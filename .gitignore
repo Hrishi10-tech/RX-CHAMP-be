@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# test coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# prisma
+prisma/*.db
+
+# .NET build output (the desktop agent projects). Keeps their source, drops the
+# ~1.1 GB of compiled artefacts — one of which is over GitHub's 100 MB hard limit.
+[Bb]in/
+[Oo]bj/
+publish/
+payload/
+*.exe
+*.dll
+*.pdb

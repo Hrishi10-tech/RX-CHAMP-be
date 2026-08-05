@@ -1,0 +1,101 @@
+// Unit test for ReportActivityUseCase's End-Day capture gate: the ack's
+// `shouldCapture`/`dayEnded` reflect the explicit End Day, and `clockedOut`
+// (the 9h basis) is decoupled from capture — capture keeps running into
+// overtime and stops only once the day is ended.
+import { ActivitySampleRecord } from '../../domain/activity-sample.repository';
+import { WorkDayEndRecord } from '../../domain/work-day.repository';
+import { DEFAULT_WORKING_BASIS_SEC, MAX_GAP_SEC } from '../activity.constants';
+import { ReportActivityUseCase } from './report-activity.use-case';
+
+const AT = '2026-07-16T09:15:00.000Z';
+
+function sample(durationSec: number, idle = false, locked = false): ActivitySampleRecord {
+  return {
+    id: 'sample-id',
+    userId: 'user-1',
+    deviceId: null,
+    date: '2026-07-16',
+    at: new Date(AT),
+    durationSec,
+    idle,
+    locked,
+    app: 'Google Chrome',
+    title: null,
+    url: null,
+  };
+}
+
+describe('ReportActivityUseCase — End Day capture gate', () => {
+  const repo = {
+    findLatestForUser: jest.fn(),
+    findLatestForUsers: jest.fn(),
+    listForUserByDate: jest.fn(),
+    stampDuration: jest.fn(),
+    create: jest.fn(),
+  } as any;
+  const access = { findSelf: jest.fn() } as any;
+  const workDays = { findEnd: jest.fn(), markEnded: jest.fn() } as any;
+  const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
+
+  let useCase: ReportActivityUseCase;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useCase = new ReportActivityUseCase(repo, access, workDays, gateway);
+    repo.findLatestForUser.mockResolvedValue(null); // no previous sample to stamp
+    repo.create.mockResolvedValue(sample(0)); // the freshly-created (open) sample
+    repo.listForUserByDate.mockResolvedValue([]); // day rollup source (overridden per test)
+    access.findSelf.mockResolvedValue(null); // no manager broadcast
+  });
+
+  it('signals capture ON when the day has not been ended', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(workDays.findEnd).toHaveBeenCalledWith('user-1', '2026-07-16');
+    expect(ack.dayEnded).toBe(false);
+    expect(ack.shouldCapture).toBe(true);
+  });
+
+  it('signals capture OFF once the day has been ended', async () => {
+    const end: WorkDayEndRecord = {
+      userId: 'user-1',
+      date: '2026-07-16',
+      endedAt: new Date('2026-07-16T18:00:00.000Z'),
+    };
+    workDays.findEnd.mockResolvedValue(end);
+
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(ack.dayEnded).toBe(true);
+    expect(ack.shouldCapture).toBe(false);
+  });
+
+  it('keeps capture ON in overtime: clockedOut is true but shouldCapture stays true', async () => {
+    // Enough active seconds to cross the 9h basis (each sample capped at MAX_GAP_SEC).
+    const count = Math.ceil(DEFAULT_WORKING_BASIS_SEC / MAX_GAP_SEC) + 5;
+    repo.listForUserByDate.mockResolvedValue(
+      Array.from({ length: count }, () => sample(MAX_GAP_SEC)),
+    );
+    workDays.findEnd.mockResolvedValue(null); // day still open
+
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(ack.activeSec).toBeGreaterThanOrEqual(DEFAULT_WORKING_BASIS_SEC);
+    expect(ack.clockedOut).toBe(true); // past the 9h basis (overtime)
+    expect(ack.shouldCapture).toBe(true); // ...but still capturing
+    expect(ack.dayEnded).toBe(false);
+  });
+
+  it('a broadcast failure never fails the agent report', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+    gateway.emitToUser.mockImplementation(() => {
+      throw new Error('socket down');
+    });
+
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(ack.ok).toBe(true);
+    expect(ack.shouldCapture).toBe(true);
+  });
+});

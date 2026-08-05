@@ -1,0 +1,423 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+enum RoleName {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+// A non-working presence status an employee can be in during the day.
+// "Working" is the implicit default — it's simply the absence of an open session.
+enum PresenceType {
+  BREAK
+  LUNCH
+  MEETING
+}
+
+model Role {
+  id   String   @id @default(uuid()) @db.Uuid
+  name RoleName @unique
+  // Granted permission codes, stored inline (validated against the Permission enum in code).
+  permissions String[] @default([])
+  users       User[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+
+model Company {
+  id     String  @id @default(uuid()) @db.Uuid
+  name   String
+  users  User[]
+  shifts Shift[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("companies")
+}
+
+model Shift {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String?  @map("company_id") @db.Uuid
+  name      String
+  // "HH:MM" 24h window, judged against attendance.
+  start     String
+  end       String
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  users     User[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([companyId])
+  @@map("shifts")
+}
+
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  // bcrypt hash (never the plaintext).
+  passwordHash String     @map("password_hash")
+  firstName    String     @map("first_name")
+  lastName     String     @map("last_name")
+  designation  String?
+  department   String?
+  status       UserStatus @default(ACTIVE)
+
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id])
+
+ 
+  managerId String? @map("manager_id") @db.Uuid
+  manager   User?   @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
+  reports   User[]  @relation("UserManager")
+
+  companyId String?  @map("company_id") @db.Uuid
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  shiftId    String? @map("shift_id") @db.Uuid
+  shift      Shift?  @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  shiftStart String? @map("shift_start")
+  shiftEnd   String? @map("shift_end")
+
+  // First time this user's agent enrolled (installed & activated). Set once, then
+  // used to notify their manager exactly once. Null = agent never activated yet.
+  agentActivatedAt DateTime? @map("agent_activated_at")
+
+  refreshTokens    RefreshToken[]
+  devices          Device[]
+  dailyReports     DailyReport[]
+  auditLogs        AuditLog[]
+  presenceSessions PresenceSession[]
+  onlineSessions   OnlineSession[]
+  activitySamples  ActivitySample[]
+  workDayEnds      WorkDayEnd[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([roleId])
+  @@index([managerId])
+  @@index([department])
+  @@index([status])
+  @@map("users")
+}
+
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 of the issued refresh token (we never store the raw token).
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  // Link to the token that replaced this one (rotation chain).
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  ip           String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Device {
+  id           String  @id @default(uuid()) @db.Uuid
+  deviceToken  String? @map("device_token")
+  hostname     String
+  username     String
+  displayName  String  @map("display_name")
+  agentVersion String? @map("agent_version")
+
+  userId String? @map("user_id") @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  pairedAt DateTime @default(now()) @map("paired_at")
+  lastSeen DateTime @default(now()) @map("last_seen")
+
+
+  lastStats Json? @map("last_stats")
+
+  reports     DailyReport[]
+  screenshots Screenshot[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([lastSeen])
+  @@map("devices")
+}
+
+model DailyReport {
+  id       String  @id @default(uuid()) @db.Uuid
+  date     String
+  deviceId String? @map("device_id") @db.Uuid
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  userId   String? @map("user_id") @db.Uuid
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  name     String
+  hostname String?
+
+  totalSec        Int @default(0) @map("total_sec")
+  activeSec       Int @default(0) @map("active_sec")
+  idleSec         Int @default(0) @map("idle_sec")
+  productiveSec   Int @default(0) @map("productive_sec")
+  extraSec        Int @default(0) @map("extra_sec")
+  workingBasisSec Int @default(28800) @map("working_basis_sec")
+
+  topApps     Json? @map("top_apps")
+  topWebsites Json? @map("top_websites")
+  hourly      Json?
+  idleBlocks  Json? @map("idle_blocks")
+
+  clockInMs  BigInt? @map("clock_in_ms")
+  outMs      BigInt? @map("out_ms")
+  clockedOut Boolean @default(false) @map("clocked_out")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, userId, deviceId])
+  @@index([date])
+  @@index([userId])
+  @@map("daily_reports")
+}
+
+// Records that a user explicitly ended their working day (the "End Day" button).
+// One row per user per local day. While no row exists for today, the agent keeps
+// capturing screenshots (including overtime past the 9h basis and idle stretches);
+// once the day is ended, capture stops for the rest of that local day.
+model WorkDayEnd {
+  id      String   @id @default(uuid()) @db.Uuid
+  userId  String   @map("user_id") @db.Uuid
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Local calendar day (YYYY-MM-DD), server timezone — matches activity/presence.
+  date    String
+  endedAt DateTime @map("ended_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@map("work_day_ends")
+}
+
+// A single stretch of time an employee spent on a break / lunch / meeting.
+// Opening a session records `startedAt`; closing it fills `endedAt` + `durationSec`.
+// An open session (endedAt = null) is the user's *current* status ("live").
+// `date` is the local calendar day (YYYY-MM-DD) the session started, for day-wise rollups.
+model PresenceSession {
+  id       String       @id @default(uuid()) @db.Uuid
+  userId   String       @map("user_id") @db.Uuid
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String?      @map("device_id") @db.Uuid
+  type     PresenceType
+  // Optional note the employee sends the manager (used for MEETING sessions).
+  note     String?
+  date     String
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+  durationSec Int?      @map("duration_sec")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([date])
+  @@index([userId, date])
+  @@index([userId, endedAt])
+  @@map("presence_sessions")
+}
+
+/// A stretch of "online" (working) time, driven by agent heartbeats. Each active
+/// heartbeat extends `lastSeenAt`; a gap longer than the grace window (or an idle
+/// signal) closes the session, so online time never counts idle or offline gaps.
+model OnlineSession {
+  id       String  @id @default(uuid()) @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String? @map("device_id") @db.Uuid
+  date     String
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  lastSeenAt  DateTime  @map("last_seen_at")
+  endedAt     DateTime? @map("ended_at")
+  durationSec Int?      @map("duration_sec")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([userId, date])
+  @@index([userId, endedAt])
+  @@map("online_sessions")
+}
+
+/// One foreground-activity sample from the agent (≈ one per minute). Each sample
+/// records the app/window/website that was in the foreground and whether the
+/// machine was idle. `durationSec` is the time this sample's app stayed in the
+/// foreground — it is filled in when the *next* sample arrives (the newest,
+/// still-open sample carries 0 and is counted live up to "now" on read).
+/// Rollups (top apps, top websites, active/idle seconds, hourly split, clock
+/// in/out) are computed from these rows per local day.
+model ActivitySample {
+  id       String  @id @default(uuid()) @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String? @map("device_id") @db.Uuid
+  // Local calendar day (YYYY-MM-DD) the sample was taken, for day-wise rollups.
+  date     String
+
+  at          DateTime
+  durationSec Int      @default(0) @map("duration_sec")
+  idle        Boolean  @default(false)
+  // Workstation was locked (Win+L / logged off / RDP disconnected). Always implies
+  // `idle`, but flags inactivity that began at this instant rather than one idle
+  // threshold earlier — so the rollup must not reclassify the work before it.
+  locked      Boolean  @default(false)
+
+  // Friendly application name, e.g. "Google Chrome" / "Visual Studio Code".
+  app   String?
+  // Foreground window title (best-effort).
+  title String?
+  // Website host when the foreground app is a browser, e.g. "github.com".
+  // Host only (never the full path/query) to keep monitoring proportionate.
+  url   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, date])
+  @@index([userId, at])
+  @@map("activity_samples")
+}
+
+// How a screenshot was triggered: the agent's 5-minute timer (AUTO) or a
+// manager's on-demand "capture now" request (MANUAL).
+enum ScreenshotKind {
+  AUTO
+  MANUAL
+}
+
+model Screenshot {
+  id         String         @id @default(uuid()) @db.Uuid
+  deviceId   String?        @map("device_id") @db.Uuid
+  device     Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  userId     String?        @map("user_id") @db.Uuid
+  storageKey String         @map("storage_key")
+  kind       ScreenshotKind @default(AUTO)
+  takenAt    DateTime       @map("taken_at")
+  // OCR text extracted on upload (AWS Textract), for full-text search.
+  ocrText    String?        @map("ocr_text")
+  // Set when a manager archives the shot; archived shots are hidden by default.
+  archivedAt DateTime?      @map("archived_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId])
+  @@index([userId])
+  @@index([takenAt])
+  @@map("screenshots")
+}
+
+model ChatMessage {
+  id         String    @id @default(uuid()) @db.Uuid
+  fromUserId String    @map("from_user_id") @db.Uuid
+  toUserId   String    @map("to_user_id") @db.Uuid
+  body       String
+  readAt     DateTime? @map("read_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("chat_messages")
+}
+
+
+// How a screenshot was triggered: the 5-minute timer (AUTO) or a manager's
+// on-demand "capture now" request (MANUAL).
+enum PermissionRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+model PermissionRequest {
+  id        String                  @id @default(uuid()) @db.Uuid
+  userId    String                  @map("user_id") @db.Uuid
+  kind      String
+  reason    String?
+  status    PermissionRequestStatus @default(PENDING)
+  decidedBy String?                 @map("decided_by") @db.Uuid
+  decidedAt DateTime?               @map("decided_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([status])
+  @@map("permission_requests")
+}
+
+// ----------------------------------------------------------------------------
+// Notifications
+// ----------------------------------------------------------------------------
+model Notification {
+  id     String    @id @default(uuid()) @db.Uuid
+  userId String    @map("user_id") @db.Uuid
+  type   String
+  title  String
+  body   String?
+  readAt DateTime? @map("read_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+
+model AuditLog {
+  id       String  @id @default(uuid()) @db.Uuid
+  actorId  String? @map("actor_id") @db.Uuid
+  actor    User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action   String
+  entity   String
+  entityId String? @map("entity_id")
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}

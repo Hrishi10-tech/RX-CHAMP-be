@@ -1,0 +1,4 @@
+{
+  "ApiBaseUrl": "http://172.16.100.32:4000/api/v1",
+  "EnrollmentToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMjBlYjM1NC0xMDEzLTQzMWEtYWI1NS0xZWI5MTkzMTMxZjYiLCJ0eXAiOiJlbnJvbGwiLCJpYXQiOjE3ODUzOTM4MjIsImV4cCI6MTgxNjkyOTgyMn0.ioitVIidX_e4I1l9s6mDhFxPZJq5ZWJPvjNzyj3mIfQ"
+}

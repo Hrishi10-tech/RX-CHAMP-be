@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>TimeChampAgent</RootNamespace>
+    <AssemblyName>TimeChampAgent</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- WinUI 3 -->
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+
+    <!-- Unpackaged (plain .exe, no MSIX) + carry the Windows App SDK runtime inside
+         the app so users don't have to install a separate runtime. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>2.0.0</Version>
+    <Company>Time Champ</Company>
+    <Product>Time Champ Agent</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250606001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.8249" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.1.4" />
+    <PackageReference Include="FluentIcons.WinUI" Version="2.1.329" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <PackageReference Include="SocketIOClient" Version="3.1.2" />
+    <!-- UI Automation interop (WinUI target has no System.Windows.Automation).
+         Managed COM interop — reads the foreground browser's address bar. -->
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

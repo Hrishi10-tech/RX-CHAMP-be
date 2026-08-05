@@ -1,0 +1,842 @@
+{
+  "info": {
+    "_postman_id": "b7a1c3d2-9f45-4e18-a6b0-timechamp0001",
+    "name": "Time Champ API (v1)",
+    "description": "Time Champ backend — NestJS. Global prefix /api/v1 (health + metrics are excluded).\n\nAUTH: POST /auth/login sets httpOnly accessToken + refreshToken cookies. Postman's cookie jar picks them up automatically, so every later request just works. The login request also copies the token into the {{accessToken}} collection variable, so Bearer auth works too (the API accepts either).\n\nEnvelope: successful responses are { success: true, data }, errors are { success: false, error: { code, message } }.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "host", "value": "http://localhost:4000" },
+    { "key": "baseUrl", "value": "{{host}}/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "otherUserId", "value": "" },
+    { "key": "companyId", "value": "" },
+    { "key": "managerId", "value": "" },
+    { "key": "notificationId", "value": "" },
+    { "key": "screenshotId", "value": "" },
+    { "key": "enrollToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Not behind the /api/v1 prefix and not guarded.",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{host}}/health", "host": ["{{host}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Process metrics",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{host}}/metrics", "host": ["{{host}}"], "path": ["metrics"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const token = pm.cookies.get('accessToken');",
+                  "if (token) { pm.collectionVariables.set('accessToken', token); }",
+                  "try {",
+                  "  const user = pm.response.json().user;",
+                  "  if (user && user.id) { pm.collectionVariables.set('userId', user.id); }",
+                  "} catch (e) { /* non-JSON response */ }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@timechamp.test\",\n  \"password\": \"admin123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "200. Sets httpOnly accessToken + refreshToken cookies. Returns { user } only — the tokens are not in the body.\n\nFailure cases the client should distinguish:\n- 401 INVALID_CREDENTIALS — 'Invalid email or password'. Unknown email OR wrong password; deliberately the same for both.\n- 403 ACCOUNT_DISABLED — 'Your account has been blocked. Contact your manager or an administrator.' Only returned once the password is correct, so it never reveals that a blocked account exists."
+          }
+        },
+        {
+          "name": "Enroll agent (password-less)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{enrollToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/auth/enroll", "host": ["{{baseUrl}}"], "path": ["auth", "enroll"] },
+            "description": "200. Signs in using the enrollment token baked into a per-user agent download."
+          }
+        },
+        {
+          "name": "Refresh tokens",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "description": "Rotates the refresh cookie and issues a new access cookie. No body — reads the refreshToken cookie."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "description": "Revokes the refresh token and clears both cookies."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "JwtAuthGuard on the whole controller. Results are role-scoped inside the use cases.",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?page=1&limit=20&sort=joined_desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                {
+                  "key": "sort",
+                  "value": "joined_desc",
+                  "description": "name_asc | name_desc | joined_asc | joined_desc | role_asc | role_desc. Defaults to joined_desc."
+                },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "role", "value": "MANAGER", "disabled": true },
+                { "key": "managerId", "value": "{{managerId}}", "disabled": true }
+              ]
+            },
+            "description": "Scope by role: SUPER_ADMIN/ADMIN see all, MANAGER sees their reports, USER sees only themselves. Returns { data, meta: { total, page, limit, totalPages } }. Every row includes `status`.\n\nSORT — pass one of six tokens as ?sort=, matching the UI labels:\n  name_asc     Name (A – Z)            firstName, then lastName\n  name_desc    Name (Z – A)\n  joined_desc  Joined Date (Newest)    default\n  joined_asc   Joined Date (Oldest)\n  role_asc     Role (A – Z)            see caveat\n  role_desc    Role (Z – A)\n\nAnything outside that list is a 400, so the client can't order by arbitrary columns.\n\nCAVEAT on role: role is a Postgres enum, so the database orders it by declaration order — SUPER_ADMIN, ADMIN, MANAGER, USER — i.e. seniority, NOT the alphabet. role_asc therefore returns SUPER_ADMIN first, not ADMIN. True alphabetical would need a raw-SQL cast.\n\nEvery ordering ends with a tiebreak on id so rows can't shuffle between pages."
+          }
+        },
+        {
+          "name": "Get user detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const u = pm.response.json().data;",
+                  "  if (u && u.id) { pm.collectionVariables.set('otherUserId', u.id); }",
+                  "} catch (e) { /* non-JSON response */ }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{otherUserId}}"]
+            },
+            "description": "Every field of one user: id, email, firstName, lastName, name, role, department, designation, managerId, companyId, shiftId, shiftStart, shiftEnd, status, createdAt.\n\nVisibility: admins see anyone, a manager sees their reports and themselves, a plain user sees only themselves. Anything you may not view returns 'Unknown user' rather than 403, so ids can't be probed.\n\nPass your own id to read your own profile. Disabled users are returned normally — status is in the payload."
+            }
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"designation\": \"Senior Team Lead\",\n  \"department\": \"Engineering\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{otherUserId}}"]
+            },
+            "description": "Partial update — send only the fields you're changing; omitted fields are left alone. Returns the full updated user, same shape as Get user detail.\n\nEditable here: firstName, lastName, designation, department. Role, manager, company and shift are NOT editable through this route. Status has its own route (POST /users/:id/status).\n\nWho can edit: admins anyone, a manager their own reports (and themselves), a plain user only themselves."
+          }
+        },
+        {
+          "name": "Create users (single or bulk)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@acme.test\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"password\": \"S3curePass!\",\n  \"role\": \"MANAGER\",\n  \"department\": \"Engineering\",\n  \"designation\": \"Team Lead\",\n  \"companyId\": null,\n  \"shiftId\": null,\n  \"shiftStart\": \"10:00\",\n  \"shiftEnd\": \"19:00\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] },
+            "description": "201. Send one user at the top level (as shown), or bulk with { \"users\": [ {...}, {...} ] }. Returns { created: [...], errors: [{ email, error }] } — partial success is normal."
+          }
+        },
+        {
+          "name": "Create users (bulk)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    {\n      \"email\": \"a@acme.test\",\n      \"firstName\": \"Amy\",\n      \"lastName\": \"Adams\",\n      \"role\": \"USER\"\n    },\n    {\n      \"email\": \"b@acme.test\",\n      \"firstName\": \"Ben\",\n      \"lastName\": \"Brown\",\n      \"role\": \"USER\"\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/users", "host": ["{{baseUrl}}"], "path": ["users"] }
+          }
+        },
+        {
+          "name": "Block user (status DISABLED)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DISABLED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{otherUserId}}", "status"]
+            },
+            "description": "status is ACTIVE (unblock) or DISABLED (block) — those are the only two values the enum has.\n\nReturns the full user object, same shape as GET /users/:id, inside { success: true, data }.\n\nTakes effect immediately: every authenticated request re-reads status, and login / refresh / agent-enrollment all reject non-ACTIVE.\n\nIdempotent — blocking an already-blocked user succeeds quietly (no 409).\n\nWho can: admin anyone, manager their own reports only, plain user nobody. Blocking yourself is rejected. A target you may not touch returns 'Unknown user', not 403.\n\nRejected with a surfaceable message when the target is the last active admin."
+          }
+        },
+        {
+          "name": "Unblock user (status ACTIVE)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{otherUserId}}", "status"]
+            },
+            "description": "Same endpoint, ACTIVE instead of DISABLED. The last-active-admin guard does not apply when unblocking."
+          }
+        },
+        {
+          "name": "Delete user (soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{otherUserId}}"]
+            },
+            "description": "Soft delete. You cannot delete yourself."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Companies",
+      "description": "JwtAuthGuard + RolesGuard. Class default is SUPER_ADMIN; the read routes also allow ADMIN and MANAGER.",
+      "item": [
+        {
+          "name": "Create company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"lakshmangroup\",\n  \"managerIds\": []\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/companies", "host": ["{{baseUrl}}"], "path": ["companies"] },
+            "description": "SUPER_ADMIN. managerIds is optional; each id listed is assigned to the new company and gets a notification."
+          }
+        },
+        {
+          "name": "List companies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/companies?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["companies"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            },
+            "description": "SUPER_ADMIN | ADMIN | MANAGER. Includes managerCount, userCount and the manager list per company."
+          }
+        },
+        {
+          "name": "Assign manager to company",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/companies/{{companyId}}/managers/{{managerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["companies", "{{companyId}}", "managers", "{{managerId}}"]
+            },
+            "description": "SUPER_ADMIN. No body."
+          }
+        },
+        {
+          "name": "List a manager's users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/companies/{{companyId}}/managers/{{managerId}}/users?page=1&limit=12",
+              "host": ["{{baseUrl}}"],
+              "path": ["companies", "{{companyId}}", "managers", "{{managerId}}", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "12" }
+              ]
+            },
+            "description": "SUPER_ADMIN | ADMIN | MANAGER."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "Create role",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"MANAGER\",\n  \"permissions\": [\"CREATE_USER\", \"VIEW_REPORT\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/roles", "host": ["{{baseUrl}}"], "path": ["roles"] },
+            "description": "201. WARNING: this route currently has NO guard on it, despite the Swagger summary saying SUPER_ADMIN only. It is reachable unauthenticated."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Presence",
+      "description": "JwtAuthGuard + RolesGuard. Break / lunch / meeting tracking + the manager board.",
+      "item": [
+        {
+          "name": "Start presence (break/lunch/meeting)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"MEETING\",\n  \"note\": \"Sprint planning with the design team\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/presence/start", "host": ["{{baseUrl}}"], "path": ["presence", "start"] },
+            "description": "type is BREAK | LUNCH | MEETING. Closes any open session first. A MEETING note is pushed to the manager as a notification."
+          }
+        },
+        {
+          "name": "End presence (back to working)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/presence/end", "host": ["{{baseUrl}}"], "path": ["presence", "end"] }
+          }
+        },
+        {
+          "name": "Heartbeat",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idle\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/presence/heartbeat", "host": ["{{baseUrl}}"], "path": ["presence", "heartbeat"] },
+            "description": "Agent calls this on a timer. idle: true closes the online session so idle time is not counted as work."
+          }
+        },
+        {
+          "name": "My current status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/presence/me/current", "host": ["{{baseUrl}}"], "path": ["presence", "me", "current"] }
+          }
+        },
+        {
+          "name": "My day",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/presence/me/today", "host": ["{{baseUrl}}"], "path": ["presence", "me", "today"] },
+            "description": "Current status, totals (break/lunch/meeting/online/idle) and every session today."
+          }
+        },
+        {
+          "name": "Team live board",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/presence/team/live", "host": ["{{baseUrl}}"], "path": ["presence", "team", "live"] },
+            "description": "MANAGER | ADMIN | SUPER_ADMIN."
+          }
+        },
+        {
+          "name": "Team day summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/presence/team/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["presence", "team", "summary"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            },
+            "description": "MANAGER | ADMIN | SUPER_ADMIN. date is YYYY-MM-DD, defaults to today."
+          }
+        },
+        {
+          "name": "One report's history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/presence/team/{{otherUserId}}/history?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["presence", "team", "{{otherUserId}}", "history"],
+              "query": [{ "key": "days", "value": "7" }]
+            },
+            "description": "MANAGER | ADMIN | SUPER_ADMIN. days is 1–31, default 7, oldest first."
+          }
+        },
+        {
+          "name": "One report's hourly timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/presence/team/{{otherUserId}}/timeline",
+              "host": ["{{baseUrl}}"],
+              "path": ["presence", "team", "{{otherUserId}}", "timeline"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            },
+            "description": "MANAGER | ADMIN | SUPER_ADMIN. 24 buckets of work/break/lunch/meeting/idle seconds."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Productivity",
+      "item": [
+        {
+          "name": "Daily productivity score",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/productivity/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["productivity", "{{userId}}"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            },
+            "description": "Self, your manager, or an admin. Score is 0–10."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Activity",
+      "description": "JwtAuthGuard + RolesGuard. Per-minute foreground samples from the desktop agent.",
+      "item": [
+        {
+          "name": "Report a sample (agent)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"at\": \"2026-07-27T09:15:00.000Z\",\n  \"idle\": false,\n  \"app\": \"Google Chrome\",\n  \"title\": \"Pull requests \\u00b7 GitHub\",\n  \"url\": \"github.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/activity/report", "host": ["{{baseUrl}}"], "path": ["activity", "report"] },
+            "description": "Every field is optional; `at` defaults to the server clock. Responds with the day's progress + shouldCapture, which tells the agent whether to keep taking screenshots."
+          }
+        },
+        {
+          "name": "End working day",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/activity/end-day", "host": ["{{baseUrl}}"], "path": ["activity", "end-day"] },
+            "description": "Idempotent — pressing it twice returns the original end time. Stops screenshot capture for the rest of the day."
+          }
+        },
+        {
+          "name": "My current activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/activity/me/current", "host": ["{{baseUrl}}"], "path": ["activity", "me", "current"] }
+          }
+        },
+        {
+          "name": "My day",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/activity/me/today",
+              "host": ["{{baseUrl}}"],
+              "path": ["activity", "me", "today"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            },
+            "description": "Totals, overtime vs the 9h basis, top apps/websites and the hourly split."
+          }
+        },
+        {
+          "name": "Team live board",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/activity/team/live", "host": ["{{baseUrl}}"], "path": ["activity", "team", "live"] },
+            "description": "MANAGER | ADMIN | SUPER_ADMIN."
+          }
+        },
+        {
+          "name": "A user's current activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/activity/user/{{otherUserId}}/current",
+              "host": ["{{baseUrl}}"],
+              "path": ["activity", "user", "{{otherUserId}}", "current"]
+            },
+            "description": "Self, their manager, or an admin."
+          }
+        },
+        {
+          "name": "A user's day",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/activity/user/{{otherUserId}}/daily",
+              "host": ["{{baseUrl}}"],
+              "path": ["activity", "user", "{{otherUserId}}", "daily"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "{{userId}}"],
+              "query": [{ "key": "date", "value": "2026-07-27", "disabled": true }]
+            },
+            "description": "KPIs with day-over-day deltas + 7-day sparks, top apps, hourly timeline, weekly score, focus trend, 7x24 heatmap and focus sessions. categories / taskCompletion / achievements / goals are Phase 2-4 stubs and come back empty."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Contacts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/chat/contacts", "host": ["{{baseUrl}}"], "path": ["chat", "contacts"] },
+            "description": "Who you are allowed to message — your manager and your reports."
+          }
+        },
+        {
+          "name": "Threads",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/chat/threads", "host": ["{{baseUrl}}"], "path": ["chat", "threads"] },
+            "description": "Each contact with a last-message preview and unread count."
+          }
+        },
+        {
+          "name": "Unread count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/chat/unread", "host": ["{{baseUrl}}"], "path": ["chat", "unread"] }
+          }
+        },
+        {
+          "name": "Conversation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/chat/messages?withUserId={{otherUserId}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["chat", "messages"],
+              "query": [
+                { "key": "withUserId", "value": "{{otherUserId}}" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "Oldest to newest. limit is 1-200, default 50. Marks the other side's messages as read."
+          }
+        },
+        {
+          "name": "Send message",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toUserId\": \"{{otherUserId}}\",\n  \"body\": \"Standup in 5?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/chat/messages", "host": ["{{baseUrl}}"], "path": ["chat", "messages"] },
+            "description": "body max 2000 chars. Also pushed live over the /chat websocket namespace."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "unreadOnly", "value": "true", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unread count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "Mark one read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{notificationId}}", "read"]
+            },
+            "description": "Scoped to the owner — returns 404-style error if the notification isn't yours."
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "read-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screenshots",
+      "item": [
+        {
+          "name": "Upload (agent, multipart)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [], "description": "The PNG/JPEG. Required." },
+                { "key": "kind", "value": "AUTO", "type": "text", "description": "AUTO | MANUAL" },
+                { "key": "takenAt", "value": "", "type": "text", "disabled": true, "description": "ISO time; defaults to now" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/screenshots", "host": ["{{baseUrl}}"], "path": ["screenshots"] },
+            "description": "201, multipart/form-data. Pick a file for the 'file' field before sending. Stored in S3 and OCR'd so it becomes text-searchable. Do NOT set Content-Type manually — Postman adds the boundary."
+          }
+        },
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/screenshots?userId={{userId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["screenshots"],
+              "query": [
+                { "key": "userId", "value": "{{userId}}" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "kind", "value": "AUTO", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "includeArchived", "value": "false", "disabled": true }
+              ]
+            },
+            "description": "Self, their manager, or an admin. Defaults to today's window when from/to are omitted. Items carry short-lived presigned URLs. q searches the OCR text."
+          }
+        },
+        {
+          "name": "Request a capture now",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{otherUserId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/screenshots/capture", "host": ["{{baseUrl}}"], "path": ["screenshots", "capture"] },
+            "description": "202. Pushes screenshot:capture over the websocket to that user's running agent."
+          }
+        },
+        {
+          "name": "Archive",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"ids\": [\"{{screenshotId}}\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/screenshots/archive", "host": ["{{baseUrl}}"], "path": ["screenshots", "archive"] },
+            "description": "Hides them from the default list; still fetchable with includeArchived=true."
+          }
+        },
+        {
+          "name": "Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/screenshots/export?userId={{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["screenshots", "export"],
+              "query": [
+                { "key": "userId", "value": "{{userId}}" },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "kind", "value": "AUTO", "disabled": true }
+              ]
+            },
+            "description": "Returns text/csv (id, takenAt, kind, presigned url) as a file download."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent",
+      "item": [
+        {
+          "name": "Version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/agent/version", "host": ["{{baseUrl}}"], "path": ["agent", "version"] },
+            "description": "Version, filename, whether the binary is published, and its size."
+          }
+        },
+        {
+          "name": "Download agent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agent/download",
+              "host": ["{{baseUrl}}"],
+              "path": ["agent", "download"],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{otherUserId}}",
+                  "disabled": true,
+                  "description": "Bakes that user's enrollment token in. Caller must be their manager or an admin."
+                }
+              ]
+            },
+            "description": "Binary/ZIP stream — use Send and Download in Postman. Without userId you get the plain build; with it, the download self-enrolls."
+          }
+        }
+      ]
+    }
+  ]
+}

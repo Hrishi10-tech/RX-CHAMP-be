@@ -39,3 +39,9 @@ payload/
 *.exe
 *.dll
 *.pdb
+
+# Local-only folders (do not push to GitHub)
+.github/
+.husky/
+docs/
+nginx/

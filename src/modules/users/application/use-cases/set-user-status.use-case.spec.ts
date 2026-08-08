@@ -6,7 +6,9 @@ import { Email } from '../../domain/value-objects/email.vo';
 import { UserId } from '../../domain/value-objects/user-id.vo';
 import { UserStatus } from '@shared/types/user.types';
 
-function makeUser(over: { id?: string; role?: Role; managerId?: string | null; status?: UserStatus } = {}): User {
+function makeUser(
+  over: { id?: string; role?: Role; managerId?: string | null; status?: UserStatus } = {},
+): User {
   return User.fromPersistence({
     id: UserId.create(over.id ?? 'u-1'),
     email: Email.create('jane@acme.test'),
@@ -28,7 +30,15 @@ function makeUser(over: { id?: string; role?: Role; managerId?: string | null; s
 }
 
 function actor(role: Role, id = 'mgr-1'): AuthenticatedUser {
-  return { id, email: 'm@acme.test', role, permissions: [], department: 'Eng', companyId: null, status: 'ACTIVE' };
+  return {
+    id,
+    email: 'm@acme.test',
+    role,
+    permissions: [],
+    department: 'Eng',
+    companyId: null,
+    status: 'ACTIVE',
+  };
 }
 
 describe('SetUserStatusUseCase', () => {
@@ -42,7 +52,7 @@ describe('SetUserStatusUseCase', () => {
     users.count.mockResolvedValue(5);
   });
 
-  it('blocks a manager\'s own report', async () => {
+  it("blocks a manager's own report", async () => {
     users.findById.mockResolvedValue(makeUser({ id: 'u-1', managerId: 'mgr-1' }));
 
     const result = await useCase.execute(actor(Role.MANAGER), 'u-1', 'DISABLED');
@@ -52,7 +62,9 @@ describe('SetUserStatusUseCase', () => {
   });
 
   it('unblocks by setting ACTIVE', async () => {
-    users.findById.mockResolvedValue(makeUser({ id: 'u-1', managerId: 'mgr-1', status: 'DISABLED' }));
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'u-1', managerId: 'mgr-1', status: 'DISABLED' }),
+    );
 
     const result = await useCase.execute(actor(Role.MANAGER), 'u-1', 'ACTIVE');
 
@@ -60,7 +72,9 @@ describe('SetUserStatusUseCase', () => {
   });
 
   it('is idempotent — re-blocking an already blocked user succeeds', async () => {
-    users.findById.mockResolvedValue(makeUser({ id: 'u-1', managerId: 'mgr-1', status: 'DISABLED' }));
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'u-1', managerId: 'mgr-1', status: 'DISABLED' }),
+    );
 
     const result = await useCase.execute(actor(Role.MANAGER), 'u-1', 'DISABLED');
 
@@ -93,9 +107,9 @@ describe('SetUserStatusUseCase', () => {
     // 0 SUPER_ADMIN + 1 ADMIN active — and that one ADMIN is the target.
     users.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
 
-    await expect(useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'a-2', 'DISABLED')).rejects.toThrow(
-      /last active admin/i,
-    );
+    await expect(
+      useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'a-2', 'DISABLED'),
+    ).rejects.toThrow(/last active admin/i);
     expect(users.save).not.toHaveBeenCalled();
   });
 

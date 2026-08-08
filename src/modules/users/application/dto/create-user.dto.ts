@@ -1,4 +1,3 @@
-
 import { Type } from 'class-transformer';
 import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -25,7 +24,11 @@ export class CreateUserItemDto {
   @IsString()
   password?: string;
 
-  @ApiPropertyOptional({ enum: Role, example: Role.MANAGER, description: 'Role name; backend resolves it to the role_id' })
+  @ApiPropertyOptional({
+    enum: Role,
+    example: Role.MANAGER,
+    description: 'Role name; backend resolves it to the role_id',
+  })
   @IsOptional()
   @IsString()
   role?: Role;

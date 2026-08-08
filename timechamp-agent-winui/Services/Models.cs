@@ -152,5 +152,11 @@ public sealed class DailyActivity
     [JsonPropertyName("idleSec")] public int IdleSec { get; set; }
     [JsonPropertyName("workingBasisSec")] public int WorkingBasisSec { get; set; }
     [JsonPropertyName("remainingSec")] public int RemainingSec { get; set; }
+
+    /// <summary>True once the user pressed "End Day" — today's totals are final and
+    /// tracking must not resume. Read on launch so restarting the agent after signing
+    /// off doesn't re-arm sampling or fire a stray screenshot.</summary>
+    [JsonPropertyName("dayEnded")] public bool DayEnded { get; set; }
+
     [JsonPropertyName("hourly")] public List<HourBucket> Hourly { get; set; } = new();
 }

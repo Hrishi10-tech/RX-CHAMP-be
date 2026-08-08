@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { SCREENSHOT_REPOSITORY } from './domain/screenshot.repository';
 import { SCREENSHOT_ACCESS_READER } from './domain/screenshot-access.reader';
+import { DAY_END_READER } from './domain/day-end.reader';
 import { PrismaScreenshotRepository } from './infrastructure/prisma-screenshot.repository';
 import { PrismaScreenshotAccessReader } from './infrastructure/prisma-screenshot-access.reader';
+import { PrismaDayEndReader } from './infrastructure/prisma-day-end.reader';
 import { S3StorageService } from './infrastructure/s3-storage.service';
 import { OcrService } from './infrastructure/ocr.service';
 import { UploadScreenshotUseCase } from './application/use-cases/upload-screenshot.use-case';
@@ -18,6 +20,7 @@ import { ScreenshotsGateway } from './presentation/screenshots.gateway';
   providers: [
     { provide: SCREENSHOT_REPOSITORY, useClass: PrismaScreenshotRepository },
     { provide: SCREENSHOT_ACCESS_READER, useClass: PrismaScreenshotAccessReader },
+    { provide: DAY_END_READER, useClass: PrismaDayEndReader },
     S3StorageService,
     OcrService,
     ScreenshotsGateway,

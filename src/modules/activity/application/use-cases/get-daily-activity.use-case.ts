@@ -6,6 +6,7 @@ import {
 } from '../../domain/activity-sample.repository';
 import { ACTIVITY_ACCESS_READER, ActivityAccessReader } from '../../domain/activity-access.reader';
 import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.repository';
+import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { ActivityMapper } from '../activity.mapper';
 import { DEFAULT_WORKING_BASIS_SEC } from '../activity.constants';
 import { DailyActivityView } from '../activity.types';
@@ -22,6 +23,7 @@ export class GetDailyActivityUseCase {
     @Inject(ACTIVITY_SAMPLE_REPOSITORY) private readonly repo: ActivitySampleRepository,
     @Inject(ACTIVITY_ACCESS_READER) private readonly access: ActivityAccessReader,
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
+    @Inject(MEETING_WINDOW_READER) private readonly meetings: MeetingWindowReader,
   ) {}
 
   async execute(me: AuthenticatedUser, userId: string, date?: string): Promise<DailyActivityView> {
@@ -30,12 +32,14 @@ export class GetDailyActivityUseCase {
     const day = date ?? localDateString(now);
     const samples = await this.repo.listForUserByDate(userId, day);
     const end = await this.workDays.findEnd(userId, day);
+    const meetings = await this.meetings.listForUserByDate(userId, day);
     return ActivityMapper.computeDaily(
       samples,
       day,
       DEFAULT_WORKING_BASIS_SEC,
       now,
       end?.endedAt ?? null,
+      meetings,
     );
   }
 }

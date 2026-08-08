@@ -18,7 +18,7 @@ import { CreateUserItemDto } from '../dto';
 
 @Injectable()
 export class CreateUsersUseCase {
-  private readonly access = new UserAccessService();  
+  private readonly access = new UserAccessService();
   constructor(
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(SHIFT_READER) private readonly shifts: ShiftReader,

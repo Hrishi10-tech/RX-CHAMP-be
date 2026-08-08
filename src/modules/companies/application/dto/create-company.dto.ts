@@ -9,7 +9,8 @@ export class CreateCompanyDto {
   name!: string;
 
   @ApiPropertyOptional({
-    description: 'User ids (managers) to assign to the new company. Optional — omit to create an unassigned company.',
+    description:
+      'User ids (managers) to assign to the new company. Optional — omit to create an unassigned company.',
     type: [String],
     example: ['f6653aad-b393-4b56-9306-08793dfdcaa0'],
   })

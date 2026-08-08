@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { ConflictError, ValidationError } from '@shared/exceptions/app.exception';
 import { Permission } from '@shared/rbac/permissions.enum';

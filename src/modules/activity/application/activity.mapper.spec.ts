@@ -33,7 +33,13 @@ describe('ActivityMapper.computeDaily — clockOutAt', () => {
   it('uses the End Day timestamp when the day was ended', () => {
     const endedAt = new Date('2026-07-16T18:10:00.000Z');
 
-    const daily = ActivityMapper.computeDaily(samples, day, DEFAULT_WORKING_BASIS_SEC, now, endedAt);
+    const daily = ActivityMapper.computeDaily(
+      samples,
+      day,
+      DEFAULT_WORKING_BASIS_SEC,
+      now,
+      endedAt,
+    );
 
     expect(daily.clockOutAt).toBe(endedAt.toISOString());
   });
@@ -172,5 +178,152 @@ describe('ActivityMapper.computeDaily — locked workstation', () => {
 
     expect(daily.topApps).toEqual([]);
     expect(daily.idleSec).toBe(120);
+  });
+});
+
+// Sitting in a meeting is working time even with the keyboard untouched, so those
+// minutes count as active. Breaks and lunches are time away and stay idle.
+describe('ActivityMapper.computeDaily — meetings count as active', () => {
+  const base = new Date('2026-07-16T09:00:00.000Z');
+  const day = localDateString(base);
+  const now = new Date('2026-07-17T09:00:00.000Z');
+
+  const at = (minute: number) => new Date(base.getTime() + minute * 60_000);
+
+  /** `flags[i]` is the idle flag of the i-th minute-long sample. */
+  const run = (flags: boolean[], meetings: { start: Date; end: Date | null }[] = []) =>
+    ActivityMapper.computeDaily(
+      flags.map((idle, i) => sample(at(i), idle)),
+      day,
+      DEFAULT_WORKING_BASIS_SEC,
+      now,
+      null,
+      meetings,
+    );
+
+  it('counts idle-flagged minutes inside a meeting as active', () => {
+    // Nobody typed for the whole 10 minutes, but it was a meeting.
+    const daily = run(Array<boolean>(10).fill(true), [{ start: at(0), end: at(10) }]);
+
+    expect(daily.activeSec).toBe(600);
+    expect(daily.idleSec).toBe(0);
+  });
+
+  it('leaves idle time outside the meeting alone', () => {
+    // 5 minutes of meeting, then 5 minutes of genuine inactivity.
+    const daily = run(Array<boolean>(10).fill(true), [{ start: at(0), end: at(5) }]);
+
+    expect(daily.activeSec).toBe(300);
+    expect(daily.idleSec).toBe(300);
+  });
+
+  it('never reclassifies meeting time into idle', () => {
+    // Meeting, then a normal idle drift: the backfill must not eat the meeting.
+    const daily = run([true, true, true, true, true, true, true], [{ start: at(0), end: at(5) }]);
+
+    expect(daily.activeSec).toBe(300); // the 5 meeting minutes survive
+    expect(daily.idleSec).toBe(120);
+  });
+
+  it('ignores a meeting left open on a past day', () => {
+    // A session the user never ended. Trusting it would turn the rest of the day into
+    // meeting time, so on a finished day it is treated as missing data.
+    const daily = run(Array<boolean>(4).fill(true), [{ start: at(0), end: null }]);
+
+    expect(daily.activeSec).toBe(0);
+    expect(daily.idleSec).toBe(240);
+  });
+
+  it('treats a meeting still running today as ongoing', () => {
+    const today = new Date();
+    const start = new Date(today.getTime() - 10 * 60_000);
+    const samples = [0, 1, 2].map(
+      (i) => sample(new Date(start.getTime() + i * 60_000), true), // idle-flagged
+    );
+
+    const daily = ActivityMapper.computeDaily(
+      samples,
+      localDateString(today),
+      DEFAULT_WORKING_BASIS_SEC,
+      today,
+      null,
+      [{ start, end: null }],
+    );
+
+    expect(daily.activeSec).toBeGreaterThan(0);
+    expect(daily.idleSec).toBe(0);
+  });
+
+  it('keeps break and lunch idle — no windows are passed for them', () => {
+    // Same shape as a meeting, but with no window: stays idle.
+    const daily = run(Array<boolean>(10).fill(true));
+
+    expect(daily.activeSec).toBe(0);
+    expect(daily.idleSec).toBe(600);
+  });
+});
+
+// Ending the day freezes it: the trailing open sample stops accruing at the End
+// Day instant instead of tracking the wall clock, so the totals never drift after
+// the user has been told their hours are final.
+describe('ActivityMapper.computeDaily — ending the day freezes the totals', () => {
+  const day = '2026-07-16';
+  const at = new Date('2026-07-16T17:00:00.000Z');
+  const endedAt = new Date('2026-07-16T17:00:30.000Z'); // 30s into the open sample
+
+  /** One still-open sample (durationSec = 0), as the agent leaves its last one. */
+  const open: ActivitySampleRecord = { ...sample(at), durationSec: 0 };
+
+  function activeSecAt(now: Date, ended: Date | null): number {
+    return ActivityMapper.computeDaily([open], day, DEFAULT_WORKING_BASIS_SEC, now, ended)
+      .activeSec;
+  }
+
+  it('stops the open sample at the End Day instant, not at "now"', () => {
+    // Two minutes after the press, the open sample must still be worth 30s.
+    expect(activeSecAt(new Date('2026-07-16T17:02:00.000Z'), endedAt)).toBe(30);
+  });
+
+  it('does not drift as time passes after the day ended', () => {
+    const soon = activeSecAt(new Date('2026-07-16T17:01:00.000Z'), endedAt);
+    const later = activeSecAt(new Date('2026-07-16T17:20:00.000Z'), endedAt);
+
+    expect(later).toBe(soon);
+  });
+
+  it('still counts up to "now" while the day is open', () => {
+    // Same sample, no End Day: it keeps growing (capped by MAX_GAP_SEC).
+    expect(activeSecAt(new Date('2026-07-16T17:01:00.000Z'), null)).toBe(60);
+  });
+
+  it('reports dayEnded so the agent can tell on a fresh launch', () => {
+    const open = ActivityMapper.computeDaily([], day, DEFAULT_WORKING_BASIS_SEC, at, null);
+    const ended = ActivityMapper.computeDaily([], day, DEFAULT_WORKING_BASIS_SEC, at, endedAt);
+
+    expect(open.dayEnded).toBe(false);
+    expect(ended.dayEnded).toBe(true);
+  });
+});
+
+describe('ActivityMapper.statusOf — DAY_ENDED', () => {
+  const now = new Date('2026-07-16T17:01:00.000Z');
+  const recent = sample(new Date('2026-07-16T17:00:30.000Z'));
+
+  it('outranks a live sample once the day has ended', () => {
+    expect(ActivityMapper.statusOf(recent, now)).toBe('ACTIVE');
+    expect(ActivityMapper.statusOf(recent, now, true)).toBe('DAY_ENDED');
+  });
+
+  it('is reported instead of OFFLINE when no sample exists', () => {
+    expect(ActivityMapper.statusOf(null, now)).toBe('OFFLINE');
+    expect(ActivityMapper.statusOf(null, now, true)).toBe('DAY_ENDED');
+  });
+
+  it('clears the foreground app on the team board', () => {
+    const member = { id: 'u1', firstName: 'A', lastName: 'B', email: 'a@b.c', department: null };
+    const view = ActivityMapper.toTeamMemberView(member, recent, now, true);
+
+    expect(view.status).toBe('DAY_ENDED');
+    expect(view.app).toBeNull();
   });
 });

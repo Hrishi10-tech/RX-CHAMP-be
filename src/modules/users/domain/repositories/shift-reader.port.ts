@@ -1,4 +1,3 @@
-
 export const SHIFT_READER = Symbol('SHIFT_READER');
 
 export interface ShiftView {

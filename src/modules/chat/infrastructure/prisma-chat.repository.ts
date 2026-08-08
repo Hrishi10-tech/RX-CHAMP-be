@@ -48,14 +48,12 @@ export class PrismaChatRepository implements ChatRepository {
   async threadSummaries(meId: string, otherIds: string[]): Promise<ThreadSummary[]> {
     if (otherIds.length === 0) return [];
 
- 
     const unreadRows = await this.prisma.chatMessage.groupBy({
       by: ['fromUserId'],
       where: { toUserId: meId, fromUserId: { in: otherIds }, readAt: null },
       _count: { _all: true },
     });
     const unreadByFrom = new Map(unreadRows.map((r) => [r.fromUserId, r._count._all]));
-
 
     const lasts = await Promise.all(
       otherIds.map((otherId) =>

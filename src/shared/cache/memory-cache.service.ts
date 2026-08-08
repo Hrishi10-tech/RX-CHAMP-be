@@ -1,10 +1,9 @@
-
 import { Injectable } from '@nestjs/common';
 import { CacheService } from './cache.port';
 
 interface Entry {
   value: string;
-  expiresAt?: number; 
+  expiresAt?: number;
 }
 
 @Injectable()
@@ -42,7 +41,6 @@ export class MemoryCacheService implements CacheService {
   private isExpired(entry: Entry): boolean {
     return entry.expiresAt !== undefined && entry.expiresAt <= Date.now();
   }
-
 
   private globToRegExp(pattern: string): RegExp {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');

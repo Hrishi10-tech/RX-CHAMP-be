@@ -75,6 +75,32 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _chatInput = "";
     [ObservableProperty] private string _focusCaption = "";
 
+    // ---- End of day --------------------------------------------------------
+    // Once the day is ended nothing may keep counting: the local clock stops, the
+    // status tiles go inert, and the banner says so. Set by App on End Day, and
+    // re-read from the server on every refresh so a day ended elsewhere lands here too.
+
+    [ObservableProperty] private bool _dayEnded;
+    /// <summary>False once the day has ended — status tiles and End Day stop responding.</summary>
+    [ObservableProperty] private bool _trackingEnabled = true;
+    /// <summary>Dims the status tiles once they can no longer be used.</summary>
+    [ObservableProperty] private double _tileOpacity = 1.0;
+
+    partial void OnDayEndedChanged(bool value)
+    {
+        TrackingEnabled = !value;
+        TileOpacity = value ? 0.45 : 1.0;
+        if (!value) return;
+
+        StopClock();
+        ApplyStatus(DayEndedStatus);
+        RenderTimers();
+        SyncText = "DAY ENDED · today's hours are final";
+    }
+
+    /// <summary>Status the server reports for a day that has been ended.</summary>
+    private const string DayEndedStatus = "DAY_ENDED";
+
     public ObservableCollection<BarViewModel> ProductivityBars { get; } = new();
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = new();
 
@@ -117,6 +143,9 @@ public partial class DashboardViewModel : ObservableObject
 
     private void OnClockTick()
     {
+        // The day's totals are final once it has ended — nothing ticks up after that.
+        if (DayEnded) return;
+
         if (_status == "WORKING") _onlineSec++;
         else _sessionElapsed++;
 
@@ -130,6 +159,7 @@ public partial class DashboardViewModel : ObservableObject
         if (today is null) { SyncText = "Offline — will sync"; return; }
 
         _status = today.Current?.Status ?? "WORKING";
+        if (_status == DayEndedStatus) DayEnded = true;
         _onlineSec = today.Totals.OnlineSec;
         _sessionElapsed = today.Current?.ElapsedSec ?? 0;
         _breakSec = today.Totals.BreakSec;
@@ -138,11 +168,13 @@ public partial class DashboardViewModel : ObservableObject
 
         ApplyStatus(_status);
         RenderTimers();
-        SyncText = $"SYNCED · {DateTime.Now:HH:mm:ss}";
+        if (!DayEnded) SyncText = $"SYNCED · {DateTime.Now:HH:mm:ss}";
 
         var activity = await _api.GetActivityTodayAsync();
         if (activity is not null)
         {
+            // The day may have been ended from the tray, or on a previous run.
+            if (activity.DayEnded) DayEnded = true;
             if (activity.WorkingBasisSec > 0) _basisSec = activity.WorkingBasisSec;
             UpdateFocus(activity);
             UpdateBars(activity.Hourly);
@@ -216,6 +248,15 @@ public partial class DashboardViewModel : ObservableObject
 
     private void ApplyStatus(string status)
     {
+        // A day that has ended has no live status at all — every tile goes inert.
+        if (status == DayEndedStatus)
+        {
+            BreakActive = LunchActive = MeetingActive = FocusActive = false;
+            PauseEnabled = ResumeEnabled = false;
+            PauseOpacity = ResumeOpacity = 0.5;
+            return;
+        }
+
         var working = status == "WORKING";
         BreakActive = status == "BREAK";
         LunchActive = status == "LUNCH";
@@ -228,15 +269,20 @@ public partial class DashboardViewModel : ObservableObject
         ResumeOpacity = working ? 0.5 : 1.0;
     }
 
+    /// <summary>Blocks a status change once the day is over. The server refuses these
+    /// too — this just avoids a pointless round trip and a confusing error.</summary>
+    private bool Blocked => DayEnded;
+
     // ---- Commands ----------------------------------------------------------
 
-    [RelayCommand] private Task Pause() => Go(() => _api.StartAsync("BREAK", null));
-    [RelayCommand] private Task Resume() => Go(() => _api.EndAsync());
-    [RelayCommand] private Task FocusWork() => Go(() => _api.EndAsync());
+    [RelayCommand] private Task Pause() => Blocked ? Task.CompletedTask : Go(() => _api.StartAsync("BREAK", null));
+    [RelayCommand] private Task Resume() => Blocked ? Task.CompletedTask : Go(() => _api.EndAsync());
+    [RelayCommand] private Task FocusWork() => Blocked ? Task.CompletedTask : Go(() => _api.EndAsync());
 
     [RelayCommand]
     private async Task Break()
     {
+        if (Blocked) return;
         if (ConfirmAsync is null || await ConfirmAsync("Are you sure you want to take a break? Your current timer will be paused."))
             await Go(() => _api.StartAsync("BREAK", null));
     }
@@ -244,6 +290,7 @@ public partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private async Task Lunch()
     {
+        if (Blocked) return;
         if (ConfirmAsync is null || await ConfirmAsync("Are you sure you want to go to lunch? Your current timer will be paused."))
             await Go(() => _api.StartAsync("LUNCH", null));
     }
@@ -251,11 +298,17 @@ public partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private async Task Meeting()
     {
+        if (Blocked) return;
         var note = PromptAsync is null ? null : await PromptAsync("Add a note for your manager (optional):");
         await Go(() => _api.StartAsync("MEETING", string.IsNullOrWhiteSpace(note) ? null : note));
     }
 
-    [RelayCommand] private async Task EndDay() { if (EndDayRequested is not null) await EndDayRequested(); }
+    [RelayCommand]
+    private async Task EndDay()
+    {
+        if (Blocked) return;
+        if (EndDayRequested is not null) await EndDayRequested();
+    }
     [RelayCommand] private async Task SignOut() { StopClock(); if (SignOutRequested is not null) await SignOutRequested(); }
 
     [RelayCommand]

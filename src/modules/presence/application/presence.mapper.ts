@@ -9,6 +9,15 @@ import {
 } from './presence.types';
 
 export class PresenceMapper {
+  /**
+   * The instant live figures are measured against. Normally "now", but once the
+   * user has ended their day everything freezes at `endedAt` — no total may keep
+   * growing past the minute they signed off.
+   */
+  static asOf(now: Date, endedAt: Date | null): Date {
+    return endedAt && endedAt < now ? endedAt : now;
+  }
+
   /** Seconds a session contributes to a total: its duration if closed, else live elapsed. */
   static sessionSeconds(s: PresenceSessionRecord, now: Date): number {
     return s.endedAt ? (s.durationSec ?? 0) : elapsedSeconds(s.startedAt, now);
@@ -29,7 +38,19 @@ export class PresenceMapper {
     return t;
   }
 
-  static currentFrom(open: PresenceSessionRecord | null, now: Date): CurrentPresenceView {
+  /**
+   * The user's live status. `dayEnded` wins outright — End Day closes any open
+   * session, so there is nothing left to report and the board must show that they
+   * have signed off rather than falling back to WORKING.
+   */
+  static currentFrom(
+    open: PresenceSessionRecord | null,
+    now: Date,
+    dayEnded = false,
+  ): CurrentPresenceView {
+    if (dayEnded) {
+      return { status: 'DAY_ENDED', sessionId: null, note: null, since: null, elapsedSec: 0 };
+    }
     if (!open) {
       return { status: 'WORKING', sessionId: null, note: null, since: null, elapsedSec: 0 };
     }

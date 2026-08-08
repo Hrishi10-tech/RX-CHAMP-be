@@ -9,9 +9,7 @@ import { ListNotificationsQueryDto } from '../dto';
 
 @Injectable()
 export class ListNotificationsUseCase {
-  constructor(
-    @Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository,
-  ) {}
+  constructor(@Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository) {}
 
   async execute(
     userId: string,

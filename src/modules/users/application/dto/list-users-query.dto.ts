@@ -8,7 +8,6 @@ import {
   UserSortOption,
 } from '../../domain/repositories/user.repository';
 
-
 export class ListUsersQueryDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()

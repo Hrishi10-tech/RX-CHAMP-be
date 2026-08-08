@@ -15,7 +15,6 @@ export interface CreateMessageData {
   body: string;
 }
 
-
 export interface ThreadSummary {
   otherId: string;
   lastMessage: ChatMessageRecord | null;

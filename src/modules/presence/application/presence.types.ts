@@ -1,8 +1,12 @@
 import { TeamMemberView } from '@shared/types/user.types';
 import { PresenceKind } from '../domain/presence-session.repository';
 
-/** WORKING = the implicit state when no session is open. */
-export type PresenceStatus = 'WORKING' | PresenceKind;
+/**
+ * WORKING = the implicit state when no session is open. DAY_ENDED outranks all of
+ * them: the user pressed "End Day", so they are signed off for the rest of the
+ * local day and nothing further accrues.
+ */
+export type PresenceStatus = 'WORKING' | 'DAY_ENDED' | PresenceKind;
 
 export interface PresenceTotals {
   breakSec: number;

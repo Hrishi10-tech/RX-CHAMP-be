@@ -15,7 +15,9 @@ export class ProductivityController {
   constructor(private readonly getProductivity: GetProductivityUseCase) {}
 
   @Get(':userId')
-  @ApiOperation({ summary: "A user's heuristic productivity score for a day (self / manager / admin)" })
+  @ApiOperation({
+    summary: "A user's heuristic productivity score for a day (self / manager / admin)",
+  })
   async productivity(
     @CurrentUser() me: AuthenticatedUser,
     @Param('userId') userId: string,

@@ -20,9 +20,7 @@ export class ListUsersUseCase {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const scope = this.access.listScopeFor(me);
-    const drillDown = query.managerId
-      ? { managerId: query.managerId }
-      : { role: query.role };
+    const drillDown = query.managerId ? { managerId: query.managerId } : { role: query.role };
     const base: ListUsersFilter = {
       search: query.search,
       sort: query.sort,

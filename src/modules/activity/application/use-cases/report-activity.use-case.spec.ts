@@ -35,12 +35,14 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
   } as any;
   const access = { findSelf: jest.fn() } as any;
   const workDays = { findEnd: jest.fn(), markEnded: jest.fn() } as any;
+  const meetings = { listForUserByDate: jest.fn() } as any;
   const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
 
   let useCase: ReportActivityUseCase;
   beforeEach(() => {
     jest.clearAllMocks();
-    useCase = new ReportActivityUseCase(repo, access, workDays, gateway);
+    useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
+    meetings.listForUserByDate.mockResolvedValue([]); // no meetings unless a test adds one
     repo.findLatestForUser.mockResolvedValue(null); // no previous sample to stamp
     repo.create.mockResolvedValue(sample(0)); // the freshly-created (open) sample
     repo.listForUserByDate.mockResolvedValue([]); // day rollup source (overridden per test)
@@ -97,5 +99,55 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
 
     expect(ack.ok).toBe(true);
     expect(ack.shouldCapture).toBe(true);
+  });
+});
+
+// A day that has already ended is final: a late report — an in-flight sample, or
+// an agent restarted after signing off — is acknowledged but never stored.
+describe('ReportActivityUseCase — reports after the day has ended', () => {
+  const repo = {
+    findLatestForUser: jest.fn(),
+    findLatestForUsers: jest.fn(),
+    listForUserByDate: jest.fn(),
+    stampDuration: jest.fn(),
+    create: jest.fn(),
+  } as any;
+  const access = { findSelf: jest.fn() } as any;
+  const workDays = { findEnd: jest.fn(), findEndsForUsers: jest.fn(), markEnded: jest.fn() } as any;
+  const meetings = { listForUserByDate: jest.fn() } as any;
+  const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
+
+  let useCase: ReportActivityUseCase;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
+    meetings.listForUserByDate.mockResolvedValue([]);
+    repo.findLatestForUser.mockResolvedValue(null);
+    repo.listForUserByDate.mockResolvedValue([]);
+    access.findSelf.mockResolvedValue(null);
+
+    const endedAt = new Date('2026-07-16T18:00:00.000Z');
+    workDays.findEnd.mockResolvedValue({ userId: 'user-1', date: '2026-07-16', endedAt });
+  });
+
+  it('does not store the sample', async () => {
+    await useCase.execute('user-1', { at: AT });
+
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.stampDuration).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges with capture off so the agent stops again', async () => {
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(ack.dayEnded).toBe(true);
+    expect(ack.shouldCapture).toBe(false);
+  });
+
+  it('broadcasts nothing — the board already shows DAY_ENDED', async () => {
+    await useCase.execute('user-1', { at: AT });
+
+    expect(gateway.emitToUser).not.toHaveBeenCalled();
+    expect(gateway.emitToManager).not.toHaveBeenCalled();
   });
 });

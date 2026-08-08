@@ -1,4 +1,3 @@
-
 const UNIT_MS: Record<string, number> = {
   s: 1000,
   m: 60 * 1000,

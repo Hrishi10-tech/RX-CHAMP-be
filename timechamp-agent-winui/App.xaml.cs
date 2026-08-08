@@ -76,7 +76,7 @@ public partial class App : Application
         Activity.DayEnded += OnDayEnded;
 
         BuildTray();
-        StartHeartbeat();
+        BuildHeartbeat(); // created stopped; started with the rest of tracking
 
         var startMinimized = Environment.GetCommandLineArgs().Contains("--minimized");
         var restored = await Api.TryRestoreSessionAsync();
@@ -92,10 +92,12 @@ public partial class App : Application
 
         if (restored)
         {
-            _dayEnded = false;
+            // Ask the server before starting anything. Without this a restart after
+            // "End Day" re-arms tracking and fires one immediate screenshot before
+            // the first report comes back and shuts it down again.
+            _dayEnded = await Api.IsDayEndedAsync();
             Chat.Start();
-            Shots.Start();
-            Activity.Start();
+            if (!_dayEnded) StartTracking();
             if (!startMinimized) ShowDashboard();
             if (freshlyEnrolled) await ShowDisclosureAsync();
         }
@@ -103,6 +105,15 @@ public partial class App : Application
         {
             ShowLogin();
         }
+    }
+
+    /// <summary>Starts everything that records the working day. Attendance included —
+    /// after "End Day" nothing may keep counting, so the heartbeat lives here too.</summary>
+    private void StartTracking()
+    {
+        Shots.Start();
+        Activity.Start();
+        _heartbeat?.Start();
     }
 
     private async Task ShowDisclosureAsync()
@@ -154,13 +165,14 @@ public partial class App : Application
     private async Task QuickStatus(string type)
     {
         if (!Api.IsAuthenticated) { ShowLogin(); return; }
+        if (_dayEnded) return; // nothing more is recorded once the day is over
         await Api.StartAsync(type, null);
         if (_dashboard is not null) await _dashboard.ViewModel.RefreshAsync();
     }
 
     private async Task QuickEnd()
     {
-        if (!Api.IsAuthenticated) return;
+        if (!Api.IsAuthenticated || _dayEnded) return;
         await Api.EndAsync();
         if (_dashboard is not null) await _dashboard.ViewModel.RefreshAsync();
     }
@@ -177,19 +189,20 @@ public partial class App : Application
     {
         if (!Api.IsAuthenticated) { ShowLogin(); return; }
         _dashboard ??= new MainWindow();
+        _dashboard.ViewModel.DayEnded = _dayEnded;
         _dashboard.AppWindow.Show();
         _dashboard.Activate();
         _ = _dashboard.ViewModel.RefreshAsync();
     }
 
     /// <summary>Called by the login window after a successful sign-in.</summary>
-    public void OnSignedIn()
+    public async void OnSignedIn()
     {
         StartupRegistration.Enable();
-        _dayEnded = false;
+        // Signing in again on a day already ended must not restart tracking.
+        _dayEnded = await Api.IsDayEndedAsync();
         Chat.Start();
-        Shots.Start();
-        Activity.Start();
+        if (!_dayEnded) StartTracking();
         _login?.Close();
         _login = null;
         ShowDashboard();
@@ -200,6 +213,7 @@ public partial class App : Application
         Chat.Stop();
         Shots.Stop();
         Activity.Stop();
+        _heartbeat?.Stop();
         await Api.LogoutAsync();
         StartupRegistration.Disable();
         _dashboard?.AppWindow.Hide();
@@ -208,24 +222,39 @@ public partial class App : Application
 
     private void OnChatMessage(ChatMessage message) => _dashboard?.ViewModel.OnChatMessage(message);
 
-    /// <summary>End the working day; stops activity + captures for the rest of today.</summary>
+    /// <summary>End the working day: activity, screen captures and attendance all stop
+    /// for the rest of today, and today's totals become final.</summary>
     public async Task EndWorkingDayAsync(bool confirm = false)
     {
         if (!Api.IsAuthenticated || _dayEnded) return;
 
+        var root = _dashboard?.Content?.XamlRoot;
         if (confirm)
         {
             if (_dashboard is null) ShowDashboard();
-            var root = _dashboard?.Content?.XamlRoot;
+            root = _dashboard?.Content?.XamlRoot;
             if (root is null) return;
             var yes = await Dialogs.ConfirmAsync(root,
-                "Activity tracking and screen captures will stop for the rest of today " +
-                "(attendance keeps running). You can't restart tracking until tomorrow.",
+                "Your working day will end now. Activity tracking, screen captures and " +
+                "attendance all stop, and today's hours are final. You can't restart " +
+                "tracking until tomorrow.",
                 title: "End your working day now?", ok: "End day", cancel: "Cancel");
             if (!yes) return;
         }
 
-        await Api.EndDayAsync();
+        // Only stop once the server has actually recorded it. Ending locally after a
+        // failed call would hide the fact that the day is still open server-side.
+        if (!await Api.EndDayAsync())
+        {
+            if (root is not null)
+            {
+                await Dialogs.NoticeAsync(root, "Couldn't end your day",
+                    "We couldn't reach the server, so your day is still running. " +
+                    "Check your connection and try again.");
+            }
+            return;
+        }
+
         OnDayEnded();
     }
 
@@ -237,7 +266,12 @@ public partial class App : Application
             _dayEnded = true;
             Activity.Stop();
             Shots.Stop();
-            if (_dashboard is not null) await _dashboard.ViewModel.RefreshAsync();
+            _heartbeat?.Stop(); // attendance stops at the same instant
+            if (_dashboard is not null)
+            {
+                _dashboard.ViewModel.DayEnded = true;
+                await _dashboard.ViewModel.RefreshAsync();
+            }
         });
     }
 
@@ -250,18 +284,17 @@ public partial class App : Application
 
     // ---- Heartbeat ---------------------------------------------------------
 
-    private void StartHeartbeat()
+    private void BuildHeartbeat()
     {
         _heartbeat = _ui.CreateTimer();
         _heartbeat.Interval = TimeSpan.FromSeconds(Math.Max(15, Config.HeartbeatSeconds));
         _heartbeat.Tick += async (_, _) =>
         {
-            if (!Api.IsAuthenticated) return;
+            if (!Api.IsAuthenticated || _dayEnded) return;
             // Locked counts as idle at once, so the online session closes at the lock
             // instead of one idle-threshold later.
             var idle = LockWatcher.IsLocked || IdleWatcher.IdleSeconds() >= Config.IdleThresholdSeconds;
             await Api.HeartbeatAsync(idle);
         };
-        _heartbeat.Start();
     }
 }

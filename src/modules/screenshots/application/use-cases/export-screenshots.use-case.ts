@@ -1,9 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import {
-  SCREENSHOT_REPOSITORY,
-  ScreenshotRepository,
-} from '../../domain/screenshot.repository';
+import { SCREENSHOT_REPOSITORY, ScreenshotRepository } from '../../domain/screenshot.repository';
 import {
   SCREENSHOT_ACCESS_READER,
   ScreenshotAccessReader,

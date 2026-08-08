@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-
 export class ListManagerUsersQueryDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()

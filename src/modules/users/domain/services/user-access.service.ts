@@ -1,4 +1,3 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 import { UnauthorizedAction } from '@shared/exceptions/domain.exception';
 import { ListUsersScope } from '../repositories/user.repository';
@@ -22,7 +21,6 @@ export class UserAccessService {
     return role === Role.SUPER_ADMIN || role === Role.ADMIN;
   }
 
- 
   listScopeFor(actor: ActorContext): ListUsersScope {
     return this.listScopes[actor.role](actor);
   }
@@ -33,14 +31,12 @@ export class UserAccessService {
     }
   }
 
-
   canView(actor: ActorContext, target: User): boolean {
     if (this.isAdminRole(actor.role)) return true;
     if (actor.role === Role.MANAGER) return target.managerId === actor.id || target.id === actor.id;
     return target.id === actor.id;
   }
 
-  
   ownsTarget(actor: ActorContext, target: User): boolean {
     if (this.isAdminRole(actor.role)) return true;
     return target.managerId === actor.id;

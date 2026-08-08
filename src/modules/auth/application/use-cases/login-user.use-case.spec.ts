@@ -1,4 +1,3 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 import { AccountDisabledError, InvalidCredentialsError } from '@shared/exceptions/app.exception';
 import { LoginUserUseCase } from './login-user.use-case';
@@ -94,7 +93,7 @@ describe('LoginUserUseCase', () => {
       }),
     );
     expect(refreshTokens.issue).toHaveBeenCalledWith('u-1', meta);
-    
+
     expect(result.user as unknown as Record<string, unknown>).not.toHaveProperty('passwordHash');
   });
 });

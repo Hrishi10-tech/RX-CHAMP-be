@@ -11,6 +11,7 @@ import {
   deltaPct,
   detectFocusSessions,
   lastNDatesEndingAt,
+  meetingWindows,
   presenceTotals,
 } from '../analytics.util';
 
@@ -20,11 +21,7 @@ const WINDOW_DAYS = 7;
 export class GetDashboardAnalyticsUseCase {
   constructor(@Inject(ANALYTICS_READER) private readonly reader: AnalyticsReader) {}
 
-  async execute(
-    me: AuthenticatedUser,
-    userId: string,
-    date?: string,
-  ): Promise<DashboardAnalytics> {
+  async execute(me: AuthenticatedUser, userId: string, date?: string): Promise<DashboardAnalytics> {
     await this.authorize(me, userId);
 
     const now = new Date();
@@ -36,12 +33,21 @@ export class GetDashboardAnalyticsUseCase {
     // Roll each day up once; the selected day is the last entry.
     const rollups: DayRollup[] = dates.map((d) => {
       const samples = win.samplesByDate.get(d) ?? [];
-      const daily = ActivityMapper.computeDaily(samples, d, DEFAULT_WORKING_BASIS_SEC, now);
+      const meetings = meetingWindows(win.presenceByDate.get(d) ?? []);
+      const daily = ActivityMapper.computeDaily(
+        samples,
+        d,
+        DEFAULT_WORKING_BASIS_SEC,
+        now,
+        null,
+        meetings,
+      );
       const presence = presenceTotals(win.presenceByDate.get(d) ?? [], now);
       const prod = computeDayProductivity(
         win.onlineByDate.get(d) ?? [],
         win.presenceByDate.get(d) ?? [],
         now,
+        samples, // focus is derived from these, keeping it consistent with activeSec
       );
       return {
         date: d,
@@ -67,6 +73,8 @@ export class GetDashboardAnalyticsUseCase {
       day,
       DEFAULT_WORKING_BASIS_SEC,
       now,
+      null,
+      meetingWindows(win.presenceByDate.get(day) ?? []),
     );
     const selectedPresence = presenceTotals(win.presenceByDate.get(day) ?? [], now);
 
@@ -114,7 +122,6 @@ export class GetDashboardAnalyticsUseCase {
       ),
       focusSessions: detectFocusSessions(selectedSamples),
 
-    
       distribution: { deepSec: 0, shallowSec: 0 },
       categories: [],
       taskCompletion: [],

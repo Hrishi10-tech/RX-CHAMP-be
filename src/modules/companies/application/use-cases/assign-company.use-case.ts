@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
@@ -35,14 +34,7 @@ export class AssignCompanyUseCase {
 
     await this.events.publish(
       CompanyAssignedEvent.eventName,
-      new CompanyAssignedEvent(
-        saved.id,
-        saved.role,
-        company.id,
-        company.name,
-        me.id,
-        new Date(),
-      ),
+      new CompanyAssignedEvent(saved.id, saved.role, company.id, company.name, me.id, new Date()),
     );
 
     return UserMapper.toPublic(saved);

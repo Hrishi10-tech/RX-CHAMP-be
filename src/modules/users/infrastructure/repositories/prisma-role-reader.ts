@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
@@ -14,4 +13,3 @@ export class PrismaRoleReader implements RoleReader {
     return r ? { id: r.id, name: r.name as Role } : null;
   }
 }
-

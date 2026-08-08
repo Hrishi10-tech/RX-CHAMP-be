@@ -31,7 +31,9 @@ export class ChatController {
   }
 
   @Get('threads')
-  @ApiOperation({ summary: 'Conversation list: each contact with last-message preview + unread count' })
+  @ApiOperation({
+    summary: 'Conversation list: each contact with last-message preview + unread count',
+  })
   async threads(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.listThreads.execute(me.id));
   }

@@ -71,7 +71,6 @@ export class AuthController {
     return { loggedOut: true };
   }
 
-  
   private meta(req: Request): RefreshTokenMeta {
     return { userAgent: req.headers['user-agent'] ?? null, ip: req.ip ?? null };
   }

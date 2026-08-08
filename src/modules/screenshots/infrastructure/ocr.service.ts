@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DetectDocumentTextCommand, TextractClient } from '@aws-sdk/client-textract';
 
-
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
@@ -20,7 +19,9 @@ export class OcrService {
 
   async extractText(image: Buffer): Promise<string | null> {
     try {
-      const res = await this.client.send(new DetectDocumentTextCommand({ Document: { Bytes: image } }));
+      const res = await this.client.send(
+        new DetectDocumentTextCommand({ Document: { Bytes: image } }),
+      );
       const lines = (res.Blocks ?? [])
         .filter((b) => b.BlockType === 'LINE' && b.Text)
         .map((b) => b.Text as string);

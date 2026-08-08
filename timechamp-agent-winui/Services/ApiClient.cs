@@ -219,7 +219,9 @@ public sealed class ApiClient
         SendJsonAsync<DailyActivity>(HttpMethod.Get, "activity/me/today", body: null, ct);
 
     /// <summary>Tell the server the user ended their working day ("End Day"). Idempotent —
-    /// after this, tracking + screen captures stop for the rest of the local day.</summary>
+    /// after this, tracking, screen captures and attendance all stop for the rest of the
+    /// local day. Returns false when the server never got the message, so the caller can
+    /// say so instead of silently pretending the day ended.</summary>
     public async Task<bool> EndDayAsync(CancellationToken ct = default)
     {
         try
@@ -232,6 +234,15 @@ public sealed class ApiClient
         {
             return false;
         }
+    }
+
+    /// <summary>Whether the signed-in user has already ended today's working day.
+    /// Checked at startup so a restart can't resume a day that is already over.
+    /// Unreachable server → false, i.e. behave as a normal working day.</summary>
+    public async Task<bool> IsDayEndedAsync(CancellationToken ct = default)
+    {
+        var today = await GetActivityTodayAsync(ct);
+        return today?.DayEnded ?? false;
     }
 
     // ---- Plumbing ----------------------------------------------------------

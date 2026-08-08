@@ -46,15 +46,16 @@ export class UsersController {
   @Get()
   @ApiOperation({ summary: 'List users (role-scoped)' })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ListUsersQueryDto) {
-
-    console.log("req.qeruy loged in to usertable rolebased",query)
+    console.log('req.qeruy loged in to usertable rolebased', query);
     const { users, total, page, limit } = await this.listUsers.execute(me, query);
     const totalPages = Math.ceil(total / limit);
     return envelope(users, { meta: { total, page, limit, totalPages } });
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Full detail for one user (self, your report, or any user for an admin)' })
+  @ApiOperation({
+    summary: 'Full detail for one user (self, your report, or any user for an admin)',
+  })
   async detail(@CurrentUser() me: AuthenticatedUser, @Param('id') id: string) {
     return this.getProfile.execute(me, id);
   }

@@ -19,7 +19,6 @@ export class SendMessageUseCase {
       body: dto.body,
     });
 
-
     this.gateway.emitToUser(dto.toUserId, ChatMapper.toMessageView(saved, dto.toUserId));
     this.gateway.emitToUser(fromUserId, ChatMapper.toMessageView(saved, fromUserId));
 

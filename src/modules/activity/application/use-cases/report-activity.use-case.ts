@@ -6,6 +6,7 @@ import {
 } from '../../domain/activity-sample.repository';
 import { ACTIVITY_ACCESS_READER, ActivityAccessReader } from '../../domain/activity-access.reader';
 import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.repository';
+import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { ActivityGateway } from '../../presentation/activity.gateway';
 import { ReportActivityDto } from '../dto';
 import { ActivityMapper } from '../activity.mapper';
@@ -26,12 +27,19 @@ export class ReportActivityUseCase {
     @Inject(ACTIVITY_SAMPLE_REPOSITORY) private readonly repo: ActivitySampleRepository,
     @Inject(ACTIVITY_ACCESS_READER) private readonly access: ActivityAccessReader,
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
+    @Inject(MEETING_WINDOW_READER) private readonly meetings: MeetingWindowReader,
     private readonly gateway: ActivityGateway,
   ) {}
 
   async execute(userId: string, body: ReportActivityDto): Promise<ActivityAck> {
     const at = body.at ? new Date(body.at) : new Date();
     const date = localDateString(at);
+
+    // The day's totals are final once it has been ended, so a late report — an
+    // in-flight sample, or an agent restarted after signing off — is acknowledged
+    // but never stored. Answering with shouldCapture=false stops the agent again.
+    const end = await this.workDays.findEnd(userId, date);
+    if (end) return this.endedAck(userId, date, end.endedAt);
 
     // Close the previous open sample: it was foreground until this one arrived.
     const prev = await this.repo.findLatestForUser(userId);
@@ -55,11 +63,8 @@ export class ReportActivityUseCase {
 
     const basis = DEFAULT_WORKING_BASIS_SEC;
     const daySamples = await this.repo.listForUserByDate(userId, date);
-    const daily = ActivityMapper.computeDaily(daySamples, date, basis, at);
-
-    // Capture runs for the whole working day (overtime + idle included) and stops
-    // only once the user has explicitly ended the day.
-    const dayEnded = (await this.workDays.findEnd(userId, date)) !== null;
+    const meetings = await this.meetings.listForUserByDate(userId, date);
+    const daily = ActivityMapper.computeDaily(daySamples, date, basis, at, null, meetings);
 
     // Push live: the user's own dashboard, and their manager's team board.
     // Best-effort — a broadcast failure must never fail the agent's report.
@@ -71,8 +76,28 @@ export class ReportActivityUseCase {
       workingBasisSec: basis,
       remainingSec: daily.remainingSec,
       clockedOut: daily.clockedOut,
-      dayEnded,
-      shouldCapture: !dayEnded,
+      // Capture runs for the whole working day (overtime + idle included) and
+      // stops only once the user has explicitly ended the day — handled above.
+      dayEnded: false,
+      shouldCapture: true,
+    };
+  }
+
+  /** Ack for a day that is already over: the frozen totals, and stop capturing. */
+  private async endedAck(userId: string, date: string, endedAt: Date): Promise<ActivityAck> {
+    const basis = DEFAULT_WORKING_BASIS_SEC;
+    const daySamples = await this.repo.listForUserByDate(userId, date);
+    const meetings = await this.meetings.listForUserByDate(userId, date);
+    const daily = ActivityMapper.computeDaily(daySamples, date, basis, endedAt, endedAt, meetings);
+
+    return {
+      ok: true,
+      activeSec: daily.activeSec,
+      workingBasisSec: basis,
+      remainingSec: daily.remainingSec,
+      clockedOut: daily.clockedOut,
+      dayEnded: true,
+      shouldCapture: false,
     };
   }
 

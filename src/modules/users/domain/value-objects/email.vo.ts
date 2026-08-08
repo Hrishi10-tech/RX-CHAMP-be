@@ -1,4 +1,3 @@
-
 import { ValidationError } from '@shared/exceptions/app.exception';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

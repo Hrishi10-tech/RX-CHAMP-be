@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
@@ -64,14 +63,7 @@ export class CreateCompanyUseCase {
 
       await this.events.publish(
         CompanyAssignedEvent.eventName,
-        new CompanyAssignedEvent(
-          saved.id,
-          saved.role,
-          companyId,
-          companyName,
-          me.id,
-          new Date(),
-        ),
+        new CompanyAssignedEvent(saved.id, saved.role, companyId, companyName, me.id, new Date()),
       );
     }
 

@@ -23,9 +23,7 @@ export class PrismaOnlineSessionRepository implements OnlineSessionRepository {
       });
 
       const withinGrace =
-        open !== null &&
-        open.date === date &&
-        elapsedSeconds(open.lastSeenAt, now) <= graceSec;
+        open !== null && open.date === date && elapsedSeconds(open.lastSeenAt, now) <= graceSec;
 
       if (withinGrace) {
         await tx.onlineSession.update({ where: { id: open!.id }, data: { lastSeenAt: now } });
@@ -36,7 +34,10 @@ export class PrismaOnlineSessionRepository implements OnlineSessionRepository {
       if (open) {
         await tx.onlineSession.update({
           where: { id: open.id },
-          data: { endedAt: open.lastSeenAt, durationSec: elapsedSeconds(open.startedAt, open.lastSeenAt) },
+          data: {
+            endedAt: open.lastSeenAt,
+            durationSec: elapsedSeconds(open.startedAt, open.lastSeenAt),
+          },
         });
       }
 
@@ -54,7 +55,10 @@ export class PrismaOnlineSessionRepository implements OnlineSessionRepository {
     if (!open) return;
     await this.prisma.onlineSession.update({
       where: { id: open.id },
-      data: { endedAt: open.lastSeenAt, durationSec: elapsedSeconds(open.startedAt, open.lastSeenAt) },
+      data: {
+        endedAt: open.lastSeenAt,
+        durationSec: elapsedSeconds(open.startedAt, open.lastSeenAt),
+      },
     });
   }
 

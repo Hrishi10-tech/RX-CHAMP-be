@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListScreenshotsQueryDto {
   @ApiProperty({ description: 'Whose screenshots to list' })
@@ -28,7 +38,8 @@ export class ListScreenshotsQueryDto {
   from?: string;
 
   @ApiPropertyOptional({
-    description: 'Only screenshots taken strictly before this ISO time (exclusive; window is [from, to))',
+    description:
+      'Only screenshots taken strictly before this ISO time (exclusive; window is [from, to))',
   })
   @IsOptional()
   @IsISO8601()

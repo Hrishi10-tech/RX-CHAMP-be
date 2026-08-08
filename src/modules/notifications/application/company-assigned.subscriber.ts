@@ -1,12 +1,8 @@
-
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { Role } from '@shared/rbac/roles.enum';
 import { CompanyAssignedEvent } from '@modules/users/domain/events/company-assigned.event';
-import {
-  NOTIFICATION_REPOSITORY,
-  NotificationRepository,
-} from '../domain/notification.repository';
+import { NOTIFICATION_REPOSITORY, NotificationRepository } from '../domain/notification.repository';
 import { NotificationMapper } from './notification.mapper';
 import { NotificationsGateway } from '../presentation/notifications.gateway';
 

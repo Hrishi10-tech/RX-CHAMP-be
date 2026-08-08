@@ -68,7 +68,10 @@ describe('CreateCompanyUseCase', () => {
     const mgr = buildManager('mgr-1');
     users.findById.mockImplementation(async (id: string) => (id === 'mgr-1' ? mgr : null));
 
-    const result = await useCase.execute({ name: 'lakshmangroup', managerIds: ['mgr-1', 'ghost'] }, me);
+    const result = await useCase.execute(
+      { name: 'lakshmangroup', managerIds: ['mgr-1', 'ghost'] },
+      me,
+    );
 
     expect(mgr.companyId).toBe('c-1');
     expect(result.assignments.assigned).toEqual(['mgr-1']);

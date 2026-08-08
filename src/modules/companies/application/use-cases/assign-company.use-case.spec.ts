@@ -1,4 +1,3 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';

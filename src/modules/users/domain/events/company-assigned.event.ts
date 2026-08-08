@@ -1,4 +1,3 @@
-
 export class CompanyAssignedEvent {
   static readonly eventName = 'company.assigned';
 

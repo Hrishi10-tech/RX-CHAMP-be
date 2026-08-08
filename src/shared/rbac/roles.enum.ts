@@ -1,11 +1,9 @@
-
 export enum Role {
   SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
   USER = 'USER',
 }
-
 
 export const ROLE_RANK: Record<Role, number> = {
   [Role.SUPER_ADMIN]: 4,

@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
 import { ShiftReader, ShiftView } from '../../domain/repositories/shift-reader.port';

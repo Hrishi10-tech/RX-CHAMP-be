@@ -31,7 +31,11 @@ export interface OnlineSessionRepository {
   ): Promise<Map<string, number>>;
 
   /** Online seconds for one user across the given days, keyed by date (missing days = 0). */
-  sumSecondsForUserByDates(userId: string, dates: string[], now: Date): Promise<Map<string, number>>;
+  sumSecondsForUserByDates(
+    userId: string,
+    dates: string[],
+    now: Date,
+  ): Promise<Map<string, number>>;
 
   /** Active online intervals for a user on a local day (open sessions end at last-seen). */
   listIntervalsForUserByDate(userId: string, date: string): Promise<TimeInterval[]>;

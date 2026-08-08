@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { Prisma, RoleName } from '@prisma/client';
 import { Role } from '@shared/rbac/roles.enum';
@@ -113,7 +112,6 @@ export class PostgresUserRepository implements UserRepository {
     return this.prisma.user.count({ where: this.buildWhere(filter) });
   }
 
-
   private async toColumns(u: UserWriteModel) {
     return {
       passwordHash: u.passwordHash,
@@ -169,7 +167,6 @@ export class PostgresUserRepository implements UserRepository {
     await this.prisma.user.update({
       where: { id },
       data: { deletedAt: new Date() },
-
     });
   }
 

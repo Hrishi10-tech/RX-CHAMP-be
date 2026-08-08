@@ -1,4 +1,3 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 import { InvalidUserState } from '@shared/exceptions/domain.exception';
 import { UserStatus } from '@shared/types/user.types';
@@ -83,7 +82,6 @@ export class User {
     return this.props.createdAt;
   }
 
-
   isSuperAdmin(): boolean {
     return this.props.role === Role.SUPER_ADMIN;
   }
@@ -139,7 +137,6 @@ export class User {
     this.props.managerId = managerId;
   }
 
-
   assignCompany(companyId: string | null, companyName: string | null = null): void {
     this.props.companyId = companyId;
     this.props.companyName = companyName;
@@ -148,7 +145,6 @@ export class User {
   setPasswordHash(hash: string): void {
     this.props.passwordHash = hash;
   }
-
 
   reactivateWith(firstName: string, lastName: string, designation: string | null): void {
     this.props.status = 'ACTIVE';

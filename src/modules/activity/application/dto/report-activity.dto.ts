@@ -36,7 +36,10 @@ export class ReportActivityDto {
   @MaxLength(200)
   app?: string;
 
-  @ApiPropertyOptional({ description: 'Foreground window title.', example: 'Pull requests · GitHub' })
+  @ApiPropertyOptional({
+    description: 'Foreground window title.',
+    example: 'Pull requests · GitHub',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)

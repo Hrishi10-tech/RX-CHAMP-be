@@ -46,7 +46,9 @@ describe('CreateUsersUseCase', () => {
     save: jest.fn(),
   } as any;
   const shifts = { findById: jest.fn() } as any;
-  const roles = { findByName: jest.fn().mockResolvedValue({ id: 'role-user', name: Role.USER }) } as any;
+  const roles = {
+    findByName: jest.fn().mockResolvedValue({ id: 'role-user', name: Role.USER }),
+  } as any;
   const hasher = { hash: jest.fn().mockResolvedValue('hashed'), compare: jest.fn() } as any;
   const events = { publish: jest.fn().mockResolvedValue(undefined), subscribe: jest.fn() } as any;
 
@@ -123,13 +125,25 @@ describe('CreateUsersUseCase', () => {
     usersRepo.save.mockResolvedValue(disabled);
 
     const reactivated = await useCase.execute(makeManager(), [
-      { email: 'back@acme.test', firstName: 'Back', lastName: 'Again', password: 'S3cure!', role: Role.USER },
+      {
+        email: 'back@acme.test',
+        firstName: 'Back',
+        lastName: 'Again',
+        password: 'S3cure!',
+        role: Role.USER,
+      },
     ]);
     expect(reactivated.created).toHaveLength(1);
 
     usersRepo.findByEmail.mockResolvedValueOnce(buildEntity('dup@acme.test'));
     const dup = await useCase.execute(makeManager(), [
-      { email: 'dup@acme.test', firstName: 'Dup', lastName: 'User', password: 'S3cure!', role: Role.USER },
+      {
+        email: 'dup@acme.test',
+        firstName: 'Dup',
+        lastName: 'User',
+        password: 'S3cure!',
+        role: Role.USER,
+      },
     ]);
     expect(dup.errors[0].error).toBe('email already exists');
   });

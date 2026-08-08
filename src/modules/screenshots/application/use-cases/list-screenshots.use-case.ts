@@ -1,9 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import {
-  SCREENSHOT_REPOSITORY,
-  ScreenshotRepository,
-} from '../../domain/screenshot.repository';
+import { SCREENSHOT_REPOSITORY, ScreenshotRepository } from '../../domain/screenshot.repository';
 import {
   SCREENSHOT_ACCESS_READER,
   ScreenshotAccessReader,
@@ -23,7 +20,10 @@ export class ListScreenshotsUseCase {
     private readonly s3: S3StorageService,
   ) {}
 
-  async execute(me: AuthenticatedUser, query: ListScreenshotsQueryDto): Promise<ListScreenshotsResult> {
+  async execute(
+    me: AuthenticatedUser,
+    query: ListScreenshotsQueryDto,
+  ): Promise<ListScreenshotsResult> {
     await assertCanAccess(me, query.userId, this.access);
 
     // When the client omits a bound, default the window to "today" in server

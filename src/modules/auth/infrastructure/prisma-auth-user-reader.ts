@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';

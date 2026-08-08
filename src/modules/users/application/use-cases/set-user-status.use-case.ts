@@ -28,7 +28,7 @@ export class SetUserStatusUseCase {
 
   async execute(me: AuthenticatedUser, targetId: string, status: UserStatus): Promise<PublicUser> {
     if (me.role === Role.USER) {
-      throw new ForbiddenError('You are not allowed to change a user\'s status');
+      throw new ForbiddenError("You are not allowed to change a user's status");
     }
     // Checked before the lookup so self always gets this message rather than the
     // "unknown user" a manager would otherwise get for their own id.

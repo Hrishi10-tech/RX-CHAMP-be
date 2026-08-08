@@ -3,11 +3,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@shared/rbac/roles.enum';
 
 export class CreateRoleDto {
-
   @ApiProperty({ enum: Role, example: Role.MANAGER })
   @IsEnum(Role)
   name!: Role;
-
 
   @ApiPropertyOptional({ type: [String], example: ['CREATE_USER', 'VIEW_REPORT'] })
   @IsOptional()

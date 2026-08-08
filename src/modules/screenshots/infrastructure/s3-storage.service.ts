@@ -40,10 +40,8 @@ export class S3StorageService {
 
   /** A time-limited URL the browser can load directly. */
   presignGet(key: string, expiresInSeconds = 3600): Promise<string> {
-    return getSignedUrl(
-      this.client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-      { expiresIn: expiresInSeconds },
-    );
+    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+      expiresIn: expiresInSeconds,
+    });
   }
 }

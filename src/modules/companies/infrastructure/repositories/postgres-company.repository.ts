@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { Company as PrismaCompany, Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';

@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -18,7 +17,6 @@ export class DeleteUserUseCase {
   ) {}
 
   async execute(me: AuthenticatedUser, targetId: string): Promise<DeleteUserResult> {
-
     if (me.role === Role.USER) throw new ForbiddenError('Not allowed');
 
     const target = await this.users.findById(targetId);

@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
@@ -16,7 +15,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     @Inject(AUTH_USER_READER) private readonly reader: AuthUserReader,
   ) {
     super({
-
       jwtFromRequest: ExtractJwt.fromExtractors([
         (req: Request) => req?.cookies?.accessToken ?? null,
         ExtractJwt.fromAuthHeaderAsBearerToken(),

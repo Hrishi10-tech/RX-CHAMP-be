@@ -4,7 +4,6 @@ import { CHAT_REPOSITORY, ChatRepository } from '../../domain/chat.repository';
 import { ChatMapper } from '../chat.mapper';
 import { ChatThreadView } from '../chat.types';
 
-
 @Injectable()
 export class ListThreadsUseCase {
   constructor(

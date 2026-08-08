@@ -11,7 +11,10 @@ import {
 @Injectable()
 export class PrismaNotificationRepository implements NotificationRepository {
   constructor(private readonly prisma: PrismaService) {}
-  private where(userId: string, filter: ListNotificationsFilter = {}): Prisma.NotificationWhereInput {
+  private where(
+    userId: string,
+    filter: ListNotificationsFilter = {},
+  ): Prisma.NotificationWhereInput {
     const where: Prisma.NotificationWhereInput = { userId };
     if (filter.unreadOnly) where.readAt = null;
     return where;

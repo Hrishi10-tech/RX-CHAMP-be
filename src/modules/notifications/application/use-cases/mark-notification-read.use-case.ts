@@ -9,9 +9,7 @@ import { NotificationView } from '../notification.types';
 
 @Injectable()
 export class MarkNotificationReadUseCase {
-  constructor(
-    @Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository,
-  ) {}
+  constructor(@Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository) {}
   async execute(userId: string, id: string): Promise<NotificationView> {
     const updated = await this.repo.markRead(userId, id);
     if (!updated) throw new NotFoundError('Unknown notification');
@@ -21,9 +19,7 @@ export class MarkNotificationReadUseCase {
 
 @Injectable()
 export class MarkAllNotificationsReadUseCase {
-  constructor(
-    @Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository,
-  ) {}
+  constructor(@Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository) {}
 
   /** Mark every unread notification for the user read; returns how many changed. */
   async execute(userId: string): Promise<number> {
@@ -33,9 +29,7 @@ export class MarkAllNotificationsReadUseCase {
 
 @Injectable()
 export class CountUnreadNotificationsUseCase {
-  constructor(
-    @Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository,
-  ) {}
+  constructor(@Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository) {}
 
   async execute(userId: string): Promise<number> {
     return this.repo.countForUser(userId, { unreadOnly: true });

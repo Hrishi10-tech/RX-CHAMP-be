@@ -5,7 +5,11 @@ import { CompanyAssignedEvent } from '@modules/users/domain/events/company-assig
 import { CompanyAssignedSubscriber } from './company-assigned.subscriber';
 
 describe('CompanyAssignedSubscriber', () => {
-  const notifications = { create: jest.fn(), listForUser: jest.fn(), countForUser: jest.fn() } as any;
+  const notifications = {
+    create: jest.fn(),
+    listForUser: jest.fn(),
+    countForUser: jest.fn(),
+  } as any;
   const gateway = { emitToUser: jest.fn() } as any;
   let captured: (e: CompanyAssignedEvent) => Promise<void>;
   const events = {
@@ -27,7 +31,10 @@ describe('CompanyAssignedSubscriber', () => {
   }
 
   it('subscribes on init', () => {
-    expect(events.subscribe).toHaveBeenCalledWith(CompanyAssignedEvent.eventName, expect.any(Function));
+    expect(events.subscribe).toHaveBeenCalledWith(
+      CompanyAssignedEvent.eventName,
+      expect.any(Function),
+    );
   });
 
   it('persists and pushes a notification for a MANAGER', async () => {
@@ -47,7 +54,10 @@ describe('CompanyAssignedSubscriber', () => {
     expect(notifications.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'mgr-1', type: 'COMPANY_ASSIGNED' }),
     );
-    expect(gateway.emitToUser).toHaveBeenCalledWith('mgr-1', expect.objectContaining({ id: 'n-1', read: false }));
+    expect(gateway.emitToUser).toHaveBeenCalledWith(
+      'mgr-1',
+      expect.objectContaining({ id: 'n-1', read: false }),
+    );
   });
 
   it('ignores non-manager roles', async () => {

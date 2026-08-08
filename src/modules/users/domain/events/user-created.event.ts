@@ -1,4 +1,3 @@
-
 export class UserCreatedEvent {
   static readonly eventName = 'user.created';
 

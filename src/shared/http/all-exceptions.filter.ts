@@ -19,7 +19,7 @@ const STATUS_CODE: Record<number, string> = {
   409: 'CONFLICT',
   429: 'RATE_LIMITED',
 };
-  
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -46,17 +46,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 
   private normalize(exception: unknown): { status: number; code: string; message: string } {
-
     if (exception instanceof AppException) {
       return { status: exception.status, code: exception.code, message: exception.message };
     }
-
 
     if (exception instanceof DomainException) {
       const status = exception.code === 'FORBIDDEN' ? 403 : 400;
       return { status, code: exception.code, message: exception.message };
     }
-
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();

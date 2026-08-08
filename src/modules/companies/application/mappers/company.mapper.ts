@@ -3,11 +3,7 @@ import {
   CompanyWithStats,
   ManagerUserRecord,
 } from '../../domain/repositories/company.repository';
-import {
-  PublicCompany,
-  PublicCompanyWithStats,
-  PublicManagerUser,
-} from '../company.types';
+import { PublicCompany, PublicCompanyWithStats, PublicManagerUser } from '../company.types';
 
 export class CompanyMapper {
   static toPublic(company: CompanyRecord): PublicCompany {

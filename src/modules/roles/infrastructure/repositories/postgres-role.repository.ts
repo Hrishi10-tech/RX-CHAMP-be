@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { Role as PrismaRole, RoleName } from '@prisma/client';
 import { Role } from '@shared/rbac/roles.enum';

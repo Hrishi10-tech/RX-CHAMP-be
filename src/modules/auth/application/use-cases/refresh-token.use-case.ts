@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
 import { TOKEN_SERVICE, TokenService } from '@shared/security/token.service.port';

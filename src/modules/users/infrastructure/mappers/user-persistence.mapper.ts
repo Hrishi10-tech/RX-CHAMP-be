@@ -1,4 +1,3 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 import { UserStatus } from '@shared/types/user.types';
 import { User } from '../../domain/entities/user.entity';

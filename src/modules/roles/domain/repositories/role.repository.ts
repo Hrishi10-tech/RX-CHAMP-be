@@ -1,8 +1,6 @@
-
 import { Role } from '@shared/rbac/roles.enum';
 
 export const ROLE_REPOSITORY = Symbol('ROLE_REPOSITORY');
-
 
 export interface RoleRecord {
   id: string;

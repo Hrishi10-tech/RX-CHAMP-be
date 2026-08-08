@@ -95,7 +95,9 @@ export class PresenceController {
 
   @Get('team/:userId/history')
   @Roles(Role.MANAGER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({ summary: "One report's day-wise totals over the last N days (worked-hours trend)" })
+  @ApiOperation({
+    summary: "One report's day-wise totals over the last N days (worked-hours trend)",
+  })
   async userHistory(
     @CurrentUser() me: AuthenticatedUser,
     @Param('userId') userId: string,

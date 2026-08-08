@@ -3,6 +3,7 @@ import {
   ONLINE_SESSION_REPOSITORY,
   OnlineSessionRepository,
 } from '../../domain/online-session.repository';
+import { DAY_END_READER, DayEndReader } from '../../domain/day-end.reader';
 import { localDateString } from '../presence-date.util';
 
 /**
@@ -17,14 +18,25 @@ export class HeartbeatUseCase {
 
   constructor(
     @Inject(ONLINE_SESSION_REPOSITORY) private readonly online: OnlineSessionRepository,
+    @Inject(DAY_END_READER) private readonly dayEnds: DayEndReader,
   ) {}
 
   async execute(userId: string, idle: boolean): Promise<void> {
     const now = new Date();
+    const day = localDateString(now);
+
+    // The day's attendance is final once it has been ended. A stray heartbeat —
+    // an agent that hasn't noticed yet, or one restarted after signing off —
+    // must not reopen the online session; close anything still open instead.
+    if (await this.dayEnds.findEnd(userId, day)) {
+      await this.online.closeOpenForUser(userId, now);
+      return;
+    }
+
     if (idle) {
       await this.online.closeOpenForUser(userId, now);
       return;
     }
-    await this.online.heartbeat(userId, localDateString(now), now, HeartbeatUseCase.GRACE_SEC);
+    await this.online.heartbeat(userId, day, now, HeartbeatUseCase.GRACE_SEC);
   }
 }

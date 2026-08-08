@@ -1,7 +1,11 @@
 import { HourBucket, UsageEntry } from '@shared/types/common.types';
 import { TeamMemberView } from '@shared/types/user.types';
 
-export type ActivityStatus = 'ACTIVE' | 'IDLE' | 'OFFLINE';
+/**
+ * `DAY_ENDED` outranks the others: the user pressed "End Day", so they are signed
+ * off for the rest of the local day rather than merely not reporting (`OFFLINE`).
+ */
+export type ActivityStatus = 'ACTIVE' | 'IDLE' | 'OFFLINE' | 'DAY_ENDED';
 
 export interface CurrentActivityView {
   status: ActivityStatus;
@@ -34,6 +38,12 @@ export interface DailyActivityView {
   remainingSec: number;
   /** True once active time has reached the working basis. */
   clockedOut: boolean;
+  /**
+   * True once the user pressed "End Day". These totals are final — distinct from
+   * `clockedOut`, which only means the 9h basis was reached. The agent reads this
+   * on launch so a restart doesn't resume tracking a day that is already over.
+   */
+  dayEnded: boolean;
   clockInAt: string | null;
   clockOutAt: string | null;
   topApps: UsageEntry[];
@@ -53,6 +63,8 @@ export interface MyActivityUpdate {
   workingBasisSec: number;
   remainingSec: number;
   clockedOut: boolean;
+  /** True once the user pressed "End Day" — these totals are final for the day. */
+  dayEnded: boolean;
   /** The day's ranked top apps so far (live). */
   topApps: UsageEntry[];
 }

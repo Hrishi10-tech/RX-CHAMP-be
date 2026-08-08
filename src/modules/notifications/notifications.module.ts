@@ -4,6 +4,7 @@ import { PrismaNotificationRepository } from './infrastructure/prisma-notificati
 import { CompanyAssignedSubscriber } from './application/company-assigned.subscriber';
 import { MeetingNoteSharedSubscriber } from './application/meeting-note-shared.subscriber';
 import { AgentActivatedSubscriber } from './application/agent-activated.subscriber';
+import { DayEndedSubscriber } from './application/day-ended.subscriber';
 import { ListNotificationsUseCase } from './application/use-cases/list-notifications.use-case';
 import {
   CountUnreadNotificationsUseCase,
@@ -21,6 +22,7 @@ import { NotificationsGateway } from './presentation/notifications.gateway';
     CompanyAssignedSubscriber,
     MeetingNoteSharedSubscriber,
     AgentActivatedSubscriber,
+    DayEndedSubscriber,
     ListNotificationsUseCase,
     MarkNotificationReadUseCase,
     MarkAllNotificationsReadUseCase,

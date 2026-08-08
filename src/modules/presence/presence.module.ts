@@ -3,10 +3,13 @@ import { PRESENCE_SESSION_REPOSITORY } from './domain/presence-session.repositor
 import { PRESENCE_TEAM_READER } from './domain/presence-team-reader.port';
 import { ONLINE_SESSION_REPOSITORY } from './domain/online-session.repository';
 import { IDLE_READER } from './domain/idle-reader.port';
+import { DAY_END_READER } from './domain/day-end.reader';
 import { PrismaPresenceSessionRepository } from './infrastructure/prisma-presence-session.repository';
 import { PrismaPresenceTeamReader } from './infrastructure/prisma-presence-team-reader';
 import { PrismaOnlineSessionRepository } from './infrastructure/prisma-online-session.repository';
 import { PrismaIdleReader } from './infrastructure/prisma-idle-reader';
+import { PrismaDayEndReader } from './infrastructure/prisma-day-end.reader';
+import { DayEndedSubscriber } from './application/day-ended.subscriber';
 import { StartPresenceUseCase } from './application/use-cases/start-presence.use-case';
 import { EndPresenceUseCase } from './application/use-cases/end-presence.use-case';
 import { HeartbeatUseCase } from './application/use-cases/heartbeat.use-case';
@@ -28,7 +31,9 @@ import { PresenceGateway } from './presentation/presence.gateway';
     { provide: PRESENCE_TEAM_READER, useClass: PrismaPresenceTeamReader },
     { provide: ONLINE_SESSION_REPOSITORY, useClass: PrismaOnlineSessionRepository },
     { provide: IDLE_READER, useClass: PrismaIdleReader },
+    { provide: DAY_END_READER, useClass: PrismaDayEndReader },
     PresenceGateway,
+    DayEndedSubscriber,
     StartPresenceUseCase,
     EndPresenceUseCase,
     HeartbeatUseCase,

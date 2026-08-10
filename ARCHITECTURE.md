@@ -154,3 +154,42 @@ helpers (`shared/utils/pagination.ts`) are already provided.
   `parsePagination`).
 - **Soft delete** keeps history without bloating hot queries (all reads filter
   `deletedAt: null`).
+
+## Publishing the Windows agent
+
+`GET /api/v1/agent/download` serves the compiled Windows agent. The binary is
+**never** committed to the repo or baked into the Docker image — the runner stage
+only copies `dist`, `prisma`, `node_modules` and `package*.json`. It is served
+from S3 instead:
+
+- `AgentController` → `AGENT_BINARY_STORE`. `agent.module.ts` binds
+  `S3AgentBinaryStore` when `AGENT_S3_KEY` is set (production), else the local-disk
+  store (developer machines).
+- `S3AgentBinaryStore.info()` does a `HeadObject` on that key; a missing object is
+  why the endpoint 404s with "Agent binary is not available on the server yet."
+
+So a deploy only works once the binary has been built and uploaded. That is one
+command:
+
+```
+npm run publish:agent        # build WinUI agent → zip → build installer exe → upload to S3
+npm run build:agent          # same, but build only (no upload) for local checks
+```
+
+It uploads to two keys: a versioned one (`agent/<version>/RXChampAgent.exe`, for
+rollback) and the stable `agent/RXChampAgent.exe`. Point the backend at one:
+
+```
+AGENT_S3_KEY=agent/RXChampAgent.exe          # always the latest published
+AGENT_S3_KEY=agent/2.0.0/RXChampAgent.exe    # pin a specific version
+```
+
+Requirements to run it: Windows with the .NET 8 SDK (WinUI publish is Windows-only)
+and AWS credentials the CLI can see (ambient `aws configure` / CI secrets / instance
+role; for local dev it falls back to `AWS_*` in `.env`). See
+`scripts/publish-agent.ps1`.
+
+**CI:** `.github/` is not tracked in this repo (CI is managed in the parent
+monorepo). To automate this on release, add a Windows job to that CI that runs
+`npm run publish:agent` with AWS credentials in secrets — a ready-to-adapt
+workflow is in `scripts/agent-release.workflow.yml`.

@@ -1,0 +1,41 @@
+# Ready-to-adapt GitHub Actions workflow for building + publishing the Windows
+# agent to S3. NOT active here: `.github/` is untracked in this repo (CI lives in
+# the parent monorepo). Copy this into that monorepo's `.github/workflows/`,
+# adjust `working-directory` to the backend path, and set the AWS_* secrets.
+#
+# It runs on a version tag (e.g. `agent-v2.0.0`) and uploads to both the versioned
+# key and the stable `agent/RXChampAgent.exe`.
+
+name: Publish agent
+
+on:
+  push:
+    tags:
+      - 'agent-v*'
+
+jobs:
+  publish-agent:
+    runs-on: windows-latest # WinUI publish is Windows-only
+    defaults:
+      run:
+        working-directory: backend # adjust to the backend path in the monorepo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Derive version from tag
+        shell: bash
+        run: echo "AGENT_VERSION=${GITHUB_REF_NAME#agent-v}" >> "$GITHUB_ENV"
+
+      - name: Build + upload agent
+        shell: pwsh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ap-south-1
+        run: >
+          ./scripts/publish-agent.ps1 -Version "$env:AGENT_VERSION"
+          -Bucket rx-timechamp -Region ap-south-1

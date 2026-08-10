@@ -22,6 +22,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "ts-node prisma/seed.ts",
+    "build:agent": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1 -NoUpload",
+    "publish:agent": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1",
     "prepare": "husky install || true"
   },
   "prisma": {

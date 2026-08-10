@@ -28,6 +28,10 @@ export interface AppConfig {
   };
   agent: {
     binaryPath: string;
+    /** S3 object key for the agent binary; when set, it's served from S3 not disk. */
+    s3Key: string;
+    /** Bucket holding the agent binary; defaults to the screenshots bucket. */
+    s3Bucket: string;
     fileName: string;
     version: string;
     publicApiBaseUrl: string;
@@ -67,6 +71,8 @@ export default (): AppConfig => ({
   agent: {
     binaryPath:
       process.env.AGENT_BINARY_PATH ?? 'timechamp-agent-installer/publish/RXChampAgent.exe',
+    s3Key: process.env.AGENT_S3_KEY ?? '',
+    s3Bucket: process.env.AGENT_S3_BUCKET ?? '',
     fileName: process.env.AGENT_FILE_NAME ?? 'RXChampAgent.exe',
     version: process.env.AGENT_VERSION ?? '2.0.0',
     publicApiBaseUrl: process.env.AGENT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1',

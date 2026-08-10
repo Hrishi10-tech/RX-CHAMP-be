@@ -1,4 +1,15 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "compilerOptions": {
+    // Pin the source root so the entrypoint emits to dist/main.js. Without it,
+    // TypeScript infers the common root and — depending on which files are in the
+    // program — can nest everything under dist/src/, which breaks the image's
+    // `node dist/main.js`. Kept here (not in the base config) so editors and
+    // ts-jest, which read the base config over the whole tree, don't trip over
+    // prisma/seed.ts and test/ sitting outside src/.
+    "rootDir": "./src"
+  },
+  // `prisma` and `test` must stay excluded: they sit outside rootDir, so compiling
+  // them fails the build with "file is not under rootDir".
+  "exclude": ["node_modules", "test", "dist", "prisma", "**/*spec.ts"]
 }

@@ -11,8 +11,6 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
-import { createReadStream, existsSync, statSync } from 'fs';
-import { isAbsolute, resolve } from 'path';
 import archiver from 'archiver';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
@@ -30,6 +28,7 @@ import {
   TRAILER_MAGIC,
 } from '../application/agent.constants';
 import { AgentEnrollConfig, AgentVersionInfo } from '../application/agent.types';
+import { AGENT_BINARY_STORE, AgentBinaryStore } from '../domain/agent-binary.store';
 
 /**
  * Serves the Windows agent. With `?userId=`, the caller (that user's manager, or
@@ -45,24 +44,19 @@ export class AgentController {
     private readonly config: ConfigService,
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    @Inject(AGENT_BINARY_STORE) private readonly binary: AgentBinaryStore,
   ) {}
-
-  private binaryPath(): string {
-    const p = this.config.get<string>('agent.binaryPath') ?? '';
-    return isAbsolute(p) ? p : resolve(process.cwd(), p);
-  }
 
   @Get('version')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Agent version + whether the binary is available to download' })
-  version(): EnvelopePayload<AgentVersionInfo> {
-    const path = this.binaryPath();
-    const available = existsSync(path);
+  async version(): Promise<EnvelopePayload<AgentVersionInfo>> {
+    const info = await this.binary.info();
     return envelope<AgentVersionInfo>({
       version: this.config.get<string>('agent.version') ?? '',
       fileName: this.config.get<string>('agent.fileName') ?? '',
-      available,
-      sizeBytes: available ? statSync(path).size : 0,
+      available: info.available,
+      sizeBytes: info.sizeBytes,
     });
   }
 
@@ -79,20 +73,22 @@ export class AgentController {
     @Res() res: Response,
     @Query('userId') userId?: string,
   ): Promise<void> {
-    const path = this.binaryPath();
-    if (!existsSync(path)) {
+    const info = await this.binary.info();
+    if (!info.available) {
       throw new NotFoundException('Agent binary is not available on the server yet.');
     }
 
     const config = userId ? await this.buildConfig(me, userId) : null;
 
-    // A directory means the modern WinUI agent: ship the whole self-contained
-    // folder as a ZIP (its single-file exe isn't viable). A file means the legacy
-    // single-exe agent: stream it and append the per-user config trailer.
-    if (statSync(path).isDirectory()) {
-      await this.downloadZip(res, path, config);
+    // A directory means the modern WinUI agent from a local publish folder: ship
+    // the whole self-contained folder as a ZIP (its single-file exe isn't viable).
+    // Otherwise — a single file on disk, or the object in S3 — stream it and append
+    // the per-user config trailer.
+    const dir = this.binary.directoryPath();
+    if (info.isDirectory && dir) {
+      await this.downloadZip(res, dir, config);
     } else {
-      this.downloadExe(res, path, config);
+      await this.downloadExe(res, info.sizeBytes, config);
     }
   }
 
@@ -119,18 +115,22 @@ export class AgentController {
     await archive.finalize();
   }
 
-  /** Streams a single-exe agent, appending the per-user config trailer. */
-  private downloadExe(res: Response, path: string, config: AgentEnrollConfig | null): void {
+  /** Streams a single-file agent (from disk or S3), appending the per-user config trailer. */
+  private async downloadExe(
+    res: Response,
+    sizeBytes: number,
+    config: AgentEnrollConfig | null,
+  ): Promise<void> {
     const trailer = config ? this.buildTrailer(config) : Buffer.alloc(0);
 
     const fileName = this.config.get<string>('agent.fileName') ?? DEFAULT_EXE_FILE_NAME;
     res.set({
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${fileName}"`,
-      'Content-Length': (statSync(path).size + trailer.length).toString(),
+      'Content-Length': (sizeBytes + trailer.length).toString(),
     });
 
-    const stream = createReadStream(path);
+    const stream = await this.binary.openStream();
     stream.on('error', () => res.destroy());
     stream.on('end', () => {
       if (trailer.length) res.write(trailer);

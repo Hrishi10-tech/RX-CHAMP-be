@@ -30,6 +30,13 @@ Thumbs.db
 
 # prisma
 prisma/*.db
+# compiled seed output (seed.ts is the source; the .js is build junk)
+prisma/seed.js
+prisma/seed.d.ts
+prisma/seed.js.map
+
+# TypeScript incremental build cache
+*.tsbuildinfo
 
 # .NET build output (the desktop agent projects). Keeps their source, drops the
 # ~1.1 GB of compiled artefacts — one of which is over GitHub's 100 MB hard limit.

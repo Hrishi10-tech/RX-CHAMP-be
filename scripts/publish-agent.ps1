@@ -91,7 +91,7 @@ $sizeMb = [math]::Round((Get-Item $outExe).Length / 1MB, 1)
 Write-Host "Built $outExe ($sizeMb MB)" -ForegroundColor Green
 
 # 4. Upload to S3 ----------------------------------------------------------------
-if ($NoUpload) { Step 'NoUpload set — done (nothing uploaded).'; return }
+if ($NoUpload) { Step 'NoUpload set - done (nothing uploaded).'; return }
 
 # Let the AWS CLI use ambient credentials (CI secrets / instance role / aws
 # configure). For local dev convenience, fall back to AWS_* in .env.

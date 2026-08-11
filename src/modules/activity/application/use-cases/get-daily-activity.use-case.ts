@@ -33,6 +33,7 @@ export class GetDailyActivityUseCase {
     const samples = await this.repo.listForUserByDate(userId, day);
     const end = await this.workDays.findEnd(userId, day);
     const meetings = await this.meetings.listForUserByDate(userId, day);
+    const login = await this.workDays.findLogin(userId, day);
     return ActivityMapper.computeDaily(
       samples,
       day,
@@ -40,6 +41,7 @@ export class GetDailyActivityUseCase {
       now,
       end?.endedAt ?? null,
       meetings,
+      login,
     );
   }
 }

@@ -12,6 +12,16 @@ export class ReportActivityDto {
   at?: string;
 
   @ApiPropertyOptional({
+    description:
+      'When the user logged into their PC (ISO-8601). The agent reports it each ' +
+      'sample; the server keeps the earliest per day as the login time.',
+    example: '2026-07-16T09:02:00.000Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  loginAt?: string;
+
+  @ApiPropertyOptional({
     description: 'True when the machine has been idle past the agent threshold.',
     default: false,
   })

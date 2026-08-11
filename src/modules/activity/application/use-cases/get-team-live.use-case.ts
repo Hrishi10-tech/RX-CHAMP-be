@@ -25,8 +25,11 @@ export class GetTeamLiveUseCase {
 
     const ids = reports.map((r) => r.id);
     const latest = await this.repo.findLatestForUsers(ids);
+    const today = localDateString(now);
     // Reports who signed off show as DAY_ENDED instead of ageing into OFFLINE.
-    const ended = await this.workDays.findEndsForUsers(ids, localDateString(now));
+    const ended = await this.workDays.findEndsForUsers(ids, today);
+    // PC login time, shown beside the live status.
+    const logins = await this.workDays.findLoginsForUsers(ids, today);
 
     return reports.map((member) =>
       ActivityMapper.toTeamMemberView(
@@ -34,6 +37,7 @@ export class GetTeamLiveUseCase {
         latest.get(member.id) ?? null,
         now,
         ended.has(member.id),
+        logins.get(member.id) ?? null,
       ),
     );
   }

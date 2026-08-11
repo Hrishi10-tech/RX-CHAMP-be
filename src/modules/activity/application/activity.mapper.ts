@@ -106,6 +106,7 @@ export class ActivityMapper {
     sample: ActivitySampleRecord | null,
     now: Date,
     dayEnded = false,
+    loginAt: Date | null = null,
   ): TeamMemberActivityView {
     const status = this.statusOf(sample, now, dayEnded);
     const live = sample && status !== 'OFFLINE' && status !== 'DAY_ENDED';
@@ -119,6 +120,7 @@ export class ActivityMapper {
       title: live ? sample!.title : null,
       url: live ? sample!.url : null,
       lastSampleAt: sample ? sample.at.toISOString() : null,
+      loginAt: loginAt ? loginAt.toISOString() : null,
     };
   }
 
@@ -140,6 +142,7 @@ export class ActivityMapper {
     now: Date,
     endedAt: Date | null = null,
     meetings: MeetingWindow[] = [],
+    loginAt: Date | null = null,
   ): DailyActivityView {
     const dayIsToday = date === localDateString(now);
     // Once the day has been ended, every live figure is measured against that
@@ -205,6 +208,7 @@ export class ActivityMapper {
       remainingSec,
       clockedOut: activeSec >= workingBasisSec,
       dayEnded: endedAt !== null,
+      loginAt: loginAt ? loginAt.toISOString() : null,
       clockInAt: samples.length ? samples[0].at.toISOString() : null,
       clockOutAt: endedAt
         ? endedAt.toISOString()
@@ -239,9 +243,10 @@ export class ActivityMapper {
     daily: DailyActivityView,
     now: Date,
     dayEnded = false,
+    loginAt: Date | null = null,
   ): LiveActivityUpdate {
     return {
-      ...this.toTeamMemberView(member, sample, now, dayEnded),
+      ...this.toTeamMemberView(member, sample, now, dayEnded, loginAt),
       activeSec: daily.activeSec,
       idleSec: daily.idleSec,
       topApps: daily.topApps,

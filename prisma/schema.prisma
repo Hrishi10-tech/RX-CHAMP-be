@@ -222,7 +222,12 @@ model WorkDayEnd {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Local calendar day (YYYY-MM-DD), server timezone — matches activity/presence.
   date    String
-  endedAt DateTime @map("ended_at")
+  // When the user logged into their PC (first logon of the day). Set on the first
+  // activity report; earliest wins. Null until the agent reports a login.
+  loginAt DateTime? @map("login_at")
+  // When the user pressed "End Day". Null while the day is still open — a row can
+  // exist for the login alone, so "day ended" means endedAt IS NOT NULL, not "row exists".
+  endedAt DateTime? @map("ended_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 

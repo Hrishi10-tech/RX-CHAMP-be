@@ -29,6 +29,39 @@ public static class IdleWatcher
     }
 }
 
+/// <summary>
+/// When the user signed into Windows this session. Uses the shell (explorer.exe)
+/// start time, which is created at interactive logon — so it reflects the real PC
+/// login even if the agent itself is restarted later in the day. Falls back to the
+/// agent's own start time if the shell can't be read.
+/// </summary>
+public static class SessionInfo
+{
+    public static DateTime? LoginTimeUtc()
+    {
+        try
+        {
+            DateTime? earliest = null;
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("explorer"))
+            {
+                try
+                {
+                    var started = p.StartTime.ToUniversalTime();
+                    if (earliest is null || started < earliest) earliest = started;
+                }
+                catch { /* access denied / exited */ }
+                finally { p.Dispose(); }
+            }
+            return earliest
+                ?? System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
 /// <summary>Reads the current foreground window: its title and the friendly name
 /// of the app that owns it. Used to record "what is being used right now".</summary>
 public static class ForegroundWatcher

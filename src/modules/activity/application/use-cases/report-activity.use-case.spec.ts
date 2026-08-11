@@ -34,7 +34,13 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
     create: jest.fn(),
   } as any;
   const access = { findSelf: jest.fn() } as any;
-  const workDays = { findEnd: jest.fn(), markEnded: jest.fn() } as any;
+  const workDays = {
+    findEnd: jest.fn(),
+    markEnded: jest.fn(),
+    recordLogin: jest.fn(),
+    findLogin: jest.fn().mockResolvedValue(null),
+    findLoginsForUsers: jest.fn(),
+  } as any;
   const meetings = { listForUserByDate: jest.fn() } as any;
   const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
 

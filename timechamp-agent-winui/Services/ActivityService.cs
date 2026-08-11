@@ -103,6 +103,9 @@ public sealed class ActivityService
             App = locked ? null : fg.App,
             Title = locked ? null : fg.Title,
             Url = host,
+            // The PC login time (server keeps the earliest per day). Sent every
+            // sample; it's the same value all session, so it's cheap and idempotent.
+            LoginAt = SessionInfo.LoginTimeUtc()?.ToString("o"),
         };
     }
 }

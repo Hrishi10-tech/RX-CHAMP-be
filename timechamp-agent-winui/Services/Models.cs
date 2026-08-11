@@ -112,6 +112,9 @@ public sealed class ActivityReport
     [JsonPropertyName("app")] public string? App { get; set; }
     [JsonPropertyName("title")] public string? Title { get; set; }
     [JsonPropertyName("url")] public string? Url { get; set; }
+    /// <summary>When the user logged into their PC (ISO-8601). The server keeps the
+    /// earliest per day as the login time.</summary>
+    [JsonPropertyName("loginAt")] public string? LoginAt { get; set; }
 }
 
 /// <summary>Server's answer to a report: progress against the 9h basis plus the
@@ -157,6 +160,9 @@ public sealed class DailyActivity
     /// tracking must not resume. Read on launch so restarting the agent after signing
     /// off doesn't re-arm sampling or fire a stray screenshot.</summary>
     [JsonPropertyName("dayEnded")] public bool DayEnded { get; set; }
+
+    /// <summary>When the user logged into their PC today (ISO-8601), or null.</summary>
+    [JsonPropertyName("loginAt")] public string? LoginAt { get; set; }
 
     [JsonPropertyName("hourly")] public List<HourBucket> Hourly { get; set; } = new();
 }

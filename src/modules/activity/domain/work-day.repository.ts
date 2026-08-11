@@ -36,7 +36,20 @@ export interface WorkDayRepository {
   /**
    * Reverse "End Day" for a local day (the user pressed "Start day" to resume).
    * Returns true if an end mark was actually cleared, false if the day was already
-   * open. Idempotent.
+   * open. Clears only the end time — the login time on the same day row is kept.
    */
   clearEnd(userId: string, date: string): Promise<boolean>;
+
+  /**
+   * Record the PC login time for a local day (the agent reports it on its first
+   * activity of the day). Earliest wins: a later report never overwrites an
+   * earlier login, and restarts are harmless.
+   */
+  recordLogin(userId: string, date: string, loginAt: Date): Promise<void>;
+
+  /** The user's PC login time for a local day, or null if none reported yet. */
+  findLogin(userId: string, date: string): Promise<Date | null>;
+
+  /** Login times for the given users on a local day, keyed by userId (missing = absent). */
+  findLoginsForUsers(userIds: string[], date: string): Promise<Map<string, Date>>;
 }

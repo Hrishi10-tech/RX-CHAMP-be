@@ -25,6 +25,8 @@ export interface TeamMemberActivityView extends TeamMemberView {
   title: string | null;
   url: string | null;
   lastSampleAt: string | null;
+  /** When the user logged into their PC today (ISO), or null if not reported yet. */
+  loginAt: string | null;
 }
 
 export interface DailyActivityView {
@@ -44,6 +46,8 @@ export interface DailyActivityView {
    * on launch so a restart doesn't resume tracking a day that is already over.
    */
   dayEnded: boolean;
+  /** When the user logged into their PC today (ISO), or null if not reported yet. */
+  loginAt: string | null;
   clockInAt: string | null;
   clockOutAt: string | null;
   topApps: UsageEntry[];

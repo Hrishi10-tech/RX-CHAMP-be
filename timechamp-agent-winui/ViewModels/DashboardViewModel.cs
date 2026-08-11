@@ -45,6 +45,8 @@ public partial class DashboardViewModel : ObservableObject
     // ---- Observable state --------------------------------------------------
     [ObservableProperty] private string _timerText = "00h : 00m : 00s";
     [ObservableProperty] private string _shiftStartedText = "";
+    /// <summary>When the user logged into their PC today, e.g. "9:10 AM" (or "—").</summary>
+    [ObservableProperty] private string _loginTimeText = "—";
     [ObservableProperty] private string _todayHoursValue = "0m";
     [ObservableProperty] private string _syncText = "SYNCED · Updated just now";
     [ObservableProperty] private double _ringFraction;
@@ -185,6 +187,7 @@ public partial class DashboardViewModel : ObservableObject
         {
             // The day may have been ended from the tray, or on a previous run.
             if (activity.DayEnded) DayEnded = true;
+            LoginTimeText = FormatLogin(activity.LoginAt);
             if (activity.WorkingBasisSec > 0) _basisSec = activity.WorkingBasisSec;
             UpdateFocus(activity);
             UpdateBars(activity.Hourly);
@@ -226,6 +229,15 @@ public partial class DashboardViewModel : ObservableObject
                 Label = (i == 0 || i == slice.Count - 1 || i % 2 == 0) ? HourLabel(b.Hour) : "",
             });
         }
+    }
+
+    /// <summary>ISO login time → local "9:10 AM", or "—" when not reported yet.</summary>
+    private static string FormatLogin(string? iso)
+    {
+        if (string.IsNullOrWhiteSpace(iso)) return "—";
+        return DateTimeOffset.TryParse(iso, out var dto)
+            ? dto.ToLocalTime().ToString("h:mm tt")
+            : "—";
     }
 
     /// <summary>Formats a 0–23 hour as a short label, e.g. 0→"12a", 13→"1p".</summary>

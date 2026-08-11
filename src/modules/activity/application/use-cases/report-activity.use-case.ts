@@ -61,14 +61,19 @@ export class ReportActivityUseCase {
       url: this.trim(body.url, 255),
     });
 
+    // Record the PC login time (earliest per day wins), then read it back so the
+    // day rollup + live board carry it.
+    if (body.loginAt) await this.workDays.recordLogin(userId, date, new Date(body.loginAt));
+    const login = await this.workDays.findLogin(userId, date);
+
     const basis = DEFAULT_WORKING_BASIS_SEC;
     const daySamples = await this.repo.listForUserByDate(userId, date);
     const meetings = await this.meetings.listForUserByDate(userId, date);
-    const daily = ActivityMapper.computeDaily(daySamples, date, basis, at, null, meetings);
+    const daily = ActivityMapper.computeDaily(daySamples, date, basis, at, null, meetings, login);
 
     // Push live: the user's own dashboard, and their manager's team board.
     // Best-effort — a broadcast failure must never fail the agent's report.
-    await this.broadcast(userId, created, daily, at);
+    await this.broadcast(userId, created, daily, at, login);
 
     return {
       ok: true,
@@ -106,6 +111,7 @@ export class ReportActivityUseCase {
     created: ActivitySampleRecord,
     daily: DailyActivityView,
     now: Date,
+    login: Date | null,
   ): Promise<void> {
     try {
       const current = ActivityMapper.toCurrentView(created, now);
@@ -115,7 +121,7 @@ export class ReportActivityUseCase {
       if (self?.managerId) {
         this.gateway.emitToManager(
           self.managerId,
-          ActivityMapper.toLiveUpdate(self, created, daily, now),
+          ActivityMapper.toLiveUpdate(self, created, daily, now, false, login),
         );
       }
     } catch (err) {

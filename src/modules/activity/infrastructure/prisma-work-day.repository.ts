@@ -65,12 +65,12 @@ export class PrismaWorkDayRepository implements WorkDayRepository {
       where: { userId_date: { userId, date } },
     });
 
-    // First login of the day, or an earlier one than what's stored, wins.
+    // First report of the day sets the login; later reports never move it.
     if (!existing) {
       await this.prisma.workDayEnd.create({ data: { userId, date, loginAt } });
       return;
     }
-    if (!existing.loginAt || loginAt < existing.loginAt) {
+    if (!existing.loginAt) {
       await this.prisma.workDayEnd.update({
         where: { userId_date: { userId, date } },
         data: { loginAt },

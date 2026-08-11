@@ -70,7 +70,8 @@ if (-not $SkipAgentBuild) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   [System.IO.Compression.ZipFile]::CreateFromDirectory(
     $pub, $payload, [System.IO.Compression.CompressionLevel]::Optimal, $false)
-  Remove-Item $pub -Recurse -Force
+  # Best-effort temp cleanup — a lingering AV/file lock must not abort the upload.
+  try { Remove-Item $pub -Recurse -Force -ErrorAction Stop } catch { Write-Host "  (temp cleanup skipped: $($_.Exception.Message))" }
 } else {
   Step 'Skipping WinUI build; reusing existing payload/app.zip'
   if (-not (Test-Path $payload)) { throw "No existing payload at $payload" }
@@ -86,7 +87,9 @@ if (-not (Test-Path $built)) { throw "Installer produced no RXChampAgent.exe in 
 
 New-Item -ItemType Directory -Force -Path (Split-Path $outExe) | Out-Null
 Copy-Item $built $outExe -Force
-Remove-Item $instOut -Recurse -Force
+# Best-effort temp cleanup — the freshly-built exe can be briefly AV-locked; a
+# failure here must not stop the upload below.
+try { Remove-Item $instOut -Recurse -Force -ErrorAction Stop } catch { Write-Host "  (temp cleanup skipped: $($_.Exception.Message))" }
 $sizeMb = [math]::Round((Get-Item $outExe).Length / 1MB, 1)
 Write-Host "Built $outExe ($sizeMb MB)" -ForegroundColor Green
 

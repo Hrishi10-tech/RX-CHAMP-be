@@ -61,9 +61,11 @@ export class ReportActivityUseCase {
       url: this.trim(body.url, 255),
     });
 
-    // Record the PC login time (earliest per day wins), then read it back so the
-    // day rollup + live board carry it.
-    if (body.loginAt) await this.workDays.recordLogin(userId, date, new Date(body.loginAt));
+    // Login time = the FIRST activity report of the local day (when the agent
+    // started reporting). In production the agent auto-starts at Windows sign-in,
+    // so this equals the login time — and unlike the OS session start it resets
+    // cleanly each day. First write wins; read it back for the rollup + board.
+    await this.workDays.recordLogin(userId, date, at);
     const login = await this.workDays.findLogin(userId, date);
 
     const basis = DEFAULT_WORKING_BASIS_SEC;

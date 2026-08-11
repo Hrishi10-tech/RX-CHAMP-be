@@ -32,4 +32,11 @@ export interface WorkDayRepository {
    * `endedAt` is kept and returned rather than overwritten, and `created` is false.
    */
   markEnded(userId: string, date: string, endedAt: Date): Promise<MarkEndedResult>;
+
+  /**
+   * Reverse "End Day" for a local day (the user pressed "Start day" to resume).
+   * Returns true if an end mark was actually cleared, false if the day was already
+   * open. Idempotent.
+   */
+  clearEnd(userId: string, date: string): Promise<boolean>;
 }

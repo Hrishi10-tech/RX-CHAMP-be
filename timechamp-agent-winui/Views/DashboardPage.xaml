@@ -163,10 +163,18 @@
                             <ic:SymbolIcon Symbol="CheckmarkCircle" FontSize="17" Foreground="White"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <StackPanel Spacing="3" MaxWidth="230">
+                        <StackPanel Spacing="8" MaxWidth="230">
                             <TextBlock Text="Day ended" Foreground="#312E81" FontSize="13" FontWeight="Bold" />
                             <TextBlock Foreground="#4B5563" FontSize="11" TextWrapping="Wrap"
-                                       Text="Tracking, screen captures and attendance have stopped. Today's hours are final — you can start again tomorrow." />
+                                       Text="Tracking, screen captures and attendance have stopped. Tap Start day to resume, or leave it — it starts again tomorrow." />
+                            <Button Command="{x:Bind ViewModel.StartDayCommand}"
+                                    HorizontalAlignment="Left" Padding="14,6" CornerRadius="9"
+                                    Background="#4F46E5" Foreground="White" BorderThickness="0">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <ic:SymbolIcon Symbol="Play" FontSize="14" Foreground="White" />
+                                    <TextBlock Text="Start day" FontSize="12" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </Border>

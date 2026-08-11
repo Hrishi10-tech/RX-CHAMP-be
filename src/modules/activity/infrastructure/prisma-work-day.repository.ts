@@ -49,6 +49,11 @@ export class PrismaWorkDayRepository implements WorkDayRepository {
     return { record: this.toRecord(existing), created: false };
   }
 
+  async clearEnd(userId: string, date: string): Promise<boolean> {
+    const res = await this.prisma.workDayEnd.deleteMany({ where: { userId, date } });
+    return res.count > 0;
+  }
+
   private toRecord(r: PrismaWorkDayEnd): WorkDayEndRecord {
     return { userId: r.userId, date: r.date, endedAt: r.endedAt };
   }

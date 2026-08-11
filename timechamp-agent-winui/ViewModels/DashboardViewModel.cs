@@ -39,6 +39,8 @@ public partial class DashboardViewModel : ObservableObject
     public Func<Task>? SignOutRequested { get; set; }
     /// <summary>Set by App: end the working day (with confirm).</summary>
     public Func<Task>? EndDayRequested { get; set; }
+    /// <summary>Set by App: resume the working day after an End Day.</summary>
+    public Func<Task>? StartDayRequested { get; set; }
 
     // ---- Observable state --------------------------------------------------
     [ObservableProperty] private string _timerText = "00h : 00m : 00s";
@@ -90,7 +92,15 @@ public partial class DashboardViewModel : ObservableObject
     {
         TrackingEnabled = !value;
         TileOpacity = value ? 0.45 : 1.0;
-        if (!value) return;
+
+        if (!value)
+        {
+            // Resumed: the local clock and status come back to life; App follows
+            // with a RefreshAsync that repaints the real status + totals.
+            StartClock();
+            SyncText = "Resuming…";
+            return;
+        }
 
         StopClock();
         ApplyStatus(DayEndedStatus);
@@ -308,6 +318,14 @@ public partial class DashboardViewModel : ObservableObject
     {
         if (Blocked) return;
         if (EndDayRequested is not null) await EndDayRequested();
+    }
+
+    [RelayCommand]
+    private async Task StartDay()
+    {
+        // Only meaningful once the day has ended; App re-checks and resumes tracking.
+        if (!DayEnded) return;
+        if (StartDayRequested is not null) await StartDayRequested();
     }
     [RelayCommand] private async Task SignOut() { StopClock(); if (SignOutRequested is not null) await SignOutRequested(); }
 

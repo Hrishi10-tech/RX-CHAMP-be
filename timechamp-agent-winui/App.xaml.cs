@@ -148,6 +148,7 @@ public partial class App : Application
         menu.Items.Add(NewItem("Back to working", () => _ = QuickEnd()));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(NewItem("End day", () => _ = EndWorkingDayAsync(confirm: true)));
+        menu.Items.Add(NewItem("Start day", () => _ = StartWorkingDayAsync()));
         menu.Items.Add(NewItem("Sign out", () => _ = SignOut()));
         menu.Items.Add(NewItem("Exit", ExitApp));
         _tray.ContextFlyout = menu;
@@ -273,6 +274,34 @@ public partial class App : Application
                 await _dashboard.ViewModel.RefreshAsync();
             }
         });
+    }
+
+    /// <summary>Resume the working day after an End Day ("Start day"). Everything —
+    /// activity, idle, screenshots and attendance — starts tracking again at once.</summary>
+    public async Task StartWorkingDayAsync()
+    {
+        if (!Api.IsAuthenticated || !_dayEnded) return;
+
+        // Only resume locally once the server has actually reopened the day.
+        if (!await Api.StartDayAsync())
+        {
+            var root = _dashboard?.Content?.XamlRoot;
+            if (root is not null)
+            {
+                await Dialogs.NoticeAsync(root, "Couldn't start your day",
+                    "We couldn't reach the server, so tracking is still paused. " +
+                    "Check your connection and try again.");
+            }
+            return;
+        }
+
+        _dayEnded = false;
+        StartTracking(); // activity + screenshots + heartbeat, exactly like sign-in
+        if (_dashboard is not null)
+        {
+            _dashboard.ViewModel.DayEnded = false;
+            await _dashboard.ViewModel.RefreshAsync();
+        }
     }
 
     private void ExitApp()

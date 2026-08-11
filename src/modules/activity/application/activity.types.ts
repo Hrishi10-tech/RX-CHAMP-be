@@ -114,3 +114,11 @@ export interface EndDayResult {
   /** When the day was ended (first End Day wins if pressed twice). */
   endedAt: string;
 }
+
+export interface StartDayResult {
+  ok: true;
+  /** The local day (YYYY-MM-DD) that was reopened. */
+  date: string;
+  /** True if a prior End Day was actually reversed; false if the day was already open. */
+  resumed: boolean;
+}

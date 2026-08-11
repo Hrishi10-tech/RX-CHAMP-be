@@ -245,6 +245,24 @@ public sealed class ApiClient
         return today?.DayEnded ?? false;
     }
 
+    /// <summary>Resume today's working day after an "End Day" ("Start day" button).
+    /// Re-enables tracking, screenshots and attendance server-side. Returns false
+    /// when the server never got the message, so the caller can say so rather than
+    /// resuming locally while the server still considers the day ended.</summary>
+    public async Task<bool> StartDayAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var res = await SendWithRefreshAsync(
+                () => new HttpRequestMessage(HttpMethod.Post, "activity/start-day"), ct);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // ---- Plumbing ----------------------------------------------------------
 
     private async Task<T?> SendJsonAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)

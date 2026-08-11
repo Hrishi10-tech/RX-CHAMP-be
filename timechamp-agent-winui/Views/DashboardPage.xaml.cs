@@ -21,6 +21,7 @@ public sealed partial class DashboardPage : Page
 
         ViewModel.SignOutRequested = () => App.Instance.SignOut();
         ViewModel.EndDayRequested = () => App.Instance.EndWorkingDayAsync(confirm: true);
+        ViewModel.StartDayRequested = () => App.Instance.StartWorkingDayAsync();
 
         ViewModel.Messages.CollectionChanged += OnMessagesChanged;
 

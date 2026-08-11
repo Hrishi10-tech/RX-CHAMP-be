@@ -9,6 +9,7 @@ import { PrismaWorkDayRepository } from './infrastructure/prisma-work-day.reposi
 import { PrismaMeetingWindowReader } from './infrastructure/prisma-meeting-window.reader';
 import { ReportActivityUseCase } from './application/use-cases/report-activity.use-case';
 import { EndDayUseCase } from './application/use-cases/end-day.use-case';
+import { StartDayUseCase } from './application/use-cases/start-day.use-case';
 import { GetCurrentActivityUseCase } from './application/use-cases/get-current-activity.use-case';
 import { GetTeamLiveUseCase } from './application/use-cases/get-team-live.use-case';
 import { GetDailyActivityUseCase } from './application/use-cases/get-daily-activity.use-case';
@@ -25,6 +26,7 @@ import { ActivityGateway } from './presentation/activity.gateway';
     ActivityGateway,
     ReportActivityUseCase,
     EndDayUseCase,
+    StartDayUseCase,
     GetCurrentActivityUseCase,
     GetTeamLiveUseCase,
     GetDailyActivityUseCase,

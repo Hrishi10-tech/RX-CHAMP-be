@@ -10,6 +10,7 @@ import { envelope } from '@shared/http/envelope';
 import { ActivityDayQueryDto, ReportActivityDto } from '../application/dto';
 import { ReportActivityUseCase } from '../application/use-cases/report-activity.use-case';
 import { EndDayUseCase } from '../application/use-cases/end-day.use-case';
+import { StartDayUseCase } from '../application/use-cases/start-day.use-case';
 import { GetCurrentActivityUseCase } from '../application/use-cases/get-current-activity.use-case';
 import { GetTeamLiveUseCase } from '../application/use-cases/get-team-live.use-case';
 import { GetDailyActivityUseCase } from '../application/use-cases/get-daily-activity.use-case';
@@ -22,6 +23,7 @@ export class ActivityController {
   constructor(
     private readonly report: ReportActivityUseCase,
     private readonly endDay: EndDayUseCase,
+    private readonly startDay: StartDayUseCase,
     private readonly getCurrent: GetCurrentActivityUseCase,
     private readonly getTeamLive: GetTeamLiveUseCase,
     private readonly getDaily: GetDailyActivityUseCase,
@@ -50,6 +52,18 @@ export class ActivityController {
   })
   async endWorkingDay(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.endDay.execute(me.id));
+  }
+
+  @Post('start-day')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Agent resumes the working day for the signed-in user ("Start day" button) ' +
+      'after an End Day. Re-enables activity, screenshots and attendance for today. ' +
+      'Idempotent.',
+  })
+  async startWorkingDay(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.startDay.execute(me.id));
   }
 
   @Get('me/current')

@@ -48,24 +48,25 @@ export class ReportActivityUseCase {
       if (dur > 0) await this.repo.stampDuration(prev.id, dur);
     }
 
+    const idle = (body.idle ?? false) || (body.locked ?? false);
     const created = await this.repo.create({
       userId,
       date,
       at,
       // Locked always counts as idle, whatever the agent computed — so a report that
       // sets only `locked` still lands in the idle column.
-      idle: (body.idle ?? false) || (body.locked ?? false),
+      idle,
       locked: body.locked ?? false,
       app: this.trim(body.app, 200),
       title: this.trim(body.title, 500),
       url: this.trim(body.url, 255),
     });
 
-    // Login time = the FIRST activity report of the local day (when the agent
-    // started reporting). In production the agent auto-starts at Windows sign-in,
-    // so this equals the login time — and unlike the OS session start it resets
-    // cleanly each day. First write wins; read it back for the rollup + board.
-    await this.workDays.recordLogin(userId, date, at);
+    // Login time = the first ACTIVE report of the local day — the first time the
+    // user actually used the PC. Only active reports count, so a machine left on
+    // and idle overnight (no End Day) doesn't record 12:00 AM as the login; the
+    // real morning arrival does. First write wins; resets cleanly each day.
+    if (!idle) await this.workDays.recordLogin(userId, date, at);
     const login = await this.workDays.findLogin(userId, date);
 
     const basis = DEFAULT_WORKING_BASIS_SEC;

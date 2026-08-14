@@ -7,7 +7,12 @@
     // `node dist/main.js`. Kept here (not in the base config) so editors and
     // ts-jest, which read the base config over the whole tree, don't trip over
     // prisma/seed.ts and test/ sitting outside src/.
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Keep the incremental build-info inside dist so nest-cli's `deleteOutDir`
+    // removes it along with the output. Left at the project root it survives the
+    // wipe, and the next build reports "Found 0 errors" while emitting nothing —
+    // leaving `node dist/main.js` with no file to load.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   // `prisma` and `test` must stay excluded: they sit outside rootDir, so compiling
   // them fails the build with "file is not under rootDir".

@@ -1,18 +1,26 @@
 
 services:
+  # Optional local database, for development without RDS. Behind a profile so
+  # it does NOT start by default — production uses the managed RDS instance
+  # named in DATABASE_URL. Start it explicitly with:
+  #   docker compose --profile local-db up
   postgres:
+    profiles: ['local-db']
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: timechamp
-      POSTGRES_PASSWORD: timechamp
-      POSTGRES_DB: timechamp
-    ports:
-      - '5432:5432'
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    # Not published to the host: Postgres is reachable only over the compose
+    # network, by service name. Use `docker compose exec postgres psql` or an
+    # SSH tunnel for admin access.
+    expose:
+      - '5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U timechamp']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,26 +28,46 @@ services:
   backend:
     build: .
     restart: unless-stopped
+    # required:false means "wait for postgres only if it's actually running" —
+    # so the local-db profile still gets an ordered start, while the default
+    # (RDS) path doesn't block on a service that never starts.
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
     environment:
       NODE_ENV: production
       PORT: 4000
       API_PREFIX: api/v1
-      CORS_ORIGINS: '*'
-      DATABASE_URL: postgresql://timechamp:timechamp@postgres:5432/timechamp?schema=public
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me-access}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh}
+      # Comma-separated exact origins. A wildcard is invalid alongside
+      # credentialed CORS, and the app splits this on ',' into an allow-list,
+      # so '*' would never match a real origin anyway.
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS in .env}
+      # Passed through verbatim so the RDS host, ?schema= and ?sslmode=require
+      # survive. Do NOT rebuild this from POSTGRES_* — that silently repoints
+      # the backend at the bundled container DB. To use the local-db profile
+      # instead, set DATABASE_URL to point at host `postgres`.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       BCRYPT_SALT_ROUNDS: '12'
-      DEFAULT_USER_PASSWORD: changeme123
+      DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:?set DEFAULT_USER_PASSWORD in .env}
       LOG_LEVEL: info
+      # Baked into every downloaded agent installer — must be the public
+      # https URL, not an IP, or redistributed agents break when it changes.
+      AGENT_PUBLIC_API_BASE_URL: ${AGENT_PUBLIC_API_BASE_URL:?set AGENT_PUBLIC_API_BASE_URL in .env}
+      AGENT_S3_KEY: ${AGENT_S3_KEY:-}
+      AGENT_S3_BUCKET: ${AGENT_S3_BUCKET:-}
+      AWS_BUCKET: ${AWS_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_PREFIX: ${AWS_PREFIX:-uploads/}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    # Not published to the host: nginx is the only public entry point.
     expose:
       - '4000'
-    ports:
-      - '4000:4000'
 
   nginx:
     image: nginx:1.27-alpine
@@ -48,8 +76,11 @@ services:
       - backend
     ports:
       - '80:80'
+      - '443:443'
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Uncomment together with the 443 block in nginx.conf.
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
 
 volumes:
   pgdata:

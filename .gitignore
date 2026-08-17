@@ -10,6 +10,9 @@ build/
 .env.local
 .env.*.local
 .env.example
+# Catch-all so a new .env.<something> (e.g. .env.production, holding live JWT
+# signing keys and DB credentials) can never be committed by accident.
+.env.*
 
 # logs
 logs/

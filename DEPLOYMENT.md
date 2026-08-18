@@ -9,7 +9,7 @@ existing **RDS Aurora PostgreSQL** instance.
 > *either* that *or* this PM2 guide — not both, they both bind :80/:443. This
 > guide is the PM2 path.
 
-Placeholders used throughout: `<STATIC_IP>`, `api.example.com` (your API
+Placeholders used throughout: `<STATIC_IP>`, `api.rxvision.shop` (your API
 domain), `ubuntu` (default Lightsail user on Ubuntu images).
 
 ---
@@ -61,14 +61,14 @@ public entry point, and the app binds `127.0.0.1:4000` behind it.
 Point an A record at the static IP:
 
 ```
-api.example.com.    A    <STATIC_IP>
+api.rxvision.shop.    A    <STATIC_IP>
 ```
 
 Use Lightsail's DNS zone or your existing registrar. Verify before step 8 —
 certbot's HTTP-01 challenge fails if DNS hasn't propagated:
 
 ```bash
-dig +short api.example.com
+dig +short api.rxvision.shop
 ```
 
 ## 5. Let the instance reach RDS  ← most common blocker
@@ -208,18 +208,11 @@ pm2 monit
 
 ## 9. nginx
 
-`nginx/` is gitignored in this repo, so the config did **not** arrive with the
-clone. Copy it up from your laptop:
+`nginx/` is tracked, so the config arrives with the clone and already carries
+the real `server_name` — install it straight from the checkout:
 
 ```bash
-scp nginx/rxchamp-host.conf ubuntu@<STATIC_IP>:/tmp/rxchamp
-```
-
-On the server:
-
-```bash
-sudo mv /tmp/rxchamp /etc/nginx/sites-available/rxchamp
-sudo sed -i 's/api.REPLACE-ME.com/api.example.com/' /etc/nginx/sites-available/rxchamp
+sudo cp nginx/rxchamp-host.conf /etc/nginx/sites-available/rxchamp
 sudo ln -s /etc/nginx/sites-available/rxchamp /etc/nginx/sites-enabled/rxchamp
 sudo rm -f /etc/nginx/sites-enabled/default   # drop the "Welcome to nginx" site
 
@@ -230,8 +223,13 @@ sudo systemctl reload nginx
 Check it over plain HTTP before adding TLS:
 
 ```bash
-curl -i http://api.example.com/health
+curl -i http://api.rxvision.shop/health
 ```
+
+Re-installing later, once step 10 has run: **don't `cp` over it.** certbot
+rewrites this file in place, so the copy in git no longer has the 443 block —
+overwriting drops TLS. Check with `grep -c "listen 443"
+/etc/nginx/sites-available/rxchamp` and edit in place if it returns non-zero.
 
 That config carries three things this app specifically needs: a
 `location /socket.io/` block with `Upgrade`/`Connection` headers and a 3600s
@@ -242,9 +240,18 @@ route so the multi-MB `.exe` streams instead of buffering to disk.
 
 ## 10. SSL (Let's Encrypt)
 
+Not optional — plain HTTP is a dead end for two independent reasons:
+
+- Auth cookies are issued `Secure` whenever `NODE_ENV=production`
+  (`auth-cookie.service.ts`). Over `http://` the client discards them, so login
+  returns 200 and then every following request is unauthenticated.
+- The agent runs with `AllowAutoRedirect = false` (`ApiClient.cs`), so it will
+  not follow the http→https redirect certbot installs. An installer baked
+  against `http://` stays broken even after TLS is working.
+
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d api.example.com
+sudo certbot --nginx -d api.rxvision.shop
 ```
 
 Choose **redirect HTTP → HTTPS** when prompted. certbot rewrites the site file
@@ -275,11 +282,11 @@ Re-upload on every agent release, and bump `AGENT_VERSION` in `.env`.
 ## 12. Verify
 
 ```bash
-curl -i https://api.example.com/health
-curl -i https://api.example.com/api/v1/agent/version
+curl -i https://api.rxvision.shop/health
+curl -i https://api.rxvision.shop/api/v1/agent/version
 
 # Socket.IO handshake — expect HTTP 200 and a JSON payload with "sid"
-curl -i "https://api.example.com/socket.io/?EIO=4&transport=polling"
+curl -i "https://api.rxvision.shop/socket.io/?EIO=4&transport=polling"
 ```
 
 Then confirm end-to-end: install an agent from the download endpoint on a test

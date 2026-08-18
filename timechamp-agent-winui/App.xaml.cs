@@ -28,6 +28,9 @@ public partial class App : Application
     private MainWindow? _dashboard;
     private LoginWindow? _login;
     private bool _dayEnded;
+    /// <summary>Set once the session was lost, so every stalled loop reporting the same
+    /// failure doesn't re-run the teardown.</summary>
+    private bool _sessionLost;
 
     public App()
     {
@@ -69,6 +72,7 @@ public partial class App : Application
         Config = AgentConfig.Load();
         SessionStore.Configure(Config);
         Api = new ApiClient(Config);
+        Api.SessionLost += OnSessionLost;
         Chat = new ChatService(Api);
         Chat.MessageReceived += OnChatMessage;
         Shots = new ScreenshotService(Api);
@@ -199,6 +203,7 @@ public partial class App : Application
     /// <summary>Called by the login window after a successful sign-in.</summary>
     public async void OnSignedIn()
     {
+        _sessionLost = false;
         StartupRegistration.Enable();
         // Signing in again on a day already ended must not restart tracking.
         _dayEnded = await Api.IsDayEndedAsync();
@@ -222,6 +227,26 @@ public partial class App : Application
     }
 
     private void OnChatMessage(ChatMessage message) => _dashboard?.ViewModel.OnChatMessage(message);
+
+    /// <summary>The session is gone and could not be renewed or re-enrolled. Stop the
+    /// loops and ask for a sign-in — a tray icon that looks fine while nothing reaches
+    /// the server is worse than an obvious prompt, because the manager's live board
+    /// just shows the user as offline and nobody knows why.</summary>
+    private void OnSessionLost()
+    {
+        _ui.TryEnqueue(() =>
+        {
+            if (_sessionLost || !Api.IsAuthenticated) return;
+            _sessionLost = true;
+
+            Chat.Stop();
+            Shots.Stop();
+            Activity.Stop();
+            _heartbeat?.Stop();
+            _dashboard?.AppWindow.Hide();
+            ShowLogin();
+        });
+    }
 
     /// <summary>End the working day: activity, screen captures and attendance all stop
     /// for the rest of today, and today's totals become final.</summary>

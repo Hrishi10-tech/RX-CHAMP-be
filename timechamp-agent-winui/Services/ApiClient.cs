@@ -21,8 +21,19 @@ public sealed class ApiClient
     private readonly HttpClient _http;
     private readonly Uri _baseUri;
 
+    /// <summary>Serialises /auth/refresh — see <see cref="RefreshAsync"/>.</summary>
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
+    /// <summary>Bumped on every successful refresh, so callers that queued behind the
+    /// gate can tell someone already renewed the session for them.</summary>
+    private long _sessionGeneration;
+
     public PublicUser? CurrentUser { get; private set; }
     public bool IsAuthenticated => CurrentUser is not null;
+
+    /// <summary>Raised when the session is gone and could not be recovered — the agent
+    /// is no longer tracking and must say so instead of looping on dead requests.</summary>
+    public event Action? SessionLost;
 
     public ApiClient(AgentConfig config)
     {
@@ -95,7 +106,10 @@ public sealed class ApiClient
         var authUri = new Uri(_baseUri, "auth/");
         _cookies.Add(authUri, new Cookie("refreshToken", saved.RefreshToken) { Path = authUri.AbsolutePath.TrimEnd('/') });
 
-        if (!await RefreshAsync(ct)) return false;
+        // Deliberately the bare refresh: nothing is tracking yet, and a saved token
+        // that no longer works is a normal cold start (the caller falls back to
+        // enrollment or the login screen), not a session lost mid-day.
+        if (!await PostRefreshAsync(ct)) return false;
 
         CurrentUser = new PublicUser
         {
@@ -106,7 +120,42 @@ public sealed class ApiClient
         return true;
     }
 
+    /// <summary>
+    /// Renews the session, at most one call at a time. Activity, the presence
+    /// heartbeat, screenshots and the chat socket all share one cookie jar, so the
+    /// moment the short-lived access token expires they each get a 401 within the
+    /// same second. Left unsynchronised they all POST /auth/refresh at once, the
+    /// server rotates the same token repeatedly, and whichever reply lands last in
+    /// the jar is the one we persist — sometimes a token another call had already
+    /// rotated away, which silently ends the session mid-day. So: one refresh, the
+    /// rest wait and reuse it.
+    /// </summary>
     private async Task<bool> RefreshAsync(CancellationToken ct)
+    {
+        var seen = Interlocked.Read(ref _sessionGeneration);
+
+        await _refreshGate.WaitAsync(ct);
+        try
+        {
+            // Someone refreshed while we queued: their token is already in the jar.
+            if (Interlocked.Read(ref _sessionGeneration) != seen) return true;
+
+            if (await PostRefreshAsync(ct) || await ReEnrollAsync(ct))
+            {
+                Interlocked.Increment(ref _sessionGeneration);
+                return true;
+            }
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+
+        SessionLost?.Invoke();
+        return false;
+    }
+
+    private async Task<bool> PostRefreshAsync(CancellationToken ct)
     {
         try
         {
@@ -119,6 +168,16 @@ public sealed class ApiClient
         }
         catch { /* fall through */ }
         return false;
+    }
+
+    /// <summary>Last resort when the refresh token is unusable: sign in again with the
+    /// enrollment token this build carries. Without it a single lost token meant the
+    /// agent ran on for hours making requests that could never succeed.</summary>
+    private async Task<bool> ReEnrollAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(_config.EnrollmentToken)) return false;
+        var (ok, _) = await EnrollAsync(_config.EnrollmentToken!, ct);
+        return ok;
     }
 
     public async Task LogoutAsync(CancellationToken ct = default)

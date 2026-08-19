@@ -26,6 +26,7 @@ export class PrismaNotificationRepository implements NotificationRepository {
         type: data.type,
         title: data.title,
         body: data.body ?? null,
+        fromUserId: data.fromUserId ?? null,
       },
     });
     return this.toRecord(row);
@@ -73,6 +74,7 @@ export class PrismaNotificationRepository implements NotificationRepository {
       type: row.type,
       title: row.title,
       body: row.body,
+      fromUserId: row.fromUserId,
       readAt: row.readAt,
       createdAt: row.createdAt,
     };

@@ -404,6 +404,11 @@ model Notification {
   body   String?
   readAt DateTime? @map("read_at")
 
+  /// Who caused it, when that is a person — the sender of a CHAT_MESSAGE, for
+  /// instance. Lets a client open that person's conversation from the toast.
+  /// Null for notifications that come from the system rather than a user.
+  fromUserId String? @map("from_user_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId])

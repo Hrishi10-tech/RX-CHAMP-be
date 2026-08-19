@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
-import { ChatContact, ChatContactsReader } from '../domain/chat-contacts.reader';
+import { ChatContact, ChatContactsReader, ChatSender } from '../domain/chat-contacts.reader';
 
 @Injectable()
 export class PrismaChatContactsReader implements ChatContactsReader {
@@ -40,6 +40,14 @@ export class PrismaChatContactsReader implements ChatContactsReader {
       department: r.department,
       role: r.role.name,
     }));
+  }
+
+  async findSender(userId: string): Promise<ChatSender | undefined> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    return row ?? undefined;
   }
 
   /**

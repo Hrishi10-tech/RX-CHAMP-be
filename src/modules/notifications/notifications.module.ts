@@ -5,6 +5,7 @@ import { CompanyAssignedSubscriber } from './application/company-assigned.subscr
 import { MeetingNoteSharedSubscriber } from './application/meeting-note-shared.subscriber';
 import { AgentActivatedSubscriber } from './application/agent-activated.subscriber';
 import { DayEndedSubscriber } from './application/day-ended.subscriber';
+import { ChatMessageSubscriber } from './application/chat-message.subscriber';
 import { ListNotificationsUseCase } from './application/use-cases/list-notifications.use-case';
 import {
   CountUnreadNotificationsUseCase,
@@ -23,6 +24,7 @@ import { NotificationsGateway } from './presentation/notifications.gateway';
     MeetingNoteSharedSubscriber,
     AgentActivatedSubscriber,
     DayEndedSubscriber,
+    ChatMessageSubscriber,
     ListNotificationsUseCase,
     MarkNotificationReadUseCase,
     MarkAllNotificationsReadUseCase,

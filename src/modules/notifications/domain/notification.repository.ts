@@ -8,6 +8,8 @@ export interface NotificationRecord {
   type: string;
   title: string;
   body: string | null;
+  /** The person who caused it, or null when it came from the system. */
+  fromUserId: string | null;
   readAt: Date | null;
   createdAt: Date;
 }
@@ -17,6 +19,7 @@ export interface CreateNotificationData {
   type: string;
   title: string;
   body?: string | null;
+  fromUserId?: string | null;
 }
 
 export interface ListNotificationsFilter extends PageFilter {

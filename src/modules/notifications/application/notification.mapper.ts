@@ -8,6 +8,7 @@ export class NotificationMapper {
       type: n.type,
       title: n.title,
       body: n.body,
+      fromUserId: n.fromUserId,
       read: n.readAt !== null,
       readAt: n.readAt ? n.readAt.toISOString() : null,
       createdAt: n.createdAt.toISOString(),

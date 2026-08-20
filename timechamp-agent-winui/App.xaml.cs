@@ -27,10 +27,15 @@ public partial class App : Application
     private DispatcherQueueTimer? _heartbeat;
     private MainWindow? _dashboard;
     private LoginWindow? _login;
+    private FloatingButtonWindow? _bubble;
+    private DispatcherQueueTimer? _bubbleWatch;
     private bool _dayEnded;
     /// <summary>Set once the session was lost, so every stalled loop reporting the same
     /// failure doesn't re-run the teardown.</summary>
     private bool _sessionLost;
+    /// <summary>On a break / at lunch / in a meeting, as last set from a menu — used to
+    /// colour the floating button before the dashboard has ever been opened.</summary>
+    private bool _awayFromDesk;
 
     public App()
     {
@@ -102,6 +107,7 @@ public partial class App : Application
             _dayEnded = await Api.IsDayEndedAsync();
             Chat.Start();
             if (!_dayEnded) StartTracking();
+            ShowBubble(); // stays up even when we start minimised — that's the point of it
             if (!startMinimized) ShowDashboard();
             if (freshlyEnrolled) await ShowDisclosureAsync();
         }
@@ -130,7 +136,8 @@ public partial class App : Application
             "to log which applications and websites you use during work hours and your idle time; " +
             "and to take periodic screenshots of your screen (about every 5 minutes, and when a " +
             "manager requests one) for work monitoring.\n\n" +
-            "It runs from the system tray — you can open it any time to see your own totals.");
+            "Use the round button on the right of your screen to open it any time and see " +
+            "your own totals. You can drag that button anywhere if it's in your way.");
     }
 
     // ---- Tray --------------------------------------------------------------
@@ -172,14 +179,18 @@ public partial class App : Application
         if (!Api.IsAuthenticated) { ShowLogin(); return; }
         if (_dayEnded) return; // nothing more is recorded once the day is over
         await Api.StartAsync(type, null);
+        _awayFromDesk = true;
         if (_dashboard is not null) await _dashboard.ViewModel.RefreshAsync();
+        RefreshBubbleStatus();
     }
 
     private async Task QuickEnd()
     {
         if (!Api.IsAuthenticated || _dayEnded) return;
         await Api.EndAsync();
+        _awayFromDesk = false;
         if (_dashboard is not null) await _dashboard.ViewModel.RefreshAsync();
+        RefreshBubbleStatus();
     }
 
     // ---- Windows -----------------------------------------------------------
@@ -200,6 +211,96 @@ public partial class App : Application
         _ = _dashboard.ViewModel.RefreshAsync();
     }
 
+    // ---- Floating button ---------------------------------------------------
+
+    /// <summary>
+    /// Puts the round button on screen. Windows hides tray icons behind the overflow
+    /// arrow, where people stop finding them — this is the way back into the agent
+    /// that doesn't need explaining.
+    /// </summary>
+    private void ShowBubble()
+    {
+        if (_bubble is null)
+        {
+            var menu = new MenuFlyout();
+            menu.Items.Add(NewItem("Open dashboard", ShowDashboard));
+            menu.Items.Add(new MenuFlyoutSeparator());
+            menu.Items.Add(NewItem("Start break", () => _ = QuickStatus("BREAK")));
+            menu.Items.Add(NewItem("Start lunch", () => _ = QuickStatus("LUNCH")));
+            menu.Items.Add(NewItem("Back to working", () => _ = QuickEnd()));
+            menu.Items.Add(new MenuFlyoutSeparator());
+            menu.Items.Add(NewItem("End day", () => _ = EndWorkingDayAsync(confirm: true)));
+            menu.Items.Add(NewItem("Start day", () => _ = StartWorkingDayAsync()));
+
+            _bubble = new FloatingButtonWindow(ToggleDashboard, menu);
+            _bubble.Activate();
+            StartBubbleWatch();
+        }
+
+        _bubble.ShowBubble();
+        RefreshBubbleStatus();
+    }
+
+    private void HideBubble()
+    {
+        _bubbleWatch?.Stop();
+        _bubble?.HideBubble();
+    }
+
+    /// <summary>Click the button: show the dashboard, or put it away if it's already up.</summary>
+    private void ToggleDashboard()
+    {
+        if (_dashboard is not null && _dashboard.AppWindow.IsVisible)
+        {
+            _dashboard.ViewModel.StopClock();
+            _dashboard.AppWindow.Hide();
+            return;
+        }
+        ShowDashboard();
+    }
+
+    /// <summary>Keeps the ring's colour honest, and gets the button out of the way of
+    /// anything running full-screen (a presentation, a shared screen, a video call).</summary>
+    private void StartBubbleWatch()
+    {
+        _bubbleWatch = _ui.CreateTimer();
+        _bubbleWatch.Interval = TimeSpan.FromSeconds(3);
+        _bubbleWatch.Tick += (_, _) =>
+        {
+            if (_bubble is null) return;
+
+            if (Native.IsFullScreenAppRunning())
+            {
+                if (_bubble.IsVisible) _bubble.HideBubble();
+                return;
+            }
+            if (!_bubble.IsVisible && Api.IsAuthenticated) _bubble.ShowBubble();
+            RefreshBubbleStatus();
+        };
+        _bubbleWatch.Start();
+    }
+
+    private void RefreshBubbleStatus()
+    {
+        if (_bubble is null) return;
+
+        // The dashboard's view-model is the better source, but it only exists once the
+        // window has been opened — and a break can be started from the button's menu
+        // without ever opening it. Fall back to what we last did in that case.
+        var vm = _dashboard?.ViewModel;
+        var away = vm is not null
+            ? vm.BreakActive || vm.LunchActive || vm.MeetingActive
+            : _awayFromDesk;
+
+        var status = !Api.IsAuthenticated || _dayEnded
+            ? BubbleStatus.Idle
+            : away
+                ? BubbleStatus.Paused
+                : BubbleStatus.Tracking;
+
+        _bubble.SetStatus(status);
+    }
+
     /// <summary>Called by the login window after a successful sign-in.</summary>
     public async void OnSignedIn()
     {
@@ -211,6 +312,7 @@ public partial class App : Application
         if (!_dayEnded) StartTracking();
         _login?.Close();
         _login = null;
+        ShowBubble();
         ShowDashboard();
     }
 
@@ -223,6 +325,7 @@ public partial class App : Application
         await Api.LogoutAsync();
         StartupRegistration.Disable();
         _dashboard?.AppWindow.Hide();
+        HideBubble();
         ShowLogin();
     }
 
@@ -244,6 +347,7 @@ public partial class App : Application
             Activity.Stop();
             _heartbeat?.Stop();
             _dashboard?.AppWindow.Hide();
+            HideBubble();
             ShowLogin();
         });
     }
@@ -298,6 +402,7 @@ public partial class App : Application
                 _dashboard.ViewModel.DayEnded = true;
                 await _dashboard.ViewModel.RefreshAsync();
             }
+            RefreshBubbleStatus(); // ring goes grey — nothing is being recorded now
         });
     }
 
@@ -327,11 +432,14 @@ public partial class App : Application
             _dashboard.ViewModel.DayEnded = false;
             await _dashboard.ViewModel.RefreshAsync();
         }
+        RefreshBubbleStatus();
     }
 
     private void ExitApp()
     {
         _heartbeat?.Stop();
+        _bubbleWatch?.Stop();
+        _bubble?.Close();
         _tray?.Dispose();
         Exit();
     }

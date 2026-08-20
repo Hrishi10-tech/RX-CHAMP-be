@@ -1,0 +1,25 @@
+<Window
+    x:Class="TimeChampAgent.Views.FloatingButtonWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- The window is clipped to a circle in code-behind (SetWindowRgn), which trims
+         the artwork's dark corners away. WinUI has no per-pixel transparency, so the
+         face has to be a filled circle rather than a floating shape.
+         Background matches the asset's own backdrop so the two can't seam. -->
+    <Grid x:Name="Root" Width="60" Height="60" Background="#04070E">
+        <!-- Source is assigned in code from the file beside the exe: ms-appx:/// is
+             unreliable for an unpackaged app. -->
+        <Image x:Name="Face" Stretch="UniformToFill" />
+
+        <!-- Washes the face when not actively tracking: amber on a break, grey once
+             the day has ended. Fully clear while working. -->
+        <Ellipse x:Name="StatusWash" Fill="Transparent" Opacity="0" />
+
+        <!-- Lifts it slightly on hover, so it reads as clickable. -->
+        <Ellipse x:Name="Hover" Fill="#FFFFFF" Opacity="0" />
+    </Grid>
+</Window>

@@ -53,8 +53,13 @@ export interface ListUsersFilter extends SearchPageFilter {
   ids?: string[];
   department?: string | null;
   managerId?: string;
+  companyId?: string;
   role?: Role;
   status?: UserStatus;
+  /** Inclusive lower bound on when the user joined. */
+  joinedFrom?: Date;
+  /** Inclusive upper bound on when the user joined. */
+  joinedTo?: Date;
   sort?: UserSortOption;
 }
 

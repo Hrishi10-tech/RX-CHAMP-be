@@ -60,4 +60,107 @@ describe('ListUsersUseCase', () => {
       expect.objectContaining({ sort: 'name_asc', skip: 20, take: 10 }),
     );
   });
+
+  // The filter panel offers Role, Team, Company and a joined-date range. They are
+  // independent controls, so every combination has to reach the repository — the
+  // list is then narrowed by all of them at once.
+  describe('filters', () => {
+    it('combines role and team, which is what the panel asks for', async () => {
+      await useCase.execute(actor(Role.ADMIN), { role: Role.USER, department: 'Marketing' });
+
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ role: Role.USER, department: 'Marketing' }),
+      );
+    });
+
+    it('keeps the role filter when a managerId is also given', async () => {
+      // Regression: the two used to be either/or, so picking a Role on any
+      // manager-scoped screen silently did nothing.
+      await useCase.execute(actor(Role.ADMIN), { managerId: 'mgr-9', role: Role.MANAGER });
+
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ managerId: 'mgr-9', role: Role.MANAGER }),
+      );
+    });
+
+    it('forwards the company filter', async () => {
+      await useCase.execute(actor(Role.ADMIN), { companyId: 'co-1' });
+
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'co-1' }));
+    });
+
+    it('widens the joined range to whole days at both ends', async () => {
+      await useCase.execute(actor(Role.ADMIN), {
+        joinedFrom: '2026-08-01',
+        joinedTo: '2026-08-31',
+      });
+
+      const filter = users.findAll.mock.calls[0][0];
+      // Someone who joined at 09:00 on the 1st, or 23:00 on the 31st, must match.
+      expect(filter.joinedFrom.getHours()).toBe(0);
+      expect(filter.joinedFrom.getMinutes()).toBe(0);
+      expect(filter.joinedTo.getHours()).toBe(23);
+      expect(filter.joinedTo.getMinutes()).toBe(59);
+      expect(filter.joinedTo.getSeconds()).toBe(59);
+    });
+
+    it('leaves the joined range undefined when no dates are picked', async () => {
+      await useCase.execute(actor(Role.ADMIN), { role: Role.USER });
+
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ joinedFrom: undefined, joinedTo: undefined }),
+      );
+    });
+
+    it('applies every filter at once', async () => {
+      await useCase.execute(actor(Role.ADMIN), {
+        role: Role.USER,
+        department: 'Marketing',
+        companyId: 'co-1',
+        joinedFrom: '2026-08-01',
+        joinedTo: '2026-08-31',
+        search: 'gowtham',
+      });
+
+      const filter = users.findAll.mock.calls[0][0];
+      expect(filter).toMatchObject({
+        role: Role.USER,
+        department: 'Marketing',
+        companyId: 'co-1',
+        search: 'gowtham',
+      });
+      expect(filter.joinedFrom).toBeInstanceOf(Date);
+      expect(filter.joinedTo).toBeInstanceOf(Date);
+    });
+
+    it("never lets a manager's filters reach outside their own team", async () => {
+      await useCase.execute(actor(Role.MANAGER, 'mgr-1'), {
+        managerId: 'someone-else',
+        department: 'Marketing',
+      });
+
+      // Their own scope wins over the managerId they asked for; the team filter
+      // still applies within it.
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ managerId: 'mgr-1', department: 'Marketing' }),
+      );
+    });
+
+    it('counts with the same filters it lists with, so paging totals match', async () => {
+      await useCase.execute(actor(Role.ADMIN), {
+        role: Role.USER,
+        department: 'Marketing',
+        page: 2,
+        limit: 5,
+      });
+
+      const listed = users.findAll.mock.calls[0][0];
+      const counted = users.count.mock.calls[0][0];
+      expect(counted).toMatchObject({ role: Role.USER, department: 'Marketing' });
+      // The count must not be narrowed by the page window.
+      expect(counted.skip).toBeUndefined();
+      expect(counted.take).toBeUndefined();
+      expect(listed).toMatchObject({ skip: 5, take: 5 });
+    });
+  });
 });

@@ -38,8 +38,16 @@ export class PostgresUserRepository implements UserRepository {
     if (filter.ids) where.id = { in: filter.ids };
     if (filter.department !== undefined) where.department = filter.department;
     if (filter.managerId) where.managerId = filter.managerId;
+    if (filter.companyId) where.companyId = filter.companyId;
     if (filter.role) where.role = { name: filter.role as RoleName };
     if (filter.status) where.status = filter.status;
+    // Both bounds are whole days, resolved by the caller — see ListUsersUseCase.
+    if (filter.joinedFrom || filter.joinedTo) {
+      where.createdAt = {
+        ...(filter.joinedFrom ? { gte: filter.joinedFrom } : {}),
+        ...(filter.joinedTo ? { lte: filter.joinedTo } : {}),
+      };
+    }
     if (filter.search) {
       where.OR = [
         { firstName: { contains: filter.search, mode: 'insensitive' } },

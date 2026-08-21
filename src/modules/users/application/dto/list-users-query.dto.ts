@@ -1,5 +1,16 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@shared/rbac/roles.enum';
 import {
@@ -39,6 +50,36 @@ export class ListUsersQueryDto {
   @IsOptional()
   @IsString()
   managerId?: string;
+
+  @ApiPropertyOptional({
+    example: 'Marketing',
+    description: 'Team / department. Exact match — a user with no team never matches.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  department?: string;
+
+  @ApiPropertyOptional({ description: 'Company the user belongs to.' })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-01',
+    description: 'Earliest join date (YYYY-MM-DD), inclusive — counts the whole day.',
+  })
+  @IsOptional()
+  @IsDateString()
+  joinedFrom?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-31',
+    description: 'Latest join date (YYYY-MM-DD), inclusive — counts the whole day.',
+  })
+  @IsOptional()
+  @IsDateString()
+  joinedTo?: string;
 
   @ApiPropertyOptional({
     enum: USER_SORT_OPTIONS,

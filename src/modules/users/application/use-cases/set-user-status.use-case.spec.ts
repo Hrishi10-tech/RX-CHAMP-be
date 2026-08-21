@@ -25,6 +25,7 @@ function makeUser(
     shiftStart: '10:00',
     shiftEnd: '19:00',
     status: over.status ?? 'ACTIVE',
+    screenshotsEnabled: true,
     createdAt: new Date('2026-01-01T00:00:00Z'),
   });
 }

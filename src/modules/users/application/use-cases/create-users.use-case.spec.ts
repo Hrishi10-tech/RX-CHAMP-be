@@ -35,6 +35,7 @@ function buildEntity(email: string, role = Role.USER): User {
     shiftStart: '10:00',
     shiftEnd: '19:00',
     status: 'ACTIVE',
+    screenshotsEnabled: true,
     createdAt: new Date(),
   });
 }

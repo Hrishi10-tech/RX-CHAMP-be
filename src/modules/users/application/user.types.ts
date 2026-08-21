@@ -17,6 +17,8 @@ export interface PublicUser {
   shiftStart: string | null;
   shiftEnd: string | null;
   status: UserStatus;
+  /** Whether the agent takes automatic screenshots for this user. */
+  screenshotsEnabled: boolean;
   createdAt: string;
 }
 
@@ -30,6 +32,8 @@ export interface UserListItem {
   department: string | null;
   company: string | null;
   status: UserStatus;
+  /** Drives the screenshots toggle on each row of the members table. */
+  screenshotsEnabled: boolean;
   createdAt: string;
 }
 

@@ -5,8 +5,12 @@ export const ACTIVITY_ACCESS_READER = Symbol('ACTIVITY_ACCESS_READER');
 
 export type ActivityTeamMember = TeamMemberRef;
 
-/** A user's own profile plus who they report to — for building live pushes. */
-export type ActivitySelf = TeamMemberWithManager;
+/**
+ * A user's own profile plus who they report to — for building live pushes — and
+ * whether their automatic screenshots are switched on, which the agent is told on
+ * every report.
+ */
+export type ActivitySelf = TeamMemberWithManager & { screenshotsEnabled: boolean };
 
 /**
  * The manager → reports relationship the activity module needs to decide who may

@@ -19,6 +19,7 @@ import {
   CreateUserItemDto,
   CreateUsersDto,
   ListUsersQueryDto,
+  SetUserScreenshotsDto,
   SetUserStatusDto,
   UpdateUserDto,
 } from '../application/dto';
@@ -26,6 +27,7 @@ import { CreateUsersUseCase } from '../application/use-cases/create-users.use-ca
 import { DeleteUserUseCase } from '../application/use-cases/delete-user.use-case';
 import { GetProfileUseCase } from '../application/use-cases/get-profile.use-case';
 import { ListUsersUseCase } from '../application/use-cases/list-users.use-case';
+import { SetUserScreenshotsUseCase } from '../application/use-cases/set-user-screenshots.use-case';
 import { SetUserStatusUseCase } from '../application/use-cases/set-user-status.use-case';
 import { UpdateUserUseCase } from '../application/use-cases/update-user.use-case';
 
@@ -40,6 +42,7 @@ export class UsersController {
     private readonly createUsers: CreateUsersUseCase,
     private readonly updateUser: UpdateUserUseCase,
     private readonly setStatus: SetUserStatusUseCase,
+    private readonly setScreenshots: SetUserScreenshotsUseCase,
     private readonly deleteUser: DeleteUserUseCase,
   ) {}
 
@@ -86,6 +89,20 @@ export class UsersController {
     @Body() body: SetUserStatusDto,
   ) {
     return this.setStatus.execute(me, id, body.status);
+  }
+
+  @Post(':id/screenshots')
+  @ApiOperation({
+    summary:
+      "Turn a user's automatic screenshots on or off (admin: anyone, manager: own reports). " +
+      'Only the periodic capture is affected — activity tracking and manual capture keep working.',
+  })
+  async screenshots(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: SetUserScreenshotsDto,
+  ) {
+    return this.setScreenshots.execute(me, id, body.enabled);
   }
 
   @Delete(':id')

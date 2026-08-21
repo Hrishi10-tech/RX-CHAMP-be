@@ -4,7 +4,11 @@ import {
   ActivitySampleRecord,
   ActivitySampleRepository,
 } from '../../domain/activity-sample.repository';
-import { ACTIVITY_ACCESS_READER, ActivityAccessReader } from '../../domain/activity-access.reader';
+import {
+  ACTIVITY_ACCESS_READER,
+  ActivityAccessReader,
+  ActivitySelf,
+} from '../../domain/activity-access.reader';
 import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.repository';
 import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { ActivityGateway } from '../../presentation/activity.gateway';
@@ -38,8 +42,13 @@ export class ReportActivityUseCase {
     // The day's totals are final once it has been ended, so a late report — an
     // in-flight sample, or an agent restarted after signing off — is acknowledged
     // but never stored. Answering with shouldCapture=false stops the agent again.
+    // Fetched once and reused: the ack needs the screenshot switch, and the live
+    // broadcast below needs the same row's name + manager.
+    const self = await this.access.findSelf(userId);
+    const screenshotsEnabled = self?.screenshotsEnabled ?? true;
+
     const end = await this.workDays.findEnd(userId, date);
-    if (end) return this.endedAck(userId, date, end.endedAt);
+    if (end) return this.endedAck(userId, date, end.endedAt, screenshotsEnabled);
 
     // Close the previous open sample: it was foreground until this one arrived.
     const prev = await this.repo.findLatestForUser(userId);
@@ -76,7 +85,7 @@ export class ReportActivityUseCase {
 
     // Push live: the user's own dashboard, and their manager's team board.
     // Best-effort — a broadcast failure must never fail the agent's report.
-    await this.broadcast(userId, created, daily, at, login);
+    await this.broadcast(userId, created, daily, at, login, self);
 
     return {
       ok: true,
@@ -88,11 +97,18 @@ export class ReportActivityUseCase {
       // stops only once the user has explicitly ended the day — handled above.
       dayEnded: false,
       shouldCapture: true,
+      // Separate switch: stops the periodic capture only, never the tracking.
+      screenshotsEnabled,
     };
   }
 
   /** Ack for a day that is already over: the frozen totals, and stop capturing. */
-  private async endedAck(userId: string, date: string, endedAt: Date): Promise<ActivityAck> {
+  private async endedAck(
+    userId: string,
+    date: string,
+    endedAt: Date,
+    screenshotsEnabled: boolean,
+  ): Promise<ActivityAck> {
     const basis = DEFAULT_WORKING_BASIS_SEC;
     const daySamples = await this.repo.listForUserByDate(userId, date);
     const meetings = await this.meetings.listForUserByDate(userId, date);
@@ -106,6 +122,7 @@ export class ReportActivityUseCase {
       clockedOut: daily.clockedOut,
       dayEnded: true,
       shouldCapture: false,
+      screenshotsEnabled,
     };
   }
 
@@ -115,12 +132,12 @@ export class ReportActivityUseCase {
     daily: DailyActivityView,
     now: Date,
     login: Date | null,
+    self: ActivitySelf | undefined,
   ): Promise<void> {
     try {
       const current = ActivityMapper.toCurrentView(created, now);
       this.gateway.emitToUser(userId, ActivityMapper.toMyUpdate(current, daily));
 
-      const self = await this.access.findSelf(userId);
       if (self?.managerId) {
         this.gateway.emitToManager(
           self.managerId,

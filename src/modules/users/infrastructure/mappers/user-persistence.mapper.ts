@@ -23,6 +23,7 @@ export class UserPersistenceMapper {
       shiftStart: row.shiftStart,
       shiftEnd: row.shiftEnd,
       status: row.status as UserStatus,
+      screenshotsEnabled: row.screenshotsEnabled,
       createdAt: row.createdAt,
     });
   }

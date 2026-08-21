@@ -83,6 +83,11 @@ public partial class App : Application
         Shots = new ScreenshotService(Api);
         Activity = new ActivityService(Api, Config);
         Activity.DayEnded += OnDayEnded;
+        // A manager can switch a user's automatic screenshots off; the server tells us
+        // on every report. Stops the 5-minute capture only — tracking and the manager's
+        // manual capture both carry on.
+        Activity.ScreenshotsEnabledChanged += (enabled) =>
+            _ui.TryEnqueue(() => Shots.SetAutoEnabled(enabled));
 
         BuildTray();
         BuildHeartbeat(); // created stopped; started with the rest of tracking

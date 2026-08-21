@@ -21,6 +21,7 @@ function makeUser(overrides: Partial<Parameters<typeof User.fromPersistence>[0]>
     shiftStart: '10:00',
     shiftEnd: '19:00',
     status: 'ACTIVE',
+    screenshotsEnabled: true,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
   });

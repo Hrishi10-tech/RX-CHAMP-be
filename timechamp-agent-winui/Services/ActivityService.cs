@@ -27,6 +27,11 @@ public sealed class ActivityService
     /// <summary>Raised (once) when the user's working day has ended (End Day).</summary>
     public event Action? DayEnded;
 
+    /// <summary>Carries the server's per-user screenshot switch from every report, so
+    /// flipping it in the dashboard reaches the agent within a minute. Screenshots only —
+    /// activity tracking is never affected by it.</summary>
+    public event Action<bool>? ScreenshotsEnabledChanged;
+
     public ActivityService(ApiClient api, AgentConfig config)
     {
         _api = api;
@@ -70,6 +75,10 @@ public sealed class ActivityService
         {
             var report = await Task.Run(BuildSample);
             var ack = await _api.ReportActivityAsync(report);
+
+            // Independent of the day-ended check below: this governs the 5-minute
+            // capture alone, and must not touch tracking.
+            if (ack is not null) ScreenshotsEnabledChanged?.Invoke(ack.ScreenshotsEnabled);
             // Keep sampling through overtime (clockedOut is informational). Stop only
             // once the day has been ended server-side (shouldCapture flips to false).
             if (ack is { ShouldCapture: false })

@@ -9,6 +9,7 @@ import { CreateUsersUseCase } from './application/use-cases/create-users.use-cas
 import { DeleteUserUseCase } from './application/use-cases/delete-user.use-case';
 import { GetProfileUseCase } from './application/use-cases/get-profile.use-case';
 import { ListUsersUseCase } from './application/use-cases/list-users.use-case';
+import { SetUserScreenshotsUseCase } from './application/use-cases/set-user-screenshots.use-case';
 import { SetUserStatusUseCase } from './application/use-cases/set-user-status.use-case';
 import { UpdateUserUseCase } from './application/use-cases/update-user.use-case';
 import { UsersController } from './presentation/users.controller';
@@ -24,6 +25,7 @@ import { UsersController } from './presentation/users.controller';
     GetProfileUseCase,
     ListUsersUseCase,
     SetUserStatusUseCase,
+    SetUserScreenshotsUseCase,
     UpdateUserUseCase,
   ],
   exports: [USER_REPOSITORY, GetProfileUseCase],

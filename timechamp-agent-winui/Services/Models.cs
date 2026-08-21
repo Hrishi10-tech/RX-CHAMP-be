@@ -137,6 +137,13 @@ public sealed class ActivityAck
     /// working day (overtime + idle included); false only after the day has ended.
     /// Defaults to true so a malformed/absent ack never silently stops capture.</summary>
     [JsonPropertyName("shouldCapture")] public bool ShouldCapture { get; set; } = true;
+
+    /// <summary>Whether automatic screenshots are switched on for this user; a manager or
+    /// admin can turn them off per person. Unlike <see cref="ShouldCapture"/> this stops
+    /// ONLY the periodic capture — activity tracking carries on and the screenshot socket
+    /// stays connected, so a manager's manual capture still arrives. Defaults to true so
+    /// an older server that doesn't send the field can't switch capture off.</summary>
+    [JsonPropertyName("screenshotsEnabled")] public bool ScreenshotsEnabled { get; set; } = true;
 }
 
 /// <summary>One hour of the day's active/idle split (0–23).</summary>

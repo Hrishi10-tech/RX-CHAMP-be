@@ -95,6 +95,56 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
     expect(ack.dayEnded).toBe(false);
   });
 
+  // The screenshot switch is a separate signal on purpose: turning a user's
+  // screenshots off must never look like "the day has ended", which would stop
+  // their activity tracking too.
+  it('passes the screenshot switch through, without touching capture or tracking', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+    access.findSelf.mockResolvedValue({
+      id: 'user-1',
+      firstName: 'Uma',
+      lastName: 'S',
+      email: 'uma@test',
+      department: null,
+      managerId: null,
+      screenshotsEnabled: false,
+    });
+
+    const ack = await useCase.execute('user-1', { at: AT });
+
+    expect(ack.screenshotsEnabled).toBe(false);
+    // The day is still very much running.
+    expect(ack.dayEnded).toBe(false);
+    expect(ack.shouldCapture).toBe(true);
+    // ...and the sample was still recorded.
+    expect(repo.create).toHaveBeenCalled();
+  });
+
+  it('reports the switch ON when it is enabled', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+    access.findSelf.mockResolvedValue({
+      id: 'user-1',
+      firstName: 'Uma',
+      lastName: 'S',
+      email: 'uma@test',
+      department: null,
+      managerId: null,
+      screenshotsEnabled: true,
+    });
+
+    const ack = await useCase.execute('user-1', { at: AT });
+    expect(ack.screenshotsEnabled).toBe(true);
+  });
+
+  it('defaults the switch ON when the user row cannot be read', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+    access.findSelf.mockResolvedValue(null);
+
+    const ack = await useCase.execute('user-1', { at: AT });
+    // Never silently stop capturing because of a lookup miss.
+    expect(ack.screenshotsEnabled).toBe(true);
+  });
+
   it('a broadcast failure never fails the agent report', async () => {
     workDays.findEnd.mockResolvedValue(null);
     gateway.emitToUser.mockImplementation(() => {

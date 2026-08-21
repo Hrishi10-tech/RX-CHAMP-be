@@ -125,6 +125,7 @@ export class PostgresUserRepository implements UserRepository {
       shiftId: u.shiftId,
       shiftStart: u.shiftStart,
       shiftEnd: u.shiftEnd,
+      screenshotsEnabled: u.screenshotsEnabled,
     };
   }
 

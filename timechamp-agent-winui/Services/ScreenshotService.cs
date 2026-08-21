@@ -10,6 +10,11 @@ namespace TimeChampAgent.Services;
 ///  • on demand when a manager clicks "capture", delivered over the <c>/screenshots</c>
 ///    socket.io channel as a <c>screenshot:capture</c> command (kind = MANUAL).
 /// The agent never holds AWS credentials — it only talks to our API.
+///
+/// The two are independent. A manager or admin can switch a user's automatic
+/// screenshots off (see <see cref="SetAutoEnabled"/>), which stops the 5-minute timer
+/// but leaves the socket connected — so a manual capture still arrives and still
+/// works. Nothing here affects activity tracking either way.
 /// </summary>
 public sealed class ScreenshotService
 {
@@ -20,6 +25,10 @@ public sealed class ScreenshotService
     private SocketIOClient.SocketIO? _io;
     private volatile bool _run;
 
+    /// <summary>The server's per-user switch for periodic capture. Assumed on until a
+    /// report says otherwise, so a slow first ack doesn't miss the opening shot.</summary>
+    private volatile bool _autoEnabled = true;
+
     public ScreenshotService(ApiClient api) => _api = api;
 
     public void Start()
@@ -27,20 +36,50 @@ public sealed class ScreenshotService
         if (_run) return;
         _run = true;
 
+        if (_autoEnabled) StartAutoTimer();
+        // The socket carries the manager's manual capture command, so it is connected
+        // whether or not automatic capture is switched on for this user.
+        _ = ConnectAsync();
+    }
+
+    /// <summary>
+    /// Applies the server's screenshot switch for this user. Called on every activity
+    /// report, so flipping the toggle in the dashboard takes effect within a minute.
+    /// Only the periodic timer starts or stops — the socket, and therefore manual
+    /// capture, is untouched.
+    /// </summary>
+    public void SetAutoEnabled(bool enabled)
+    {
+        if (_autoEnabled == enabled) return;
+        _autoEnabled = enabled;
+        if (!_run) return;
+
+        if (enabled) StartAutoTimer();
+        else StopAutoTimer();
+    }
+
+    private void StartAutoTimer()
+    {
+        if (_timer is not null) return;
+
         _timer = new Timer(Interval.TotalMilliseconds) { AutoReset = true };
         _timer.Elapsed += (_, _) => _ = CaptureAndUpload("AUTO");
         _timer.Start();
 
         _ = CaptureAndUpload("AUTO"); // one shot right away so there's something to show
-        _ = ConnectAsync();
+    }
+
+    private void StopAutoTimer()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
+        _timer = null;
     }
 
     public void Stop()
     {
         _run = false;
-        _timer?.Stop();
-        _timer?.Dispose();
-        _timer = null;
+        StopAutoTimer();
 
         var io = _io;
         _io = null;

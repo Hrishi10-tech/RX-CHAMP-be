@@ -109,6 +109,16 @@ export interface ActivityAck {
    * the other, implicit, stop: no agent running means no captures.)
    */
   shouldCapture: boolean;
+  /**
+   * Whether automatic screenshots are switched on for this user (a manager or admin
+   * can turn them off per person).
+   *
+   * Deliberately separate from `shouldCapture`: that one means "the day is over" and
+   * makes the agent shut everything down, tracking included. This one must stop the
+   * periodic capture and nothing else — activity keeps being recorded, and the agent
+   * stays connected so a manager's manual capture still lands.
+   */
+  screenshotsEnabled: boolean;
 }
 
 export interface EndDayResult {

@@ -20,4 +20,6 @@ export type UserWriteModel = {
   shiftId?: string | null;
   shiftStart?: string | null;
   shiftEnd?: string | null;
+  /** Undefined on create, so the column keeps its `true` default. */
+  screenshotsEnabled?: boolean;
 };

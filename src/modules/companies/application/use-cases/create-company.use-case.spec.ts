@@ -27,6 +27,7 @@ function buildManager(id: string): User {
     shiftStart: null,
     shiftEnd: null,
     status: 'ACTIVE',
+    screenshotsEnabled: true,
     createdAt: new Date(),
   });
 }

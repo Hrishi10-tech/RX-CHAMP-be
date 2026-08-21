@@ -1,11 +1,21 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import {
   SCREENSHOT_REPOSITORY,
   ScreenshotKind,
   ScreenshotRepository,
 } from '../../domain/screenshot.repository';
 import { DAY_END_READER, DayEndReader } from '../../domain/day-end.reader';
+import {
+  SCREENSHOT_POLICY_READER,
+  ScreenshotPolicyReader,
+} from '../../domain/screenshot-policy.reader';
 import { S3StorageService } from '../../infrastructure/s3-storage.service';
 import { OcrService } from '../../infrastructure/ocr.service';
 import { ScreenshotMapper } from '../screenshot.mapper';
@@ -24,6 +34,7 @@ export class UploadScreenshotUseCase {
   constructor(
     @Inject(SCREENSHOT_REPOSITORY) private readonly repo: ScreenshotRepository,
     @Inject(DAY_END_READER) private readonly dayEnds: DayEndReader,
+    @Inject(SCREENSHOT_POLICY_READER) private readonly policy: ScreenshotPolicyReader,
     private readonly s3: S3StorageService,
     private readonly ocr: OcrService,
   ) {}
@@ -33,6 +44,14 @@ export class UploadScreenshotUseCase {
 
     const takenAt = input.takenAt ?? new Date();
     const kind: ScreenshotKind = input.kind ?? 'AUTO';
+
+    // Automatic capture can be switched off per user. The agent is told and stops
+    // on its own, but a shot already in flight when the switch flipped would
+    // otherwise still land — so refuse it here too. A MANUAL capture is a manager
+    // asking for one deliberately and is never gated by this.
+    if (kind === 'AUTO' && !(await this.policy.isAutoEnabled(userId))) {
+      throw new ForbiddenException('Automatic screenshots are switched off for this user.');
+    }
 
     // Capture stops dead at "End Day". A shot that arrives after it — one already
     // in flight, or an agent restarted after signing off — is refused rather than

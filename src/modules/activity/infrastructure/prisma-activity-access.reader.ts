@@ -28,6 +28,7 @@ export class PrismaActivityAccessReader implements ActivityAccessReader {
         email: true,
         department: true,
         managerId: true,
+        screenshotsEnabled: true,
       },
     });
     return row ?? undefined;

@@ -18,6 +18,7 @@ export class UserMapper {
       shiftStart: user.shiftStart,
       shiftEnd: user.shiftEnd,
       status: user.status,
+      screenshotsEnabled: user.screenshotsEnabled,
       createdAt: user.createdAt.toISOString(),
     };
   }
@@ -33,6 +34,7 @@ export class UserMapper {
       department: user.department,
       company: user.companyName,
       status: user.status,
+      screenshotsEnabled: user.screenshotsEnabled,
       createdAt: user.createdAt.toISOString(),
     };
   }

@@ -22,6 +22,7 @@ export interface UserProps {
   shiftStart: string | null;
   shiftEnd: string | null;
   status: UserStatus;
+  screenshotsEnabled: boolean;
   createdAt: Date;
 }
 
@@ -78,6 +79,9 @@ export class User {
   get status(): UserStatus {
     return this.props.status;
   }
+  get screenshotsEnabled(): boolean {
+    return this.props.screenshotsEnabled;
+  }
   get createdAt(): Date {
     return this.props.createdAt;
   }
@@ -96,6 +100,14 @@ export class User {
   }
   isActive(): boolean {
     return this.props.status === 'ACTIVE';
+  }
+
+  /**
+   * Turns this user's automatic screenshots on or off. Only the periodic capture is
+   * affected — activity tracking and a manager's manual capture are untouched.
+   */
+  setScreenshotsEnabled(enabled: boolean): void {
+    this.props.screenshotsEnabled = enabled;
   }
 
   changeStatus(next: UserStatus): void {

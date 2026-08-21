@@ -22,6 +22,7 @@ function buildUser(status: 'ACTIVE' | 'DISABLED' = 'ACTIVE'): User {
     shiftStart: null,
     shiftEnd: null,
     status,
+    screenshotsEnabled: true,
     createdAt: new Date(),
   });
 }

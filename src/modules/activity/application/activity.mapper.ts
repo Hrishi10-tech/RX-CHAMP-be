@@ -3,6 +3,7 @@ import { fullName } from '@shared/types/user.types';
 import { ActivitySampleRecord } from '../domain/activity-sample.repository';
 import { ActivityTeamMember } from '../domain/activity-access.reader';
 import { MeetingWindow } from '../domain/meeting-window.reader';
+import { appDisplayName } from './app-display-name';
 import { clamp, elapsedSeconds, localDateString } from './activity-date.util';
 import { IDLE_THRESHOLD_SEC, LIVE_GRACE_SEC, MAX_GAP_SEC, TOP_N } from './activity.constants';
 import {
@@ -92,7 +93,7 @@ export class ActivityMapper {
     }
     return {
       status,
-      app: sample.app,
+      app: appDisplayName(sample.app),
       title: sample.title,
       url: sample.url,
       idle: sample.idle,
@@ -116,7 +117,7 @@ export class ActivityMapper {
       email: member.email,
       department: member.department,
       status,
-      app: live ? sample!.app : null,
+      app: live ? appDisplayName(sample!.app) : null,
       title: live ? sample!.title : null,
       url: live ? sample!.url : null,
       lastSampleAt: sample ? sample.at.toISOString() : null,
@@ -191,7 +192,10 @@ export class ActivityMapper {
         hourly[slice.hour].activeSec += slice.activeSec;
         // App/site time follows the active portion only, so reclassified seconds
         // stop inflating "top apps" as well.
-        if (slice.app) apps.set(slice.app, (apps.get(slice.app) ?? 0) + slice.activeSec);
+        // Renamed before aggregating, so a stored `TimeChampAgent` and a newer
+        // `RX Vision Agent` land in the same row rather than two.
+        const app = appDisplayName(slice.app);
+        if (app) apps.set(app, (apps.get(app) ?? 0) + slice.activeSec);
         if (slice.url) sites.set(slice.url, (sites.get(slice.url) ?? 0) + slice.activeSec);
       }
     }

@@ -327,3 +327,54 @@ describe('ActivityMapper.statusOf — DAY_ENDED', () => {
     expect(view.app).toBeNull();
   });
 });
+
+// The agent reports its own window by process name, `TimeChampAgent`. Renaming is
+// done where names are served, so stored history reads correctly too — and old and
+// new names must collapse into one row rather than appearing twice.
+describe('ActivityMapper — the agent is shown under the product name', () => {
+  const day = new Date('2026-08-24T10:00:00.000Z');
+
+  function named(at: Date, app: string): ActivitySampleRecord {
+    return { ...sample(at), app };
+  }
+
+  it('renames the agent in the top-apps list', () => {
+    const daily = ActivityMapper.computeDaily(
+      [named(day, 'TimeChampAgent')],
+      localDateString(day),
+      DEFAULT_WORKING_BASIS_SEC,
+      new Date(day.getTime() + 60_000),
+    );
+
+    expect(daily.topApps.map((a) => a.name)).toEqual(['RX Vision Agent']);
+  });
+
+  it('merges the old and new names into one row', () => {
+    const daily = ActivityMapper.computeDaily(
+      [named(day, 'TimeChampAgent'), named(new Date(day.getTime() + 60_000), 'RX Vision Agent')],
+      localDateString(day),
+      DEFAULT_WORKING_BASIS_SEC,
+      new Date(day.getTime() + 120_000),
+    );
+
+    const agent = daily.topApps.filter((a) => a.name === 'RX Vision Agent');
+    expect(agent).toHaveLength(1);
+    expect(agent[0].seconds).toBe(120);
+  });
+
+  it('renames it in the currently-using panel', () => {
+    const current = ActivityMapper.toCurrentView(named(day, 'TimeChampAgent'), day);
+    expect(current.app).toBe('RX Vision Agent');
+  });
+
+  it('leaves other apps untouched', () => {
+    const daily = ActivityMapper.computeDaily(
+      [named(day, 'Google Chrome')],
+      localDateString(day),
+      DEFAULT_WORKING_BASIS_SEC,
+      new Date(day.getTime() + 60_000),
+    );
+
+    expect(daily.topApps.map((a) => a.name)).toEqual(['Google Chrome']);
+  });
+});

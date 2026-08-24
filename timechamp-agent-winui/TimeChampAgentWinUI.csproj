@@ -25,8 +25,15 @@
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>2.0.0</Version>
-    <Company>Time Champ</Company>
-    <Product>Time Champ Agent</Product>
+    <Company>RX Vision</Company>
+    <Product>RX Vision Agent</Product>
+    <!-- Becomes the exe's FileDescription, which is exactly what the agent reports
+         as the foreground app name. Without it the name fell back to the process
+         name and the dashboard listed "TimeChampAgent". AssemblyName is deliberately
+         left alone: renaming the exe would break the install directory, the
+         startup registry entry and the installer payload for everyone already
+         running it. -->
+    <AssemblyTitle>RX Vision Agent</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

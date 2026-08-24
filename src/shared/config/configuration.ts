@@ -1,6 +1,13 @@
 export interface AppConfig {
   env: string;
   port: number;
+  /**
+   * The business timezone: the one working days are measured in and the one times
+   * are shown in. Set it explicitly rather than inheriting the host's clock —
+   * servers run UTC, which had "signed off at 6:38 PM" reaching a manager as
+   * "1:08 PM".
+   */
+  timezone: string;
   apiPrefix: string;
   corsOrigins: string[];
   databaseUrl: string;
@@ -41,6 +48,7 @@ export interface AppConfig {
 export default (): AppConfig => ({
   env: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '4000', 10),
+  timezone: process.env.APP_TIMEZONE ?? 'Asia/Kolkata',
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
   databaseUrl: process.env.DATABASE_URL ?? '',

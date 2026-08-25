@@ -5,7 +5,7 @@ import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { AccessTokenPayload } from '@shared/security/token.service.port';
+import { AccessTokenPayload, SOCKET_TOKEN_TYPE } from '@shared/security/token.service.port';
 import { AUTH_USER_READER, AuthUserReader } from '../domain/auth-user-reader.port';
 
 @Injectable()
@@ -24,7 +24,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: AccessTokenPayload): Promise<AuthenticatedUser> {
+  async validate(payload: AccessTokenPayload & { typ?: string }): Promise<AuthenticatedUser> {
+    // A socket ticket is signed with this same secret, and it is readable by
+    // JavaScript — unlike the httpOnly access cookie. Accepting one here would hand
+    // anything that scraped a ticket a working API credential, which is exactly what
+    // the httpOnly cookie exists to prevent. Handshakes only.
+    if (payload.typ === SOCKET_TOKEN_TYPE) {
+      throw new UnauthorizedError('Not signed in');
+    }
+
     const user = await this.reader.loadById(payload.sub);
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedError('Account is no longer active');

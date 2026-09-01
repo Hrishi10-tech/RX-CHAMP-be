@@ -5,11 +5,17 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Deliberately still RXChampAgent: this name is the S3 object key the publish
+         script uploads to and that AGENT_S3_KEY points at, so renaming it would
+         break every download until the key and the server env were changed in step.
+         What the user saves the file as comes from the backend's Content-Disposition
+         (agent.fileName = RXVision.exe), which is the name that actually shows. -->
     <AssemblyName>RXChampAgent</AssemblyName>
     <RootNamespace>TimeChampAgentInstaller</RootNamespace>
     <Version>2.0.0</Version>
-    <Company>RX Champ</Company>
-    <Product>RX Champ Agent Installer</Product>
+    <Company>RX Vision</Company>
+    <Product>RX Vision Installer</Product>
+    <AssemblyTitle>RX Vision Installer</AssemblyTitle>
 
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

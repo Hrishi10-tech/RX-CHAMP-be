@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Text;
 
 // ============================================================================
-// RX Champ Agent — self-extracting installer.
+// RX Vision — self-extracting installer.
 //
 // The employee downloads ONE .exe and double-clicks it. This bootstrapper:
 //   1. Extracts the embedded WinUI agent into %LOCALAPPDATA%\RXChampAgent.
@@ -58,7 +58,7 @@ try
 }
 catch (Exception ex)
 {
-    Fail("Couldn't install the RX Champ agent.\n\n" + ex.Message);
+    Fail("Couldn't install the RX Vision agent.\n\n" + ex.Message);
 }
 
 static void ExtractPayload(string installDir)
@@ -129,7 +129,7 @@ static void TryWriteEnroll(string installDir)
 static void Fail(string message)
 {
     // Minimal message box via Win32 so we don't pull in WinForms/WPF.
-    MessageBoxW(IntPtr.Zero, message, "RX Champ Agent", 0x10 /* MB_ICONERROR */);
+    MessageBoxW(IntPtr.Zero, message, "RX Vision", 0x10 /* MB_ICONERROR */);
 }
 
 [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]

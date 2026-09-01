@@ -81,7 +81,7 @@ export default (): AppConfig => ({
       process.env.AGENT_BINARY_PATH ?? 'timechamp-agent-installer/publish/RXChampAgent.exe',
     s3Key: process.env.AGENT_S3_KEY ?? '',
     s3Bucket: process.env.AGENT_S3_BUCKET ?? '',
-    fileName: process.env.AGENT_FILE_NAME ?? 'RXChampAgent.exe',
+    fileName: process.env.AGENT_FILE_NAME ?? 'RXVision.exe',
     version: process.env.AGENT_VERSION ?? '2.0.0',
     publicApiBaseUrl: process.env.AGENT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1',
   },

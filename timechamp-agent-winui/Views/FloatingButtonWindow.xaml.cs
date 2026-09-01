@@ -54,7 +54,7 @@ public sealed partial class FloatingButtonWindow : Window
         _onClick = onClick;
         LoadFace();
 
-        Title = "RX Champ";
+        Title = "RX Vision";
 
         _presenter = (OverlappedPresenter)AppWindow.Presenter;
         _presenter.SetBorderAndTitleBar(false, false);
@@ -72,7 +72,7 @@ public sealed partial class FloatingButtonWindow : Window
         Root.PointerReleased += OnPointerReleased;
         Root.PointerEntered += (_, _) => Hover.Opacity = 0.1;
         Root.PointerExited += (_, _) => Hover.Opacity = 0;
-        ToolTipService.SetToolTip(Root, "RX Champ — click to open");
+        ToolTipService.SetToolTip(Root, "RX Vision — click to open");
 
         Activated += OnFirstActivated;
     }

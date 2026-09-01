@@ -15,7 +15,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
    
-        Title = "RX Champ Agent";
+        Title = "RX Vision";
         var tb = AppWindow.TitleBar;
         var caption = UiUtil.ColorFromHex("#F4F5FD");
         tb.BackgroundColor = caption;

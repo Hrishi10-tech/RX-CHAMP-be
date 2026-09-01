@@ -14,7 +14,7 @@
 
     <Grid Background="{StaticResource Bg}" Padding="32">
         <StackPanel VerticalAlignment="Center" MaxWidth="320" HorizontalAlignment="Center" Spacing="4">
-            <TextBlock Text="RX Champ" FontSize="26" FontWeight="Bold"
+            <TextBlock Text="RX Vision" FontSize="26" FontWeight="Bold"
                        Foreground="{StaticResource Text}" HorizontalAlignment="Center" />
             <TextBlock Text="Sign in with the details your manager sent you"
                        Foreground="{StaticResource Muted}" FontSize="12" TextAlignment="Center"
@@ -37,7 +37,7 @@
                     HorizontalAlignment="Stretch" Background="{StaticResource Brand}" Foreground="White"
                     BorderThickness="0" CornerRadius="8" Padding="14,10" FontSize="15" FontWeight="SemiBold" Margin="0,8,0,0" />
 
-            <TextBlock Text="Your company uses RX Champ to record attendance and break time."
+            <TextBlock Text="Your company uses RX Vision to record attendance and break time."
                        Foreground="{StaticResource Muted}" FontSize="10" TextWrapping="Wrap"
                        TextAlignment="Center" Margin="0,16,0,0" />
         </StackPanel>

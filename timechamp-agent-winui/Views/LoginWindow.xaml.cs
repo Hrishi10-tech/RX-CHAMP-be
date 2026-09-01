@@ -8,7 +8,7 @@ public sealed partial class LoginWindow : Window
     public LoginWindow()
     {
         InitializeComponent();
-        Title = "RX Champ — Sign in";
+        Title = "RX Vision — Sign in";
         AppWindow.Resize(new Windows.Graphics.SizeInt32(420, 520));
     }
 }

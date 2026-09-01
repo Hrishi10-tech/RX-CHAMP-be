@@ -135,8 +135,8 @@ public partial class App : Application
     {
         if (_dashboard?.Content?.XamlRoot is null) return;
         await Dialogs.NoticeAsync(_dashboard.Content.XamlRoot,
-            "RX Champ — attendance & activity monitoring",
-            "RX Champ is now active on this device.\n\n" +
+            "RX Vision — attendance & activity monitoring",
+            "RX Vision is now active on this device.\n\n" +
             "Your employer uses it to record working hours, breaks, and lunch for attendance; " +
             "to log which applications and websites you use during work hours and your idle time; " +
             "and to take periodic screenshots of your screen (about every 5 minutes, and when a " +
@@ -151,7 +151,7 @@ public partial class App : Application
     {
         _tray = new TaskbarIcon
         {
-            ToolTipText = "RX Champ Agent",
+            ToolTipText = "RX Vision",
             Icon = System.Drawing.SystemIcons.Application,
             LeftClickCommand = new RelayCommand(ShowDashboard),
         };

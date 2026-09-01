@@ -75,7 +75,7 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private double _pauseOpacity = 1.0;
     [ObservableProperty] private double _resumeOpacity = 0.5;
 
-    [ObservableProperty] private string _chatHeader = "RX Champ Chat";
+    [ObservableProperty] private string _chatHeader = "RX Vision Chat";
     [ObservableProperty] private string _chatInput = "";
     [ObservableProperty] private string _focusCaption = "";
 

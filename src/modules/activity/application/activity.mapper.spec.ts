@@ -3,7 +3,7 @@
 // falls back to the last sample (and is null when there are no samples).
 import { ActivitySampleRecord } from '../domain/activity-sample.repository';
 import { ActivityMapper } from './activity.mapper';
-import { DEFAULT_WORKING_BASIS_SEC } from './activity.constants';
+import { DEFAULT_WORKING_BASIS_SEC, LOCK_SCREEN_APP, MAX_GAP_SEC } from './activity.constants';
 import { localDateString } from './activity-date.util';
 
 function sample(at: Date, idle = false, locked = false): ActivitySampleRecord {
@@ -376,5 +376,99 @@ describe('ActivityMapper — the agent is shown under the product name', () => {
     );
 
     expect(daily.topApps.map((a) => a.name)).toEqual(['Google Chrome']);
+  });
+});
+
+// What the agents in the field actually send, and what it costs.
+//
+// The `locked` flag has never arrived in practice — 108 of 60,127 stored samples
+// carry it, all from one machine — so the lock screen is recognised by its process
+// name instead. And because a locked PC sleeps a few minutes later, an ordinary break
+// reaches the server as a hole in the samples rather than as idle time: one real day
+// showed 8h34m at the desk of which only 6h01m was accounted for anywhere.
+describe('ActivityMapper.computeDaily — locks and sleep in the field', () => {
+  const day = '2026-09-08';
+  const at = (hhmm: string) => new Date(`${day}T${hhmm}:00`);
+  // A later day, so no sample counts as still-open.
+  const now = new Date(`2026-09-09T10:00:00`);
+
+  /** As the field sends it: lock screen by name, `locked` never set. */
+  const lockScreen = (hhmm: string, durationSec = MAX_GAP_SEC): ActivitySampleRecord => ({
+    ...sample(at(hhmm), true, false),
+    app: LOCK_SCREEN_APP,
+    durationSec,
+  });
+  const work = (hhmm: string, durationSec = 60): ActivitySampleRecord => ({
+    ...sample(at(hhmm)),
+    durationSec,
+  });
+
+  const run = (samples: ActivitySampleRecord[]) =>
+    ActivityMapper.computeDaily(samples, day, DEFAULT_WORKING_BASIS_SEC, now);
+
+  it('recognises the lock screen by name and keeps the work before it', () => {
+    // Win+L straight from Chrome: the lock minutes are idle, and the working minutes
+    // before them are not raided for an idle lead-in — she was working until she locked.
+    const daily = run([work('10:00'), work('10:01'), lockScreen('10:02', 60)]);
+
+    expect(daily.activeSec).toBe(120);
+    expect(daily.idleSec).toBe(60);
+  });
+
+  it('recovers the break a sleeping machine never reported', () => {
+    // Locked at 10:00 carrying its 150s cap, reporting resumes at 10:46.
+    const daily = run([lockScreen('10:00'), work('10:46')]);
+
+    // 46m of hole: 2m30s on the locked sample, the remaining 43m30s put back.
+    expect(daily.idleSec).toBe(46 * 60);
+    expect(daily.activeSec).toBe(60);
+  });
+
+  it('lands recovered time in the hours it actually spans', () => {
+    const daily = run([lockScreen('10:50'), work('11:20')]);
+
+    // Hole runs 10:52:30 → 11:20. Hour 10 also holds the locked sample's own 150s.
+    expect(daily.hourly[10].idleSec).toBe(MAX_GAP_SEC + 450);
+    expect(daily.hourly[11].idleSec).toBe(1200);
+  });
+
+  it('leaves a hole unaccounted when nothing says the machine was locked', () => {
+    // A killed agent or a dead network. Nobody observed the time; nobody may claim it.
+    const daily = run([work('13:00'), work('13:40')]);
+
+    expect(daily.idleSec).toBe(0);
+    expect(daily.activeSec).toBe(120);
+  });
+
+  it('never credits a trailing hole, so a machine locked overnight bills nothing', () => {
+    const daily = run([work('17:00'), lockScreen('18:00')]);
+
+    expect(daily.idleSec).toBe(MAX_GAP_SEC);
+    expect(daily.activeSec).toBe(60);
+  });
+
+  it('leaves a hole past the cap unaccounted', () => {
+    // 2h: long enough that "locked at her desk" and "went home" are the same picture.
+    const daily = run([lockScreen('16:00'), work('18:00')]);
+
+    expect(daily.idleSec).toBe(MAX_GAP_SEC);
+    expect(daily.activeSec).toBe(60);
+  });
+
+  it('makes the day add up when every hole opens on a locked machine', () => {
+    // The point of all of it. Two breaks, each taken by locking the PC and letting it
+    // sleep; between them she is back at the keyboard. Nothing may go missing.
+    const daily = run([
+      work('10:00'),
+      lockScreen('10:01'), // locks, machine sleeps, back at 10:46
+      work('10:46'),
+      lockScreen('10:47'), // locks again, back at 11:30
+      work('11:30'),
+    ]);
+
+    // First sample to the end of the last one — the whole stretch she was there.
+    const span = Math.round((+at('11:30') + 60_000 - +at('10:00')) / 1000);
+    expect(daily.activeSec + daily.idleSec).toBe(span);
+    expect(daily.activeSec).toBe(180); // three working minutes, and only those
   });
 });

@@ -6,6 +6,7 @@ import { MeetingWindow } from '../domain/meeting-window.reader';
 import { appDisplayName } from './app-display-name';
 import { clamp, elapsedSeconds, localDateString } from './activity-date.util';
 import { IDLE_THRESHOLD_SEC, LIVE_GRACE_SEC, MAX_GAP_SEC, TOP_N } from './activity.constants';
+import { fillLockedGaps, isLockedSample } from './locked-time.util';
 import {
   ActivityStatus,
   CurrentActivityView,
@@ -70,7 +71,7 @@ export class ActivityMapper {
     if (dayEnded) return 'DAY_ENDED';
     if (!sample) return 'OFFLINE';
     if (elapsedSeconds(sample.at, now) > LIVE_GRACE_SEC) return 'OFFLINE';
-    return sample.idle ? 'IDLE' : 'ACTIVE';
+    return sample.idle || isLockedSample(sample) ? 'IDLE' : 'ACTIVE';
   }
 
   static toCurrentView(
@@ -96,7 +97,7 @@ export class ActivityMapper {
       app: appDisplayName(sample.app),
       title: sample.title,
       url: sample.url,
-      idle: sample.idle,
+      idle: sample.idle || isLockedSample(sample),
       lastSampleAt: sample.at.toISOString(),
       staleSec: elapsedSeconds(sample.at, now),
     };
@@ -168,19 +169,30 @@ export class ActivityMapper {
       if (dur <= 0) return;
       // A meeting outranks the idle flag: the user is working, just not typing.
       const inMeeting = this.isInMeeting(s.at, meetings, dayIsToday, asOf);
-      const countIdle = s.idle && !inMeeting;
+      // A locked workstation is idle from the instant it locks, whatever the agent
+      // computed: with the flag missing in the field the lock screen would otherwise
+      // spend one idle threshold being counted as work.
+      const locked = isLockedSample(s);
+      const countIdle = (s.idle || locked) && !inMeeting;
       slices.push({
         hour: s.at.getHours(),
         activeSec: countIdle ? 0 : dur,
         idleSec: countIdle ? dur : 0,
         flaggedIdle: countIdle,
-        locked: s.locked,
+        locked,
         inMeeting,
         app: s.app,
         url: s.url,
       });
     });
     this.backfillIdleGrace(slices);
+
+    // Breaks taken on a locked machine arrive as holes rather than idle samples,
+    // because a sleeping PC cannot report. Put those seconds back before totalling.
+    for (const filled of fillLockedGaps(samples)) {
+      idleSec += filled.idleSec;
+      hourly[filled.hour].idleSec += filled.idleSec;
+    }
 
     for (const slice of slices) {
       if (slice.idleSec > 0) {

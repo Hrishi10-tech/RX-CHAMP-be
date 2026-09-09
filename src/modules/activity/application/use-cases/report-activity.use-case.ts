@@ -14,7 +14,7 @@ import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting
 import { ActivityGateway } from '../../presentation/activity.gateway';
 import { ReportActivityDto } from '../dto';
 import { ActivityMapper } from '../activity.mapper';
-import { DEFAULT_WORKING_BASIS_SEC, MAX_GAP_SEC } from '../activity.constants';
+import { DEFAULT_WORKING_BASIS_SEC, LOCK_SCREEN_APP, MAX_GAP_SEC } from '../activity.constants';
 import { ActivityAck, DailyActivityView } from '../activity.types';
 import { clamp, elapsedSeconds, localDateString } from '../activity-date.util';
 
@@ -57,7 +57,11 @@ export class ReportActivityUseCase {
       if (dur > 0) await this.repo.stampDuration(prev.id, dur);
     }
 
-    const idle = (body.idle ?? false) || (body.locked ?? false);
+    const app = this.trim(body.app, 200);
+    // An agent that never sends `locked` still gives the lock screen away by name, and
+    // that is the state the whole report hangs on — so believe either source.
+    const locked = (body.locked ?? false) || app === LOCK_SCREEN_APP;
+    const idle = (body.idle ?? false) || locked;
     const created = await this.repo.create({
       userId,
       date,
@@ -65,8 +69,8 @@ export class ReportActivityUseCase {
       // Locked always counts as idle, whatever the agent computed — so a report that
       // sets only `locked` still lands in the idle column.
       idle,
-      locked: body.locked ?? false,
-      app: this.trim(body.app, 200),
+      locked,
+      app,
       title: this.trim(body.title, 500),
       url: this.trim(body.url, 255),
     });

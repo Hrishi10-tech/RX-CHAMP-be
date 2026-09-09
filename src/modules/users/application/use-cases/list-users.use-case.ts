@@ -7,6 +7,10 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '../../domain/repositories/user.repository';
+import {
+  AGENT_PRESENCE_READER,
+  AgentPresenceReader,
+} from '../../domain/repositories/agent-presence.reader';
 import { ListUsersQueryDto } from '../dto';
 import { ListUsersResult } from '../user.types';
 
@@ -36,7 +40,10 @@ function endOfDay(date?: string): Date | undefined {
 export class ListUsersUseCase {
   private readonly access = new UserAccessService();
 
-  constructor(@Inject(USER_REPOSITORY) private readonly users: UserRepository) {}
+  constructor(
+    @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    @Inject(AGENT_PRESENCE_READER) private readonly presence: AgentPresenceReader,
+  ) {}
 
   async execute(me: AuthenticatedUser, query: ListUsersQueryDto = {}): Promise<ListUsersResult> {
     const page = query.page ?? 1;
@@ -65,6 +72,16 @@ export class ListUsersUseCase {
       this.users.count(base),
     ]);
 
-    return { users: list.map(UserMapper.toListItem), total, page, limit };
+    // Grouped lookups for the whole page, so the Status column costs a fixed few
+    // queries rather than several per row.
+    const now = new Date();
+    const presence = await this.presence.presenceFor(list.map((u) => u.id));
+
+    return {
+      users: list.map((u) => UserMapper.toListItem(u, presence.get(u.id), now)),
+      total,
+      page,
+      limit,
+    };
   }
 }

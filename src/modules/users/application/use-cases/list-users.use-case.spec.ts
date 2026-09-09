@@ -16,12 +16,14 @@ function actor(role: Role, id = 'a-1'): AuthenticatedUser {
 
 describe('ListUsersUseCase', () => {
   const users = { findAll: jest.fn(), count: jest.fn() } as any;
-  const useCase = new ListUsersUseCase(users);
+  const presence = { presenceFor: jest.fn() } as any;
+  const useCase = new ListUsersUseCase(users, presence);
 
   beforeEach(() => {
     jest.resetAllMocks();
     users.findAll.mockResolvedValue([]);
     users.count.mockResolvedValue(0);
+    presence.presenceFor.mockResolvedValue(new Map());
   });
 
   it('passes the requested sort through to the repository', async () => {

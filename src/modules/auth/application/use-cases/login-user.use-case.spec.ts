@@ -23,6 +23,7 @@ function buildUser(status: 'ACTIVE' | 'DISABLED' = 'ACTIVE'): User {
     shiftEnd: null,
     status,
     screenshotsEnabled: true,
+    agentActivatedAt: null,
     createdAt: new Date(),
   });
 }

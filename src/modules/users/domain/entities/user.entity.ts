@@ -23,6 +23,8 @@ export interface UserProps {
   shiftEnd: string | null;
   status: UserStatus;
   screenshotsEnabled: boolean;
+  /** First time this user's agent enrolled. Null = never installed anywhere. */
+  agentActivatedAt: Date | null;
   createdAt: Date;
 }
 
@@ -81,6 +83,9 @@ export class User {
   }
   get screenshotsEnabled(): boolean {
     return this.props.screenshotsEnabled;
+  }
+  get agentActivatedAt(): Date | null {
+    return this.props.agentActivatedAt;
   }
   get createdAt(): Date {
     return this.props.createdAt;

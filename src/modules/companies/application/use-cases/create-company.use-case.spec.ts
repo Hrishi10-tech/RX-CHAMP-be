@@ -28,6 +28,7 @@ function buildManager(id: string): User {
     shiftEnd: null,
     status: 'ACTIVE',
     screenshotsEnabled: true,
+    agentActivatedAt: null,
     createdAt: new Date(),
   });
 }

@@ -24,6 +24,7 @@ export class UserPersistenceMapper {
       shiftEnd: row.shiftEnd,
       status: row.status as UserStatus,
       screenshotsEnabled: row.screenshotsEnabled,
+      agentActivatedAt: row.agentActivatedAt,
       createdAt: row.createdAt,
     });
   }

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { USER_REPOSITORY } from './domain/repositories/user.repository';
 import { SHIFT_READER } from './domain/repositories/shift-reader.port';
 import { ROLE_READER } from './domain/repositories/role-reader.port';
+import { AGENT_PRESENCE_READER } from './domain/repositories/agent-presence.reader';
+import { PrismaAgentPresenceReader } from './infrastructure/repositories/prisma-agent-presence.reader';
 import { PostgresUserRepository } from './infrastructure/repositories/postgres-user.repository';
 import { PrismaShiftReader } from './infrastructure/repositories/prisma-shift-reader';
 import { PrismaRoleReader } from './infrastructure/repositories/prisma-role-reader';
@@ -20,6 +22,7 @@ import { UsersController } from './presentation/users.controller';
     { provide: USER_REPOSITORY, useClass: PostgresUserRepository },
     { provide: SHIFT_READER, useClass: PrismaShiftReader },
     { provide: ROLE_READER, useClass: PrismaRoleReader },
+    { provide: AGENT_PRESENCE_READER, useClass: PrismaAgentPresenceReader },
     CreateUsersUseCase,
     DeleteUserUseCase,
     GetProfileUseCase,

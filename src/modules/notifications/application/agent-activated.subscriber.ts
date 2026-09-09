@@ -26,7 +26,7 @@ export class AgentActivatedSubscriber implements OnModuleInit {
     const saved = await this.notifications.create({
       userId: event.managerId,
       type: 'AGENT_ACTIVATED',
-      title: `${event.userName} activated the Time Champ agent`,
+      title: `${event.userName} activated RX Vision`,
       body: 'Their device is now set up — attendance, activity and screen monitoring are active.',
     });
 

@@ -470,7 +470,7 @@ public partial class App : Application
         // Spread the checks: fifty agents asking in the same second, then all
         // downloading the installer at once, is a needless spike on the one box
         // that serves it.
-        var minutes = Math.Max(1, Config.UpdateCheckHours) * 60 + Random.Shared.Next(0, 31);
+        var minutes = Math.Max(5, Config.UpdateCheckMinutes) + Random.Shared.Next(0, 6);
         _updates.Interval = TimeSpan.FromMinutes(minutes);
         _updates.Tick += async (_, _) => await RunUpdateCheckAsync();
     }

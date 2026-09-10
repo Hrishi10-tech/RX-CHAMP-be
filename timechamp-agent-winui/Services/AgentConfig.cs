@@ -28,10 +28,16 @@ public sealed class AgentConfig
     public bool AutoUpdate { get; init; } = true;
 
     /// <summary>
-    /// Hours between update checks. There is also one shortly after launch, which
+    /// Minutes between update checks. There is also one shortly after launch, which
     /// is what catches a machine that was off while a release went out.
+    ///
+    /// Short on purpose: a check is one small request and the hundred-megabyte
+    /// download only happens when there is genuinely a new build, so asking often
+    /// costs almost nothing — fifty agents at this interval is a couple of hundred
+    /// requests an hour. What it buys is that a bad release can be corrected in
+    /// minutes rather than half a day.
     /// </summary>
-    public int UpdateCheckHours { get; init; } = 4;
+    public int UpdateCheckMinutes { get; init; } = 15;
 
     /// <summary>Present only for pre-configured (per-user) downloads.</summary>
     public string? EnrollmentToken { get; init; }
@@ -52,7 +58,7 @@ public sealed class AgentConfig
             IdleThresholdSeconds = fromFile.IdleThresholdSeconds,
             ActivitySeconds = fromFile.ActivitySeconds,
             AutoUpdate = fromFile.AutoUpdate,
-            UpdateCheckHours = fromFile.UpdateCheckHours,
+            UpdateCheckMinutes = fromFile.UpdateCheckMinutes,
             EnrollmentToken = embedded.EnrollmentToken,
         };
     }

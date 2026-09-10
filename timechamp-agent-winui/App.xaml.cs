@@ -19,12 +19,14 @@ public partial class App : Application
     public static ChatService Chat { get; private set; } = null!;
     public static ScreenshotService Shots { get; private set; } = null!;
     public static ActivityService Activity { get; private set; } = null!;
+    public static UpdateService Updater { get; private set; } = null!;
 
     public static App Instance { get; private set; } = null!;
 
     private DispatcherQueue _ui = null!;
     private TaskbarIcon? _tray;
     private DispatcherQueueTimer? _heartbeat;
+    private DispatcherQueueTimer? _updates;
     private MainWindow? _dashboard;
     private LoginWindow? _login;
     private FloatingButtonWindow? _bubble;
@@ -83,6 +85,7 @@ public partial class App : Application
         Shots = new ScreenshotService(Api);
         Activity = new ActivityService(Api, Config);
         Activity.DayEnded += OnDayEnded;
+        Updater = new UpdateService(Api, Config);
         // A manager can switch a user's automatic screenshots off; the server tells us
         // on every report. Stops the 5-minute capture only — tracking and the manager's
         // manual capture both carry on.
@@ -91,6 +94,7 @@ public partial class App : Application
 
         BuildTray();
         BuildHeartbeat(); // created stopped; started with the rest of tracking
+        BuildUpdateChecks(); // also stopped; needs a session before it can ask
 
         var startMinimized = Environment.GetCommandLineArgs().Contains("--minimized");
         var restored = await Api.TryRestoreSessionAsync();
@@ -112,6 +116,10 @@ public partial class App : Application
             _dayEnded = await Api.IsDayEndedAsync();
             Chat.Start();
             if (!_dayEnded) StartTracking();
+            // Deliberately outside StartTracking: a machine sitting on an ended day
+            // is the best moment there is to pick up a new build, not the worst.
+            _updates?.Start();
+            QueueStartupUpdateCheck();
             ShowBubble(); // stays up even when we start minimised — that's the point of it
             if (!startMinimized) ShowDashboard();
             if (freshlyEnrolled) await ShowDisclosureAsync();
@@ -443,6 +451,7 @@ public partial class App : Application
     private void ExitApp()
     {
         _heartbeat?.Stop();
+        _updates?.Stop();
         _bubbleWatch?.Stop();
         _bubble?.Close();
         _tray?.Dispose();
@@ -450,6 +459,48 @@ public partial class App : Application
     }
 
     // ---- Heartbeat ---------------------------------------------------------
+
+    // ---- Self-update -------------------------------------------------------
+
+    /// <summary>Periodic check for a newer agent build. Every employee's machine used
+    /// to need visiting for this; now it only needs to be switched on.</summary>
+    private void BuildUpdateChecks()
+    {
+        _updates = _ui.CreateTimer();
+        // Spread the checks: fifty agents asking in the same second, then all
+        // downloading the installer at once, is a needless spike on the one box
+        // that serves it.
+        var minutes = Math.Max(1, Config.UpdateCheckHours) * 60 + Random.Shared.Next(0, 31);
+        _updates.Interval = TimeSpan.FromMinutes(minutes);
+        _updates.Tick += async (_, _) => await RunUpdateCheckAsync();
+    }
+
+    /// <summary>One check shortly after launch — what catches a machine that was
+    /// switched off while a release went out. Delayed so it never competes with
+    /// starting up, and never blocks it.</summary>
+    private void QueueStartupUpdateCheck()
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(45));
+            _ui.TryEnqueue(async () => await RunUpdateCheckAsync());
+        });
+    }
+
+    private async Task RunUpdateCheckAsync()
+    {
+        if (!Api.IsAuthenticated) return;
+        try
+        {
+            // True means the installer is now running and about to overwrite these
+            // files, so the one useful thing left to do is get out of its way.
+            if (await Updater.TryUpdateAsync()) ExitApp();
+        }
+        catch (Exception ex)
+        {
+            Log("update check: " + ex);
+        }
+    }
 
     private void BuildHeartbeat()
     {

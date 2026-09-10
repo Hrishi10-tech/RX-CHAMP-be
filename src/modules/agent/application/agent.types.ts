@@ -9,4 +9,10 @@ export interface AgentVersionInfo {
   fileName: string;
   available: boolean;
   sizeBytes: number;
+  /**
+   * SHA-256 of the download, or '' when the store can't say. An agent updating
+   * itself checks it before running what it fetched; empty means "unverifiable",
+   * and the agent declines rather than trusting it.
+   */
+  sha256: string;
 }

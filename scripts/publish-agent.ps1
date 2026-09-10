@@ -12,12 +12,18 @@
     1. dotnet publish the WinUI agent (self-contained, win-x64).
     2. Zip that publish folder into timechamp-agent-installer/payload/app.zip.
     3. dotnet publish the installer (single-file exe that embeds app.zip).
-    4. Upload the exe to S3 under a versioned key AND the stable "latest" key.
+    4. Upload the exe to S3 under a versioned key AND the stable "latest" key,
+       stamped with the version and a SHA-256 so agents already installed can see
+       they are behind and verify what they fetch. Uploading IS the release: there
+       is no backend env to change and no redeploy to remember.
 
   Point the backend at it with:  AGENT_S3_KEY=agent/RXChampAgent.exe
 
 .PARAMETER Version
-  Agent version, used for the versioned S3 key. Default 2.0.0.
+  Agent version, used for the versioned S3 key and stamped on the object so agents
+  in the field can tell they are behind. Defaults to <Version> in the agent csproj,
+  which is where it should be changed — passing this by hand risks labelling a build
+  as something it isn't.
 
 .PARAMETER Bucket / Region
   Target S3 bucket / region. Default rx-timechamp / ap-south-1.
@@ -34,7 +40,7 @@
 #>
 [CmdletBinding()]
 param(
-  [string]$Version = '2.0.0',
+  [string]$Version = '',
   [string]$Bucket  = 'rx-timechamp',
   [string]$Region  = 'ap-south-1',
   [switch]$SkipAgentBuild,
@@ -47,6 +53,19 @@ Set-Location $repo
 
 $winui     = Join-Path $repo 'timechamp-agent-winui\TimeChampAgentWinUI.csproj'
 $installer = Join-Path $repo 'timechamp-agent-installer\TimeChampAgentInstaller.csproj'
+
+# The version is read from the agent's own csproj unless one is passed. Agents in
+# the field compare their built-in assembly version against the version stamped on
+# the S3 object, so the two drifting apart is the one mistake that would either
+# stop updates dead or leave machines reinstalling the same build forever. Reading
+# it from the single place it is declared makes that impossible.
+if (-not $Version) {
+  $node = ([xml](Get-Content $winui)).Project.PropertyGroup.Version |
+            Where-Object { $_ } | Select-Object -First 1
+  if (-not $node) { throw "No <Version> in $winui - pass -Version explicitly." }
+  $Version = "$node".Trim()
+  Write-Host "Version $Version (from the agent csproj)" -ForegroundColor Cyan
+}
 $payload   = Join-Path $repo 'timechamp-agent-installer\payload\app.zip'
 $outExe    = Join-Path $repo 'timechamp-agent-installer\publish\RXChampAgent.exe'
 
@@ -108,10 +127,20 @@ if (-not $env:AWS_ACCESS_KEY_ID -and (Test-Path (Join-Path $repo '.env'))) {
 
 $versionedKey = "agent/$Version/RXChampAgent.exe"
 $latestKey    = 'agent/RXChampAgent.exe'
+
+# Stamp the version and a checksum onto the object itself. Agents already in the
+# field read these back through GET /agent/version to decide whether to update, so
+# uploading IS the release — there is no backend env to change afterwards, and a
+# download that arrived wrong is refused rather than run.
+$sha256 = (Get-FileHash $outExe -Algorithm SHA256).Hash.ToLower()
+$meta   = "agent-version=$Version,agent-sha256=$sha256"
+Write-Host "  version $Version  sha256 $sha256"
+
 Step "Uploading to s3://$Bucket/$versionedKey and /$latestKey"
-aws s3 cp $outExe "s3://$Bucket/$versionedKey" --region $Region --only-show-errors
+aws s3 cp $outExe "s3://$Bucket/$versionedKey" --region $Region --metadata $meta --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'S3 upload (versioned) failed.' }
-aws s3 cp $outExe "s3://$Bucket/$latestKey" --region $Region --only-show-errors
+aws s3 cp $outExe "s3://$Bucket/$latestKey" --region $Region --metadata $meta --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'S3 upload (latest) failed.' }
 
 Write-Host "`nDone. Set AGENT_S3_KEY=$latestKey (or $versionedKey to pin)." -ForegroundColor Green
+Write-Host "Agents on an older version will pick $Version up on their next check." -ForegroundColor Green

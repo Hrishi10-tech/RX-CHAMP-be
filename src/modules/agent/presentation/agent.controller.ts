@@ -53,10 +53,15 @@ export class AgentController {
   async version(): Promise<EnvelopePayload<AgentVersionInfo>> {
     const info = await this.binary.info();
     return envelope<AgentVersionInfo>({
-      version: this.config.get<string>('agent.version') ?? '',
+      // What the store is actually holding wins over the configured value. An
+      // agent updating itself acts on this, so it has to describe the bytes it
+      // would get — and it lets publishing a build be the whole release, with no
+      // backend deploy to remember afterwards.
+      version: info.version ?? this.config.get<string>('agent.version') ?? '',
       fileName: this.config.get<string>('agent.fileName') ?? '',
       available: info.available,
       sizeBytes: info.sizeBytes,
+      sha256: info.sha256 ?? '',
     });
   }
 

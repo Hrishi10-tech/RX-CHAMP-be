@@ -17,6 +17,11 @@ using System.Text;
 
 const string Magic = "TCAGCFG1";
 
+// Run by the agent updating itself rather than by a person double-clicking. Same
+// install, minus everything that would be noticed: no message box if it fails, and
+// the agent comes back minimised instead of opening its dashboard on the employee.
+var silent = args.Contains("--update", StringComparer.OrdinalIgnoreCase);
+
 try
 {
     var installDir = Path.Combine(
@@ -45,20 +50,22 @@ try
 
     if (File.Exists(exePath))
     {
-        Process.Start(new ProcessStartInfo(exePath)
+        var relaunch = new ProcessStartInfo(exePath)
         {
             UseShellExecute = true,
             WorkingDirectory = installDir,
-        });
+        };
+        if (silent) relaunch.ArgumentList.Add("--minimized");
+        Process.Start(relaunch);
     }
     else
     {
-        Fail("The agent files could not be installed. Please contact your administrator.");
+        Fail("The agent files could not be installed. Please contact your administrator.", silent);
     }
 }
 catch (Exception ex)
 {
-    Fail("Couldn't install the RX Vision agent.\n\n" + ex.Message);
+    Fail("Couldn't install the RX Vision agent.\n\n" + ex.Message, silent);
 }
 
 static void ExtractPayload(string installDir)
@@ -126,8 +133,12 @@ static void TryWriteEnroll(string installDir)
     }
 }
 
-static void Fail(string message)
+/// <summary>Reports a failed install. During a silent self-update there is nobody
+/// sitting in front of the machine to read it, and the old agent is still installed,
+/// so the only right move is to say nothing and leave what works in place.</summary>
+static void Fail(string message, bool silent)
 {
+    if (silent) return;
     // Minimal message box via Win32 so we don't pull in WinForms/WPF.
     MessageBoxW(IntPtr.Zero, message, "RX Vision", 0x10 /* MB_ICONERROR */);
 }

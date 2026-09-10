@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace TimeChampAgent.Services;
@@ -19,6 +20,7 @@ public sealed class ApiClient
     private readonly AgentConfig _config;
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _http;
+    private readonly HttpClient _bulk;
     private readonly Uri _baseUri;
 
     /// <summary>Serialises /auth/refresh — see <see cref="RefreshAsync"/>.</summary>
@@ -46,6 +48,15 @@ public sealed class ApiClient
             AllowAutoRedirect = false,
         };
         _http = new HttpClient(handler) { BaseAddress = _baseUri, Timeout = TimeSpan.FromSeconds(20) };
+        // A second client over the same cookies, for the one request that is a
+        // hundred megabytes rather than a few hundred bytes: the agent installer,
+        // when the agent is updating itself. The 20-second timeout above is right
+        // for every API call and would abort this one every time.
+        _bulk = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = _baseUri,
+            Timeout = TimeSpan.FromMinutes(30),
+        };
     }
 
     // ---- Auth --------------------------------------------------------------
@@ -320,6 +331,66 @@ public sealed class ApiClient
         {
             return false;
         }
+    }
+
+    // ---- Self-update -------------------------------------------------------
+
+    /// <summary>The build the server is currently offering. Null when it cannot be
+    /// reached or the session is gone — treated as "nothing to do", never as "no
+    /// update exists", so a bad answer can't talk the agent into anything.</summary>
+    public Task<AgentVersionInfo?> GetAgentVersionAsync(CancellationToken ct = default) =>
+        SendJsonAsync<AgentVersionInfo>(HttpMethod.Get, "agent/version", body: null, ct);
+
+    /// <summary>
+    /// Downloads the generic installer to <paramref name="destPath"/> and returns its
+    /// SHA-256, or null if anything went wrong. No <c>userId</c> is sent, so the bytes
+    /// come back exactly as they sit in the store — no per-user trailer — which is what
+    /// makes the published checksum something the caller can actually compare against.
+    /// </summary>
+    public async Task<string?> DownloadAgentAsync(string destPath, CancellationToken ct = default)
+    {
+        try
+        {
+            var res = await SendBulkWithRefreshAsync(
+                () => new HttpRequestMessage(HttpMethod.Get, "agent/download"), ct);
+            using (res)
+            {
+                if (!res.IsSuccessStatusCode) return null;
+
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                await using var src = await res.Content.ReadAsStreamAsync(ct);
+                await using var dst = File.Create(destPath);
+
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await src.ReadAsync(buffer, ct)) > 0)
+                {
+                    hash.AppendData(buffer, 0, read);
+                    await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+                return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>As <see cref="SendWithRefreshAsync"/>, on the long-timeout client and
+    /// without buffering the body — the response here is the whole installer.</summary>
+    private async Task<HttpResponseMessage> SendBulkWithRefreshAsync(
+        Func<HttpRequestMessage> build,
+        CancellationToken ct)
+    {
+        var res = await _bulk.SendAsync(build(), HttpCompletionOption.ResponseHeadersRead, ct);
+        if (res.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            res.Dispose();
+            if (await RefreshAsync(ct))
+                res = await _bulk.SendAsync(build(), HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        return res;
     }
 
     // ---- Plumbing ----------------------------------------------------------

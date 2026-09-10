@@ -37,7 +37,15 @@ export class S3AgentBinaryStore implements AgentBinaryStore {
       const head = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: this.key }),
       );
-      return { available: true, sizeBytes: head.ContentLength ?? 0, isDirectory: false };
+      // Stamped by scripts/publish-agent.ps1. The SDK lowercases metadata keys.
+      const meta = head.Metadata ?? {};
+      return {
+        available: true,
+        sizeBytes: head.ContentLength ?? 0,
+        isDirectory: false,
+        version: meta['agent-version'] || undefined,
+        sha256: meta['agent-sha256'] || undefined,
+      };
     } catch (err) {
       // A missing object (404) just means "not uploaded yet" — not an error.
       this.logger.debug(

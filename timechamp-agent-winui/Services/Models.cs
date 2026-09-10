@@ -173,3 +173,21 @@ public sealed class DailyActivity
 
     [JsonPropertyName("hourly")] public List<HourBucket> Hourly { get; set; } = new();
 }
+
+/// <summary>What the server is offering as the current agent build (/agent/version).
+/// Read by <see cref="UpdateService"/> to decide whether this machine is behind.</summary>
+public sealed class AgentVersionInfo
+{
+    /// <summary>Version of the binary actually sitting in the store, e.g. "2.1.0".</summary>
+    [JsonPropertyName("version")] public string Version { get; set; } = "";
+
+    /// <summary>False when no build has been published yet — nothing to update to.</summary>
+    [JsonPropertyName("available")] public bool Available { get; set; }
+
+    /// <summary>Exact byte length of the download, so a truncated one is obvious.</summary>
+    [JsonPropertyName("sizeBytes")] public long SizeBytes { get; set; }
+
+    /// <summary>SHA-256 of those bytes, or "" when the server cannot vouch for them.
+    /// An update is only applied against a hash that matches.</summary>
+    [JsonPropertyName("sha256")] public string Sha256 { get; set; } = "";
+}

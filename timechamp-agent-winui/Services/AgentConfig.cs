@@ -18,6 +18,21 @@ public sealed class AgentConfig
     /// <summary>How often the foreground app/website is sampled and reported.</summary>
     public int ActivitySeconds { get; init; } = 60;
 
+    /// <summary>
+    /// Whether the agent replaces itself when the server offers a newer build.
+    /// On by default — the whole point is that a fix reaches every machine without
+    /// anyone visiting it. Setting it false in appsettings.json pins a machine to
+    /// the build it has, which is how a suspect release gets contained without a
+    /// rebuild.
+    /// </summary>
+    public bool AutoUpdate { get; init; } = true;
+
+    /// <summary>
+    /// Hours between update checks. There is also one shortly after launch, which
+    /// is what catches a machine that was off while a release went out.
+    /// </summary>
+    public int UpdateCheckHours { get; init; } = 4;
+
     /// <summary>Present only for pre-configured (per-user) downloads.</summary>
     public string? EnrollmentToken { get; init; }
 
@@ -36,6 +51,8 @@ public sealed class AgentConfig
             HeartbeatSeconds = fromFile.HeartbeatSeconds,
             IdleThresholdSeconds = fromFile.IdleThresholdSeconds,
             ActivitySeconds = fromFile.ActivitySeconds,
+            AutoUpdate = fromFile.AutoUpdate,
+            UpdateCheckHours = fromFile.UpdateCheckHours,
             EnrollmentToken = embedded.EnrollmentToken,
         };
     }

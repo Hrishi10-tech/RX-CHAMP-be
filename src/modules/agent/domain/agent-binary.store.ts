@@ -13,6 +13,18 @@ export interface AgentBinaryInfo {
    * S3-backed binary is always a single object, so this is always false there.
    */
   isDirectory: boolean;
+  /**
+   * Version of the binary actually in the store, stamped on it at upload time.
+   *
+   * The point of reading it from the store rather than an env var is that
+   * releasing an agent must not need the backend redeployed: publishing a build
+   * is the whole release, and every agent in the field learns about it from the
+   * object itself. Undefined where the store can't say (a local dev build), and
+   * the configured version is used instead.
+   */
+  version?: string;
+  /** SHA-256 of those bytes, so an agent can refuse a download that arrived wrong. */
+  sha256?: string;
 }
 
 /**

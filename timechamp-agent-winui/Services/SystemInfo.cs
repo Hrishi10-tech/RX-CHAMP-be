@@ -30,6 +30,82 @@ public static class IdleWatcher
 }
 
 /// <summary>
+/// Notices that the machine was asleep — the one thing no other signal here can see.
+///
+/// A sleeping PC cannot report, so a break taken by closing the lid arrives at the
+/// server as a hole in the samples rather than as idle time, and those minutes are
+/// dropped from both columns. Where the user pressed Win+L first the lock screen
+/// proves nobody was working, but a lid closed without locking leaves no evidence at
+/// all — one user lost 1h48m that way in a single day.
+///
+/// Two clocks tell them apart: the wall clock keeps running while the machine is
+/// suspended, and <c>QueryUnbiasedInterruptTime</c> does not. If the wall clock has
+/// moved further than the unbiased one, the difference is exactly how long the
+/// machine slept. It also distinguishes sleep from the agent being killed — a dead
+/// process advances neither.
+/// </summary>
+public static class SleepWatcher
+{
+    /// <summary>Interrupt time excluding any time the system spent suspended, in
+    /// 100-nanosecond units — the same unit as <see cref="TimeSpan.Ticks"/>.</summary>
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+
+    /// <summary>
+    /// Shortest sleep worth reporting, matching the longest span the server lets a
+    /// single sample stand for. Below this the sample either side already covers the
+    /// time, so reporting it would double-count rather than recover anything.
+    /// </summary>
+    public static readonly TimeSpan MinReportable = TimeSpan.FromSeconds(150);
+
+    private static DateTime _wall;
+    private static ulong _unbiased;
+    private static bool _primed;
+
+    /// <summary>Starts watching from now, so the first comparison has something to
+    /// measure against and the agent's own startup is never read as a sleep.</summary>
+    public static void Prime()
+    {
+        if (!QueryUnbiasedInterruptTime(out var unbiased)) return;
+        _wall = DateTime.UtcNow;
+        _unbiased = unbiased;
+        _primed = true;
+    }
+
+    /// <summary>
+    /// How long the machine slept since the last call, or null for "it didn't, or not
+    /// long enough to matter". Re-marks both clocks on every call, so this is meant to
+    /// be called once per sampling tick and nowhere else.
+    /// </summary>
+    public static TimeSpan? SleepSinceLastCall()
+    {
+        if (!QueryUnbiasedInterruptTime(out var unbiasedNow)) return null;
+        var wallNow = DateTime.UtcNow;
+
+        if (!_primed)
+        {
+            _wall = wallNow;
+            _unbiased = unbiasedNow;
+            _primed = true;
+            return null;
+        }
+
+        var wallDelta = wallNow - _wall;
+        var awakeDelta = TimeSpan.FromTicks((long)(unbiasedNow - _unbiased));
+        _wall = wallNow;
+        _unbiased = unbiasedNow;
+
+        // A wall clock that went backwards means it was adjusted, not that time was
+        // lost; there is nothing to recover and guessing would invent idle time.
+        if (wallDelta < TimeSpan.Zero) return null;
+
+        var slept = wallDelta - awakeDelta;
+        return slept >= MinReportable ? slept : null;
+    }
+}
+
+/// <summary>
 /// When the user signed into Windows this session. Uses the shell (explorer.exe)
 /// start time, which is created at interactive logon — so it reflects the real PC
 /// login even if the agent itself is restarted later in the day. Falls back to the

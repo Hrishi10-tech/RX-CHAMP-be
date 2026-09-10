@@ -24,6 +24,19 @@ public sealed class ActivityService
     private Timer? _timer;
     private volatile bool _run;
 
+    /// <summary>
+    /// Serialises reporting. The timer and the lock/unlock hook can both fire a
+    /// sample, and the server closes each sample by the arrival of the next one — so
+    /// two reports racing would stamp each other's durations. It matters more now
+    /// that waking sends a backdated sample immediately before the live one.
+    /// </summary>
+    private readonly SemaphoreSlim _reporting = new(1, 1);
+
+    /// <summary>When the last sample this agent sent was stamped. A backdated sleep
+    /// sample is never allowed to land before it, because the server only closes a
+    /// sample with one that comes after it.</summary>
+    private DateTime _lastSampleAtUtc = DateTime.MinValue;
+
     /// <summary>Raised (once) when the user's working day has ended (End Day).</summary>
     public event Action? DayEnded;
 
@@ -54,6 +67,10 @@ public sealed class ActivityService
         LockWatcher.Start();
         LockWatcher.Changed += OnLockChanged;
 
+        // Start the clocks together, so the stretch before tracking began is never
+        // mistaken for a sleep the user should be credited for.
+        SleepWatcher.Prime();
+
         _ = SampleAndReport(); // one immediately so "using now" isn't empty
     }
 
@@ -71,10 +88,16 @@ public sealed class ActivityService
     private async Task SampleAndReport()
     {
         if (!_run || !_api.IsAuthenticated) return;
+        await _reporting.WaitAsync();
         try
         {
+            // Before the live sample: if the machine was asleep, say so, so the hole
+            // it left is accounted for rather than silently dropped.
+            await ReportSleepIfAnyAsync();
+
             var report = await Task.Run(BuildSample);
             var ack = await _api.ReportActivityAsync(report);
+            _lastSampleAtUtc = DateTime.UtcNow;
 
             // Independent of the day-ended check below: this governs the 5-minute
             // capture alone, and must not touch tracking.
@@ -88,6 +111,52 @@ public sealed class ActivityService
             }
         }
         catch { /* best-effort telemetry */ }
+        finally
+        {
+            _reporting.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reports a stretch the machine spent asleep, as one sample stamped at the moment
+    /// it went under and marked locked.
+    ///
+    /// That marking is the whole trick. The server already knows how to account for a
+    /// hole that opens on a locked sample — it was written for Win+L, where the lock
+    /// screen proves nobody was working — and a machine that was demonstrably asleep
+    /// is the same fact by a different route. So this needs nothing new on the server:
+    /// the sleep sample closes the day's last waking one, and the gap after it is
+    /// credited as idle by the rules already in place.
+    ///
+    /// Sent before the live sample and never after, because the server closes each
+    /// sample with whichever one arrives next.
+    /// </summary>
+    private async Task ReportSleepIfAnyAsync()
+    {
+        var slept = SleepWatcher.SleepSinceLastCall();
+        if (slept is null) return;
+
+        var wentUnder = DateTime.UtcNow - slept.Value;
+        // Never behind the last sample sent: the server ignores a sample that predates
+        // the open one, which would leave the hole unexplained after all.
+        if (_lastSampleAtUtc != DateTime.MinValue && wentUnder <= _lastSampleAtUtc)
+            wentUnder = _lastSampleAtUtc.AddSeconds(1);
+        if (wentUnder >= DateTime.UtcNow) return;
+
+        var ok = await _api.ReportActivityAsync(new ActivityReport
+        {
+            At = wentUnder.ToString("o"),
+            Idle = true,
+            Locked = true,
+            // Nobody was in front of any app, so attribute the time to none.
+            App = null,
+            Title = null,
+            Url = null,
+            LoginAt = SessionInfo.LoginTimeUtc()?.ToString("o"),
+        });
+
+        if (ok is not null) _lastSampleAtUtc = wentUnder;
+        App.Log($"slept {slept.Value.TotalMinutes:F0}m from {wentUnder:HH:mm:ss}Z — reported");
     }
 
     /// <summary>Reads the foreground app/window/website + idle into a report. Off the UI thread.</summary>

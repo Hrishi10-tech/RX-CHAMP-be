@@ -46,4 +46,12 @@ export interface CompanyRepository {
     page?: PageFilter,
   ): Promise<ManagerUserRecord[]>;
   countManagerUsers(companyId: string, managerId: string): Promise<number>;
+  /** Active (not already deleted) members attached to this company. */
+  countActiveUsers(companyId: string): Promise<number>;
+  /**
+   * Soft-deletes the company and every member still attached to it, and answers how
+   * many members went with it. One transaction, because a company that disappears
+   * while its members stay behind leaves people with no company at all.
+   */
+  softDelete(id: string): Promise<number>;
 }

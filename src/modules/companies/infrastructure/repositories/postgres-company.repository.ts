@@ -136,6 +136,23 @@ export class PostgresCompanyRepository implements CompanyRepository {
     return this.toRecord(row);
   }
 
+  async countActiveUsers(companyId: string): Promise<number> {
+    return this.prisma.user.count({ where: { companyId, deletedAt: null } });
+  }
+
+  async softDelete(id: string): Promise<number> {
+    const deletedAt = new Date();
+    // Same stamp for both, so a restore can find exactly what went together.
+    const [users] = await this.prisma.$transaction([
+      this.prisma.user.updateMany({
+        where: { companyId: id, deletedAt: null },
+        data: { deletedAt },
+      }),
+      this.prisma.company.update({ where: { id }, data: { deletedAt } }),
+    ]);
+    return users.count;
+  }
+
   private toRecord(row: PrismaCompany): CompanyRecord {
     return { id: row.id, name: row.name, createdAt: row.createdAt };
   }

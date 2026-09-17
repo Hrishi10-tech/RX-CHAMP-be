@@ -43,6 +43,14 @@ export interface CompanyAssignmentSummary {
   errors: BulkError<'managerId'>[];
 }
 
+export interface DeleteCompanyResult {
+  deleted: true;
+  id: string;
+  name: string;
+  /** Members soft-deleted alongside the company. */
+  membersRemoved: number;
+}
+
 export interface CreateCompanyResult extends PublicCompany {
   assignments: CompanyAssignmentSummary;
 }

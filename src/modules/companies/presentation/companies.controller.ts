@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { RolesGuard } from '@shared/rbac/roles.guard';
@@ -14,6 +24,7 @@ import {
 } from '../application/dto';
 import { AssignCompanyUseCase } from '../application/use-cases/assign-company.use-case';
 import { CreateCompanyUseCase } from '../application/use-cases/create-company.use-case';
+import { DeleteCompanyUseCase } from '../application/use-cases/delete-company.use-case';
 import { ListCompaniesUseCase } from '../application/use-cases/list-companies.use-case';
 import { ListManagerUsersUseCase } from '../application/use-cases/list-manager-users.use-case';
 
@@ -28,6 +39,7 @@ export class CompaniesController {
     private readonly listCompanies: ListCompaniesUseCase,
     private readonly listManagerUsers: ListManagerUsersUseCase,
     private readonly assignCompany: AssignCompanyUseCase,
+    private readonly deleteCompany: DeleteCompanyUseCase,
   ) {}
 
   @Post()
@@ -46,6 +58,18 @@ export class CompaniesController {
     const { companies, total, page, limit } = await this.listCompanies.execute(query);
     const totalPages = Math.ceil(total / limit);
     return envelope(companies, { meta: { total, page, limit, totalPages } });
+  }
+
+  @Delete(':id')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary:
+      'Delete a company (SUPER_ADMIN). Soft delete: the company and any members still ' +
+      'attached go with it, and every record is kept.',
+  })
+  async remove(@Param('id') id: string) {
+    const result = await this.deleteCompany.execute(id);
+    return envelope(result);
   }
 
   @Post(':companyId/managers/:managerId')

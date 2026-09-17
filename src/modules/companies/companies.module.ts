@@ -7,6 +7,7 @@ import { CreateCompanyUseCase } from './application/use-cases/create-company.use
 import { DeleteCompanyUseCase } from './application/use-cases/delete-company.use-case';
 import { ListCompaniesUseCase } from './application/use-cases/list-companies.use-case';
 import { ListManagerUsersUseCase } from './application/use-cases/list-manager-users.use-case';
+import { UpdateCompanyUseCase } from './application/use-cases/update-company.use-case';
 import { CompaniesController } from './presentation/companies.controller';
 
 @Module({
@@ -19,6 +20,7 @@ import { CompaniesController } from './presentation/companies.controller';
     DeleteCompanyUseCase,
     ListCompaniesUseCase,
     ListManagerUsersUseCase,
+    UpdateCompanyUseCase,
   ],
 })
 export class CompaniesModule {}

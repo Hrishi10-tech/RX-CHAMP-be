@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -21,12 +22,14 @@ import {
   CreateCompanyDto,
   ListCompaniesQueryDto,
   ListManagerUsersQueryDto,
+  UpdateCompanyDto,
 } from '../application/dto';
 import { AssignCompanyUseCase } from '../application/use-cases/assign-company.use-case';
 import { CreateCompanyUseCase } from '../application/use-cases/create-company.use-case';
 import { DeleteCompanyUseCase } from '../application/use-cases/delete-company.use-case';
 import { ListCompaniesUseCase } from '../application/use-cases/list-companies.use-case';
 import { ListManagerUsersUseCase } from '../application/use-cases/list-manager-users.use-case';
+import { UpdateCompanyUseCase } from '../application/use-cases/update-company.use-case';
 
 @ApiTags('companies')
 @ApiBearerAuth()
@@ -40,6 +43,7 @@ export class CompaniesController {
     private readonly listManagerUsers: ListManagerUsersUseCase,
     private readonly assignCompany: AssignCompanyUseCase,
     private readonly deleteCompany: DeleteCompanyUseCase,
+    private readonly updateCompany: UpdateCompanyUseCase,
   ) {}
 
   @Post()
@@ -58,6 +62,14 @@ export class CompaniesController {
     const { companies, total, page, limit } = await this.listCompanies.execute(query);
     const totalPages = Math.ceil(total / limit);
     return envelope(companies, { meta: { total, page, limit, totalPages } });
+  }
+
+  @Patch(':id')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Rename a company (SUPER_ADMIN)' })
+  async update(@Param('id') id: string, @Body() body: UpdateCompanyDto) {
+    const company = await this.updateCompany.execute(id, { name: body.name });
+    return envelope(company);
   }
 
   @Delete(':id')

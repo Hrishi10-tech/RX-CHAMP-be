@@ -136,6 +136,11 @@ export class PostgresCompanyRepository implements CompanyRepository {
     return this.toRecord(row);
   }
 
+  async rename(id: string, name: string): Promise<CompanyRecord> {
+    const row = await this.prisma.company.update({ where: { id }, data: { name } });
+    return this.toRecord(row);
+  }
+
   async countActiveUsers(companyId: string): Promise<number> {
     return this.prisma.user.count({ where: { companyId, deletedAt: null } });
   }

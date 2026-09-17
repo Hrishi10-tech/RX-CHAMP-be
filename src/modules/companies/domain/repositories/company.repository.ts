@@ -40,6 +40,7 @@ export interface CompanyRepository {
   findAllWithStats(filter?: ListCompaniesFilter): Promise<CompanyWithStats[]>;
   count(filter?: ListCompaniesFilter): Promise<number>;
   create(data: CreateCompanyData): Promise<CompanyRecord>;
+  rename(id: string, name: string): Promise<CompanyRecord>;
   findManagerUsers(
     companyId: string,
     managerId: string,

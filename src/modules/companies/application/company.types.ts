@@ -43,6 +43,10 @@ export interface CompanyAssignmentSummary {
   errors: BulkError<'managerId'>[];
 }
 
+export interface UpdateCompanyInput {
+  name: string;
+}
+
 export interface DeleteCompanyResult {
   deleted: true;
   id: string;

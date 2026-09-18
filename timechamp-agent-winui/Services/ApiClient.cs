@@ -33,6 +33,18 @@ public sealed class ApiClient
     public PublicUser? CurrentUser { get; private set; }
     public bool IsAuthenticated => CurrentUser is not null;
 
+    /// <summary>
+    /// Whether the last sign-in attempt failed because the server could not be
+    /// reached, rather than because it answered and refused.
+    ///
+    /// The difference decides what the agent does next: a machine that booted before
+    /// its wifi should keep trying quietly, while a genuinely rejected session needs
+    /// a person. Without this both looked identical — every failure was treated as
+    /// rejection, and an agent that started a few seconds early sat on a login screen
+    /// for the rest of the day.
+    /// </summary>
+    public bool LastFailureWasNetwork { get; private set; }
+
     /// <summary>Raised when the session is gone and could not be recovered — the agent
     /// is no longer tracking and must say so instead of looping on dead requests.</summary>
     public event Action? SessionLost;
@@ -93,6 +105,7 @@ public sealed class ApiClient
             using var res = await _http.PostAsJsonAsync(
                 "auth/enroll", new { token }, JsonOpts.Default, ct);
 
+            LastFailureWasNetwork = false; // the server answered
             if (!res.IsSuccessStatusCode)
                 return (false, $"Enrollment failed ({(int)res.StatusCode}).");
 
@@ -103,6 +116,7 @@ public sealed class ApiClient
         }
         catch (Exception ex)
         {
+            LastFailureWasNetwork = ex is HttpRequestException or TaskCanceledException;
             return (false, $"Can't reach the server. {ex.Message}");
         }
     }
@@ -111,7 +125,11 @@ public sealed class ApiClient
     public async Task<bool> TryRestoreSessionAsync(CancellationToken ct = default)
     {
         var saved = SessionStore.Load();
-        if (saved is null || string.IsNullOrWhiteSpace(saved.RefreshToken)) return false;
+        if (saved is null || string.IsNullOrWhiteSpace(saved.RefreshToken))
+        {
+            LastFailureWasNetwork = false;
+            return false;
+        }
 
         // Seed the refresh cookie (scoped to the /auth path, matching the backend).
         var authUri = new Uri(_baseUri, "auth/");
@@ -171,13 +189,23 @@ public sealed class ApiClient
         try
         {
             using var res = await _http.PostAsync("auth/refresh", content: null, ct);
+            // The server answered. Whatever it said, the network is not the problem.
+            LastFailureWasNetwork = false;
             if (res.IsSuccessStatusCode)
             {
                 PersistSession(); // refresh rotates the token — save the new one
                 return true;
             }
         }
-        catch { /* fall through */ }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Nothing answered: no DNS, no route, or it timed out. Worth retrying.
+            LastFailureWasNetwork = true;
+        }
+        catch
+        {
+            LastFailureWasNetwork = false;
+        }
         return false;
     }
 

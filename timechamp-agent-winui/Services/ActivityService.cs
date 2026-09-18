@@ -37,6 +37,13 @@ public sealed class ActivityService
     /// sample with one that comes after it.</summary>
     private DateTime _lastSampleAtUtc = DateTime.MinValue;
 
+    /// <summary>When a sample last reached the server, for the watchdog to judge by.
+    /// <see cref="DateTime.MinValue"/> until the first one lands.</summary>
+    public DateTime LastSampleAtUtc => _lastSampleAtUtc;
+
+    /// <summary>Whether sampling is meant to be running — false after <see cref="Stop"/>.</summary>
+    public bool IsRunning => _run;
+
     /// <summary>Raised (once) when the user's working day has ended (End Day).</summary>
     public event Action? DayEnded;
 

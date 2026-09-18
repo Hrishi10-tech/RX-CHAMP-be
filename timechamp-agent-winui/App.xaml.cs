@@ -32,6 +32,14 @@ public partial class App : Application
     private FloatingButtonWindow? _bubble;
     private DispatcherQueueTimer? _bubbleWatch;
     private bool _dayEnded;
+
+    /// <summary>How long tracking may produce nothing before the watchdog restarts it.
+    /// Long enough that a slow network or a paused machine is not mistaken for a
+    /// stall, short enough that nobody loses a morning to one.</summary>
+    private static readonly TimeSpan TrackingStallAfter = TimeSpan.FromMinutes(10);
+
+    private DispatcherQueueTimer? _trackingWatchdog;
+    private DateTime _trackingStartedUtc = DateTime.UtcNow;
     /// <summary>Set once the session was lost, so every stalled loop reporting the same
     /// failure doesn't re-run the teardown.</summary>
     private bool _sessionLost;
@@ -110,19 +118,15 @@ public partial class App : Application
 
         if (restored)
         {
-            // Ask the server before starting anything. Without this a restart after
-            // "End Day" re-arms tracking and fires one immediate screenshot before
-            // the first report comes back and shuts it down again.
-            _dayEnded = await Api.IsDayEndedAsync();
-            Chat.Start();
-            if (!_dayEnded) StartTracking();
-            // Deliberately outside StartTracking: a machine sitting on an ended day
-            // is the best moment there is to pick up a new build, not the worst.
-            _updates?.Start();
-            QueueStartupUpdateCheck();
-            ShowBubble(); // stays up even when we start minimised — that's the point of it
-            if (!startMinimized) ShowDashboard();
-            if (freshlyEnrolled) await ShowDisclosureAsync();
+            await BeginSessionAsync(startMinimized, freshlyEnrolled);
+        }
+        else if (Api.LastFailureWasNetwork)
+        {
+            // The machine booted faster than its wifi. Nothing is wrong with the
+            // session — it could not be asked about yet — so keep asking quietly
+            // rather than showing a login screen the user has no reason to fill in
+            // and, worse, sitting dead behind it for the rest of the day.
+            WaitForNetworkThenStart(startMinimized);
         }
         else
         {
@@ -130,10 +134,76 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Everything that follows a session actually existing.</summary>
+    private async Task BeginSessionAsync(bool startMinimized, bool freshlyEnrolled)
+    {
+        // Ask the server before starting anything. Without this a restart after
+        // "End Day" re-arms tracking and fires one immediate screenshot before
+        // the first report comes back and shuts it down again.
+        _dayEnded = await Api.IsDayEndedAsync();
+        Chat.Start();
+        if (!_dayEnded) StartTracking();
+        // Deliberately outside StartTracking: a machine sitting on an ended day
+        // is the best moment there is to pick up a new build, not the worst.
+        _updates?.Start();
+        QueueStartupUpdateCheck();
+        ShowBubble(); // stays up even when we start minimised — that's the point of it
+        StartTrackingWatchdog();
+        if (!startMinimized) ShowDashboard();
+        if (freshlyEnrolled) await ShowDisclosureAsync();
+    }
+
+    /// <summary>
+    /// Retries the session until the network answers. One attempt was enough to lose
+    /// a whole day: two machines booted before their wifi, failed the single try,
+    /// and sat on the login screen until someone walked over and restarted them.
+    ///
+    /// Silent on purpose — the user is not being asked for anything, and a login
+    /// screen appearing and vanishing would only invite them to type into it.
+    /// </summary>
+    private void WaitForNetworkThenStart(bool startMinimized)
+    {
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1));
+
+                var ok = await Api.TryRestoreSessionAsync();
+                if (!ok && !string.IsNullOrEmpty(Config.EnrollmentToken))
+                {
+                    var (enrolled, _) = await Api.EnrollAsync(Config.EnrollmentToken!);
+                    ok = enrolled;
+                    if (ok) StartupRegistration.Enable();
+                }
+
+                if (ok)
+                {
+                    _ui.TryEnqueue(async () =>
+                    {
+                        _login?.Close();
+                        _login = null;
+                        await BeginSessionAsync(startMinimized, freshlyEnrolled: false);
+                    });
+                    return;
+                }
+
+                // A server that answers and refuses is a real problem, and one the
+                // user can fix by signing in. Stop retrying and say so.
+                if (!Api.LastFailureWasNetwork)
+                {
+                    _ui.TryEnqueue(ShowLogin);
+                    return;
+                }
+            }
+        });
+    }
+
     /// <summary>Starts everything that records the working day. Attendance included —
     /// after "End Day" nothing may keep counting, so the heartbeat lives here too.</summary>
     private void StartTracking()
     {
+        _trackingStartedUtc = DateTime.UtcNow;
         Shots.Start();
         Activity.Start();
         _heartbeat?.Start();
@@ -222,6 +292,45 @@ public partial class App : Application
         _dashboard.AppWindow.Show();
         _dashboard.Activate();
         _ = _dashboard.ViewModel.RefreshAsync();
+    }
+
+    /// <summary>
+    /// Restarts tracking when it has quietly stopped.
+    ///
+    /// Four times in one week an agent sat signed in, renewing its session on time,
+    /// showing every sign of health, and recorded nothing — for three hours in the
+    /// worst case, until somebody walked to the machine and started it again. The
+    /// cause is still unknown; this does not need to know it. A user is present, the
+    /// day is not over, and nothing has been recorded for ten minutes: whatever went
+    /// wrong, starting again is strictly better than staying stopped.
+    ///
+    /// Deliberately not tied to <see cref="ActivityService.IsRunning"/> alone — the
+    /// failures seen left the timer running and the samples never arriving, so the
+    /// test is what reached the server, not what the agent believes it is doing.
+    /// </summary>
+    private void StartTrackingWatchdog()
+    {
+        if (_trackingWatchdog is not null) return;
+
+        _trackingWatchdog = _ui.CreateTimer();
+        _trackingWatchdog.Interval = TimeSpan.FromMinutes(2);
+        _trackingWatchdog.Tick += (_, _) =>
+        {
+            if (!Api.IsAuthenticated || _dayEnded) return;
+
+            var last = Activity.LastSampleAtUtc;
+            // Nothing has landed yet: give it the same grace as a stall rather than
+            // restarting a tracker that simply has not had its first tick.
+            var since = last == DateTime.MinValue
+                ? DateTime.UtcNow - _trackingStartedUtc
+                : DateTime.UtcNow - last;
+            if (since < TrackingStallAfter) return;
+
+            App.Log($"watchdog: no sample for {since.TotalMinutes:F0}m — restarting tracking");
+            Activity.Stop();
+            StartTracking();
+        };
+        _trackingWatchdog.Start();
     }
 
     // ---- Floating button ---------------------------------------------------
@@ -326,6 +435,7 @@ public partial class App : Application
         _login?.Close();
         _login = null;
         ShowBubble();
+        StartTrackingWatchdog();
         ShowDashboard();
     }
 
@@ -338,6 +448,7 @@ public partial class App : Application
         await Api.LogoutAsync();
         StartupRegistration.Disable();
         _dashboard?.AppWindow.Hide();
+        _trackingWatchdog?.Stop();
         HideBubble();
         ShowLogin();
     }
@@ -360,6 +471,7 @@ public partial class App : Application
             Activity.Stop();
             _heartbeat?.Stop();
             _dashboard?.AppWindow.Hide();
+            _trackingWatchdog?.Stop();
             HideBubble();
             ShowLogin();
         });
@@ -407,6 +519,7 @@ public partial class App : Application
         {
             if (_dayEnded) return;
             _dayEnded = true;
+            _trackingWatchdog?.Stop();
             Activity.Stop();
             Shots.Stop();
             _heartbeat?.Stop(); // attendance stops at the same instant
@@ -440,6 +553,7 @@ public partial class App : Application
 
         _dayEnded = false;
         StartTracking(); // activity + screenshots + heartbeat, exactly like sign-in
+        _trackingWatchdog?.Start();
         if (_dashboard is not null)
         {
             _dashboard.ViewModel.DayEnded = false;

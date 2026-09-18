@@ -218,27 +218,74 @@ public static class ScreenCapture
     private const int SM_CXVIRTUALSCREEN = 78;
     private const int SM_CYVIRTUALSCREEN = 79;
 
+    /// <summary>Per-monitor v2 — the context in which Windows reports real pixels.</summary>
+    private static readonly IntPtr PerMonitorAwareV2 = new(-4);
+
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
     public static byte[] CapturePng()
     {
-        var left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        var top = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        var width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        var height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-        if (width <= 0 || height <= 0) return Array.Empty<byte>();
-
-        using var bmp = new System.Drawing.Bitmap(
-            width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using (var g = System.Drawing.Graphics.FromImage(bmp))
+        // Windows shrinks the desktop it describes to a process that has not said it
+        // understands display scaling: a 1920x1080 laptop at 150% is reported as
+        // 1280x720, and the capture comes back that size — half a screenshot, on
+        // every scaled machine. Saying so for this thread alone is enough. The
+        // capture already runs off the UI thread, so the floating button and the
+        // dashboard keep the scaling Windows does for them and nothing about how
+        // they draw changes.
+        var previous = TrySetPerMonitorAware();
+        try
         {
-            g.CopyFromScreen(left, top, 0, 0, new System.Drawing.Size(width, height),
-                System.Drawing.CopyPixelOperation.SourceCopy);
+            var left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            var top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            var width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            var height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            if (width <= 0 || height <= 0) return Array.Empty<byte>();
+
+            using var bmp = new System.Drawing.Bitmap(
+                width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            {
+                g.CopyFromScreen(left, top, 0, 0, new System.Drawing.Size(width, height),
+                    System.Drawing.CopyPixelOperation.SourceCopy);
+            }
+            using var ms = new MemoryStream();
+            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            return ms.ToArray();
         }
-        using var ms = new MemoryStream();
-        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-        return ms.ToArray();
+        finally
+        {
+            if (previous != IntPtr.Zero) TryRestore(previous);
+        }
+    }
+
+    /// <summary>The thread's previous context, or zero when it could not be changed —
+    /// a screenshot at the old size beats no screenshot at all.</summary>
+    private static IntPtr TrySetPerMonitorAware()
+    {
+        try
+        {
+            return SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    private static void TryRestore(IntPtr context)
+    {
+        try
+        {
+            SetThreadDpiAwarenessContext(context);
+        }
+        catch
+        {
+            // Nothing to do: this thread is the pool's, and the next capture sets it again.
+        }
     }
 }
 

@@ -127,6 +127,15 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
     return { userId: current.userId, token: issued.token, expiresAt: issued.expiresAt };
   }
 
+  async purgeDead(cutoff: Date): Promise<number> {
+    const { count } = await this.prisma.refreshToken.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }],
+      },
+    });
+    return count;
+  }
+
   async revoke(rawToken: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash: this.hash(rawToken), revokedAt: null },

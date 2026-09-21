@@ -22,4 +22,9 @@ export interface RefreshTokenRepository {
   rotate(rawToken: string, meta: RefreshTokenMeta): Promise<RotatedRefreshToken | null>;
 
   revoke(rawToken: string): Promise<void>;
+  /**
+   * Deletes tokens that died before the cutoff — expired, or revoked. Neither can
+   * authenticate anyone, so the rows are weight without meaning. Answers how many.
+   */
+  purgeDead(cutoff: Date): Promise<number>;
 }

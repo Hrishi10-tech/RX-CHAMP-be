@@ -5,6 +5,7 @@ import { LoginUserUseCase } from './application/use-cases/login-user.use-case';
 import { EnrollAgentUseCase } from './application/use-cases/enroll-agent.use-case';
 import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-case';
 import { LogoutUserUseCase } from './application/use-cases/logout-user.use-case';
+import { RefreshTokenCleanupJob } from './application/jobs/refresh-token-cleanup.job';
 import { AuthController } from './presentation/auth.controller';
 import { AuthCookieService } from './presentation/auth-cookie.service';
 import { JwtStrategy } from './infrastructure/jwt.strategy';
@@ -21,6 +22,7 @@ import { PrismaRefreshTokenRepository } from './infrastructure/prisma-refresh-to
     EnrollAgentUseCase,
     RefreshTokenUseCase,
     LogoutUserUseCase,
+    RefreshTokenCleanupJob,
     AuthCookieService,
     JwtStrategy,
     { provide: AUTH_USER_READER, useClass: PrismaAuthUserReader },

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { CoreModule } from './core/core.module';
 
@@ -23,6 +24,8 @@ import { AgentModule } from '@modules/agent/agent.module';
 
 @Module({
   imports: [
+    // Drives the nightly refresh-token sweep; nothing else is scheduled yet.
+    ScheduleModule.forRoot(),
     CoreModule,
     AppLoggerModule,
     PrismaModule,

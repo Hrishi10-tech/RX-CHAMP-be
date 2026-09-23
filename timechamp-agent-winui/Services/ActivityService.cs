@@ -104,7 +104,11 @@ public sealed class ActivityService
 
             var report = await Task.Run(BuildSample);
             var ack = await _api.ReportActivityAsync(report);
-            _lastSampleAtUtc = DateTime.UtcNow;
+            // Only once the server has taken it. Stamping this on every attempt made
+            // the watchdog blind to the failure it exists to catch: an agent whose
+            // reports all fail still looked freshly heard from, so tracking that had
+            // stopped was never restarted. Two users lost over an hour each that way.
+            if (ack is not null) _lastSampleAtUtc = DateTime.UtcNow;
 
             // Independent of the day-ended check below: this governs the 5-minute
             // capture alone, and must not touch tracking.

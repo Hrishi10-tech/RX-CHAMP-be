@@ -18,10 +18,15 @@ describe('PrismaRefreshTokenRepository.rotate', () => {
   const config = { get: jest.fn().mockReturnValue('7d') } as any;
   const meta = { userAgent: 'jest', ip: '127.0.0.1' };
 
+  // Empty by default, so a race with nothing held falls back to issuing — the
+  // behaviour before the replay cache existed.
+  const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn(), delByPattern: jest.fn() } as any;
+
   let repo: PrismaRefreshTokenRepository;
   beforeEach(() => {
     jest.clearAllMocks();
-    repo = new PrismaRefreshTokenRepository(prisma, config);
+    cache.get.mockResolvedValue(null);
+    repo = new PrismaRefreshTokenRepository(prisma, config, cache);
   });
 
   /** A stored token row, revoked `agoMs` ago when `agoMs` is given. */
@@ -70,6 +75,36 @@ describe('PrismaRefreshTokenRepository.rotate', () => {
     expect(result!.token).toHaveLength(64);
     // A sibling is issued; the winner's token is left alone.
     expect(refreshToken.update).not.toHaveBeenCalled();
+  });
+
+  it("hands the loser of a race the winner's token, not a second one", async () => {
+    // The winner rotated moments ago and left its token where the loser can find it.
+    cache.get.mockResolvedValue({
+      token: 'the-winners-token',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    refreshToken.updateMany.mockResolvedValue({ count: 0 });
+    refreshToken.findUnique.mockResolvedValue(row({ agoMs: 500 }));
+
+    const result = await repo.rotate('raw', meta);
+
+    expect(result!.token).toBe('the-winners-token');
+    // The whole point: no extra session is created for the loser.
+    expect(refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('stores the new token for the losers of its own race', async () => {
+    refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    refreshToken.findUnique.mockResolvedValue(row());
+    refreshToken.create.mockResolvedValue({ id: 'rt-2' });
+
+    const result = await repo.rotate('raw', meta);
+
+    expect(cache.set).toHaveBeenCalledWith(
+      expect.stringContaining('refresh:replay:'),
+      expect.objectContaining({ token: result!.token }),
+      expect.any(Number),
+    );
   });
 
   it('rejects a token rotated long ago (replay, not a race)', async () => {

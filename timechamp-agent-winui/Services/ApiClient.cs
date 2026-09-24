@@ -180,6 +180,14 @@ public sealed class ApiClient
             _refreshGate.Release();
         }
 
+        // A refresh that never reached the server says nothing about the session. The
+        // token is good for days; a lift between floors, or a wifi handover, is
+        // seconds. Treating the two alike is what put a login screen in front of
+        // people whose sessions were perfectly valid — eleven of them in one day,
+        // none of whom had actually been signed out. The caller still sees this
+        // attempt fail and will try again; the session stays where it is.
+        if (LastFailureWasNetwork) return false;
+
         SessionLost?.Invoke();
         return false;
     }

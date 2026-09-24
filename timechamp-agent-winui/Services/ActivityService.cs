@@ -36,6 +36,7 @@ public sealed class ActivityService
     /// sample is never allowed to land before it, because the server only closes a
     /// sample with one that comes after it.</summary>
     private DateTime _lastSampleAtUtc = DateTime.MinValue;
+    private bool _checkedAwayOnStart;
 
     /// <summary>When a sample last reached the server, for the watchdog to judge by.
     /// <see cref="DateTime.MinValue"/> until the first one lands.</summary>
@@ -92,27 +93,87 @@ public sealed class ActivityService
 
     private void OnLockChanged(bool locked) => _ = SampleAndReport();
 
+    /// <summary>
+    /// Samples the server has not taken yet, oldest first.
+    ///
+    /// A report that cannot be sent used to be dropped where it stood, so a wifi
+    /// handover between floors cost the minutes it lasted even though the machine
+    /// was on and the person was working — 109 minutes for one user in an
+    /// afternoon of walking between two offices. The timestamp travels with the
+    /// sample, so a late one lands in the right minute of the day rather than
+    /// bunching up at the moment the network returned.
+    /// </summary>
+    private readonly Queue<ActivityReport> _pending = new();
+
+    /// <summary>
+    /// How many minutes of samples to hold. Long enough to cover any outage worth
+    /// riding out; short enough that a machine offline all day does not grow a
+    /// queue it will never drain. Beyond this the oldest are dropped, because the
+    /// recent ones are what the day still needs.
+    /// </summary>
+    private const int MaxPending = 240;
+
+    /// <summary>Sends what the network refused earlier, oldest first. Stops at the
+    /// first refusal and keeps the rest — the connection is evidently still down,
+    /// and hammering it helps nobody.</summary>
+    private async Task FlushPendingAsync()
+    {
+        while (_pending.Count > 0)
+        {
+            var queued = _pending.Peek();
+            if (await _api.ReportActivityAsync(queued) is null) return;
+            _pending.Dequeue();
+        }
+    }
+
+    private void HoldForLater(ActivityReport report)
+    {
+        if (_pending.Count >= MaxPending) _pending.Dequeue();
+        _pending.Enqueue(report);
+    }
+
     private async Task SampleAndReport()
     {
         if (!_run || !_api.IsAuthenticated) return;
         await _reporting.WaitAsync();
         try
         {
+            // Once per start: what the machine did while the agent was not running.
+            if (!_checkedAwayOnStart)
+            {
+                _checkedAwayOnStart = true;
+                await ReportAwayAcrossRestartAsync();
+            }
+
             // Before the live sample: if the machine was asleep, say so, so the hole
             // it left is accounted for rather than silently dropped.
             await ReportSleepIfAnyAsync();
 
             var report = await Task.Run(BuildSample);
+
+            // Anything the network refused earlier goes first, so the day is filled
+            // in the order it happened.
+            await FlushPendingAsync();
+
             var ack = await _api.ReportActivityAsync(report);
+            if (ack is null)
+            {
+                // Not sent. Hold it rather than lose it — the person is at the
+                // machine and working, whatever the wifi is doing.
+                HoldForLater(report);
+                return;
+            }
+
             // Only once the server has taken it. Stamping this on every attempt made
             // the watchdog blind to the failure it exists to catch: an agent whose
             // reports all fail still looked freshly heard from, so tracking that had
             // stopped was never restarted. Two users lost over an hour each that way.
-            if (ack is not null) _lastSampleAtUtc = DateTime.UtcNow;
+            _lastSampleAtUtc = DateTime.UtcNow;
+            AwayAcrossRestart.Remember(_lastSampleAtUtc);
 
             // Independent of the day-ended check below: this governs the 5-minute
             // capture alone, and must not touch tracking.
-            if (ack is not null) ScreenshotsEnabledChanged?.Invoke(ack.ScreenshotsEnabled);
+            ScreenshotsEnabledChanged?.Invoke(ack.ScreenshotsEnabled);
             // Keep sampling through overtime (clockedOut is informational). Stop only
             // once the day has been ended server-side (shouldCapture flips to false).
             if (ack is { ShouldCapture: false })
@@ -125,6 +186,36 @@ public sealed class ActivityService
         finally
         {
             _reporting.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reports the stretch this machine spent switched off or asleep since it last
+    /// recorded — the case <see cref="ReportSleepIfAnyAsync"/> cannot see, because
+    /// the agent was not running to see it. Sent once, on the first tick after a
+    /// start, stamped where the machine went away.
+    /// </summary>
+    private async Task ReportAwayAcrossRestartAsync()
+    {
+        var away = AwayAcrossRestart.AwaySinceLastSample();
+        if (away is null) return;
+
+        var (from, to) = away.Value;
+        var ok = await _api.ReportActivityAsync(new ActivityReport
+        {
+            At = from.ToString("o"),
+            Idle = true,
+            Locked = true,
+            App = null,
+            Title = null,
+            Url = null,
+            LoginAt = SessionInfo.LoginTimeUtc()?.ToString("o"),
+        });
+
+        if (ok is not null)
+        {
+            _lastSampleAtUtc = from;
+            App.Log($"machine away {(to - from).TotalMinutes:F0}m from {from:HH:mm:ss}Z — reported");
         }
     }
 

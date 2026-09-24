@@ -208,6 +208,73 @@ public static class ForegroundWatcher
         string.IsNullOrEmpty(proc) ? proc : char.ToUpperInvariant(proc[0]) + proc[1..];
 }
 
+/// <summary>
+/// Remembers when the agent last recorded, across the machine being switched off.
+///
+/// <see cref="SleepWatcher"/> only sees a sleep the agent itself lived through. A
+/// deep sleep or a hibernate takes the process down with it, so on waking the agent
+/// starts with no memory of ever having been away and the whole stretch simply
+/// vanishes from the day — 86 minutes for one user who walked off to lunch without
+/// locking, 78 for another. A note on disk outlives the process; memory does not.
+/// </summary>
+public static class AwayAcrossRestart
+{
+    private static string Dir =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TimeChampAgent");
+
+    private static string FilePath => Path.Combine(Dir, "last-sample.txt");
+
+    /// <summary>Records the moment a sample reached the server. Cheap enough to do on
+    /// every one, and the file is a single timestamp.</summary>
+    public static void Remember(DateTime utc)
+    {
+        try
+        {
+            Directory.CreateDirectory(Dir);
+            File.WriteAllText(FilePath, utc.ToString("o"));
+        }
+        catch
+        {
+            // Nothing to do: the worst case is the gap it would have recovered.
+        }
+    }
+
+    /// <summary>
+    /// The stretch this machine spent switched off or asleep since it last recorded,
+    /// or null when there is nothing to report.
+    ///
+    /// Only time the machine was genuinely away is returned. The unbiased clock
+    /// counts the milliseconds this machine has been awake since it booted; anything
+    /// the wall clock gained beyond that, the machine was not there for. An agent
+    /// closed on a running machine therefore recovers nothing, which is right — a
+    /// closed agent is not a break.
+    /// </summary>
+    public static (DateTime from, DateTime to)? AwaySinceLastSample()
+    {
+        try
+        {
+            if (!File.Exists(FilePath)) return null;
+            if (!DateTime.TryParse(File.ReadAllText(FilePath), null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var last)) return null;
+
+            var now = DateTime.UtcNow;
+            var gap = now - last;
+            if (gap < SleepWatcher.MinReportable) return null;
+
+            var awake = TimeSpan.FromMilliseconds(Environment.TickCount64);
+            // Awake longer than the gap: the machine was up the whole time, so
+            // whatever stopped the recording, it was not the machine going away.
+            if (awake >= gap) return null;
+
+            return (last, now - awake);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
 /// <summary>Grabs the whole desktop (all monitors) as a PNG. Runs off the UI thread.
 /// Uses Win32 <c>GetSystemMetrics</c> for the virtual-screen bounds (WinUI has no
 /// <c>System.Windows.Forms.SystemInformation</c>).</summary>

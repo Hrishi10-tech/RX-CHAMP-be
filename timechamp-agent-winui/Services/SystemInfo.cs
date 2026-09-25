@@ -65,6 +65,13 @@ public static class SleepWatcher
 
     /// <summary>Starts watching from now, so the first comparison has something to
     /// measure against and the agent's own startup is never read as a sleep.</summary>
+    /// <summary>
+    /// The unbiased interrupt count, for callers that need to compare two moments
+    /// across a restart rather than within one run. False when Windows declines,
+    /// which leaves the caller to skip rather than guess.
+    /// </summary>
+    public static bool TryUnbiasedTicks(out ulong ticks) => QueryUnbiasedInterruptTime(out ticks);
+
     public static void Prime()
     {
         if (!QueryUnbiasedInterruptTime(out var unbiased)) return;
@@ -224,14 +231,19 @@ public static class AwayAcrossRestart
 
     private static string FilePath => Path.Combine(Dir, "last-sample.txt");
 
-    /// <summary>Records the moment a sample reached the server. Cheap enough to do on
-    /// every one, and the file is a single timestamp.</summary>
+    /// <summary>
+    /// Records a sample's moment by both clocks: the wall clock, which keeps running
+    /// while the machine is suspended, and the unbiased one, which does not. Neither
+    /// tells you anything about sleep alone — the gap between them is the whole
+    /// answer, so both have to be written down together.
+    /// </summary>
     public static void Remember(DateTime utc)
     {
         try
         {
+            if (!SleepWatcher.TryUnbiasedTicks(out var unbiased)) return;
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, utc.ToString("o"));
+            File.WriteAllText(FilePath, $"{utc:o}|{unbiased}");
         }
         catch
         {
@@ -243,30 +255,39 @@ public static class AwayAcrossRestart
     /// The stretch this machine spent switched off or asleep since it last recorded,
     /// or null when there is nothing to report.
     ///
-    /// Only time the machine was genuinely away is returned. The unbiased clock
-    /// counts the milliseconds this machine has been awake since it booted; anything
-    /// the wall clock gained beyond that, the machine was not there for. An agent
-    /// closed on a running machine therefore recovers nothing, which is right — a
-    /// closed agent is not a break.
+    /// Wall time covers the whole gap. The unbiased clock covers only the part the
+    /// machine was actually awake for. What is left over is what it slept — and when
+    /// the machine rebooted in between, the unbiased clock has gone backwards, so
+    /// everything since boot is all it was awake for.
+    ///
+    /// An agent closed on a running machine therefore recovers nothing, which is
+    /// right: a closed agent is not a break.
     /// </summary>
     public static (DateTime from, DateTime to)? AwaySinceLastSample()
     {
         try
         {
             if (!File.Exists(FilePath)) return null;
-            if (!DateTime.TryParse(File.ReadAllText(FilePath), null,
+            var parts = File.ReadAllText(FilePath).Split('|');
+            if (parts.Length != 2) return null;
+            if (!DateTime.TryParse(parts[0], null,
                     System.Globalization.DateTimeStyles.RoundtripKind, out var last)) return null;
+            if (!ulong.TryParse(parts[1], out var unbiasedThen)) return null;
+            if (!SleepWatcher.TryUnbiasedTicks(out var unbiasedNow)) return null;
 
             var now = DateTime.UtcNow;
             var gap = now - last;
             if (gap < SleepWatcher.MinReportable) return null;
 
-            var awake = TimeSpan.FromMilliseconds(Environment.TickCount64);
-            // Awake longer than the gap: the machine was up the whole time, so
-            // whatever stopped the recording, it was not the machine going away.
-            if (awake >= gap) return null;
+            // Rebooted: the unbiased clock restarted, so all of it is time since boot.
+            var awake = unbiasedNow >= unbiasedThen
+                ? TimeSpan.FromTicks((long)(unbiasedNow - unbiasedThen))
+                : TimeSpan.FromTicks((long)unbiasedNow);
 
-            return (last, now - awake);
+            var away = gap - awake;
+            if (away < SleepWatcher.MinReportable) return null;
+
+            return (last, last + away);
         }
         catch
         {

@@ -448,8 +448,10 @@ describe('ActivityMapper.computeDaily — locks and sleep in the field', () => {
   });
 
   it('leaves a hole past the cap unaccounted', () => {
-    // 2h: long enough that "locked at her desk" and "went home" are the same picture.
-    const daily = run([lockScreen('16:00'), work('18:00')]);
+    // 5h — past LOCK_GAP_FILL_CAP_SEC, where "locked at her desk" and "went home"
+    // are the same picture. Two hours used to sit past the cap and no longer does:
+    // a lunch that ran 92 minutes was being credited nothing at all.
+    const daily = run([lockScreen('13:00'), work('18:00')]);
 
     expect(daily.idleSec).toBe(MAX_GAP_SEC);
     expect(daily.activeSec).toBe(60);

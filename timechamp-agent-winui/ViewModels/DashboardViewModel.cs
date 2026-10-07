@@ -162,15 +162,27 @@ public partial class DashboardViewModel : ObservableObject
     public bool IsChatOpen => _peerId is not null;
 
     /// <summary>
-    /// Re-reads the conversation for the sole purpose of marking it read — fetching it
-    /// is what clears the unread flags server-side. Cheap, and the right thing to do
-    /// every time the dashboard comes back up, because <see cref="LoadChatAsync"/>
-    /// deliberately only ever loads once.
+    /// Re-reads the conversation and shows whatever has arrived since it was last
+    /// looked at.
+    ///
+    /// <see cref="LoadChatAsync"/> deliberately runs once, so after the first look the
+    /// only thing that could add a message was the live socket. When that socket was
+    /// down — or the message arrived before this version was installed — the
+    /// conversation simply stayed as it was, and reopening the window changed nothing.
+    /// Somebody could be told a message had been sent, open the chat, and find no sign
+    /// of it.
+    ///
+    /// Fetching is also what marks the other side's messages read, so this is the
+    /// refresh and the acknowledgement in one. Already-shown messages are filtered out
+    /// by id, so nothing appears twice.
     /// </summary>
-    public async Task MarkChatReadAsync()
+    public async Task RefreshChatAsync()
     {
-        if (_peerId is null) return;
-        await _api.GetConversationAsync(_peerId);
+        if (_peerId is null) { await LoadChatAsync(); return; }
+
+        var history = await _api.GetConversationAsync(_peerId);
+        if (history is null) return;
+        foreach (var m in history) RenderMessage(m);
     }
 
     private void OnClockTick()

@@ -572,7 +572,7 @@ public partial class App : Application
         {
             if (_dashboard is null) return;
             await _dashboard.ViewModel.LoadChatAsync();
-            await _dashboard.ViewModel.MarkChatReadAsync();
+            await _dashboard.ViewModel.RefreshChatAsync();
             SetUnread(await Api.GetUnreadCountAsync());
         }
         catch (Exception ex)

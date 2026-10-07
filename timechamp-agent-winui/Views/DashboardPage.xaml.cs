@@ -36,7 +36,16 @@ public sealed partial class DashboardPage : Page
     public async void OnShown()
     {
         ViewModel.StartClock();
-        if (_started) { await ViewModel.RefreshAsync(); return; }
+        if (_started)
+        {
+            // Every reopening re-reads the conversation. Loading it once and trusting
+            // the socket for the rest meant a message could be sitting on the server,
+            // unread, while the window showed nothing — and clicking the button again
+            // did not help, because nothing re-asked.
+            await ViewModel.RefreshChatAsync();
+            await ViewModel.RefreshAsync();
+            return;
+        }
         _started = true;
         await ViewModel.LoadChatAsync();
         await ViewModel.RefreshAsync();

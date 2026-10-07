@@ -132,6 +132,24 @@ public sealed class ActivityService
         _pending.Enqueue(report);
     }
 
+    /// <summary>
+    /// Sends one report, keeping it for the next tick if it cannot get through.
+    ///
+    /// The ordinary sample has been held-and-retried since 2.7.0; the sleep and away
+    /// reports were not, and they are precisely the two that fire at the worst
+    /// possible second — the moment a machine wakes, before its wifi is back. One
+    /// failed attempt lost the stretch for good, because the clocks the reports are
+    /// derived from have already moved on by then and cannot say it twice. Three
+    /// people lost 216 minutes to that in a single day, and the same cause has been
+    /// behind nearly every missing break for a fortnight.
+    /// </summary>
+    private async Task<bool> SendOrHoldAsync(ActivityReport report)
+    {
+        if (await _api.ReportActivityAsync(report) is not null) return true;
+        HoldForLater(report);
+        return false;
+    }
+
     private async Task SampleAndReport()
     {
         if (!_run || !_api.IsAuthenticated) return;
@@ -192,8 +210,9 @@ public sealed class ActivityService
     /// <summary>
     /// Reports the stretch this machine spent switched off or asleep since it last
     /// recorded — the case <see cref="ReportSleepIfAnyAsync"/> cannot see, because
-    /// the agent was not running to see it. Sent once, on the first tick after a
-    /// start, stamped where the machine went away.
+    /// the agent was not running to see it. Worked out once, on the first tick after a
+    /// start, stamped where the machine went away — and held for retry if the network
+    /// is not back yet, which on a machine that has just woken it usually is not.
     /// </summary>
     private async Task ReportAwayAcrossRestartAsync()
     {
@@ -201,7 +220,7 @@ public sealed class ActivityService
         if (away is null) return;
 
         var (from, to) = away.Value;
-        var ok = await _api.ReportActivityAsync(new ActivityReport
+        var sent = await SendOrHoldAsync(new ActivityReport
         {
             At = from.ToString("o"),
             Idle = true,
@@ -212,11 +231,11 @@ public sealed class ActivityService
             LoginAt = SessionInfo.LoginTimeUtc()?.ToString("o"),
         });
 
-        if (ok is not null)
-        {
-            _lastSampleAtUtc = from;
-            App.Log($"machine away {(to - from).TotalMinutes:F0}m from {from:HH:mm:ss}Z — reported");
-        }
+        // Only a report the server took may move this: the watchdog judges the agent
+        // by it, and a held report has reached nobody.
+        if (sent) _lastSampleAtUtc = from;
+        App.Log($"machine away {(to - from).TotalMinutes:F0}m from {from:HH:mm:ss}Z — " +
+                (sent ? "reported" : "held for retry"));
     }
 
     /// <summary>
@@ -245,7 +264,7 @@ public sealed class ActivityService
             wentUnder = _lastSampleAtUtc.AddSeconds(1);
         if (wentUnder >= DateTime.UtcNow) return;
 
-        var ok = await _api.ReportActivityAsync(new ActivityReport
+        var sent = await SendOrHoldAsync(new ActivityReport
         {
             At = wentUnder.ToString("o"),
             Idle = true,
@@ -257,8 +276,9 @@ public sealed class ActivityService
             LoginAt = SessionInfo.LoginTimeUtc()?.ToString("o"),
         });
 
-        if (ok is not null) _lastSampleAtUtc = wentUnder;
-        App.Log($"slept {slept.Value.TotalMinutes:F0}m from {wentUnder:HH:mm:ss}Z — reported");
+        if (sent) _lastSampleAtUtc = wentUnder;
+        App.Log($"slept {slept.Value.TotalMinutes:F0}m from {wentUnder:HH:mm:ss}Z — " +
+                (sent ? "reported" : "held for retry"));
     }
 
     /// <summary>Reads the foreground app/window/website + idle into a report. Off the UI thread.</summary>

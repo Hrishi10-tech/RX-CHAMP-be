@@ -1,0 +1,140 @@
+<Window
+    x:Class="TimeChampAgent.Views.MessageToastWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- Sized to match the card in the design: 300x150 at 100% scale, scaled per
+         monitor in code-behind. The outer border is the card's visible edge; the
+         window itself has no chrome. -->
+    <Grid x:Name="Root" Width="300" Height="150" Background="#F4F5FB">
+        <Border Background="#FFFFFF"
+                CornerRadius="12"
+                BorderBrush="#E6E8F0"
+                BorderThickness="1"
+                Margin="6">
+            <Grid Margin="14,12,14,14" RowSpacing="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Title row -->
+                <Grid Grid.Row="0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Width="22" Height="22"
+                            CornerRadius="11" Background="#EEF0FD">
+                        <TextBlock Text="&#xE8BD;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="11"
+                                   Foreground="#4F46E5"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <TextBlock Grid.Column="1"
+                               Text="New Message"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="#111827"
+                               VerticalAlignment="Center" />
+
+                    <Button Grid.Column="2"
+                            x:Name="CloseButton"
+                            Width="24" Height="24"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Click="OnCloseClick"
+                            ToolTipService.ToolTip="Dismiss">
+                        <TextBlock Text="&#xE711;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="11"
+                                   Foreground="#6B7280" />
+                    </Button>
+                </Grid>
+
+                <!-- Sender + preview -->
+                <Grid Grid.Row="1" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Width="34" Height="34"
+                            CornerRadius="17"
+                            Background="#E8EAFB"
+                            VerticalAlignment="Top">
+                        <TextBlock x:Name="Initials"
+                                   Text="M"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="#4F46E5"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <Grid Grid.Column="1" ColumnSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                   x:Name="Sender"
+                                   Text="Manager"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="#111827"
+                                   TextTrimming="CharacterEllipsis" />
+
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   x:Name="Stamp"
+                                   Text=""
+                                   FontSize="11"
+                                   Foreground="#9CA3AF"
+                                   VerticalAlignment="Center" />
+
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                   x:Name="Preview"
+                                   Text=""
+                                   FontSize="12.5"
+                                   Foreground="#4B5563"
+                                   TextWrapping="Wrap"
+                                   MaxLines="2"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,2,0,0" />
+                    </Grid>
+                </Grid>
+
+                <!-- Action -->
+                <Button Grid.Row="2"
+                        x:Name="ViewButton"
+                        Content="View Messages"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Height="34"
+                        Background="#EEF0FD"
+                        BorderThickness="0"
+                        CornerRadius="8"
+                        Foreground="#4F46E5"
+                        FontWeight="SemiBold"
+                        FontSize="13"
+                        Click="OnViewClick" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

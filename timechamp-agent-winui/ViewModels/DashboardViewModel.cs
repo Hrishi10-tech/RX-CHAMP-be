@@ -153,6 +153,26 @@ public partial class DashboardViewModel : ObservableObject
         foreach (var m in history) RenderMessage(m);
     }
 
+    /// <summary>Who this user chats with, for the card that announces a message —
+    /// null until the conversation has been loaded at least once.</summary>
+    public string? PeerName => _peerId is null ? null : _peerName;
+
+    /// <summary>True once a conversation is on screen, so App can tell a message that
+    /// is being read as it arrives from one that needs announcing.</summary>
+    public bool IsChatOpen => _peerId is not null;
+
+    /// <summary>
+    /// Re-reads the conversation for the sole purpose of marking it read — fetching it
+    /// is what clears the unread flags server-side. Cheap, and the right thing to do
+    /// every time the dashboard comes back up, because <see cref="LoadChatAsync"/>
+    /// deliberately only ever loads once.
+    /// </summary>
+    public async Task MarkChatReadAsync()
+    {
+        if (_peerId is null) return;
+        await _api.GetConversationAsync(_peerId);
+    }
+
     private void OnClockTick()
     {
         // The day's totals are final once it has ended — nothing ticks up after that.

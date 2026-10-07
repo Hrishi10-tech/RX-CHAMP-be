@@ -10,16 +10,49 @@
          the artwork's dark corners away. WinUI has no per-pixel transparency, so the
          face has to be a filled circle rather than a floating shape.
          Background matches the asset's own backdrop so the two can't seam. -->
-    <Grid x:Name="Root" Width="60" Height="60" Background="#04070E">
-        <!-- Source is assigned in code from the file beside the exe: ms-appx:/// is
-             unreliable for an unpackaged app. -->
-        <Image x:Name="Face" Stretch="UniformToFill" />
+    <!-- 68 wide, not 60: the extra strip along the top and right is where the unread
+         badge sits, out on the rim of the face rather than tucked inside it. The
+         window region is cut to the face circle plus the badge circle, so the strip
+         is invisible wherever the badge isn't. -->
+    <Grid x:Name="Root" Width="68" Height="68" Background="Transparent">
 
-        <!-- Washes the face when not actively tracking: amber on a break, grey once
-             the day has ended. Fully clear while working. -->
-        <Ellipse x:Name="StatusWash" Fill="Transparent" Opacity="0" />
+        <!-- The round button itself: 60px, pinned bottom-left of the 68 box. -->
+        <Grid x:Name="FaceArea"
+              Width="60" Height="60"
+              HorizontalAlignment="Left" VerticalAlignment="Bottom"
+              Background="#04070E">
+            <!-- Source is assigned in code from the file beside the exe: ms-appx:/// is
+                 unreliable for an unpackaged app. -->
+            <Image x:Name="Face" Stretch="UniformToFill" />
 
-        <!-- Lifts it slightly on hover, so it reads as clickable. -->
-        <Ellipse x:Name="Hover" Fill="#FFFFFF" Opacity="0" />
+            <!-- Washes the face when not actively tracking: amber on a break, grey once
+                 the day has ended. Fully clear while working. -->
+            <Ellipse x:Name="StatusWash" Fill="Transparent" Opacity="0" />
+
+            <!-- Lifts it slightly on hover, so it reads as clickable. -->
+            <Ellipse x:Name="Hover" Fill="#FFFFFF" Opacity="0" />
+        </Grid>
+
+        <!-- Unread messages, on the rim at the top right. The white ring is what
+             separates it from whatever is behind the button. Its box here must match
+             the badge circle cut into the window region in code-behind. -->
+        <Grid x:Name="Badge"
+              Width="22" Height="22"
+              HorizontalAlignment="Right" VerticalAlignment="Top"
+              Margin="0,0,0,0"
+              Visibility="Collapsed">
+            <Grid.RenderTransform>
+                <ScaleTransform x:Name="BadgeScale" CenterX="11" CenterY="11" />
+            </Grid.RenderTransform>
+            <Ellipse Fill="#FFFFFF" />
+            <Ellipse Fill="#E5484D" Margin="1.5" />
+            <TextBlock x:Name="BadgeText"
+                       Text="1"
+                       Foreground="#FFFFFF"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+        </Grid>
     </Grid>
 </Window>

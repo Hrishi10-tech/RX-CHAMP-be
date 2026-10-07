@@ -254,6 +254,17 @@ public sealed class ApiClient
     public Task<ChatMessage?> SendMessageAsync(string toUserId, string body, CancellationToken ct = default) =>
         SendJsonAsync<ChatMessage>(HttpMethod.Post, "chat/messages", new { toUserId, body }, ct);
 
+    /// <summary>
+    /// How many messages are waiting unread. Asked once at sign-in, so a message sent
+    /// while the laptop was shut still raises the badge the next morning rather than
+    /// waiting for a second one to arrive over the socket.
+    /// </summary>
+    public async Task<int> GetUnreadCountAsync(CancellationToken ct = default)
+    {
+        var result = await SendJsonAsync<UnreadCount>(HttpMethod.Get, "chat/unread", body: null, ct);
+        return result?.Count ?? 0;
+    }
+
     // ---- Screenshots -------------------------------------------------------
 
     /// <summary>Upload a captured screenshot (multipart). <paramref name="kind"/> is AUTO or MANUAL.</summary>

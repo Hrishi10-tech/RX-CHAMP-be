@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using TimeChampAgent.Helpers;
 using TimeChampAgent.Services;
@@ -29,9 +31,16 @@ namespace TimeChampAgent.Views;
 /// </summary>
 public sealed partial class FloatingButtonWindow : Window
 {
-    /// <summary>Diameter in raw pixels at 100% scale; scaled per-monitor below.
-    /// Matches the canvas the artwork is laid out on in XAML.</summary>
-    private const int SizeDip = 60;
+    /// <summary>Diameter of the round face in raw pixels at 100% scale; scaled
+    /// per-monitor below. Matches the canvas the artwork is laid out on in XAML.</summary>
+    private const int FaceDip = 60;
+
+    /// <summary>Side of the whole window. Wider than the face by exactly the strip the
+    /// unread badge needs along the top and right edges.</summary>
+    private const int SizeDip = 68;
+
+    /// <summary>Badge diameter, matching its box in XAML.</summary>
+    private const int BadgeDip = 22;
 
     /// <summary>Gap from the right edge of the work area.</summary>
     private const int MarginDip = 12;
@@ -47,6 +56,9 @@ public sealed partial class FloatingButtonWindow : Window
     private PointInt32 _grabOffset;
     private double _scale = 1.0;
     private int _sizePx = SizeDip;
+    private int _facePx = FaceDip;
+    private int _badgePx = BadgeDip;
+    private bool _clipReady;
 
     public FloatingButtonWindow(Action onClick, MenuFlyout menu)
     {
@@ -86,10 +98,14 @@ public sealed partial class FloatingButtonWindow : Window
         _scale = Native.ScaleFor(this);
         _sizePx = (int)Math.Round(SizeDip * _scale);
 
-        // Must come before the circle clip: this is what actually gets the window
-        // down to 52px (AppWindow.Resize alone is floored at SM_CXMINTRACK).
+        // Must come before the clip: this is what actually gets the window down to
+        // size (AppWindow.Resize alone is floored at SM_CXMINTRACK).
         Native.MakeBorderlessPopup(this, _sizePx);
-        Native.ClipToCircle(this, _sizePx);
+
+        _facePx = (int)Math.Round(FaceDip * _scale);
+        _badgePx = (int)Math.Round(BadgeDip * _scale);
+        _clipReady = true;
+        ApplyClip();
 
         var saved = BubblePosition.Load();
         if (saved is not null) MoveTo(saved.X, saved.Y);
@@ -145,6 +161,111 @@ public sealed partial class FloatingButtonWindow : Window
         };
         StatusWash.Fill = UiUtil.Brush(hex);
         StatusWash.Opacity = opacity;
+    }
+
+    // ---- Unread messages ---------------------------------------------------
+
+    /// <summary>What the badge is currently showing, so a repeat of the same count
+    /// doesn't re-run the pulse and leave the button twitching every minute.</summary>
+    private int _unread;
+
+    /// <summary>
+    /// Puts the unread count on the button, and draws attention to it when the count
+    /// has gone up.
+    ///
+    /// The button is the one part of the agent that is always on screen, so it is the
+    /// only place a message can be announced that the user is certain to see. Until
+    /// this existed a manager's message reached a closed window and was never
+    /// mentioned again.
+    /// </summary>
+    public void SetUnread(int count)
+    {
+        count = Math.Max(0, count);
+        var rose = count > _unread;
+        _unread = count;
+
+        if (count == 0)
+        {
+            Badge.Visibility = Visibility.Collapsed;
+            ApplyClip();
+            return;
+        }
+
+        BadgeText.Text = count > 9 ? "9+" : count.ToString();
+        Badge.Visibility = Visibility.Visible;
+        ApplyClip();
+        // The count is the part that matters. An animation that will not run must
+        // never cost the user the badge, let alone the agent.
+        if (rose) { try { Pulse(); } catch { } }
+    }
+
+    /// <summary>
+    /// Cuts the window to the round face, plus the badge circle only while a badge is
+    /// actually showing.
+    ///
+    /// The cut-out has to come and go with the badge. Leaving the badge circle in the
+    /// region once the count hits zero leaves a hole with nothing drawn in it, and
+    /// WinUI has no per-pixel transparency — so the hole came out as a small white
+    /// dot stuck to the rim of the button after every message was read.
+    /// </summary>
+    private void ApplyClip()
+    {
+        if (!_clipReady) return;
+
+        var faceTop = _sizePx - _facePx;
+        if (Badge.Visibility == Visibility.Visible)
+        {
+            Native.ClipToCircleWithBadge(
+                this,
+                faceTopPx: faceTop,
+                faceDiameterPx: _facePx,
+                badgeLeftPx: _sizePx - _badgePx,
+                badgeTopPx: 0,
+                badgeDiameterPx: _badgePx);
+        }
+        else
+        {
+            Native.ClipToCircle(this, faceTop, _facePx);
+        }
+    }
+
+    /// <summary>
+    /// Two short beats on the badge when something new arrives.
+    ///
+    /// Deliberately the badge and not a ring around the button: the window is clipped
+    /// to its circle, so anything that grew past the edge would be sliced off mid-beat
+    /// rather than expanding.
+    /// </summary>
+    private void Pulse()
+    {
+        var story = new Storyboard();
+        foreach (var property in new[] { "ScaleX", "ScaleY" })
+        {
+            // A transform's scale is a "dependent" animation — it runs on the UI thread
+            // rather than the compositor, and XAML refuses to start one without this.
+            var beat = new DoubleAnimationUsingKeyFrames
+            {
+                RepeatBehavior = new RepeatBehavior(2),
+                EnableDependentAnimation = true,
+            };
+            beat.KeyFrames.Add(new EasingDoubleKeyFrame { KeyTime = TimeSpan.Zero, Value = 1.0 });
+            beat.KeyFrames.Add(new EasingDoubleKeyFrame
+            {
+                KeyTime = TimeSpan.FromMilliseconds(220),
+                Value = 1.35,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+            });
+            beat.KeyFrames.Add(new EasingDoubleKeyFrame
+            {
+                KeyTime = TimeSpan.FromMilliseconds(520),
+                Value = 1.0,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn },
+            });
+            Storyboard.SetTarget(beat, BadgeScale);
+            Storyboard.SetTargetProperty(beat, property);
+            story.Children.Add(beat);
+        }
+        story.Begin();
     }
 
     /// <summary>Loads the badge artwork sitting next to the exe. Deliberately a file

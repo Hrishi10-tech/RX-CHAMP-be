@@ -149,6 +149,7 @@ public partial class App : Application
         QueueStartupUpdateCheck();
         ShowBubble(); // stays up even when we start minimised — that's the point of it
         StartTrackingWatchdog();
+        _ = LoadUnreadAsync();
         if (!startMinimized) ShowDashboard();
         if (freshlyEnrolled) await ShowDisclosureAsync();
     }
@@ -292,6 +293,10 @@ public partial class App : Application
         _dashboard.AppWindow.Show();
         _dashboard.Activate();
         _ = _dashboard.ViewModel.RefreshAsync();
+        // Opening the dashboard is the moment a message stops being unread — the chat
+        // is right there on it. The card, if one is still up, has said its piece.
+        _toast?.Dismiss();
+        if (_unread > 0) _ = MarkChatReadAsync();
     }
 
     /// <summary>
@@ -357,9 +362,18 @@ public partial class App : Application
             _bubble = new FloatingButtonWindow(ToggleDashboard, menu);
             _bubble.Activate();
             StartBubbleWatch();
+
+            // Built alongside the button so it is warmed up and off-screen well before
+            // the first message, rather than being constructed at the moment one lands.
+            _toast ??= new MessageToastWindow(() =>
+            {
+                ShowDashboard();
+                _ = MarkChatReadAsync();
+            });
         }
 
         _bubble.ShowBubble();
+        _bubble.SetUnread(_unread);
         RefreshBubbleStatus();
     }
 
@@ -436,6 +450,7 @@ public partial class App : Application
         _login = null;
         ShowBubble();
         StartTrackingWatchdog();
+        _ = LoadUnreadAsync();
         ShowDashboard();
     }
 
@@ -453,7 +468,126 @@ public partial class App : Application
         ShowLogin();
     }
 
-    private void OnChatMessage(ChatMessage message) => _dashboard?.ViewModel.OnChatMessage(message);
+    /// <summary>
+    /// A message has arrived for this user.
+    ///
+    /// This used to be one line — hand it to the dashboard, if the dashboard happened
+    /// to exist. It usually did not: the window is closed most of the day, and a
+    /// message that arrived while it was closed was dropped on the floor. The text
+    /// was safe in the database, but nothing on screen ever said so, and people were
+    /// finding their manager's messages hours later by chance.
+    ///
+    /// So the agent now keeps the news whether or not anything is open: the badge on
+    /// the floating button carries the count, and a card beside it says who wrote.
+    /// Reading the chat is what clears both.
+    /// </summary>
+    private void OnChatMessage(ChatMessage message)
+    {
+        _ui.TryEnqueue(() =>
+        {
+            // Our own outgoing message echoes back over the same socket.
+            if (message.Mine) return;
+
+            _dashboard?.ViewModel.OnChatMessage(message);
+
+            // Already reading this conversation: the message appears in the list as it
+            // lands, so announcing it would be announcing something they can see.
+            //
+            // "Reading it" means the dashboard is the window in front, not merely that
+            // it is open. The first cut tested only for open, and the dashboard spends
+            // the day open behind everything else — so messages arrived in a window
+            // nobody was looking at and were never mentioned, which is the exact fault
+            // this whole change exists to remove.
+            if (IsChatOnScreen())
+            {
+                _ = MarkChatReadAsync();
+                return;
+            }
+
+            SetUnread(_unread + 1);
+            ShowMessageCard(message);
+        });
+    }
+
+    /// <summary>Unread messages as far as this agent knows. The server is the
+    /// authority and is asked at sign-in; between times the socket keeps the count.</summary>
+    private int _unread;
+
+    private MessageToastWindow? _toast;
+
+    /// <summary>True when the dashboard is the window in front and has the conversation
+    /// loaded — the one case where an arriving message is already being read.</summary>
+    private bool IsChatOnScreen() =>
+        _dashboard is not null
+        && _dashboard.AppWindow.IsVisible
+        && Native.IsForeground(_dashboard)
+        && _dashboard.ViewModel.IsChatOpen;
+
+    private void SetUnread(int count)
+    {
+        _unread = Math.Max(0, count);
+        _bubble?.SetUnread(_unread);
+    }
+
+    /// <summary>
+    /// Slides the card in beside the floating button. Created once and reused — a new
+    /// window per message would stack cards up the screen, and one piece of news
+    /// deserves one interruption.
+    /// </summary>
+    private void ShowMessageCard(ChatMessage message)
+    {
+        if (_bubble is null || Native.IsFullScreenAppRunning()) return;
+
+        if (_toast is null) return;
+
+        try
+        {
+            var sender = _dashboard?.ViewModel.PeerName;
+            if (string.IsNullOrWhiteSpace(sender)) sender = "Your manager";
+
+            _toast.Show(
+                sender!,
+                message.Body,
+                message.CreatedAt.ToLocalTime(),
+                _unread,
+                _bubble.AppWindow.Position,
+                _bubble.AppWindow.Size.Width);
+        }
+        catch (Exception ex)
+        {
+            // The badge is the part that matters; a card that won't draw must not
+            // take the message down with it.
+            Log("message card: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Clears the unread state, by telling the server the conversation has been seen
+    /// and trusting its answer rather than the local count — the same person may be
+    /// reading on the dashboard in a browser at the same time.
+    /// </summary>
+    private async Task MarkChatReadAsync()
+    {
+        try
+        {
+            if (_dashboard is null) return;
+            await _dashboard.ViewModel.LoadChatAsync();
+            await _dashboard.ViewModel.MarkChatReadAsync();
+            SetUnread(await Api.GetUnreadCountAsync());
+        }
+        catch (Exception ex)
+        {
+            Log("mark chat read: " + ex.Message);
+        }
+    }
+
+    /// <summary>Asks the server what is waiting. A message sent while the machine was
+    /// off is unread too, and nothing would otherwise mention it.</summary>
+    private async Task LoadUnreadAsync()
+    {
+        try { SetUnread(await Api.GetUnreadCountAsync()); }
+        catch (Exception ex) { Log("unread count: " + ex.Message); }
+    }
 
     /// <summary>The session is gone and could not be renewed or re-enrolled. Stop the
     /// loops and ask for a sign-in — a tray icon that looks fine while nothing reaches
@@ -567,6 +701,7 @@ public partial class App : Application
         _heartbeat?.Stop();
         _updates?.Stop();
         _bubbleWatch?.Stop();
+        _toast?.Close();
         _bubble?.Close();
         _tray?.Dispose();
         Exit();

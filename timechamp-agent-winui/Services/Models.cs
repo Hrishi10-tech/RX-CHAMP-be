@@ -66,6 +66,11 @@ public sealed class ChatMessage
     [JsonPropertyName("createdAt")] public DateTime CreatedAt { get; set; }
 }
 
+public sealed class UnreadCount
+{
+    [JsonPropertyName("count")] public int Count { get; set; }
+}
+
 // ---- Presence --------------------------------------------------------------
 public sealed class StartPresenceRequest
 {

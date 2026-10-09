@@ -29,6 +29,19 @@ module.exports = {
       // needs NODE_ENV set early enough for Nest's own production behaviour.
       env: {
         NODE_ENV: 'production',
+
+        // The app asks the system what hour it is — for the activity timeline,
+        // the day a sample belongs to, presence history, analytics and the
+        // folder screenshots are filed under. On a UTC host that answer is five
+        // and a half hours behind everyone using the product: a user arriving at
+        // 10:21 saw their first activity drawn at 04:00, and the "day" rolled
+        // over at 05:30 in the morning rather than at midnight, which is why
+        // machines left on overnight always appeared to start work at 05:30.
+        //
+        // Setting the timezone here fixes every one of those at once, because
+        // they all read the same clock. Doing it in each of the seven places
+        // instead would be seven chances to miss one.
+        TZ: 'Asia/Kolkata',
       },
 
       // Restart on crash, but stop flapping if it fails to boot (e.g. bad

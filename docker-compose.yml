@@ -37,6 +37,11 @@ services:
         required: false
     environment:
       NODE_ENV: production
+      # Hours and days are read from the system clock — the activity timeline,
+      # the day a sample belongs to, presence history, analytics and screenshot
+      # folders all depend on it. Kept the same as ecosystem.config.js so a
+      # container and a PM2 process never disagree about what day it is.
+      TZ: Asia/Kolkata
       PORT: 4000
       API_PREFIX: api/v1
       # Comma-separated exact origins. A wildcard is invalid alongside

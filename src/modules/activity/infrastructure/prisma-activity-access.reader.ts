@@ -29,9 +29,12 @@ export class PrismaActivityAccessReader implements ActivityAccessReader {
         department: true,
         managerId: true,
         screenshotsEnabled: true,
+        role: { select: { name: true } },
       },
     });
-    return row ?? undefined;
+    if (!row) return undefined;
+    const { role, ...rest } = row;
+    return { ...rest, role: role.name };
   }
 
   async findReports(managerId: string): Promise<ActivityTeamMember[]> {

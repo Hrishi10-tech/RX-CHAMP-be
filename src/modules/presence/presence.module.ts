@@ -4,11 +4,13 @@ import { PRESENCE_TEAM_READER } from './domain/presence-team-reader.port';
 import { ONLINE_SESSION_REPOSITORY } from './domain/online-session.repository';
 import { IDLE_READER } from './domain/idle-reader.port';
 import { DAY_END_READER } from './domain/day-end.reader';
+import { WORK_SESSION_STATE_READER } from './domain/work-session-state.reader';
 import { PrismaPresenceSessionRepository } from './infrastructure/prisma-presence-session.repository';
 import { PrismaPresenceTeamReader } from './infrastructure/prisma-presence-team-reader';
 import { PrismaOnlineSessionRepository } from './infrastructure/prisma-online-session.repository';
 import { PrismaIdleReader } from './infrastructure/prisma-idle-reader';
 import { PrismaDayEndReader } from './infrastructure/prisma-day-end.reader';
+import { PrismaWorkSessionStateReader } from './infrastructure/prisma-work-session-state.reader';
 import { DayEndedSubscriber } from './application/day-ended.subscriber';
 import { StartPresenceUseCase } from './application/use-cases/start-presence.use-case';
 import { EndPresenceUseCase } from './application/use-cases/end-presence.use-case';
@@ -32,6 +34,7 @@ import { PresenceGateway } from './presentation/presence.gateway';
     { provide: ONLINE_SESSION_REPOSITORY, useClass: PrismaOnlineSessionRepository },
     { provide: IDLE_READER, useClass: PrismaIdleReader },
     { provide: DAY_END_READER, useClass: PrismaDayEndReader },
+    { provide: WORK_SESSION_STATE_READER, useClass: PrismaWorkSessionStateReader },
     PresenceGateway,
     DayEndedSubscriber,
     StartPresenceUseCase,
@@ -45,5 +48,7 @@ import { PresenceGateway } from './presentation/presence.gateway';
     GetUserTimelineUseCase,
     GetProductivityUseCase,
   ],
+  // The shifts module ends breaks and pushes live status through these.
+  exports: [PresenceGateway, PRESENCE_SESSION_REPOSITORY, PRESENCE_TEAM_READER, DAY_END_READER],
 })
 export class PresenceModule {}

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
+import { RATE_LIMITS, RateLimit } from '@shared/security/rate-limits';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import {
@@ -10,7 +11,8 @@ import {
   TOKEN_SERVICE,
   TokenService,
 } from '@shared/security/token.service.port';
-import { EnrollDto, LoginDto } from '../application/dto';
+import { ChangePasswordDto, EnrollDto, LoginDto } from '../application/dto';
+import { ChangePasswordUseCase } from '../application/use-cases/change-password.use-case';
 import { RefreshTokenMeta } from '../domain/refresh-token.repository';
 import { LoginUserUseCase } from '../application/use-cases/login-user.use-case';
 import { EnrollAgentUseCase } from '../application/use-cases/enroll-agent.use-case';
@@ -26,12 +28,15 @@ export class AuthController {
     private readonly enrollAgent: EnrollAgentUseCase,
     private readonly refreshToken: RefreshTokenUseCase,
     private readonly logoutUser: LogoutUserUseCase,
+    private readonly changePassword: ChangePasswordUseCase,
     private readonly cookies: AuthCookieService,
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
   ) {}
 
   @Post('login')
   @HttpCode(200)
+  // Sized for an office behind one address; wrong passwords lock the account (LoginAttempts).
+  @RateLimit(RATE_LIMITS.login)
   @ApiOperation({ summary: 'Sign in; sets httpOnly access + refresh token cookies' })
   async login(
     @Body() body: LoginDto,
@@ -49,6 +54,7 @@ export class AuthController {
 
   @Post('enroll')
   @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: 'Password-less sign-in for a pre-configured agent (enrollment token)' })
   async enroll(
     @Body() body: EnrollDto,
@@ -65,6 +71,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
+  @RateLimit(RATE_LIMITS.refresh)
   @ApiOperation({ summary: 'Rotate the refresh token and re-issue the access cookie' })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const tokens = await this.refreshToken.execute(req.cookies?.[REFRESH_COOKIE], this.meta(req));
@@ -74,7 +81,7 @@ export class AuthController {
 
   @Get('socket-ticket')
   @UseGuards(JwtAuthGuard)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @RateLimit(RATE_LIMITS.socketTicket)
   @ApiOperation({
     summary:
       'Short-lived ticket for a socket.io handshake. Needed because browsers will ' +
@@ -90,6 +97,30 @@ export class AuthController {
       role: me.role,
     });
     return { token, expiresIn: SOCKET_TICKET_TTL_SEC };
+  }
+
+  @Post('change-password')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Change your own password (needs the current one); this device stays signed in',
+  })
+  async changeOwnPassword(
+    @CurrentUser() me: AuthenticatedUser,
+    @Body() body: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const tokens = await this.changePassword.execute(
+      me,
+      body.currentPassword,
+      body.newPassword,
+      body.signOutOtherDevices ?? false,
+      this.meta(req),
+    );
+    this.cookies.set(res, tokens);
+    return { changed: true, signedOutOtherDevices: body.signOutOtherDevices ?? false };
   }
 
   @Post('logout')

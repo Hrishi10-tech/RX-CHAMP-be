@@ -63,7 +63,7 @@ export class GetProductivityUseCase {
 
   private async authorize(me: AuthenticatedUser, userId: string): Promise<void> {
     if (me.id === userId) return;
-    if (me.role === Role.ADMIN || me.role === Role.SUPER_ADMIN) return;
+    if (me.role === Role.SUPER_ADMIN) return;
     const reports = await this.team.findReports(me.id);
     if (reports.some((r) => r.id === userId)) return;
     throw new ForbiddenException('That user is not one of your reports.');

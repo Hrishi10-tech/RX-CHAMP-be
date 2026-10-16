@@ -45,6 +45,15 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
   const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
 
   let useCase: ReportActivityUseCase;
+  // The use case judges `at` against the server clock (future samples are
+  // clamped, very old backlog is not stored), so pin the clock to the sample.
+  beforeAll(() => {
+    jest
+      .useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+      .setSystemTime(new Date(AT).getTime() + 30_000);
+  });
+  afterAll(() => jest.useRealTimers());
+
   beforeEach(() => {
     jest.clearAllMocks();
     useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
@@ -136,6 +145,36 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
     expect(ack.screenshotsEnabled).toBe(true);
   });
 
+  it('the activity:me push to staff carries no activity figures; a manager sees theirs', async () => {
+    workDays.findEnd.mockResolvedValue(null);
+    repo.listForUserByDate.mockResolvedValue([sample(60), sample(60)]);
+    const self = {
+      id: 'user-1',
+      firstName: 'Uma',
+      lastName: 'S',
+      email: 'uma@test',
+      department: null,
+      managerId: 'mgr-1',
+      screenshotsEnabled: true,
+    };
+    access.findSelf.mockResolvedValue({ ...self, role: 'USER' });
+    await useCase.execute('user-1', { at: AT });
+    const mine = gateway.emitToUser.mock.calls[0][1];
+    expect(mine).toMatchObject({ activeSec: 0, idleSec: 0, clockedOut: false, topApps: [] });
+    expect(mine.remainingSec).toBe(mine.workingBasisSec);
+    expect(mine.current).toMatchObject({ app: null, title: null, url: null });
+    expect(mine.current.status).toBeDefined();
+    // The manager's board still gets the figures.
+    expect(gateway.emitToManager.mock.calls[0][1].activeSec).toBeGreaterThan(0);
+
+    gateway.emitToUser.mockClear();
+    access.findSelf.mockResolvedValue({ ...self, role: 'MANAGER' });
+    await useCase.execute('user-1', { at: AT });
+    const managers = gateway.emitToUser.mock.calls[0][1];
+    expect(managers.activeSec).toBeGreaterThan(0);
+    expect(managers.current.app).toBe('Google Chrome');
+  });
+
   it('defaults the switch ON when the user row cannot be read', async () => {
     workDays.findEnd.mockResolvedValue(null);
     access.findSelf.mockResolvedValue(null);
@@ -200,10 +239,76 @@ describe('ReportActivityUseCase — reports after the day has ended', () => {
     expect(ack.shouldCapture).toBe(false);
   });
 
+  it("does not stop today's capture for a leftover sample from an earlier ended day", async () => {
+    jest
+      .useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+      .setSystemTime(new Date('2026-07-17T04:00:00.000Z'));
+    try {
+      // Yesterday (16 Jul) was ended; today (17 Jul) was not.
+      workDays.findEnd.mockImplementation(async (_u: string, date: string) =>
+        date === '2026-07-16'
+          ? { userId: 'user-1', date, endedAt: new Date('2026-07-16T18:00:00.000Z') }
+          : null,
+      );
+      const ack = await useCase.execute('user-1', { at: AT });
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(ack.shouldCapture).toBe(true);
+      expect(ack.dayEnded).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('broadcasts nothing — the board already shows DAY_ENDED', async () => {
     await useCase.execute('user-1', { at: AT });
 
     expect(gateway.emitToUser).not.toHaveBeenCalled();
     expect(gateway.emitToManager).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportActivityUseCase — clock checks', () => {
+  const repo = {
+    findLatestForUser: jest.fn().mockResolvedValue(null),
+    listForUserByDate: jest.fn().mockResolvedValue([]),
+    stampDuration: jest.fn(),
+    create: jest.fn(),
+  } as any;
+  const access = { findSelf: jest.fn().mockResolvedValue(null) } as any;
+  const workDays = {
+    findEnd: jest.fn().mockResolvedValue(null),
+    recordLogin: jest.fn(),
+    findLogin: jest.fn().mockResolvedValue(null),
+  } as any;
+  const meetings = { listForUserByDate: jest.fn().mockResolvedValue([]) } as any;
+  const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
+  const NOW = new Date('2026-10-13T09:00:00.000Z');
+
+  beforeAll(() =>
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] }).setSystemTime(NOW),
+  );
+  afterAll(() => jest.useRealTimers());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.create.mockImplementation(async (s: any) => ({ id: 'n', durationSec: 0, ...s }));
+  });
+
+  it('never stores a sample dated in the future', async () => {
+    const useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
+    await useCase.execute('user-1', { at: '2026-10-14T09:00:00.000Z' });
+    expect(repo.create.mock.calls[0][0].at.getTime()).toBe(NOW.getTime());
+  });
+
+  it('keeps a recent offline backlog sample at its own time', async () => {
+    const useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
+    await useCase.execute('user-1', { at: '2026-10-13T07:00:00.000Z' });
+    expect(repo.create.mock.calls[0][0].at.toISOString()).toBe('2026-10-13T07:00:00.000Z');
+  });
+
+  it('acknowledges but does not store backlog older than three days', async () => {
+    const useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway);
+    const ack = await useCase.execute('user-1', { at: '2026-10-01T07:00:00.000Z' });
+    expect(ack.ok).toBe(true);
+    expect(repo.create).not.toHaveBeenCalled();
   });
 });

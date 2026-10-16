@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional } from 'class-validator';
+import { IsId } from '@shared/validation/is-id';
 
 export class ExportScreenshotsQueryDto {
   @ApiProperty({ description: 'Whose screenshots to export' })
-  @IsUUID()
+  @IsId()
   userId!: string;
 
   @ApiPropertyOptional({ description: 'From ISO time' })

@@ -11,6 +11,7 @@ import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting
 import { DayEndedEvent } from '../../domain/events/day-ended.event';
 import { ActivityGateway } from '../../presentation/activity.gateway';
 import { ActivityMapper } from '../activity.mapper';
+import { myUpdateFor } from '../activity-redaction';
 import { DEFAULT_WORKING_BASIS_SEC, MAX_GAP_SEC } from '../activity.constants';
 import { clamp, elapsedSeconds, localDateString } from '../activity-date.util';
 import { EndDayResult } from '../activity.types';
@@ -50,10 +51,20 @@ export class EndDayUseCase {
       return { ok: true, date: record.date, endedAt: record.endedAt.toISOString() };
     }
 
-    await this.closeTrailingSample(userId, record.endedAt);
-    await this.announce(userId, date, record.endedAt);
+    await this.finish(userId, date, record.endedAt);
 
     return { ok: true, date: record.date, endedAt: record.endedAt.toISOString() };
+  }
+
+  /**
+   * Everything after the end mark: stamp the trailing sample, push the final
+   * state, raise DayEndedEvent. Public for the 3.1 End Day flow, which closes the
+   * work session and sets the end mark in one transaction and then calls this
+   * once, only when that call ended the day.
+   */
+  async finish(userId: string, date: string, endedAt: Date): Promise<void> {
+    await this.closeTrailingSample(userId, endedAt);
+    await this.announce(userId, date, endedAt);
   }
 
   /**
@@ -90,7 +101,11 @@ export class EndDayUseCase {
       );
 
       const current = ActivityMapper.toCurrentView(null, endedAt, true);
-      this.gateway.emitToUser(userId, ActivityMapper.toMyUpdate(current, daily));
+      // Staff get the push without their activity figures (SPEC 1.8).
+      this.gateway.emitToUser(
+        userId,
+        myUpdateFor(self?.role, ActivityMapper.toMyUpdate(current, daily)),
+      );
 
       if (self?.managerId) {
         this.gateway.emitToManager(

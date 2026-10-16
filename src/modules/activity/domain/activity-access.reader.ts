@@ -10,7 +10,11 @@ export type ActivityTeamMember = TeamMemberRef;
  * whether their automatic screenshots are switched on, which the agent is told on
  * every report.
  */
-export type ActivitySelf = TeamMemberWithManager & { screenshotsEnabled: boolean };
+export type ActivitySelf = TeamMemberWithManager & {
+  screenshotsEnabled: boolean;
+  /** Staff get their own pushes without activity figures (SPEC 1.8). */
+  role: 'SUPER_ADMIN' | 'MANAGER' | 'USER';
+};
 
 /**
  * The manager → reports relationship the activity module needs to decide who may

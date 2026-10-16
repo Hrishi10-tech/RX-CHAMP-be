@@ -33,21 +33,17 @@ export class PrismaWorkDayRepository implements WorkDayRepository {
 
   async markEnded(userId: string, date: string, endedAt: Date): Promise<MarkEndedResult> {
     // The row may already exist from the login. End it only if it isn't already
-    // ended — the first End Day wins and drives the one-shot event.
-    const existing = await this.prisma.workDayEnd.findUnique({
+    // ended: the conditional update is atomic, so of two simultaneous End Days
+    // exactly one sees count=1 and drives the one-shot event.
+    await this.prisma.workDayEnd.createMany({ data: [{ userId, date }], skipDuplicates: true });
+    const res = await this.prisma.workDayEnd.updateMany({
+      where: { userId, date, endedAt: null },
+      data: { endedAt },
+    });
+    const row = await this.prisma.workDayEnd.findUniqueOrThrow({
       where: { userId_date: { userId, date } },
     });
-
-    if (existing?.endedAt) {
-      return { record: this.toEndRecord(existing), created: false };
-    }
-
-    const row = await this.prisma.workDayEnd.upsert({
-      where: { userId_date: { userId, date } },
-      create: { userId, date, endedAt },
-      update: { endedAt },
-    });
-    return { record: this.toEndRecord(row), created: true };
+    return { record: this.toEndRecord(row), created: res.count > 0 };
   }
 
   async clearEnd(userId: string, date: string): Promise<boolean> {
@@ -61,21 +57,17 @@ export class PrismaWorkDayRepository implements WorkDayRepository {
   }
 
   async recordLogin(userId: string, date: string, loginAt: Date): Promise<void> {
-    const existing = await this.prisma.workDayEnd.findUnique({
-      where: { userId_date: { userId, date } },
+    // First report of the day sets the login; later reports never move it. Both
+    // steps are atomic, so two first reports arriving together cannot collide
+    // on the (user, date) key.
+    await this.prisma.workDayEnd.createMany({
+      data: [{ userId, date, loginAt }],
+      skipDuplicates: true,
     });
-
-    // First report of the day sets the login; later reports never move it.
-    if (!existing) {
-      await this.prisma.workDayEnd.create({ data: { userId, date, loginAt } });
-      return;
-    }
-    if (!existing.loginAt) {
-      await this.prisma.workDayEnd.update({
-        where: { userId_date: { userId, date } },
-        data: { loginAt },
-      });
-    }
+    await this.prisma.workDayEnd.updateMany({
+      where: { userId, date, loginAt: null },
+      data: { loginAt },
+    });
   }
 
   async findLogin(userId: string, date: string): Promise<Date | null> {

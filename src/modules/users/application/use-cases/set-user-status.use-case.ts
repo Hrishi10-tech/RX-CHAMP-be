@@ -3,6 +3,8 @@ import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptio
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { CACHE_SERVICE, CacheService } from '@shared/cache/cache.port';
+import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { UserAccessChangedEvent } from '../../domain/events/user-access-changed.event';
 import { UserStatus } from '@shared/types/user.types';
 import { UserAccessService } from '../../domain/services/user-access.service';
 import { UserMapper } from '../mappers/user.mapper';
@@ -24,6 +26,7 @@ export class SetUserStatusUseCase {
   constructor(
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(CACHE_SERVICE) private readonly cache: CacheService,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async execute(me: AuthenticatedUser, targetId: string, status: UserStatus): Promise<PublicUser> {
@@ -45,33 +48,36 @@ export class SetUserStatusUseCase {
 
     await this.assertNotLastAdmin(target.role, target.isActive(), status);
 
+    const changed = target.status !== status;
     target.changeStatus(status);
     const saved = await this.users.save(target);
     await this.cache.del(`user:profile:${targetId}`);
+    if (changed) {
+      await this.events.publish(
+        UserAccessChangedEvent.eventName,
+        new UserAccessChangedEvent(targetId, ['STATUS'], new Date(), status === 'ACTIVE'),
+      );
+    }
 
     return UserMapper.toPublic(saved);
   }
 
   /**
-   * Blocking the only remaining active admin would lock everyone out of every
-   * admin-only route, with no way back in through the API. Only checked on a real
-   * ACTIVE → DISABLED transition, so re-blocking stays idempotent.
+   * Blocking the only remaining active Super Admin would lock everyone out of
+   * every Super Admin route, with no way back in through the API. Only checked on
+   * a real ACTIVE -> DISABLED transition, so re-blocking stays idempotent.
    */
   private async assertNotLastAdmin(
     role: Role,
     targetIsActive: boolean,
     next: UserStatus,
   ): Promise<void> {
-    if (next !== 'DISABLED' || !targetIsActive || !this.access.isAdminRole(role)) return;
+    if (next !== 'DISABLED' || !targetIsActive || role !== Role.SUPER_ADMIN) return;
 
-    const [superAdmins, admins] = await Promise.all([
-      this.users.count({ role: Role.SUPER_ADMIN, status: 'ACTIVE' }),
-      this.users.count({ role: Role.ADMIN, status: 'ACTIVE' }),
-    ]);
-
-    if (superAdmins + admins <= 1) {
+    const superAdmins = await this.users.count({ role: Role.SUPER_ADMIN, status: 'ACTIVE' });
+    if (superAdmins <= 1) {
       throw new ValidationError(
-        'This is the last active admin. Promote or activate another admin before blocking this one.',
+        'This is the last active Super Admin. Promote or activate another Super Admin before blocking this one.',
       );
     }
   }

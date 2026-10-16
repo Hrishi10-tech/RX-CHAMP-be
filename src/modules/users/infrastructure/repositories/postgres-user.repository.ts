@@ -1,3 +1,4 @@
+import { isId } from '@shared/validation/is-id';
 import { Injectable } from '@nestjs/common';
 import { Prisma, RoleName } from '@prisma/client';
 import { Role } from '@shared/rbac/roles.enum';
@@ -12,6 +13,7 @@ import {
   UserSortOption,
 } from '../../domain/repositories/user.repository';
 import { UserPersistenceMapper } from '../mappers/user-persistence.mapper';
+import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { UserWriteModel, WITH_RELATIONS } from './postgres-user.repository.types';
 
 @Injectable()
@@ -59,6 +61,8 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async findById(id: string): Promise<User | null> {
+    // A malformed id is simply nobody (Prisma would otherwise fail the uuid cast with a 500).
+    if (!isId(id)) return null;
     const row = await this.prisma.user.findFirst({
       where: { id, ...this.notDeleted },
       include: WITH_RELATIONS,
@@ -138,9 +142,27 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async create(data: CreateUserData): Promise<User> {
-    const row = await this.prisma.user.create({
-      data: { email: data.email, ...(await this.toColumns(data)) },
-      include: WITH_RELATIONS,
+    const columns = await this.toColumns(data);
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: { email: data.email, ...columns },
+        include: WITH_RELATIONS,
+      });
+      // A shift chosen at creation is an explicit per-person assignment, so it
+      // shows (and can be cleared) on the Assign Shifts screen like any other.
+      if (data.shiftId) {
+        await tx.shiftAssignment.create({
+          data: {
+            target: 'USER',
+            userId: created.id,
+            companyId: created.companyId,
+            shiftId: data.shiftId,
+            effectiveFrom: dateKeyInZone(new Date(), appTimezone()),
+            createdById: data.createdById ?? null,
+          },
+        });
+      }
+      return created;
     });
     return UserPersistenceMapper.toDomain(row);
   }

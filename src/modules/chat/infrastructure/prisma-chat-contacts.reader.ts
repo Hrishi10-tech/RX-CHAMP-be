@@ -8,8 +8,8 @@ export class PrismaChatContactsReader implements ChatContactsReader {
   constructor(private readonly prisma: PrismaService) {}
 
   async findContacts(userId: string): Promise<ChatContact[]> {
-    const me = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const me = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
       select: { managerId: true, role: { select: { name: true } } },
     });
     if (!me) return [];
@@ -27,6 +27,7 @@ export class PrismaChatContactsReader implements ChatContactsReader {
         lastName: true,
         email: true,
         department: true,
+        managerId: true,
         role: { select: { name: true } },
       },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
@@ -39,7 +40,14 @@ export class PrismaChatContactsReader implements ChatContactsReader {
       email: r.email,
       department: r.department,
       role: r.role.name,
+      relation: r.id === me.managerId ? 'MANAGER' : r.managerId === userId ? 'REPORT' : 'ORG',
     }));
+  }
+
+  async canMessage(fromUserId: string, toUserId: string): Promise<boolean> {
+    if (fromUserId === toUserId) return false;
+    const contacts = await this.findContacts(fromUserId);
+    return contacts.some((c) => c.id === toUserId);
   }
 
   async findSender(userId: string): Promise<ChatSender | undefined> {
@@ -51,26 +59,20 @@ export class PrismaChatContactsReader implements ChatContactsReader {
   }
 
   /**
-   * Who this user may message.
-   *
-   * Admins talk to managers. They sit outside the org chart — nobody manages them
-   * and managers don't necessarily report to them — so scoping them to it left
-   * them with an empty contact list.
-   *
-   * Everyone else is limited to their own line of the chart: the manager above
-   * them, plus the reports below.
+   * Who this user may message: their own line of the chart, the manager above
+   * them and the reports below. A Super Admin additionally reaches every Manager,
+   * since Managers whose reporting line was never set would otherwise be unreachable.
    */
   private scopeFor(
     userId: string,
     role: RoleName,
     managerId: string | null,
   ): Prisma.UserWhereInput {
-    if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
-      return { role: { name: 'MANAGER' } };
-    }
-
-    return {
-      OR: [...(managerId ? [{ id: managerId }] : []), { managerId: userId }],
-    };
+    const line: Prisma.UserWhereInput[] = [
+      ...(managerId ? [{ id: managerId }] : []),
+      { managerId: userId },
+    ];
+    if (role === 'SUPER_ADMIN') line.push({ role: { name: 'MANAGER' } });
+    return { OR: line };
   }
 }

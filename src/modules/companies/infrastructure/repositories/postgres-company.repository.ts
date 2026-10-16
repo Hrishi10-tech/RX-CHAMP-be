@@ -18,6 +18,7 @@ export class PostgresCompanyRepository implements CompanyRepository {
 
   private buildWhere(filter: ListCompaniesFilter = {}): Prisma.CompanyWhereInput {
     const where: Prisma.CompanyWhereInput = { deletedAt: null };
+    if (filter.ids) where.id = { in: filter.ids };
     if (filter.search) {
       where.OR = [
         { name: { contains: filter.search, mode: 'insensitive' } },

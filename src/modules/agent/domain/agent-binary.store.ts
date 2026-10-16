@@ -2,6 +2,20 @@ import { Readable } from 'stream';
 
 export const AGENT_BINARY_STORE = Symbol('AGENT_BINARY_STORE');
 
+/** Per-platform stores: the Windows installer and the macOS app archives. */
+export const AGENT_BINARY_STORES = Symbol('AGENT_BINARY_STORES');
+
+/** mac = Apple Silicon (arm64); mac-x64 = Intel Macs. Each is a zipped, signed .app. */
+export type AgentPlatform = 'windows' | 'mac' | 'mac-x64';
+
+export const AGENT_PLATFORMS: AgentPlatform[] = ['windows', 'mac', 'mac-x64'];
+
+export function isMacPlatform(p: AgentPlatform): boolean {
+  return p === 'mac' || p === 'mac-x64';
+}
+
+export type AgentBinaryStores = Record<AgentPlatform, AgentBinaryStore>;
+
 /** What's known about the agent binary without fetching its bytes. */
 export interface AgentBinaryInfo {
   /** True when a binary is actually there to download. */

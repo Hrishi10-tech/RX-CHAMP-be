@@ -9,4 +9,6 @@ export interface ShiftView {
 
 export interface ShiftReader {
   findById(id: string): Promise<ShiftView | null>;
+  /** Whether a (not deleted) company with this id exists. */
+  companyExists(id: string): Promise<boolean>;
 }

@@ -179,6 +179,22 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
     return count;
   }
 
+  async signedInFrom(userId: string, ip: string, since: Date): Promise<boolean> {
+    const row = await this.prisma.refreshToken.findFirst({
+      where: { userId, ip, createdAt: { gte: since } },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  async revokeAllForUser(userId: string): Promise<number> {
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return count;
+  }
+
   async revoke(rawToken: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash: this.hash(rawToken), revokedAt: null },

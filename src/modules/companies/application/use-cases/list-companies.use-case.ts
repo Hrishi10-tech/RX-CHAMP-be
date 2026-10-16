@@ -14,14 +14,18 @@ const DEFAULT_LIMIT = 20;
 export class ListCompaniesUseCase {
   constructor(@Inject(COMPANY_REPOSITORY) private readonly companies: CompanyRepository) {}
 
-  async execute(query: ListCompaniesQueryDto = {}): Promise<ListCompaniesResult> {
+  /** `onlyIds` restricts the listing (a Manager sees only their own company). */
+  async execute(
+    query: ListCompaniesQueryDto = {},
+    onlyIds?: string[],
+  ): Promise<ListCompaniesResult> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
-    const filter = { search: query.search, skip: (page - 1) * limit, take: limit };
+    const filter = { search: query.search, ids: onlyIds, skip: (page - 1) * limit, take: limit };
 
     const [rows, total] = await Promise.all([
       this.companies.findAllWithStats(filter),
-      this.companies.count({ search: query.search }),
+      this.companies.count({ search: query.search, ids: onlyIds }),
     ]);
 
     return { companies: rows.map(CompanyMapper.toStats), total, page, limit };

@@ -1,4 +1,7 @@
 export class AppException extends Error {
+  /** Extra machine-readable context for clients (e.g. a required minimum length). */
+  public details?: Record<string, unknown>;
+
   constructor(
     public readonly status: number,
     public readonly code: string,
@@ -6,6 +9,12 @@ export class AppException extends Error {
   ) {
     super(message);
     this.name = new.target.name;
+  }
+
+  /** Attaches client-readable details; returns `this` so it can be thrown inline. */
+  withDetails(details: Record<string, unknown>): this {
+    this.details = details;
+    return this;
   }
 }
 
@@ -48,5 +57,17 @@ export class NotFoundError extends AppException {
 export class ConflictError extends AppException {
   constructor(message = 'Conflict', code = 'CONFLICT') {
     super(409, code, message);
+  }
+}
+
+export class TooManyAttemptsError extends AppException {
+  constructor(message = 'Too many attempts. Try again later.', code = 'TOO_MANY_ATTEMPTS') {
+    super(429, code, message);
+  }
+}
+
+export class UnprocessableError extends AppException {
+  constructor(message = 'Cannot process this request', code = 'UNPROCESSABLE') {
+    super(422, code, message);
   }
 }

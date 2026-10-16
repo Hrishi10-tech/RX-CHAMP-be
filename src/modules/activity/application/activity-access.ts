@@ -13,7 +13,7 @@ export async function assertCanAccess(
   access: ActivityAccessReader,
 ): Promise<void> {
   if (me.id === targetUserId) return;
-  if (me.role === Role.ADMIN || me.role === Role.SUPER_ADMIN) return;
+  if (me.role === Role.SUPER_ADMIN) return;
 
   const managerId = await access.findManagerId(targetUserId);
   if (managerId === undefined) throw new ForbiddenException('User not found');

@@ -7,6 +7,7 @@ import {
 import { PRESENCE_TEAM_READER, PresenceTeamReader } from '../../domain/presence-team-reader.port';
 import { DAY_END_READER, DayEndReader } from '../../domain/day-end.reader';
 import { MeetingNoteSharedEvent } from '../../domain/events/meeting-note-shared.event';
+import { PresenceStartedEvent } from '../../domain/events/presence-started.event';
 import { PresenceGateway } from '../../presentation/presence.gateway';
 import { StartPresenceDto } from '../dto/start-presence.dto';
 import { localDateString } from '../presence-date.util';
@@ -40,6 +41,13 @@ export class StartPresenceUseCase {
     );
 
     const current = PresenceMapper.currentFrom(opened, now);
+
+    // Lets the break schedule record (and if needed send for approval) a break
+    // started this way, e.g. by an agent older than scheduled breaks.
+    await this.events.publish(
+      PresenceStartedEvent.eventName,
+      new PresenceStartedEvent(userId, opened.id, dto.type, now),
+    );
 
     // Live-notify the manager that this report changed status.
     if (context?.managerId) {

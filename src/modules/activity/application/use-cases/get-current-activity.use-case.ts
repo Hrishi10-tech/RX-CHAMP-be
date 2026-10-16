@@ -10,8 +10,9 @@ import { ActivityMapper } from '../activity.mapper';
 import { CurrentActivityView } from '../activity.types';
 import { assertCanAccess } from '../activity-access';
 import { localDateString } from '../activity-date.util';
+import { redactCurrent, seesOwnActivity } from '../activity-redaction';
 
-/** What a single user is using right now (self, their manager, or an admin). */
+/** What a single user is using right now (self, their manager, or an admin; no app for staff). */
 @Injectable()
 export class GetCurrentActivityUseCase {
   constructor(
@@ -26,6 +27,8 @@ export class GetCurrentActivityUseCase {
     const latest = await this.repo.findLatestForUser(userId);
     // Signed off for the day reads as DAY_ENDED, not as "stopped reporting".
     const ended = await this.workDays.findEnd(userId, localDateString(now));
-    return ActivityMapper.toCurrentView(latest, now, ended !== null);
+    const view = ActivityMapper.toCurrentView(latest, now, ended !== null);
+    // Staff never see activity (SPEC 1.8): the status stays, the app, title and URL go.
+    return seesOwnActivity(me.role) ? view : redactCurrent(view);
   }
 }

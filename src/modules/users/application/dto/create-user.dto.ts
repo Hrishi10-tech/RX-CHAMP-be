@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@shared/rbac/roles.enum';
+import { IsId } from '@shared/validation/is-id';
 
 export class CreateUserItemDto {
   @ApiPropertyOptional({ example: 'jane@acme.test' })
@@ -26,7 +27,7 @@ export class CreateUserItemDto {
 
   @ApiPropertyOptional({
     enum: Role,
-    example: Role.MANAGER,
+    example: Role.USER,
     description: 'Role name; backend resolves it to the role_id',
   })
   @IsOptional()
@@ -52,6 +53,13 @@ export class CreateUserItemDto {
   @IsOptional()
   @IsString()
   shiftId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Super Admin only: who the new person reports to (defaults to the creator).',
+  })
+  @IsOptional()
+  @IsId()
+  managerId?: string;
 
   @ApiPropertyOptional({ example: '10:00' })
   @IsOptional()

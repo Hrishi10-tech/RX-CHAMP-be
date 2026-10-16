@@ -2,8 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { OnGatewayConnection, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { AuthenticatedGateway } from '@shared/websocket/authenticated.gateway';
+import { SocketAccessService } from '@shared/websocket/socket-access.service';
+import { socketCors } from '@shared/websocket/socket-cors';
 import { managerRoom } from '@shared/websocket/socket-rooms';
 import { TeamMemberPresenceView } from '../application/presence.types';
 
@@ -14,18 +16,18 @@ import { TeamMemberPresenceView } from '../application/presence.types';
  */
 @WebSocketGateway({
   namespace: '/presence',
-  cors: { origin: true, credentials: true },
+  cors: socketCors(),
 })
 export class PresenceGateway extends AuthenticatedGateway implements OnGatewayConnection {
   protected readonly logger = new Logger(PresenceGateway.name);
-  @WebSocketServer() protected server!: Server;
+  @WebSocketServer() protected server!: Namespace;
 
-  constructor(jwt: JwtService, config: ConfigService) {
-    super(jwt, config);
+  constructor(jwt: JwtService, config: ConfigService, access: SocketAccessService) {
+    super(jwt, config, access);
   }
 
-  handleConnection(client: Socket): void {
-    const userId = this.authenticateOrDisconnect(client);
+  async handleConnection(client: Socket): Promise<void> {
+    const userId = await this.authenticateOrDisconnect(client);
     if (!userId) return;
 
     void client.join(managerRoom(userId));

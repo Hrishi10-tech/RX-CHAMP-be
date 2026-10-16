@@ -8,10 +8,14 @@
   Running this is the ONE step that makes `GET /api/v1/agent/download` work; skip
   it and the endpoint returns 404 ("Agent binary is not available on the server").
 
-  Pipeline:
-    1. dotnet publish the WinUI agent (self-contained, win-x64).
-    2. Zip that publish folder into timechamp-agent-installer/payload/app.zip.
-    3. dotnet publish the installer (single-file exe that embeds app.zip).
+  Pipeline (RX Vision Agent 3.0 — the Avalonia agent + the v3 installer, both under
+  the sibling `agent/` solution):
+    1. dotnet publish the Avalonia agent agent/src/RXVision.Agent (self-contained,
+       win-x64, RXVision.exe at the publish-folder root).
+    2. Zip that publish folder into
+       agent/packaging/windows/RXVision.Installer/payload/app.zip.
+    3. dotnet publish the installer agent/packaging/windows/RXVision.Installer
+       (single-file exe that embeds app.zip; assembly name RXChampAgent).
     4. Upload the exe to S3 under a versioned key AND the stable "latest" key,
        stamped with the version and a SHA-256 so agents already installed can see
        they are behind and verify what they fetch. Uploading IS the release: there
@@ -21,9 +25,9 @@
 
 .PARAMETER Version
   Agent version, used for the versioned S3 key and stamped on the object so agents
-  in the field can tell they are behind. Defaults to <Version> in the agent csproj,
-  which is where it should be changed — passing this by hand risks labelling a build
-  as something it isn't.
+  in the field can tell they are behind. Defaults to <Version> in the agent's
+  Directory.Build.props, the single place the version is declared — passing this by
+  hand risks labelling a build as something it isn't.
 
 .PARAMETER Bucket / Region
   Target S3 bucket / region. Default rx-timechamp / ap-south-1.
@@ -48,41 +52,68 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
-Set-Location $repo
+$repo = Split-Path -Parent $PSScriptRoot          # the backend folder
+$root = Split-Path -Parent $repo                  # the rxvision repo root
+$agent = Join-Path $root 'agent'                   # the RX Vision Agent 3.0 solution
+Set-Location $agent
 
-$winui     = Join-Path $repo 'timechamp-agent-winui\TimeChampAgentWinUI.csproj'
-$installer = Join-Path $repo 'timechamp-agent-installer\TimeChampAgentInstaller.csproj'
+$app       = Join-Path $agent 'src\RXVision.Agent\RXVision.Agent.csproj'
+$installer = Join-Path $agent 'packaging\windows\RXVision.Installer\RXVision.Installer.csproj'
+$buildProps = Join-Path $agent 'Directory.Build.props'
 
-# The version is read from the agent's own csproj unless one is passed. Agents in
+# The version is read from Directory.Build.props unless one is passed. Agents in
 # the field compare their built-in assembly version against the version stamped on
 # the S3 object, so the two drifting apart is the one mistake that would either
 # stop updates dead or leave machines reinstalling the same build forever. Reading
 # it from the single place it is declared makes that impossible.
+$node = ([xml](Get-Content $buildProps)).Project.PropertyGroup.Version |
+          Where-Object { $_ } | Select-Object -First 1
+if (-not $node) { throw "No <Version> in $buildProps." }
+$propsVersion = "$node".Trim()
 if (-not $Version) {
-  $node = ([xml](Get-Content $winui)).Project.PropertyGroup.Version |
-            Where-Object { $_ } | Select-Object -First 1
-  if (-not $node) { throw "No <Version> in $winui - pass -Version explicitly." }
-  $Version = "$node".Trim()
-  Write-Host "Version $Version (from the agent csproj)" -ForegroundColor Cyan
+  $Version = $propsVersion
+  Write-Host "Version $Version (from Directory.Build.props)" -ForegroundColor Cyan
+} elseif ($Version.Trim().TrimStart('v', 'V') -ne $propsVersion) {
+  # The build inside is always $propsVersion; labelling it as anything else makes
+  # every agent download it, find the same version inside, and refuse it.
+  throw "-Version $Version does not match <Version>$propsVersion</Version> in $buildProps. Bump it there (and tag agent-v$propsVersion) instead."
+} else {
+  $Version = $propsVersion
 }
-$payload   = Join-Path $repo 'timechamp-agent-installer\payload\app.zip'
-$outExe    = Join-Path $repo 'timechamp-agent-installer\publish\RXChampAgent.exe'
+$payload   = Join-Path $agent 'packaging\windows\RXVision.Installer\payload\app.zip'
+$outExe    = Join-Path $agent 'dist\windows\RXChampAgent.exe'
 
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 
-# 1. Publish the self-contained WinUI agent -------------------------------------
+# 1. Publish the self-contained Avalonia agent ----------------------------------
 if (-not $SkipAgentBuild) {
-  Step 'Publishing WinUI agent (self-contained, win-x64)'
-  $pub = Join-Path $env:TEMP "rxchamp-agent-pub-$(Get-Random)"
-  dotnet publish $winui -c Release -r win-x64 --self-contained true -p:Platform=x64 -o $pub
-  if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
-  if (-not (Test-Path (Join-Path $pub 'TimeChampAgent.exe'))) {
-    throw "Publish produced no TimeChampAgent.exe in $pub"
+  Step 'Publishing the Avalonia agent (self-contained, win-x64)'
+  $pub = Join-Path $env:TEMP "rxvision-agent-pub-$(Get-Random)"
+  dotnet publish $app -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o $pub
+  if ($LASTEXITCODE -ne 0) { throw 'Agent publish failed.' }
+  if (-not (Test-Path (Join-Path $pub 'RXVision.exe'))) {
+    throw "Publish produced no RXVision.exe in $pub"
   }
 
-  # 2. Zip the publish folder CONTENTS at the archive root (Program.cs extracts
-  #    them straight into the install dir and expects TimeChampAgent.exe at root).
+  # Ship production defaults if the app project does not already carry an appsettings.json.
+  $settings = Join-Path $pub 'appsettings.json'
+  if (-not (Test-Path $settings)) {
+    Step 'Writing production appsettings.json'
+    @'
+{
+  "ApiBaseUrl": "https://api.rxvision.shop/api/v1",
+  "HeartbeatSeconds": 60,
+  "IdleThresholdSeconds": 300,
+  "ActivitySeconds": 60,
+  "ScreenshotMinutes": 5,
+  "AutoUpdate": true,
+  "UpdateCheckMinutes": 15
+}
+'@ | Set-Content -Path $settings -Encoding UTF8
+  }
+
+  # 2. Zip the publish folder CONTENTS at the archive root (the installer extracts
+  #    them straight into app\ and expects RXVision.exe at the zip root).
   Step 'Packing payload/app.zip'
   New-Item -ItemType Directory -Force -Path (Split-Path $payload) | Out-Null
   if (Test-Path $payload) { Remove-Item $payload -Force }
@@ -92,14 +123,14 @@ if (-not $SkipAgentBuild) {
   # Best-effort temp cleanup — a lingering AV/file lock must not abort the upload.
   try { Remove-Item $pub -Recurse -Force -ErrorAction Stop } catch { Write-Host "  (temp cleanup skipped: $($_.Exception.Message))" }
 } else {
-  Step 'Skipping WinUI build; reusing existing payload/app.zip'
+  Step 'Skipping agent build; reusing existing payload/app.zip'
   if (-not (Test-Path $payload)) { throw "No existing payload at $payload" }
 }
 
 # 3. Build the single-file installer exe ----------------------------------------
 Step 'Publishing installer exe'
-$instOut = Join-Path $env:TEMP "rxchamp-installer-$(Get-Random)"
-dotnet publish $installer -c Release -o $instOut
+$instOut = Join-Path $env:TEMP "rxvision-installer-$(Get-Random)"
+dotnet publish $installer -c Release -r win-x64 --self-contained true -o $instOut
 if ($LASTEXITCODE -ne 0) { throw 'Installer publish failed.' }
 $built = Join-Path $instOut 'RXChampAgent.exe'
 if (-not (Test-Path $built)) { throw "Installer produced no RXChampAgent.exe in $instOut" }

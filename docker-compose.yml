@@ -70,6 +70,32 @@ services:
       AWS_PREFIX: ${AWS_PREFIX:-uploads/}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # RX Vision 3.0. Compose passes only what is listed here, so every setting
+      # the app reads must appear in this list to reach the container.
+      # Business time zone: break windows, day keys and the approvals digest.
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
+      # Signs installer tokens and setup codes. Set it explicitly (different from
+      # the access secret); when empty it is derived from JWT_REFRESH_SECRET.
+      JWT_ENROLL_SECRET: ${JWT_ENROLL_SECRET:-}
+      JWT_ENROLL_TTL: ${JWT_ENROLL_TTL:-365d}
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      # Daily reminder to approvers about breaks waiting for a decision.
+      BREAK_DIGEST_CRON: ${BREAK_DIGEST_CRON:-30 18 * * *}
+      # RX Vision 3.1: the portal address the agent opens for "Open approvals".
+      # Empty: the first CORS_ORIGINS entry is used.
+      PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-}
+      AGENT_VERSION: ${AGENT_VERSION:-2.0.0}
+      AGENT_FILE_NAME: ${AGENT_FILE_NAME:-RXVision.exe}
+      # macOS agents (Apple Silicon and Intel), served from S3 like Windows.
+      AGENT_MAC_S3_KEY: ${AGENT_MAC_S3_KEY:-}
+      AGENT_MAC_FILE_NAME: ${AGENT_MAC_FILE_NAME:-RXVision-mac.zip}
+      AGENT_MAC_VERSION: ${AGENT_MAC_VERSION:-}
+      AGENT_MAC_X64_S3_KEY: ${AGENT_MAC_X64_S3_KEY:-}
+      AGENT_MAC_X64_FILE_NAME: ${AGENT_MAC_X64_FILE_NAME:-RXVision-mac-intel.zip}
+      AGENT_MAC_X64_VERSION: ${AGENT_MAC_X64_VERSION:-}
     # Not published to the host: nginx is the only public entry point.
     expose:
       - '4000'

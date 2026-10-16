@@ -19,6 +19,7 @@ import {
   CreateUserItemDto,
   CreateUsersDto,
   ListUsersQueryDto,
+  SetUserPasswordDto,
   SetUserScreenshotsDto,
   SetUserStatusDto,
   UpdateUserDto,
@@ -29,6 +30,7 @@ import { GetProfileUseCase } from '../application/use-cases/get-profile.use-case
 import { ListUsersUseCase } from '../application/use-cases/list-users.use-case';
 import { SetUserScreenshotsUseCase } from '../application/use-cases/set-user-screenshots.use-case';
 import { SetUserStatusUseCase } from '../application/use-cases/set-user-status.use-case';
+import { SetUserPasswordUseCase } from '../application/use-cases/set-user-password.use-case';
 import { UpdateUserUseCase } from '../application/use-cases/update-user.use-case';
 
 @ApiTags('users')
@@ -44,12 +46,12 @@ export class UsersController {
     private readonly setStatus: SetUserStatusUseCase,
     private readonly setScreenshots: SetUserScreenshotsUseCase,
     private readonly deleteUser: DeleteUserUseCase,
+    private readonly setPassword: SetUserPasswordUseCase,
   ) {}
 
   @Get()
   @ApiOperation({ summary: 'List users (role-scoped)' })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ListUsersQueryDto) {
-    console.log('req.qeruy loged in to usertable rolebased', query);
     const { users, total, page, limit } = await this.listUsers.execute(me, query);
     const totalPages = Math.ceil(total / limit);
     return envelope(users, { meta: { total, page, limit, totalPages } });
@@ -89,6 +91,21 @@ export class UsersController {
     @Body() body: SetUserStatusDto,
   ) {
     return this.setStatus.execute(me, id, body.status);
+  }
+
+  @Post(':id/password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "Set someone's password (Super Admin: anyone else; Manager: own staff). " +
+      'Optionally sign them out everywhere.',
+  })
+  async password(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: SetUserPasswordDto,
+  ) {
+    return this.setPassword.execute(me, id, body.newPassword, body.signOutEverywhere ?? false);
   }
 
   @Post(':id/screenshots')

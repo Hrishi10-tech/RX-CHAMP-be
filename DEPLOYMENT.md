@@ -158,6 +158,12 @@ chmod 600 /opt/rxchamp/.env
 nano /opt/rxchamp/.env      # replace CORS_ORIGINS and AGENT_PUBLIC_API_BASE_URL
 ```
 
+3.1 adds one optional variable, `PORTAL_PUBLIC_URL`: the portal address the 3.1
+agent opens for "Open approvals" (for example `https://vision.example.com`). When
+it is unset the first `CORS_ORIGINS` entry is used, so set it when that entry is
+not the portal people sign in to. It must be an `http(s)` URL; a wildcard is never
+used.
+
 Build and apply migrations:
 
 ```bash
@@ -170,11 +176,79 @@ npm run build               # -> dist/main.js
 > Take an RDS snapshot before `migrate deploy` on any release carrying schema
 > changes. It writes directly to your production database.
 
+### Upgrading to 3.1
+
+PostgreSQL 12 or later (nothing needs an extension). Stop the API while the
+migrations run, so no request holds a lock on the tables they alter:
+
+```bash
+cd /opt/rxchamp
+pm2 stop rxchamp-api
+# RDS snapshot now
+git pull && npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+pm2 start rxchamp-api        # or pm2 restart rxchamp-api
+```
+
+Two migrations apply, in this order. Prisma sends each file as one batch, which
+PostgreSQL runs as one transaction: each applies completely or not at all.
+
+| Migration | What it does | Measured |
+|---|---|---|
+| `20261014_focus_meetings_reports` | Schema only, additive: new tables `work_sessions`, `meeting_records`, `app_settings`, `report_runs`, `month_locks`; new nullable or defaulted columns on `break_records` and `shift_breaks`; `shifts.overrun_grace_min` defaults to 3 (existing rows keep theirs). `lock_timeout` 15 s: a table still in use fails it in 15 s instead of stalling the database | 0.03 to 0.06 s |
+| `20261014_focus_meetings_reports_backfill` | Data: lunch breaks not skippable, and shifts still on the 3.0 overrun grace of 2 minutes get 3 (rows changed after the schema migration are left alone); PENDING items get a due time 48 hours after the deploy (or after they were made, if later), so nobody is overdue on day one; 3.0 overruns sent for a decision with a reason count as asked to be focus time, with `overrun_sec` from the break's presence session; every past day in `work_day_ends` becomes one closed work session (source `BACKFILL`): login to End Day, or to the last keyboard or mouse input when End Day was never pressed, at most 14 hours. Today is left to the server, and a day that already has a work session is skipped, so it never inserts a day twice (a rerun, or a database that ran an earlier version). The last inputs are read in one pass over `activity_samples` | 4 to 6 s for 5.0 to 5.6 million activity samples and about 10,000 attendance days |
+
+Measured inside the database on a scratch copy (2 vCPU, PostgreSQL 16; Prisma adds
+about 1 s per `migrate deploy`) with `node test/live/migrations.live.mjs`
+(`VOLUME=5` adds 5 million samples); the same
+script checks every backfill rule on a copy of 3.0 data and drops the copy. The
+backfill decides "today" in Asia/Kolkata (the `APP_TIMEZONE` default); with another
+`APP_TIMEZONE`, edit the two `'Asia/Kolkata'` literals in its `migration.sql` before
+deploying.
+
+If a migration fails (for example the API was still running and a lock timed out),
+nothing of it is applied. `migrate deploy` then refuses to continue (`P3009`) until
+it is marked rolled back:
+
+```bash
+npx prisma migrate resolve --rolled-back 20261014_focus_meetings_reports_backfill   # the name it reported
+npx prisma migrate deploy
+```
+
+Rollback to 3.0 is code only: the 3.1 schema is additive, so check out the 3.0
+build, `npm ci && npm run build`, and restart. 3.0's `prisma migrate deploy`
+reports "No pending migrations" (it ignores the two it does not know), and the new
+columns have defaults for the rows 3.0 writes. Going forward to 3.1 again needs no
+migration. Restore the snapshot only to undo the data itself.
+
+3.1 also changes these:
+
+- Rate limits per client address are sized for an office of 100+ people behind one
+  NAT address: sign-in 300 a minute, token refresh 600, socket tickets 600 (30 per
+  person), activity reports 1200 (120 per person); everything else keeps
+  `RATE_LIMIT_MAX` (120) per `RATE_LIMIT_TTL` (60 s), per person or address. Wrong
+  passwords are still stopped per account (10 within 15 minutes pause that
+  account's sign-in for 15 minutes) and now per address too: 30 within 10 minutes
+  and that address may only sign in people who signed in from it in the last 30
+  days (429 for anyone else), so password spraying stops while the office keeps
+  working. nginx must pass the client address (the shipped
+  config does) or everyone shares one bucket.
+- `PORTAL_PUBLIC_URL` (optional, below).
+- Two jobs run shortly after every start: the monthly report catch-up (20 s; makes
+  last month's runs if the 1st-of-month job was missed, but never for a month
+  before 3.1's first boot, which it records once in `app_settings`) and the hourly
+  cache warm-up (45 s; a few seconds of database reads).
+
+Deploy the API first, then roll out the 3.1 agents; 3.0 and 2.9.1 agents keep
+working against the 3.1 API.
+
 Smoke-test before involving PM2:
 
 ```bash
 node dist/main.js
-# expect: "Time Champ API on http://localhost:4000/api/v1"
+# expect: "RX Vision API on http://localhost:4000/api/v1"
 # Ctrl-C once it boots cleanly
 ```
 
@@ -270,14 +344,28 @@ sudo certbot renew --dry-run
 The Linux server has no `timechamp-agent-installer/publish/` folder, so the
 on-disk default for the agent binary can't resolve. `.env.production` sets
 `AGENT_S3_KEY=agent/RXChampAgent.exe`, which switches `agent.module.ts` to
-serve from S3. Upload the exe once from your laptop:
+serve from S3.
+
+From RX Vision Agent 3.0 the agents are built from the `agent/` folder beside
+this backend, and uploaded with their version and SHA-256 stamped on the S3
+object (agents refuse an update without a checksum, so never upload with a
+plain `aws s3 cp`):
 
 ```bash
-aws s3 cp "timechamp-agent-installer/publish/RXChampAgent.exe" \
-  s3://rx-timechamp/agent/RXChampAgent.exe --region ap-south-1
+# Windows installer (on Windows):
+powershell -ExecutionPolicy Bypass -File scripts/publish-agent.ps1
+# or on Linux/macOS:
+bash ../agent/build/publish-windows.sh
+
+# macOS, Apple Silicon and Intel (Linux or macOS):
+bash ../agent/build/build-mac.sh && bash ../agent/build/publish-mac.sh --skip-build
 ```
 
-Re-upload on every agent release, and bump `AGENT_VERSION` in `.env`.
+Then set, once, in `.env`: `AGENT_S3_KEY=agent/RXChampAgent.exe`,
+`AGENT_MAC_S3_KEY=agent/RXVision-mac.zip` and
+`AGENT_MAC_X64_S3_KEY=agent/RXVision-mac-intel.zip`. Uploading is the release:
+every installed agent picks the new version up within about 15 minutes, so
+upload only after testing. The version comes from `agent/Directory.Build.props`.
 
 ## 12. Verify
 
@@ -300,8 +388,10 @@ machine and watch `pm2 logs rxchamp-api` for its activity reports.
 
 ```bash
 cd /opt/rxchamp
+pm2 stop rxchamp-api         # when the release carries migrations (3.1 does)
 git pull
 npm ci
+npx prisma generate          # the client must match the new schema
 npx prisma migrate deploy    # snapshot RDS first if migrations are included
 npm run build
 pm2 restart rxchamp-api
@@ -319,8 +409,9 @@ pm2 restart rxchamp-api
 ```
 
 Note that `prisma migrate deploy` is **not** reversible by checking out an
-older commit. Rolling back across a schema change means restoring the RDS
-snapshot you took before the deploy.
+older commit. A release whose migrations are additive (3.1's are) can still be
+rolled back by code alone, as above; otherwise rolling back across a schema change
+means restoring the RDS snapshot you took before the deploy.
 
 **Logs**
 
@@ -342,5 +433,11 @@ sudo tail -f /var/log/nginx/access.log
 | Agent download 500s | `AGENT_S3_KEY` unset, or the exe was never uploaded (step 11) |
 | `Cannot find module './app.module'` after a deploy | Incomplete `dist/` from a stale TypeScript incremental cache. Fixed by `tsBuildInfoFile` living inside `dist/`; if you see it, delete `dist/` and any stray root `*.tsbuildinfo`, then rebuild |
 | Rate limiting 429s everyone at once | `trust proxy` not applied — check `configure-app.ts` is on the deployed build |
+| `migrate deploy` fails with `P3009` | An earlier migration failed (nothing of it was applied): `npx prisma migrate resolve --rolled-back <name>`, then deploy again |
+| A 3.1 migration fails with `lock timeout` | The API (or another client) was still using the table: `pm2 stop rxchamp-api`, resolve as above, deploy again |
 | CORS errors in browser | `CORS_ORIGINS` still `https://app.REPLACE-ME.com` |
 | certbot fails HTTP-01 | DNS not propagated, or port 80 closed in the Lightsail firewall |
+
+
+## Optional: failed sign-ins per address
+`LOGIN_FAILED_PER_IP_MAX` (default 30) and `LOGIN_FAILED_PER_IP_WINDOW_MIN` (default 10). If the whole office signs in from one public address and the first morning trips the limit (sign-in answers "Sign-in paused" for people who have not signed in from that address before), raise `LOGIN_FAILED_PER_IP_MAX` to 100 in `.env` and restart the API.

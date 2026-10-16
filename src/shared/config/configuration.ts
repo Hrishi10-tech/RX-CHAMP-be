@@ -10,6 +10,11 @@ export interface AppConfig {
   timezone: string;
   apiPrefix: string;
   corsOrigins: string[];
+  /**
+   * The portal's public address, which 3.1 agents open for "Open approvals".
+   * Falls back to the first CORS_ORIGINS entry when unset.
+   */
+  portalPublicUrl: string;
   databaseUrl: string;
   jwt: {
     accessSecret: string;
@@ -42,6 +47,20 @@ export interface AppConfig {
     fileName: string;
     version: string;
     publicApiBaseUrl: string;
+    /** The macOS agent for Apple Silicon (a zipped .app), served alongside the Windows installer. */
+    mac: {
+      s3Key: string;
+      binaryPath: string;
+      fileName: string;
+      version: string;
+    };
+    /** The macOS agent for Intel Macs. */
+    macX64: {
+      s3Key: string;
+      binaryPath: string;
+      fileName: string;
+      version: string;
+    };
   };
 }
 
@@ -51,14 +70,18 @@ export default (): AppConfig => ({
   timezone: process.env.APP_TIMEZONE ?? 'Asia/Kolkata',
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
+  portalPublicUrl: process.env.PORTAL_PUBLIC_URL?.trim() ?? '',
   databaseUrl: process.env.DATABASE_URL ?? '',
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? 'change-me-access',
     accessTtl: process.env.JWT_ACCESS_TTL ?? '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh',
     refreshTtl: process.env.JWT_REFRESH_TTL ?? '7d',
+    // `||`, not `??`: an empty JWT_ENROLL_SECRET= must mean "not set". An empty
+    // secret would make @nestjs/jwt fall back to the access secret, and installer
+    // tokens would then be signed like access tokens.
     enrollSecret:
-      process.env.JWT_ENROLL_SECRET ??
+      process.env.JWT_ENROLL_SECRET?.trim() ||
       `${process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh'}-enroll`,
     enrollTtl: process.env.JWT_ENROLL_TTL ?? '365d',
   },
@@ -84,5 +107,20 @@ export default (): AppConfig => ({
     fileName: process.env.AGENT_FILE_NAME ?? 'RXVision.exe',
     version: process.env.AGENT_VERSION ?? '2.0.0',
     publicApiBaseUrl: process.env.AGENT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1',
+    mac: {
+      s3Key: process.env.AGENT_MAC_S3_KEY ?? '',
+      binaryPath:
+        process.env.AGENT_MAC_BINARY_PATH ?? 'timechamp-agent-mac/publish/RXVision-mac.zip',
+      fileName: process.env.AGENT_MAC_FILE_NAME ?? 'RXVision-mac.zip',
+      version: process.env.AGENT_MAC_VERSION ?? '',
+    },
+    macX64: {
+      s3Key: process.env.AGENT_MAC_X64_S3_KEY ?? '',
+      binaryPath:
+        process.env.AGENT_MAC_X64_BINARY_PATH ??
+        'timechamp-agent-mac/publish/RXVision-mac-intel.zip',
+      fileName: process.env.AGENT_MAC_X64_FILE_NAME ?? 'RXVision-mac-intel.zip',
+      version: process.env.AGENT_MAC_X64_VERSION ?? process.env.AGENT_MAC_VERSION ?? '',
+    },
   },
 });

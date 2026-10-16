@@ -18,6 +18,8 @@ export interface CreateUserData {
   shiftId?: string;
   shiftStart?: string;
   shiftEnd?: string;
+  /** Who created the account; recorded on the initial shift assignment. */
+  createdById?: string;
 }
 
 /**

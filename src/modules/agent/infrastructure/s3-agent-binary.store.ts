@@ -1,5 +1,5 @@
 import { Readable } from 'stream';
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { AgentBinaryInfo, AgentBinaryStore } from '../domain/agent-binary.store';
@@ -13,23 +13,23 @@ import { AgentBinaryInfo, AgentBinaryStore } from '../domain/agent-binary.store'
  * Reuses the same bucket/credentials as screenshot storage unless `AGENT_S3_BUCKET`
  * overrides the bucket.
  */
-@Injectable()
 export class S3AgentBinaryStore implements AgentBinaryStore {
   private readonly logger = new Logger(S3AgentBinaryStore.name);
   private readonly client: S3Client;
   private readonly bucket: string;
-  private readonly key: string;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly key: string,
+  ) {
+    const accessKeyId = config.get<string>('s3.accessKeyId');
+    const secretAccessKey = config.get<string>('s3.secretAccessKey');
     this.client = new S3Client({
       region: config.get<string>('s3.region')!,
-      credentials: {
-        accessKeyId: config.get<string>('s3.accessKeyId')!,
-        secretAccessKey: config.get<string>('s3.secretAccessKey')!,
-      },
+      // Empty keys fall back to the default provider chain (instance role etc.).
+      ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
     });
     this.bucket = config.get<string>('agent.s3Bucket') || config.get<string>('s3.bucket')!;
-    this.key = config.get<string>('agent.s3Key') ?? '';
   }
 
   async info(): Promise<AgentBinaryInfo> {

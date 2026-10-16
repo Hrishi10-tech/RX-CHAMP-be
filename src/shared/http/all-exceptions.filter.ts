@@ -17,6 +17,7 @@ const STATUS_CODE: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  422: 'UNPROCESSABLE',
   429: 'RATE_LIMITED',
 };
 
@@ -29,7 +30,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request>();
 
-    const { status, code, message } = this.normalize(exception);
+    const { status, code, message, details } = this.normalize(exception);
 
     if (status >= 500) {
       this.logger.error(
@@ -42,12 +43,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // `message` is duplicated at the top level because clients read it there to
     // show a toast; `error` keeps the code for programmatic handling.
-    res.status(status).json({ success: false, message, error: { code, message } });
+    res.status(status).json({
+      success: false,
+      message,
+      error: details ? { code, message, details } : { code, message },
+    });
   }
 
-  private normalize(exception: unknown): { status: number; code: string; message: string } {
+  private normalize(exception: unknown): {
+    status: number;
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  } {
     if (exception instanceof AppException) {
-      return { status: exception.status, code: exception.code, message: exception.message };
+      return {
+        status: exception.status,
+        code: exception.code,
+        message: exception.message,
+        details: exception.details,
+      };
     }
 
     if (exception instanceof DomainException) {
@@ -73,6 +88,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return { status: 409, code: 'CONFLICT', message: 'Resource already exists' };
       }
       if (exception.code === 'P2025') {
+        return { status: 404, code: 'NOT_FOUND', message: 'Resource not found' };
+      }
+      // A malformed id reached a uuid column: nothing by that id exists.
+      if (exception.code === 'P2023') {
         return { status: 404, code: 'NOT_FOUND', message: 'Resource not found' };
       }
     }

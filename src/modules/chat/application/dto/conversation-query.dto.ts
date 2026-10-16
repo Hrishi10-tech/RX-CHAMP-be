@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsId } from '@shared/validation/is-id';
 
 export class ConversationQueryDto {
   @ApiProperty({ description: 'The other participant in the conversation' })
-  @IsUUID()
+  @IsId()
   withUserId!: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 200, default: 50 })

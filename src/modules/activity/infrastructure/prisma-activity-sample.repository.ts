@@ -7,6 +7,20 @@ import {
   NewActivitySample,
 } from '../domain/activity-sample.repository';
 
+interface LatestRow {
+  id: string;
+  user_id: string;
+  device_id: string | null;
+  date: string;
+  at: Date;
+  duration_sec: number;
+  idle: boolean;
+  locked: boolean;
+  app: string | null;
+  title: string | null;
+  url: string | null;
+}
+
 @Injectable()
 export class PrismaActivitySampleRepository implements ActivitySampleRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -23,13 +37,33 @@ export class PrismaActivitySampleRepository implements ActivitySampleRepository 
     const result = new Map<string, ActivitySampleRecord>();
     if (userIds.length === 0) return result;
 
-    // Newest-first, then keep the first row seen per user.
-    const rows = await this.prisma.activitySample.findMany({
-      where: { userId: { in: userIds } },
-      orderBy: { at: 'desc' },
-    });
-    for (const row of rows) {
-      if (!result.has(row.userId)) result.set(row.userId, this.toRecord(row));
+    // One indexed lookup per person (activity_samples(user_id, at)), in a single
+    // round trip. Loading every sample and keeping the newest in memory pulled the
+    // team's entire history on each live-board poll.
+    const rows = await this.prisma.$queryRaw<LatestRow[]>`
+      SELECT s.id, s.user_id, s.device_id, s.date, s.at, s.duration_sec, s.idle, s.locked,
+             s.app, s.title, s.url
+      FROM unnest(${userIds}::uuid[]) AS u(id)
+      CROSS JOIN LATERAL (
+        SELECT * FROM activity_samples a
+        WHERE a.user_id = u.id
+        ORDER BY a.at DESC
+        LIMIT 1
+      ) s`;
+    for (const r of rows) {
+      result.set(r.user_id, {
+        id: r.id,
+        userId: r.user_id,
+        deviceId: r.device_id,
+        date: r.date,
+        at: r.at,
+        durationSec: r.duration_sec,
+        idle: r.idle,
+        locked: r.locked,
+        app: r.app,
+        title: r.title,
+        url: r.url,
+      });
     }
     return result;
   }

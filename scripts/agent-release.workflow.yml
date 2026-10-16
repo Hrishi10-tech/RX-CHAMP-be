@@ -3,8 +3,10 @@
 # the parent monorepo). Copy this into that monorepo's `.github/workflows/`,
 # adjust `working-directory` to the backend path, and set the AWS_* secrets.
 #
-# It runs on a version tag (e.g. `agent-v2.0.0`) and uploads to both the versioned
-# key and the stable `agent/RXChampAgent.exe`.
+# It runs on a version tag (e.g. `agent-v3.0.0`, which must match <Version> in
+# agent/Directory.Build.props; the script refuses a mismatch) and uploads to both
+# the versioned key and the stable `agent/RXChampAgent.exe`. The macOS zips are
+# built and uploaded by agent/build/build-mac.sh + publish-mac.sh (Linux or macOS).
 
 name: Publish agent
 
@@ -15,7 +17,7 @@ on:
 
 jobs:
   publish-agent:
-    runs-on: windows-latest # WinUI publish is Windows-only
+    runs-on: windows-latest # publish-agent.ps1 is PowerShell (build-windows.sh is the Linux equivalent)
     defaults:
       run:
         working-directory: backend # adjust to the backend path in the monorepo

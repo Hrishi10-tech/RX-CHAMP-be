@@ -1,4 +1,6 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { presenceScope } from './get-user-history.use-case';
 import {
   PRESENCE_SESSION_REPOSITORY,
   PresenceSessionRepository,
@@ -34,14 +36,15 @@ export class GetUserTimelineUseCase {
     @Inject(IDLE_READER) private readonly idle: IdleReader,
   ) {}
 
-  async execute(managerId: string, userId: string, date?: string): Promise<UserTimelineView> {
+  async execute(
+    me: Pick<AuthenticatedUser, 'id' | 'role'>,
+    userId: string,
+    date?: string,
+  ): Promise<UserTimelineView> {
     const now = new Date();
     const day = date ?? localDateString(now);
 
-    const reports = await this.team.findReports(managerId);
-    if (!reports.some((r) => r.id === userId)) {
-      throw new ForbiddenException('That user is not one of your reports.');
-    }
+    await presenceScope(this.team, me, userId);
 
     const sessions = await this.sessions.listForUserByDate(userId, day);
     const intervals = await this.online.listIntervalsForUserByDate(userId, day);

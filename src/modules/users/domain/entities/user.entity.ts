@@ -95,7 +95,7 @@ export class User {
     return this.props.role === Role.SUPER_ADMIN;
   }
   isAdmin(): boolean {
-    return this.props.role === Role.SUPER_ADMIN || this.props.role === Role.ADMIN;
+    return this.props.role === Role.SUPER_ADMIN;
   }
   isManager(): boolean {
     return this.props.role === Role.MANAGER;
@@ -151,7 +151,14 @@ export class User {
   }
 
   assignManager(managerId: string | null): void {
+    if (managerId !== null && managerId === this.props.id.value) {
+      throw new InvalidUserState('a user cannot be their own manager');
+    }
     this.props.managerId = managerId;
+  }
+
+  changeRole(next: Role): void {
+    this.props.role = next;
   }
 
   assignCompany(companyId: string | null, companyName: string | null = null): void {

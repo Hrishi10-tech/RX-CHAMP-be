@@ -14,9 +14,25 @@ import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting
 import { ActivityGateway } from '../../presentation/activity.gateway';
 import { ReportActivityDto } from '../dto';
 import { ActivityMapper } from '../activity.mapper';
+import { myUpdateFor } from '../activity-redaction';
 import { DEFAULT_WORKING_BASIS_SEC, LOCK_SCREEN_APP, MAX_GAP_SEC } from '../activity.constants';
 import { ActivityAck, DailyActivityView } from '../activity.types';
 import { clamp, elapsedSeconds, localDateString } from '../activity-date.util';
+
+/** A sample stamped this far ahead of the server clock is taken as "now". */
+const MAX_FUTURE_SKEW_MS = 2 * 60_000;
+/** Offline backlog older than this is acknowledged but not stored. */
+const MAX_BACKLOG_MS = 72 * 60 * 60_000;
+
+/**
+ * The instant a sample is filed under: the agent's stamp, unless it is not a
+ * date or lies further in the future than the allowed skew (then now).
+ */
+export function sampleInstant(raw: string | undefined, now: Date): Date {
+  const at = raw ? new Date(raw) : now;
+  if (Number.isNaN(at.getTime()) || at.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS) return now;
+  return at;
+}
 
 /**
  * Ingests one foreground-activity sample from the agent. Stamps the previous
@@ -36,8 +52,13 @@ export class ReportActivityUseCase {
   ) {}
 
   async execute(userId: string, body: ReportActivityDto): Promise<ActivityAck> {
-    const at = body.at ? new Date(body.at) : new Date();
-    const date = localDateString(at);
+    // The agent stamps each sample and may replay an offline backlog, so a past
+    // `at` is legitimate; a future one (a wrong PC clock, or a forged report) is
+    // never trusted past a small skew, and ancient backlog is not stored.
+    const now = new Date();
+    const at = sampleInstant(body.at, now);
+    const stale = now.getTime() - at.getTime() > MAX_BACKLOG_MS;
+    const date = localDateString(stale ? now : at);
 
     // The day's totals are final once it has been ended, so a late report — an
     // in-flight sample, or an agent restarted after signing off — is acknowledged
@@ -48,7 +69,15 @@ export class ReportActivityUseCase {
     const screenshotsEnabled = self?.screenshotsEnabled ?? true;
 
     const end = await this.workDays.findEnd(userId, date);
-    if (end) return this.endedAck(userId, date, end.endedAt, screenshotsEnabled);
+    if (end) {
+      // Never stored. What the agent should do now depends on today, not on the
+      // sample's day: yesterday's leftovers (queued while offline, sent this
+      // morning) must not stop today's tracking.
+      const today = localDateString(now);
+      const todayEnded = date === today ? true : !!(await this.workDays.findEnd(userId, today));
+      return this.endedAck(userId, date, end.endedAt, screenshotsEnabled, todayEnded);
+    }
+    if (stale) return this.progressAck(userId, date, now, screenshotsEnabled);
 
     // Close the previous open sample: it was foreground until this one arrived.
     const prev = await this.repo.findLatestForUser(userId);
@@ -106,12 +135,74 @@ export class ReportActivityUseCase {
     };
   }
 
-  /** Ack for a day that is already over: the frozen totals, and stop capturing. */
+  /**
+   * 3.1: a sample from a 3.1 agent with no open work session is not stored (the
+   * agent tracks nothing before Start Day). Answers with today's progress so far,
+   * `shouldCapture: false`, and whether today was ended.
+   */
+  async ackWithoutStoring(userId: string, now: Date): Promise<ActivityAck> {
+    const self = await this.access.findSelf(userId);
+    const date = localDateString(now);
+    const end = await this.workDays.findEnd(userId, date);
+    const basis = DEFAULT_WORKING_BASIS_SEC;
+    const daySamples = await this.repo.listForUserByDate(userId, date);
+    const meetings = await this.meetings.listForUserByDate(userId, date);
+    const login = await this.workDays.findLogin(userId, date);
+    const daily = ActivityMapper.computeDaily(
+      daySamples,
+      date,
+      basis,
+      now,
+      end?.endedAt ?? null,
+      meetings,
+      login,
+    );
+    return {
+      ok: true,
+      activeSec: daily.activeSec,
+      workingBasisSec: basis,
+      remainingSec: daily.remainingSec,
+      clockedOut: daily.clockedOut,
+      dayEnded: end !== null,
+      shouldCapture: false,
+      screenshotsEnabled: self?.screenshotsEnabled ?? true,
+    };
+  }
+
+  /** Ack without storing (a sample too old to keep): today's progress so far. */
+  private async progressAck(
+    userId: string,
+    date: string,
+    now: Date,
+    screenshotsEnabled: boolean,
+  ): Promise<ActivityAck> {
+    const basis = DEFAULT_WORKING_BASIS_SEC;
+    const daySamples = await this.repo.listForUserByDate(userId, date);
+    const meetings = await this.meetings.listForUserByDate(userId, date);
+    const login = await this.workDays.findLogin(userId, date);
+    const daily = ActivityMapper.computeDaily(daySamples, date, basis, now, null, meetings, login);
+    return {
+      ok: true,
+      activeSec: daily.activeSec,
+      workingBasisSec: basis,
+      remainingSec: daily.remainingSec,
+      clockedOut: daily.clockedOut,
+      dayEnded: false,
+      shouldCapture: true,
+      screenshotsEnabled,
+    };
+  }
+
+  /**
+   * Ack for a sample whose day is already over: that day's frozen totals, and
+   * stop capturing only when today has been ended too.
+   */
   private async endedAck(
     userId: string,
     date: string,
     endedAt: Date,
     screenshotsEnabled: boolean,
+    todayEnded: boolean,
   ): Promise<ActivityAck> {
     const basis = DEFAULT_WORKING_BASIS_SEC;
     const daySamples = await this.repo.listForUserByDate(userId, date);
@@ -124,8 +215,8 @@ export class ReportActivityUseCase {
       workingBasisSec: basis,
       remainingSec: daily.remainingSec,
       clockedOut: daily.clockedOut,
-      dayEnded: true,
-      shouldCapture: false,
+      dayEnded: todayEnded,
+      shouldCapture: !todayEnded,
       screenshotsEnabled,
     };
   }
@@ -140,7 +231,11 @@ export class ReportActivityUseCase {
   ): Promise<void> {
     try {
       const current = ActivityMapper.toCurrentView(created, now);
-      this.gateway.emitToUser(userId, ActivityMapper.toMyUpdate(current, daily));
+      // Staff get the push without their activity figures (SPEC 1.8).
+      this.gateway.emitToUser(
+        userId,
+        myUpdateFor(self?.role, ActivityMapper.toMyUpdate(current, daily)),
+      );
 
       if (self?.managerId) {
         this.gateway.emitToManager(

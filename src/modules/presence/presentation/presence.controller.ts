@@ -79,22 +79,31 @@ export class PresenceController {
   // ---- Manager endpoints ---------------------------------------------------
 
   @Get('team/live')
-  @Roles(Role.MANAGER, Role.ADMIN, Role.SUPER_ADMIN)
+  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Live status of every report (manager)' })
   async teamLive(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.getTeamLive.execute(me.id));
   }
 
   @Get('team/summary')
-  @Roles(Role.MANAGER, Role.ADMIN, Role.SUPER_ADMIN)
+  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Day-wise break/lunch/meeting totals per report (manager)' })
   async teamSummary(@CurrentUser() me: AuthenticatedUser, @Query() query: PresenceSummaryQueryDto) {
     const { date, rows } = await this.getTeamSummary.execute(me.id, query.date);
     return envelope(rows, { meta: { date } });
   }
 
+  @Get('team/:userId/current')
+  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: "One report's current status + elapsed time (manager, or any user for a Super Admin)",
+  })
+  async userCurrent(@CurrentUser() me: AuthenticatedUser, @Param('userId') userId: string) {
+    return envelope(await this.getCurrent.forMember(me, userId));
+  }
+
   @Get('team/:userId/history')
-  @Roles(Role.MANAGER, Role.ADMIN, Role.SUPER_ADMIN)
+  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
   @ApiOperation({
     summary: "One report's day-wise totals over the last N days (worked-hours trend)",
   })
@@ -103,17 +112,17 @@ export class PresenceController {
     @Param('userId') userId: string,
     @Query() query: UserHistoryQueryDto,
   ) {
-    return envelope(await this.getUserHistory.execute(me.id, userId, query.days ?? 7));
+    return envelope(await this.getUserHistory.execute(me, userId, query.days ?? 7));
   }
 
   @Get('team/:userId/timeline')
-  @Roles(Role.MANAGER, Role.ADMIN, Role.SUPER_ADMIN)
+  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
   @ApiOperation({ summary: "One report's day split into hourly work/break/lunch/meeting buckets" })
   async userTimeline(
     @CurrentUser() me: AuthenticatedUser,
     @Param('userId') userId: string,
     @Query() query: PresenceSummaryQueryDto,
   ) {
-    return envelope(await this.getUserTimeline.execute(me.id, userId, query.date));
+    return envelope(await this.getUserTimeline.execute(me, userId, query.date));
   }
 }

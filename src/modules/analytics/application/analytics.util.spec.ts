@@ -89,11 +89,10 @@ describe('computeDayProductivity — focus time', () => {
   it('drops a broken-up day below a solid one of the same total work', () => {
     const solid = working(60);
     // Same 60 working minutes, but chopped into 6 ten-minute bursts.
-    const choppy = Array.from({ length: 6 })
-      .flatMap((_, block) => [
-        ...Array.from({ length: 10 }, (_, i) => sample(block * 15 + i, false)),
-        ...Array.from({ length: 5 }, (_, i) => sample(block * 15 + 10 + i, true)),
-      ]);
+    const choppy = Array.from({ length: 6 }).flatMap((_, block) => [
+      ...Array.from({ length: 10 }, (_, i) => sample(block * 15 + i, false)),
+      ...Array.from({ length: 5 }, (_, i) => sample(block * 15 + 10 + i, true)),
+    ]);
 
     const solidFocus = computeDayProductivity(online, [], NOW, solid).focusSec;
     const choppyFocus = computeDayProductivity(online, [], NOW, choppy).focusSec;

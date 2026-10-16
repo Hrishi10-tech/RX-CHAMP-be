@@ -18,8 +18,23 @@ export class InMemoryEventBus implements EventBus {
 
   subscribe<T>(name: string, handler: (payload: T) => void | Promise<void>): void {
     this.emitter.on(name, (payload: T) => {
-      Promise.resolve(handler(payload)).catch((e) =>
-        this.logger.error(`handler for ${name} failed: ${(e as Error).message}`),
+      // A subscriber must never break the publisher: sync throws and async
+      // rejections are both logged and swallowed.
+      let result: void | Promise<void>;
+      try {
+        result = handler(payload);
+      } catch (e) {
+        this.logger.error(
+          `handler for ${name} failed: ${(e as Error).message}`,
+          (e as Error).stack,
+        );
+        return;
+      }
+      Promise.resolve(result).catch((e) =>
+        this.logger.error(
+          `handler for ${name} failed: ${(e as Error).message}`,
+          (e as Error).stack,
+        ),
       );
     });
   }

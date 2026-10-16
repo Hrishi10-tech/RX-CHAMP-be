@@ -46,12 +46,14 @@ function actor(role: Role, id = 'mgr-1'): AuthenticatedUser {
 describe('SetUserStatusUseCase', () => {
   const users = { findById: jest.fn(), save: jest.fn(), count: jest.fn() } as any;
   const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn(), delByPattern: jest.fn() } as any;
-  const useCase = new SetUserStatusUseCase(users, cache);
+  const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
+  const useCase = new SetUserStatusUseCase(users, cache, events);
 
   beforeEach(() => {
     jest.resetAllMocks();
     users.save.mockImplementation(async (u: User) => u);
     users.count.mockResolvedValue(5);
+    events.publish.mockResolvedValue(undefined);
   });
 
   it("blocks a manager's own report", async () => {
@@ -61,6 +63,11 @@ describe('SetUserStatusUseCase', () => {
 
     expect(result.status).toBe('DISABLED');
     expect(cache.del).toHaveBeenCalledWith('user:profile:u-1');
+    // Approvals waiting on (or for) this person get re-routed.
+    expect(events.publish).toHaveBeenCalledWith(
+      'user.access-changed',
+      expect.objectContaining({ userId: 'u-1', changes: ['STATUS'] }),
+    );
   });
 
   it('unblocks by setting ACTIVE', async () => {
@@ -81,6 +88,7 @@ describe('SetUserStatusUseCase', () => {
     const result = await useCase.execute(actor(Role.MANAGER), 'u-1', 'DISABLED');
 
     expect(result.status).toBe('DISABLED');
+    expect(events.publish).not.toHaveBeenCalled();
   });
 
   it('rejects a plain user outright', async () => {
@@ -91,8 +99,19 @@ describe('SetUserStatusUseCase', () => {
   });
 
   it('rejects blocking yourself', async () => {
-    await expect(useCase.execute(actor(Role.ADMIN, 'a-1'), 'a-1', 'DISABLED')).rejects.toThrow(
-      /your own account/i,
+    await expect(
+      useCase.execute(actor(Role.SUPER_ADMIN, 'a-1'), 'a-1', 'DISABLED'),
+    ).rejects.toThrow(/your own account/i);
+  });
+
+  it("does not let a manager block another manager's staff or a fellow manager", async () => {
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'm-2', role: Role.MANAGER, managerId: 'mgr-1' }),
+    );
+
+    // Even reporting to them, a Manager is not theirs to block: only staff are.
+    await expect(useCase.execute(actor(Role.MANAGER), 'm-2', 'DISABLED')).rejects.toThrow(
+      /unknown user/i,
     );
   });
 
@@ -104,30 +123,44 @@ describe('SetUserStatusUseCase', () => {
     );
   });
 
-  it('refuses to block the last active admin', async () => {
-    users.findById.mockResolvedValue(makeUser({ id: 'a-2', role: Role.ADMIN }));
-    // 0 SUPER_ADMIN + 1 ADMIN active — and that one ADMIN is the target.
-    users.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+  it('refuses to block the last active Super Admin', async () => {
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'sa-2', role: Role.SUPER_ADMIN, managerId: null }),
+    );
+    users.count.mockResolvedValueOnce(1);
 
     await expect(
-      useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'a-2', 'DISABLED'),
-    ).rejects.toThrow(/last active admin/i);
+      useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'sa-2', 'DISABLED'),
+    ).rejects.toThrow(/last active super admin/i);
     expect(users.save).not.toHaveBeenCalled();
   });
 
-  it('allows blocking an admin while others remain active', async () => {
-    users.findById.mockResolvedValue(makeUser({ id: 'a-2', role: Role.ADMIN }));
-    users.count.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+  it('allows blocking a Super Admin while another remains active', async () => {
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'sa-2', role: Role.SUPER_ADMIN, managerId: null }),
+    );
+    users.count.mockResolvedValueOnce(2);
 
-    const result = await useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'a-2', 'DISABLED');
+    const result = await useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'sa-2', 'DISABLED');
 
     expect(result.status).toBe('DISABLED');
   });
 
-  it('does not run the last-admin check when unblocking', async () => {
-    users.findById.mockResolvedValue(makeUser({ id: 'a-2', role: Role.ADMIN, status: 'DISABLED' }));
+  it('lets a Super Admin block a Manager without the last-admin check', async () => {
+    users.findById.mockResolvedValue(makeUser({ id: 'm-2', role: Role.MANAGER, managerId: null }));
 
-    await useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'a-2', 'ACTIVE');
+    const result = await useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'm-2', 'DISABLED');
+
+    expect(result.status).toBe('DISABLED');
+    expect(users.count).not.toHaveBeenCalled();
+  });
+
+  it('does not run the last-admin check when unblocking', async () => {
+    users.findById.mockResolvedValue(
+      makeUser({ id: 'sa-2', role: Role.SUPER_ADMIN, managerId: null, status: 'DISABLED' }),
+    );
+
+    await useCase.execute(actor(Role.SUPER_ADMIN, 'sa-1'), 'sa-2', 'ACTIVE');
 
     expect(users.count).not.toHaveBeenCalled();
   });

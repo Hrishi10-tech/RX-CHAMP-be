@@ -1,20 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsISO8601,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsId } from '@shared/validation/is-id';
 
 export class ListScreenshotsQueryDto {
   @ApiProperty({ description: 'Whose screenshots to list' })
-  @IsUUID()
+  @IsId()
   userId!: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 200, default: 50 })

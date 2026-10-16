@@ -27,7 +27,7 @@ describe('ListUsersUseCase', () => {
   });
 
   it('passes the requested sort through to the repository', async () => {
-    await useCase.execute(actor(Role.ADMIN), { sort: 'name_asc' });
+    await useCase.execute(actor(Role.SUPER_ADMIN), { sort: 'name_asc' });
 
     expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort: 'name_asc' }));
   });
@@ -35,14 +35,14 @@ describe('ListUsersUseCase', () => {
   it.each(['name_asc', 'name_desc', 'joined_asc', 'joined_desc', 'role_asc', 'role_desc'] as const)(
     'forwards %s unchanged',
     async (sort) => {
-      await useCase.execute(actor(Role.ADMIN), { sort });
+      await useCase.execute(actor(Role.SUPER_ADMIN), { sort });
 
       expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort }));
     },
   );
 
   it('leaves sort undefined when the client omits it, so the repository default applies', async () => {
-    await useCase.execute(actor(Role.ADMIN), {});
+    await useCase.execute(actor(Role.SUPER_ADMIN), {});
 
     expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort: undefined }));
   });
@@ -56,7 +56,7 @@ describe('ListUsersUseCase', () => {
   });
 
   it('paginates independently of the sort', async () => {
-    await useCase.execute(actor(Role.ADMIN), { sort: 'name_asc', page: 3, limit: 10 });
+    await useCase.execute(actor(Role.SUPER_ADMIN), { sort: 'name_asc', page: 3, limit: 10 });
 
     expect(users.findAll).toHaveBeenCalledWith(
       expect.objectContaining({ sort: 'name_asc', skip: 20, take: 10 }),
@@ -68,7 +68,7 @@ describe('ListUsersUseCase', () => {
   // list is then narrowed by all of them at once.
   describe('filters', () => {
     it('combines role and team, which is what the panel asks for', async () => {
-      await useCase.execute(actor(Role.ADMIN), { role: Role.USER, department: 'Marketing' });
+      await useCase.execute(actor(Role.SUPER_ADMIN), { role: Role.USER, department: 'Marketing' });
 
       expect(users.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ role: Role.USER, department: 'Marketing' }),
@@ -78,7 +78,7 @@ describe('ListUsersUseCase', () => {
     it('keeps the role filter when a managerId is also given', async () => {
       // Regression: the two used to be either/or, so picking a Role on any
       // manager-scoped screen silently did nothing.
-      await useCase.execute(actor(Role.ADMIN), { managerId: 'mgr-9', role: Role.MANAGER });
+      await useCase.execute(actor(Role.SUPER_ADMIN), { managerId: 'mgr-9', role: Role.MANAGER });
 
       expect(users.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ managerId: 'mgr-9', role: Role.MANAGER }),
@@ -86,13 +86,13 @@ describe('ListUsersUseCase', () => {
     });
 
     it('forwards the company filter', async () => {
-      await useCase.execute(actor(Role.ADMIN), { companyId: 'co-1' });
+      await useCase.execute(actor(Role.SUPER_ADMIN), { companyId: 'co-1' });
 
       expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'co-1' }));
     });
 
     it('widens the joined range to whole days at both ends', async () => {
-      await useCase.execute(actor(Role.ADMIN), {
+      await useCase.execute(actor(Role.SUPER_ADMIN), {
         joinedFrom: '2026-08-01',
         joinedTo: '2026-08-31',
       });
@@ -107,7 +107,7 @@ describe('ListUsersUseCase', () => {
     });
 
     it('leaves the joined range undefined when no dates are picked', async () => {
-      await useCase.execute(actor(Role.ADMIN), { role: Role.USER });
+      await useCase.execute(actor(Role.SUPER_ADMIN), { role: Role.USER });
 
       expect(users.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ joinedFrom: undefined, joinedTo: undefined }),
@@ -115,7 +115,7 @@ describe('ListUsersUseCase', () => {
     });
 
     it('applies every filter at once', async () => {
-      await useCase.execute(actor(Role.ADMIN), {
+      await useCase.execute(actor(Role.SUPER_ADMIN), {
         role: Role.USER,
         department: 'Marketing',
         companyId: 'co-1',
@@ -149,7 +149,7 @@ describe('ListUsersUseCase', () => {
     });
 
     it('counts with the same filters it lists with, so paging totals match', async () => {
-      await useCase.execute(actor(Role.ADMIN), {
+      await useCase.execute(actor(Role.SUPER_ADMIN), {
         role: Role.USER,
         department: 'Marketing',
         page: 2,

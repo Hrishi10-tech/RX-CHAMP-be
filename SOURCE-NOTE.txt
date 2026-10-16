@@ -1,0 +1,23 @@
+RX VISION 3.1 BACKEND (API SERVER) SOURCE
+=========================================
+
+NestJS + Prisma + PostgreSQL. Release tag v3.1.0.
+
+To run it locally (full steps: docs/3.1/TESTING.md and backend/README.md):
+  1. npm ci
+  2. copy .env.example to .env and set DATABASE_URL (never reuse example secrets on a server)
+  3. npx prisma generate
+  4. npx prisma migrate reset --force     (local database only: wipes it and seeds demo accounts)
+  5. npm run start:dev
+
+To deploy it: docs/3.1/DEPLOY.md.
+
+Not included, on purpose:
+  node_modules   dependencies - npm ci restores them
+  dist           compiled output - npm run build recreates it
+  .env           live passwords and keys. Use .env.example as the template.
+
+Also in this folder:
+  timechamp-agent-winui, timechamp-agent-installer
+                 the source of the old 2.x Windows agent and its installer, kept for
+                 reference only. The 3.1 agent is in agent/ at the top of the zip.

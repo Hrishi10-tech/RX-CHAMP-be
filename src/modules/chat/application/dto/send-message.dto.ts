@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsId } from '@shared/validation/is-id';
 
 export class SendMessageDto {
   @ApiProperty({ description: 'Recipient user id' })
-  @IsUUID()
+  @IsId()
   toUserId!: string;
 
   @ApiProperty({ description: 'Message text', maxLength: 2000 })

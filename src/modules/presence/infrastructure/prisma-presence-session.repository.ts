@@ -25,18 +25,21 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
     now: Date,
   ): Promise<{ closed: PresenceSessionRecord | null; opened: PresenceSessionRecord }> {
     return this.prisma.$transaction(async (tx) => {
-      const open = await tx.presenceSession.findFirst({
+      // Serialise status changes per person (shared with the scheduled-break
+      // start), so two taps can never leave two sessions open.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${data.userId}::uuid FOR UPDATE`;
+      const open = await tx.presenceSession.findMany({
         where: { userId: data.userId, endedAt: null },
         orderBy: { startedAt: 'desc' },
       });
 
       let closed: PresenceSessionRecord | null = null;
-      if (open) {
+      for (const s of open) {
         const row = await tx.presenceSession.update({
-          where: { id: open.id },
-          data: { endedAt: now, durationSec: elapsedSeconds(open.startedAt, now) },
+          where: { id: s.id },
+          data: { endedAt: now, durationSec: elapsedSeconds(s.startedAt, now) },
         });
-        closed = this.toRecord(row);
+        closed ??= this.toRecord(row);
       }
 
       const opened = await tx.presenceSession.create({
@@ -55,17 +58,25 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
   }
 
   async endOpenForUser(userId: string, now: Date): Promise<PresenceSessionRecord | null> {
-    const open = await this.prisma.presenceSession.findFirst({
-      where: { userId, endedAt: null },
-      orderBy: { startedAt: 'desc' },
-    });
-    if (!open) return null;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+      const open = await tx.presenceSession.findMany({
+        where: { userId, endedAt: null },
+        orderBy: { startedAt: 'desc' },
+      });
+      if (!open.length) return null;
 
-    const row = await this.prisma.presenceSession.update({
-      where: { id: open.id },
-      data: { endedAt: now, durationSec: elapsedSeconds(open.startedAt, now) },
+      // Close every open session (normally one; older data may hold strays).
+      let newest: PresenceSessionRecord | null = null;
+      for (const s of open) {
+        const row = await tx.presenceSession.update({
+          where: { id: s.id },
+          data: { endedAt: now, durationSec: elapsedSeconds(s.startedAt, now) },
+        });
+        newest ??= this.toRecord(row);
+      }
+      return newest;
     });
-    return this.toRecord(row);
   }
 
   async listForUserByDate(userId: string, date: string): Promise<PresenceSessionRecord[]> {

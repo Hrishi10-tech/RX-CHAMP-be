@@ -6,7 +6,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -18,6 +17,7 @@ import {
   USER_SORT_OPTIONS,
   UserSortOption,
 } from '../../domain/repositories/user.repository';
+import { IsId } from '@shared/validation/is-id';
 
 export class ListUsersQueryDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 })
@@ -62,7 +62,7 @@ export class ListUsersQueryDto {
 
   @ApiPropertyOptional({ description: 'Company the user belongs to.' })
   @IsOptional()
-  @IsUUID()
+  @IsId()
   companyId?: string;
 
   @ApiPropertyOptional({

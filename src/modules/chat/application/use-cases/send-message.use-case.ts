@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
 import { fullName } from '@shared/types/user.types';
 import { CHAT_REPOSITORY, ChatRepository } from '../../domain/chat.repository';
 import { CHAT_CONTACTS_READER, ChatContactsReader } from '../../domain/chat-contacts.reader';
@@ -21,6 +22,12 @@ export class SendMessageUseCase {
   ) {}
 
   async execute(fromUserId: string, dto: SendMessageDto): Promise<ChatMessageView> {
+    // Only people in your own line of the chart (see the contacts reader). Without
+    // this, any account could message any user id and raise a notification there.
+    if (!(await this.contacts.canMessage(fromUserId, dto.toUserId))) {
+      throw new ForbiddenError('You can only message your manager or your own team.');
+    }
+
     const saved = await this.repo.create({
       fromUserId,
       toUserId: dto.toUserId,

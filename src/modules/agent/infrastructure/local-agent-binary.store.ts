@@ -3,8 +3,6 @@ import { createReadStream, existsSync, statSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { AgentBinaryInfo, AgentBinaryStore } from '../domain/agent-binary.store';
 
 /**
@@ -12,15 +10,14 @@ import { AgentBinaryInfo, AgentBinaryStore } from '../domain/agent-binary.store'
  * bind-mounted volume). Supports both the single-exe file and the WinUI publish
  * *folder* (shipped as a ZIP) — see {@link AgentBinaryStore}.
  */
-@Injectable()
 export class LocalAgentBinaryStore implements AgentBinaryStore {
   /** Last hash worked out, keyed by the file it was taken from. */
   private cached?: { key: string; sha256: string };
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly configuredPath: string) {}
 
   private path(): string {
-    const p = this.config.get<string>('agent.binaryPath') ?? '';
+    const p = this.configuredPath ?? '';
     return isAbsolute(p) ? p : resolve(process.cwd(), p);
   }
 

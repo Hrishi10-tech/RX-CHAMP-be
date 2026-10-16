@@ -1,6 +1,16 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
+import { Role } from '@shared/rbac/roles.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '@shared/types/user.types';
+import { IsId } from '@shared/validation/is-id';
 
 const USER_STATUSES: UserStatus[] = ['ACTIVE', 'DISABLED'];
 
@@ -32,6 +42,19 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   department?: string;
+
+  @ApiPropertyOptional({ enum: Role, description: 'Super Admin only.' })
+  @IsOptional()
+  @IsEnum(Role)
+  role?: Role;
+
+  @ApiPropertyOptional({
+    description: 'Super Admin only. Who this person reports to; empty string clears it.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== '')
+  @IsId()
+  managerId?: string;
 }
 
 export class SetUserStatusDto {

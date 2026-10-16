@@ -5,7 +5,7 @@ import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { AccessTokenPayload, SOCKET_TOKEN_TYPE } from '@shared/security/token.service.port';
+import { AccessTokenPayload } from '@shared/security/token.service.port';
 import { AUTH_USER_READER, AuthUserReader } from '../domain/auth-user-reader.port';
 
 @Injectable()
@@ -29,7 +29,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // JavaScript — unlike the httpOnly access cookie. Accepting one here would hand
     // anything that scraped a ticket a working API credential, which is exactly what
     // the httpOnly cookie exists to prevent. Handshakes only.
-    if (payload.typ === SOCKET_TOKEN_TYPE) {
+    // Access tokens carry no `typ`. Anything typed (a socket ticket, an installer's
+    // enrollment token if a misconfiguration ever signed one with this secret) is
+    // never an API credential.
+    if (payload.typ !== undefined) {
       throw new UnauthorizedError('Not signed in');
     }
 

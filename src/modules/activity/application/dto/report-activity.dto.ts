@@ -13,8 +13,8 @@ export class ReportActivityDto {
 
   @ApiPropertyOptional({
     description:
-      'When the user logged into their PC (ISO-8601). The agent reports it each ' +
-      'sample; the server keeps the earliest per day as the login time.',
+      'Ignored. Agents before 3.0 send their PC login time here; the server takes ' +
+      "the day's login time from the first active sample instead.",
     example: '2026-07-16T09:02:00.000Z',
   })
   @IsOptional()

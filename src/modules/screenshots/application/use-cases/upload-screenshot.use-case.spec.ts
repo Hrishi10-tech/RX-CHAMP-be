@@ -13,7 +13,11 @@ describe('UploadScreenshotUseCase — screenshot switch', () => {
   const s3 = { buildKey: jest.fn(), upload: jest.fn(), presignGet: jest.fn() } as any;
   const ocr = { extractText: jest.fn() } as any;
 
-  const buffer = Buffer.from('fake-png-bytes');
+  // A real PNG signature: uploads are sniffed and anything else is refused.
+  const buffer = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from('rest'),
+  ]);
   let useCase: UploadScreenshotUseCase;
 
   beforeEach(() => {
@@ -61,6 +65,38 @@ describe('UploadScreenshotUseCase — screenshot switch', () => {
     policy.isAutoEnabled.mockResolvedValue(false);
 
     await expect(useCase.execute('u-1', { buffer })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses a file that is not a PNG or JPEG, whatever type it claims', async () => {
+    policy.isAutoEnabled.mockResolvedValue(true);
+
+    await expect(
+      useCase.execute('u-1', {
+        buffer: Buffer.from('<html>not an image</html>'),
+        kind: 'MANUAL',
+        contentType: 'image/png',
+      }),
+    ).rejects.toThrow(/PNG or JPEG/);
+    expect(s3.upload).not.toHaveBeenCalled();
+  });
+
+  it('stores a JPEG with its real content type', async () => {
+    policy.isAutoEnabled.mockResolvedValue(true);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+    await useCase.execute('u-1', { buffer: jpeg, kind: 'MANUAL', contentType: 'image/png' });
+
+    expect(s3.upload).toHaveBeenCalledWith(expect.any(String), jpeg, 'image/jpeg');
+  });
+
+  it('never dates a capture in the future', async () => {
+    policy.isAutoEnabled.mockResolvedValue(true);
+    const future = new Date(Date.now() + 60 * 60_000);
+
+    await useCase.execute('u-1', { buffer, kind: 'MANUAL', takenAt: future });
+
+    const stored = repo.create.mock.calls[0][0].takenAt as Date;
+    expect(stored.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('does not even ask about the switch for a manual capture', async () => {

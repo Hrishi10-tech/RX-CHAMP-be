@@ -1,15 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray } from 'class-validator';
+import { IsId } from '@shared/validation/is-id';
 
 export class ArchiveScreenshotsDto {
   @ApiProperty({ description: 'The user whose screenshots are being archived' })
-  @IsUUID()
+  @IsId()
   userId!: string;
 
   @ApiProperty({ type: [String], description: 'Screenshot ids to archive' })
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(500)
-  @IsUUID(undefined, { each: true })
+  @IsId({ each: true })
   ids!: string[];
 }

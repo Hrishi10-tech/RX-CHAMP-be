@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ShiftsModule } from '@modules/shifts/shifts.module';
+import { WorktimeModule } from '@modules/worktime/worktime.module';
 import { ACTIVITY_SAMPLE_REPOSITORY } from './domain/activity-sample.repository';
 import { ACTIVITY_ACCESS_READER } from './domain/activity-access.reader';
 import { WORK_DAY_REPOSITORY } from './domain/work-day.repository';
@@ -13,10 +15,17 @@ import { StartDayUseCase } from './application/use-cases/start-day.use-case';
 import { GetCurrentActivityUseCase } from './application/use-cases/get-current-activity.use-case';
 import { GetTeamLiveUseCase } from './application/use-cases/get-team-live.use-case';
 import { GetDailyActivityUseCase } from './application/use-cases/get-daily-activity.use-case';
+import { EndDayFlow, ReportActivityFlow, StartDayFlow } from './application/flows/workday.flows';
 import { ActivityController } from './presentation/activity.controller';
 import { ActivityGateway } from './presentation/activity.gateway';
 
+/**
+ * Activity samples, the End Day / Start Day buttons and the activity rollups.
+ * 3.1: Start Day, End Day and reports go through the work sessions of the
+ * worktime module (the flows); the 3.0 use cases remain the building blocks.
+ */
 @Module({
+  imports: [WorktimeModule, ShiftsModule],
   controllers: [ActivityController],
   providers: [
     { provide: ACTIVITY_SAMPLE_REPOSITORY, useClass: PrismaActivitySampleRepository },
@@ -30,6 +39,9 @@ import { ActivityGateway } from './presentation/activity.gateway';
     GetCurrentActivityUseCase,
     GetTeamLiveUseCase,
     GetDailyActivityUseCase,
+    StartDayFlow,
+    EndDayFlow,
+    ReportActivityFlow,
   ],
 })
 export class ActivityModule {}

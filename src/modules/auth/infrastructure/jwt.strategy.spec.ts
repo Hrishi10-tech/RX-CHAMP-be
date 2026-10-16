@@ -29,6 +29,15 @@ describe('JwtStrategy — socket tickets are not API credentials', () => {
     expect(reader.loadById).not.toHaveBeenCalled();
   });
 
+  it('rejects an enrollment token, or any other typed token', async () => {
+    for (const typ of ['enroll', 'anything']) {
+      await expect(
+        strategy.validate({ sub: 'u-1', email: 'u@test', role: 'MANAGER', typ } as never),
+      ).rejects.toBeInstanceOf(UnauthorizedError);
+    }
+    expect(reader.loadById).not.toHaveBeenCalled();
+  });
+
   it('accepts a normal access token', async () => {
     const user = await strategy.validate({ sub: 'u-1', email: 'u@test', role: 'MANAGER' });
     expect(user).toBe(activeUser);

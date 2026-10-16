@@ -132,7 +132,7 @@ export class GetDashboardAnalyticsUseCase {
 
   private async authorize(me: AuthenticatedUser, userId: string): Promise<void> {
     if (me.id === userId) return;
-    if (me.role === Role.ADMIN || me.role === Role.SUPER_ADMIN) return;
+    if (me.role === Role.SUPER_ADMIN) return;
     if (me.role === Role.MANAGER) {
       const managerId = await this.reader.findManagerId(userId);
       if (managerId === me.id) return;

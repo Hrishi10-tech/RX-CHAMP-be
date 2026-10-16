@@ -18,6 +18,7 @@ import { Role } from '@shared/rbac/roles.enum';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
+import { NotFoundError } from '@shared/exceptions/app.exception';
 import {
   CreateCompanyDto,
   ListCompaniesQueryDto,
@@ -56,10 +57,13 @@ export class CompaniesController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
-  @ApiOperation({ summary: 'List companies with manager/user counts (paginated)' })
-  async list(@Query() query: ListCompaniesQueryDto) {
-    const { companies, total, page, limit } = await this.listCompanies.execute(query);
+  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @ApiOperation({
+    summary: 'List companies with manager/user counts (Super Admin: all; Manager: their own)',
+  })
+  async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ListCompaniesQueryDto) {
+    const onlyIds = me.role === Role.SUPER_ADMIN ? undefined : me.companyId ? [me.companyId] : [];
+    const { companies, total, page, limit } = await this.listCompanies.execute(query, onlyIds);
     const totalPages = Math.ceil(total / limit);
     return envelope(companies, { meta: { total, page, limit, totalPages } });
   }
@@ -100,13 +104,18 @@ export class CompaniesController {
   }
 
   @Get(':companyId/managers/:managerId/users')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
   @ApiOperation({ summary: "List a manager's users within a company (paginated)" })
   async managerUsers(
+    @CurrentUser() me: AuthenticatedUser,
     @Param('companyId') companyId: string,
     @Param('managerId') managerId: string,
     @Query() query: ListManagerUsersQueryDto,
   ) {
+    // A Manager may look only at their own team, never another manager's.
+    if (me.role !== Role.SUPER_ADMIN && managerId !== me.id) {
+      throw new NotFoundError('Unknown manager');
+    }
     const { users, total, page, limit } = await this.listManagerUsers.execute(
       companyId,
       managerId,

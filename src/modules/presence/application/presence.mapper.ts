@@ -47,12 +47,19 @@ export class PresenceMapper {
     open: PresenceSessionRecord | null,
     now: Date,
     dayEnded = false,
+    notStarted = false,
   ): CurrentPresenceView {
     if (dayEnded) {
       return { status: 'DAY_ENDED', sessionId: null, note: null, since: null, elapsedSec: 0 };
     }
     if (!open) {
-      return { status: 'WORKING', sessionId: null, note: null, since: null, elapsedSec: 0 };
+      return {
+        status: notStarted ? 'NOT_STARTED' : 'WORKING',
+        sessionId: null,
+        note: null,
+        since: null,
+        elapsedSec: 0,
+      };
     }
     return {
       status: open.type,

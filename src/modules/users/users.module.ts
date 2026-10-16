@@ -14,6 +14,7 @@ import { ListUsersUseCase } from './application/use-cases/list-users.use-case';
 import { SetUserScreenshotsUseCase } from './application/use-cases/set-user-screenshots.use-case';
 import { SetUserStatusUseCase } from './application/use-cases/set-user-status.use-case';
 import { UpdateUserUseCase } from './application/use-cases/update-user.use-case';
+import { SetUserPasswordUseCase } from './application/use-cases/set-user-password.use-case';
 import { UsersController } from './presentation/users.controller';
 
 @Module({
@@ -30,6 +31,7 @@ import { UsersController } from './presentation/users.controller';
     SetUserStatusUseCase,
     SetUserScreenshotsUseCase,
     UpdateUserUseCase,
+    SetUserPasswordUseCase,
   ],
   exports: [USER_REPOSITORY, GetProfileUseCase],
 })

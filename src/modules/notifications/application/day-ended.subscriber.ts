@@ -41,7 +41,7 @@ export class DayEndedSubscriber implements OnModuleInit {
       title: `${event.userName} ended their working day`,
       body:
         `Signed off at ${at}. Activity tracking, screen captures and attendance have ` +
-        `stopped for the rest of the day — today's totals are final.`,
+        `stopped for the rest of the day. Today's totals are final.`,
     });
 
     this.gateway.emitToUser(event.managerId, NotificationMapper.toView(saved));

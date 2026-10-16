@@ -8,6 +8,7 @@ import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.re
 import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { ActivityGateway } from '../../presentation/activity.gateway';
 import { ActivityMapper } from '../activity.mapper';
+import { myUpdateFor } from '../activity-redaction';
 import { DEFAULT_WORKING_BASIS_SEC } from '../activity.constants';
 import { localDateString } from '../activity-date.util';
 import { StartDayResult } from '../activity.types';
@@ -48,9 +49,10 @@ export class StartDayUseCase {
    * Pushes the now-live state to the user's own dashboard and their manager's
    * board so both drop DAY_ENDED at once, rather than waiting for the agent's
    * first fresh sample. Best-effort — a broadcast failure must never fail the
-   * agent's Start Day.
+   * agent's Start Day. Public for the 3.1 Start Day flow, which opens the work
+   * session itself and then announces through here.
    */
-  private async announce(userId: string, date: string, now: Date): Promise<void> {
+  async announce(userId: string, date: string, now: Date): Promise<void> {
     try {
       const self = await this.access.findSelf(userId);
       const samples = await this.samples.listForUserByDate(userId, date);
@@ -66,7 +68,11 @@ export class StartDayUseCase {
 
       const latest = await this.samples.findLatestForUser(userId);
       const current = ActivityMapper.toCurrentView(latest, now, false);
-      this.gateway.emitToUser(userId, ActivityMapper.toMyUpdate(current, daily));
+      // Staff get the push without their activity figures (SPEC 1.8).
+      this.gateway.emitToUser(
+        userId,
+        myUpdateFor(self?.role, ActivityMapper.toMyUpdate(current, daily)),
+      );
 
       if (self?.managerId) {
         this.gateway.emitToManager(

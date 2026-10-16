@@ -12,6 +12,7 @@ import { DEFAULT_WORKING_BASIS_SEC } from '../activity.constants';
 import { DailyActivityView } from '../activity.types';
 import { assertCanAccess } from '../activity-access';
 import { localDateString } from '../activity-date.util';
+import { redactActivity, seesOwnActivity } from '../activity-redaction';
 
 /**
  * A user's day rolled up: active/idle seconds, top apps, top websites, an hourly
@@ -34,7 +35,7 @@ export class GetDailyActivityUseCase {
     const end = await this.workDays.findEnd(userId, day);
     const meetings = await this.meetings.listForUserByDate(userId, day);
     const login = await this.workDays.findLogin(userId, day);
-    return ActivityMapper.computeDaily(
+    const daily = ActivityMapper.computeDaily(
       samples,
       day,
       DEFAULT_WORKING_BASIS_SEC,
@@ -43,5 +44,8 @@ export class GetDailyActivityUseCase {
       meetings,
       login,
     );
+    // 3.1: staff never see activity. Same shape (200, so older agents keep
+    // reading dayEnded), with every activity figure emptied.
+    return seesOwnActivity(me.role) ? daily : redactActivity(daily);
   }
 }

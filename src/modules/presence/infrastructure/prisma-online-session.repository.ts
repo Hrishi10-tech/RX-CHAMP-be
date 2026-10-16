@@ -17,6 +17,9 @@ export class PrismaOnlineSessionRepository implements OnlineSessionRepository {
     deviceId?: string | null,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      // One heartbeat at a time per person (an agent retry can overlap the next
+      // beat), so two can never both open a session and double-count online time.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'online:' + userId}))`;
       const open = await tx.onlineSession.findFirst({
         where: { userId, endedAt: null },
         orderBy: { startedAt: 'desc' },

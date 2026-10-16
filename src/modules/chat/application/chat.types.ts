@@ -12,6 +12,8 @@ export interface ChatMessageView {
 
 export interface ChatContactView extends TeamMemberView {
   role: string;
+  /** MANAGER = the viewer's own manager; REPORT = one of their reports; ORG = other. */
+  relation: 'MANAGER' | 'REPORT' | 'ORG';
 }
 
 export interface ChatThreadView extends ChatContactView {

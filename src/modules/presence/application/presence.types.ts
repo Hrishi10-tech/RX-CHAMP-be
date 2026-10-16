@@ -4,9 +4,10 @@ import { PresenceKind } from '../domain/presence-session.repository';
 /**
  * WORKING = the implicit state when no session is open. DAY_ENDED outranks all of
  * them: the user pressed "End Day", so they are signed off for the rest of the
- * local day and nothing further accrues.
+ * local day and nothing further accrues. NOT_STARTED (3.1): no open work session
+ * and none today; a 3.0 client treats it as unknown.
  */
-export type PresenceStatus = 'WORKING' | 'DAY_ENDED' | PresenceKind;
+export type PresenceStatus = 'WORKING' | 'DAY_ENDED' | 'NOT_STARTED' | PresenceKind;
 
 export interface PresenceTotals {
   breakSec: number;

@@ -31,7 +31,10 @@ export interface CreateCompanyData {
   name: string;
 }
 
-export type ListCompaniesFilter = SearchPageFilter;
+export interface ListCompaniesFilter extends SearchPageFilter {
+  /** Restrict to these company ids (a Manager sees only their own company). */
+  ids?: string[];
+}
 
 export interface CompanyRepository {
   findById(id: string): Promise<CompanyRecord | null>;

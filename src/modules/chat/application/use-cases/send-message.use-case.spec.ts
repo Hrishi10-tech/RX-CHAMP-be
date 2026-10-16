@@ -3,7 +3,7 @@ import { SendMessageUseCase } from './send-message.use-case';
 
 describe('SendMessageUseCase', () => {
   const repo = { create: jest.fn() } as any;
-  const contacts = { findContacts: jest.fn(), findSender: jest.fn() } as any;
+  const contacts = { findContacts: jest.fn(), findSender: jest.fn(), canMessage: jest.fn() } as any;
   const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
   const gateway = { emitToUser: jest.fn() } as any;
 
@@ -21,7 +21,18 @@ describe('SendMessageUseCase', () => {
       createdAt,
     });
     contacts.findSender.mockResolvedValue({ id: 'from-1', firstName: 'Ravi', lastName: 'Kumar' });
+    contacts.canMessage.mockResolvedValue(true);
     useCase = new SendMessageUseCase(repo, contacts, events, gateway);
+  });
+
+  it('refuses to message someone outside your line of the chart', async () => {
+    contacts.canMessage.mockResolvedValue(false);
+
+    await expect(useCase.execute('from-1', { toUserId: 'stranger', body: 'hi' })).rejects.toThrow(
+      /your manager or your own team/i,
+    );
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(gateway.emitToUser).not.toHaveBeenCalled();
   });
 
   it('delivers over the chat socket to both sides and raises the notification event', async () => {

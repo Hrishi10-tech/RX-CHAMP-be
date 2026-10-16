@@ -11,6 +11,7 @@ import { DAY_END_READER, DayEndReader } from '../../domain/day-end.reader';
 import { localDateString } from '../presence-date.util';
 import { PresenceMapper } from '../presence.mapper';
 import { TodayPresenceView } from '../presence.types';
+import { GetCurrentPresenceUseCase } from './get-current-presence.use-case';
 
 /** The signed-in user's own day: current status, totals, and every session today. */
 @Injectable()
@@ -19,6 +20,7 @@ export class GetMyTodayUseCase {
     @Inject(PRESENCE_SESSION_REPOSITORY) private readonly sessions: PresenceSessionRepository,
     @Inject(ONLINE_SESSION_REPOSITORY) private readonly online: OnlineSessionRepository,
     @Inject(DAY_END_READER) private readonly dayEnds: DayEndReader,
+    private readonly current: GetCurrentPresenceUseCase,
   ) {}
 
   async execute(userId: string, date?: string): Promise<TodayPresenceView> {
@@ -36,9 +38,15 @@ export class GetMyTodayUseCase {
     const totals = PresenceMapper.totals(all, asOf);
     totals.onlineSec = await this.online.sumSecondsForUserByDate(userId, day, asOf);
 
+    // Today's status is exactly /presence/me/current's (NOT_STARTED before Start Day).
+    const current =
+      date === undefined || date === localDateString(now)
+        ? await this.current.execute(userId)
+        : PresenceMapper.currentFrom(open, asOf, ended !== null);
+
     return {
       date: day,
-      current: PresenceMapper.currentFrom(open, asOf, ended !== null),
+      current,
       totals,
       sessions: all.map((s) => PresenceMapper.toSessionView(s, asOf)),
     };

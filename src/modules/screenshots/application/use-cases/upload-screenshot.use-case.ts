@@ -28,6 +28,22 @@ function localDateString(d: Date): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
+/** The image type from its first bytes; the client's declared type is not trusted. */
+export function sniffImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | null {
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return 'image/png';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)
+    return 'image/jpeg';
+  return null;
+}
+
+/** A capture stamped this far ahead of the server clock is taken as "now". */
+const MAX_FUTURE_SKEW_MS = 2 * 60_000;
+
 /** The agent uploads a captured screenshot: store the image in S3, record it in the DB. */
 @Injectable()
 export class UploadScreenshotUseCase {
@@ -41,8 +57,13 @@ export class UploadScreenshotUseCase {
 
   async execute(userId: string, input: UploadScreenshotInput): Promise<ScreenshotView> {
     if (!input.buffer?.length) throw new BadRequestException('Empty screenshot');
+    // Only real PNG/JPEG images are stored, served with the type they really are.
+    const contentType = sniffImageType(input.buffer);
+    if (!contentType) throw new BadRequestException('Screenshots must be PNG or JPEG images');
 
-    const takenAt = input.takenAt ?? new Date();
+    const now = new Date();
+    const claimed = input.takenAt && !Number.isNaN(input.takenAt.getTime()) ? input.takenAt : now;
+    const takenAt = claimed.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS ? now : claimed;
     const kind: ScreenshotKind = input.kind ?? 'AUTO';
 
     // Automatic capture can be switched off per user. The agent is told and stops
@@ -64,7 +85,7 @@ export class UploadScreenshotUseCase {
 
     // Store the image, and OCR it (best-effort) so it becomes text-searchable.
     const [, ocrText] = await Promise.all([
-      this.s3.upload(key, input.buffer, input.contentType ?? 'image/png'),
+      this.s3.upload(key, input.buffer, contentType),
       this.ocr.extractText(input.buffer),
     ]);
     const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText });

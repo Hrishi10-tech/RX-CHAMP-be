@@ -1,4 +1,6 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { Role } from '@shared/rbac/roles.enum';
 import {
   PRESENCE_SESSION_REPOSITORY,
   PresenceSessionRecord,
@@ -8,7 +10,11 @@ import {
   ONLINE_SESSION_REPOSITORY,
   OnlineSessionRepository,
 } from '../../domain/online-session.repository';
-import { PRESENCE_TEAM_READER, PresenceTeamReader } from '../../domain/presence-team-reader.port';
+import {
+  PRESENCE_TEAM_READER,
+  PresenceTeamReader,
+  TeamMember,
+} from '../../domain/presence-team-reader.port';
 import { IDLE_READER, IdleReader } from '../../domain/idle-reader.port';
 import { localDateString } from '../presence-date.util';
 import { PresenceMapper } from '../presence.mapper';
@@ -19,6 +25,30 @@ import { UserDailyPresenceView, UserPresenceHistoryView } from '../presence.type
  * manager's per-user "worked hours" trend chart. Manager-scoped: the target user
  * must be one of the caller's direct reports.
  */
+
+/**
+ * The people a per-user presence view may compare against, which also decides
+ * access: a manager sees their direct reports; a Super Admin sees anyone, and
+ * compares them with that person's own team.
+ */
+export async function presenceScope(
+  team: PresenceTeamReader,
+  me: Pick<AuthenticatedUser, 'id' | 'role'>,
+  userId: string,
+): Promise<TeamMember[]> {
+  const direct = await team.findReports(me.id);
+  if (direct.some((r) => r.id === userId)) return direct;
+  if (me.role !== Role.SUPER_ADMIN)
+    throw new ForbiddenException('That user is not one of your reports.');
+  const ctx = await team.findContext(userId);
+  if (!ctx) throw new NotFoundException('Unknown user');
+  if (ctx.managerId) {
+    const peers = await team.findReports(ctx.managerId);
+    if (peers.some((r) => r.id === userId)) return peers;
+  }
+  return [ctx.self];
+}
+
 @Injectable()
 export class GetUserHistoryUseCase {
   constructor(
@@ -28,13 +58,16 @@ export class GetUserHistoryUseCase {
     @Inject(IDLE_READER) private readonly idle: IdleReader,
   ) {}
 
-  async execute(managerId: string, userId: string, days = 7): Promise<UserPresenceHistoryView> {
+  async execute(
+    me: Pick<AuthenticatedUser, 'id' | 'role'>,
+    userId: string,
+    days = 7,
+  ): Promise<UserPresenceHistoryView> {
     const now = new Date();
     const span = Math.min(31, Math.max(1, days));
 
-    const reports = await this.team.findReports(managerId);
-    const member = reports.find((r) => r.id === userId);
-    if (!member) throw new ForbiddenException('That user is not one of your reports.');
+    const reports = await presenceScope(this.team, me, userId);
+    const member = reports.find((r) => r.id === userId)!;
 
     const dates = this.lastNDates(now, span);
     const sessions = await this.sessions.listForUserInDates(userId, dates);

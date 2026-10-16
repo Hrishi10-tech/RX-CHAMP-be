@@ -23,6 +23,7 @@ export class ChatMapper {
       email: c.email,
       role: c.role,
       department: c.department,
+      relation: c.relation,
     };
   }
 

@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,10 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
+// Three tiers: Super Admin -> Manager -> Staff (USER). The former ADMIN role was
+// folded into MANAGER by migration 20261013_shift_breaks_and_roles.
 enum RoleName {
   SUPER_ADMIN
-  ADMIN
   MANAGER
   USER
 }
@@ -30,8 +29,8 @@ enum PresenceType {
 }
 
 model Role {
-  id   String   @id @default(uuid()) @db.Uuid
-  name RoleName @unique
+  id          String   @id @default(uuid()) @db.Uuid
+  name        RoleName @unique
   // Granted permission codes, stored inline (validated against the Permission enum in code).
   permissions String[] @default([])
   users       User[]
@@ -41,7 +40,6 @@ model Role {
 
   @@map("roles")
 }
-
 
 model Company {
   id     String  @id @default(uuid()) @db.Uuid
@@ -60,11 +58,35 @@ model Shift {
   id        String   @id @default(uuid()) @db.Uuid
   companyId String?  @map("company_id") @db.Uuid
   name      String
-  // "HH:MM" 24h window, judged against attendance.
+  // "HH:MM" 24h window, judged against attendance. end <= start means the shift
+  // runs past midnight.
   start     String
   end       String
   company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   users     User[]
+
+  /// ISO weekdays the shift works (1 = Monday ... 7 = Sunday).
+  workDays        Int[]   @default([1, 2, 3, 4, 5, 6]) @map("work_days")
+  /// The shift used when neither the person nor their department has one.
+  isDefault       Boolean @default(false) @map("is_default")
+  /// The agent starts ringing this many minutes before each break...
+  ringLeadMin     Int     @default(1) @map("ring_lead_min")
+  /// ...and rings for this long. Starting a break while it rings is "on time".
+  ringDurationMin Int     @default(5) @map("ring_duration_min")
+  ringSound       Boolean @default(true) @map("ring_sound")
+  /// Whether starting early (window open, before the ring) needs a reason.
+  reasonOnEarly   Boolean @default(true) @map("reason_on_early")
+  /// Whether starting late (after the ring, window still open) needs a reason.
+  reasonOnLate    Boolean @default(true) @map("reason_on_late")
+  reasonMinChars  Int     @default(10) @map("reason_min_chars")
+  /// Also ask for a reason when someone comes back later than the grace allows.
+  overrunReason   Boolean @default(false) @map("overrun_reason")
+  /// Minutes over a break that are simply break time (no approval). 3.1 default 3.
+  overrunGraceMin Int     @default(3) @map("overrun_grace_min")
+
+  breaks       ShiftBreak[]
+  assignments  ShiftAssignment[]
+  breakRecords BreakRecord[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -74,6 +96,267 @@ model Shift {
   @@map("shifts")
 }
 
+// The three daily breaks a shift can define.
+enum BreakKind {
+  MORNING
+  LUNCH
+  EVENING
+}
+
+// How a break's start compares with its schedule.
+//   ON_TIME         started while the agent was ringing
+//   EARLY / LATE    started inside the allowed window but outside the ring
+//   OUTSIDE_WINDOW  started outside the allowed window (only older agents can)
+//   UNSCHEDULED     no matching scheduled break (older agents, or no shift)
+enum BreakTiming {
+  ON_TIME
+  EARLY
+  LATE
+  OUTSIDE_WINDOW
+  UNSCHEDULED
+}
+
+enum BreakApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ShiftAssignmentTarget {
+  DEPARTMENT
+  USER
+}
+
+/// One of a shift's breaks: when it is due, how long it lasts and the window in
+/// which it may be started.
+model ShiftBreak {
+  id              String    @id @default(uuid()) @db.Uuid
+  shiftId         String    @map("shift_id") @db.Uuid
+  shift           Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  kind            BreakKind
+  enabled         Boolean   @default(true)
+  /// "HH:MM", local business time.
+  startTime       String    @map("start_time")
+  durationMin     Int       @map("duration_min")
+  windowBeforeMin Int       @default(30) @map("window_before_min")
+  windowAfterMin  Int       @default(60) @map("window_after_min")
+  /// Whether staff may skip this break (3.1). The migration sets LUNCH rows to false.
+  allowSkip       Boolean   @default(true) @map("allow_skip")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([shiftId, kind])
+  @@map("shift_breaks")
+}
+
+// What became of a scheduled break (3.1).
+//   TAKEN         a break was taken (the 3.0 meaning of every record)
+//   SKIPPED       the person pressed Skip break while the window was open
+//   AUTO_SKIPPED  the window closed (or End Day ran inside it) with nothing taken
+enum BreakOutcome {
+  TAKEN
+  SKIPPED
+  AUTO_SKIPPED
+}
+
+enum MeetingMode {
+  LIVE
+  PAST
+}
+
+enum WorkSessionEndReason {
+  USER
+  AUTO_CLOSED
+}
+
+/// One stretch of a working day, Start Day to End Day (3.1). A day can hold several
+/// (End Day then Start Day resumes). At most one is open per person: enforced by a
+/// row lock on the user and by the partial unique index
+/// work_sessions_one_open_per_user (migration SQL only; Prisma cannot express it).
+model WorkSession {
+  id        String                @id @default(uuid()) @db.Uuid
+  userId    String                @map("user_id") @db.Uuid
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Business-timezone day of startedAt. A session running past midnight keeps it.
+  date      String
+  startedAt DateTime              @map("started_at")
+  endedAt   DateTime?             @map("ended_at")
+  endReason WorkSessionEndReason? @map("end_reason")
+  /// AGENT | LEGACY | BACKFILL
+  source    String                @default("AGENT")
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@index([endedAt])
+  @@map("work_sessions")
+}
+
+/// A meeting a person reported (3.1): started live from the agent, or logged
+/// afterwards. Counts as focus time; a rejection takes it off.
+model MeetingRecord {
+  id                String              @id @default(uuid()) @db.Uuid
+  userId            String              @map("user_id") @db.Uuid
+  user              User                @relation("MeetingRecordUser", fields: [userId], references: [id], onDelete: Cascade)
+  date              String
+  mode              MeetingMode
+  agenda            String
+  /// [{ "id"?: uuid, "name": string }]
+  participants      Json                @default("[]")
+  startedAt         DateTime            @map("started_at")
+  endedAt           DateTime?           @map("ended_at")
+  durationSec       Int?                @map("duration_sec")
+  presenceSessionId String?             @unique @map("presence_session_id") @db.Uuid
+  presenceSession   PresenceSession?    @relation(fields: [presenceSessionId], references: [id], onDelete: SetNull)
+  approvalStatus    BreakApprovalStatus @default(PENDING) @map("approval_status")
+  approverRole      RoleName?           @map("approver_role")
+  approverId        String?             @map("approver_id") @db.Uuid
+  decidedById       String?             @map("decided_by_id") @db.Uuid
+  decidedAt         DateTime?           @map("decided_at")
+  decisionNote      String?             @map("decision_note")
+  dueAt             DateTime?           @map("due_at")
+  escalatedAt       DateTime?           @map("escalated_at")
+  remindedAt        DateTime?           @map("reminded_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@index([approverId, approvalStatus, date])
+  @@index([approverRole, approvalStatus, date])
+  @@index([approvalStatus, dueAt])
+  @@map("meeting_records")
+}
+
+/// Organisation settings (3.1), one JSON value per key. Key `org` holds the
+/// Super Admin settings table (SPEC 1.10).
+model AppSetting {
+  key         String   @id
+  value       Json
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+/// A monthly report built at 00:30 on the 1st for one owner (3.1).
+model ReportRun {
+  id          String   @id @default(uuid()) @db.Uuid
+  month       String
+  /// TEAM | ALL
+  scope       String
+  ownerId     String   @map("owner_id") @db.Uuid
+  generatedAt DateTime @default(now()) @map("generated_at")
+  summary     Json
+
+  @@unique([month, scope, ownerId])
+  @@index([ownerId, month])
+  @@map("report_runs")
+}
+
+/// A month closed for payroll (3.1): reports read the snapshot, decisions are refused.
+model MonthLock {
+  month      String   @id
+  lockedById String   @map("locked_by_id") @db.Uuid
+  lockedAt   DateTime @default(now()) @map("locked_at")
+  snapshot   Json
+
+  @@map("month_locks")
+}
+
+/// Dated shift assignment. A person's shift on a given day is the newest USER row
+/// in force that day, else their department's newest DEPARTMENT row, else the
+/// default shift. Rows are never edited, only superseded, so history is kept.
+model ShiftAssignment {
+  id            String                @id @default(uuid()) @db.Uuid
+  target        ShiftAssignmentTarget
+  companyId     String?               @map("company_id") @db.Uuid
+  /// Department as typed (for display) and its normalised key (for matching).
+  department    String?
+  departmentKey String?               @map("department_key")
+  userId        String?               @map("user_id") @db.Uuid
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Null on a USER row means "back to the department's shift".
+  shiftId       String?               @map("shift_id") @db.Uuid
+  shift         Shift?                @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  /// Local day (YYYY-MM-DD) the assignment starts.
+  effectiveFrom String                @map("effective_from")
+  /// Optional last local day (inclusive). Only used on USER rows.
+  effectiveTo   String?               @map("effective_to")
+  createdById   String?               @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([target, departmentKey, effectiveFrom])
+  @@index([userId, effectiveFrom])
+  @@index([shiftId])
+  @@map("shift_assignments")
+}
+
+/// A break that was actually taken, with a copy of the schedule it was judged
+/// against (so later shift edits never rewrite history) and its approval trail.
+/// End time and overrun come from the linked presence session.
+model BreakRecord {
+  id                String              @id @default(uuid()) @db.Uuid
+  userId            String              @map("user_id") @db.Uuid
+  user              User                @relation("BreakRecordUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Local day (YYYY-MM-DD) the break belongs to.
+  date              String
+  /// Null for an unscheduled break.
+  kind              BreakKind?
+  seq               Int                 @default(0)
+  presenceType      PresenceType        @map("presence_type")
+  shiftId           String?             @map("shift_id") @db.Uuid
+  shift             Shift?              @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  shiftName         String?             @map("shift_name")
+  scheduledStart    DateTime?           @map("scheduled_start")
+  durationMin       Int?                @map("duration_min")
+  windowOpen        DateTime?           @map("window_open")
+  windowClose       DateTime?           @map("window_close")
+  ringStart         DateTime?           @map("ring_start")
+  ringEnd           DateTime?           @map("ring_end")
+  presenceSessionId String?             @unique @map("presence_session_id") @db.Uuid
+  presenceSession   PresenceSession?    @relation(fields: [presenceSessionId], references: [id], onDelete: SetNull)
+  startedAt         DateTime            @map("started_at")
+  timing            BreakTiming
+  /// Minutes early or late against the scheduled start (always >= 0).
+  minutesOff        Int                 @default(0) @map("minutes_off")
+  reason            String?
+  overrunReason     String?             @map("overrun_reason")
+  /// AGENT (the break flow) or LEGACY (an older agent's plain break/lunch).
+  source            String              @default("AGENT")
+  approvalStatus    BreakApprovalStatus @default(NOT_REQUIRED) @map("approval_status")
+  /// SUPER_ADMIN when routed to the Super Admin pool; else the approver's role.
+  approverRole      RoleName?           @map("approver_role")
+  approverId        String?             @map("approver_id") @db.Uuid
+  decidedById       String?             @map("decided_by_id") @db.Uuid
+  decidedAt         DateTime?           @map("decided_at")
+  decisionNote      String?             @map("decision_note")
+  /// 3.1: TAKEN, or a skip (no presence session; startedAt = when it was skipped).
+  outcome           BreakOutcome        @default(TAKEN)
+  /// Seconds past the break's length, stored when the break ends through /breaks/end.
+  overrunSec        Int?                @map("overrun_sec")
+  /// The person asked their manager to count the overrun as focus time.
+  overrunAsked      Boolean             @default(false) @map("overrun_asked")
+  /// When the comment on an auto-skip was added (stored in `reason`).
+  commentedAt       DateTime?           @map("commented_at")
+  /// 48-hour rule: set every time the record becomes PENDING.
+  dueAt             DateTime?           @map("due_at")
+  escalatedAt       DateTime?           @map("escalated_at")
+  remindedAt        DateTime?           @map("reminded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, date, kind, seq])
+  @@index([userId, date])
+  @@index([approverId, approvalStatus, date])
+  @@index([approverRole, approvalStatus, date])
+  @@index([approvalStatus, date])
+  @@index([approvalStatus, dueAt])
+  @@map("break_records")
+}
 
 model User {
   id           String     @id @default(uuid()) @db.Uuid
@@ -89,7 +372,6 @@ model User {
   roleId String @map("role_id") @db.Uuid
   role   Role   @relation(fields: [roleId], references: [id])
 
- 
   managerId String? @map("manager_id") @db.Uuid
   manager   User?   @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
   reports   User[]  @relation("UserManager")
@@ -119,6 +401,10 @@ model User {
   onlineSessions   OnlineSession[]
   activitySamples  ActivitySample[]
   workDayEnds      WorkDayEnd[]
+  shiftAssignments ShiftAssignment[]
+  breakRecords     BreakRecord[]     @relation("BreakRecordUser")
+  workSessions     WorkSession[]
+  meetingRecords   MeetingRecord[]   @relation("MeetingRecordUser")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -130,7 +416,6 @@ model User {
   @@index([status])
   @@map("users")
 }
-
 
 model RefreshToken {
   id           String    @id @default(uuid()) @db.Uuid
@@ -165,7 +450,6 @@ model Device {
 
   pairedAt DateTime @default(now()) @map("paired_at")
   lastSeen DateTime @default(now()) @map("last_seen")
-
 
   lastStats Json? @map("last_stats")
 
@@ -222,9 +506,9 @@ model DailyReport {
 // capturing screenshots (including overtime past the 9h basis and idle stretches);
 // once the day is ended, capture stops for the rest of that local day.
 model WorkDayEnd {
-  id      String   @id @default(uuid()) @db.Uuid
-  userId  String   @map("user_id") @db.Uuid
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id      String    @id @default(uuid()) @db.Uuid
+  userId  String    @map("user_id") @db.Uuid
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Local calendar day (YYYY-MM-DD), server timezone — matches activity/presence.
   date    String
   // When the user logged into their PC (first logon of the day). Set on the first
@@ -258,6 +542,9 @@ model PresenceSession {
   startedAt   DateTime  @default(now()) @map("started_at")
   endedAt     DateTime? @map("ended_at")
   durationSec Int?      @map("duration_sec")
+
+  breakRecord   BreakRecord?
+  meetingRecord MeetingRecord?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -373,7 +660,6 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
-
 // How a screenshot was triggered: the 5-minute timer (AUTO) or a manager's
 // on-demand "capture now" request (MANUAL).
 enum PermissionRequestStatus {
@@ -419,7 +705,6 @@ model Notification {
   @@index([userId])
   @@map("notifications")
 }
-
 
 model AuditLog {
   id       String  @id @default(uuid()) @db.Uuid

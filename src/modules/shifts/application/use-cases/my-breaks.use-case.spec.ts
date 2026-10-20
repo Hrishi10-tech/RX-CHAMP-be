@@ -70,6 +70,7 @@ const people: Record<string, ShiftPerson> = {
     department: 'Support',
     designation: null,
     companyId: 'co-1',
+    departmentId: 'dept-support',
     managerId: 'mgr',
     active: true,
   },
@@ -82,6 +83,7 @@ const people: Record<string, ShiftPerson> = {
     department: 'Support',
     designation: null,
     companyId: 'co-1',
+    departmentId: 'dept-support',
     managerId: 'sa',
     active: true,
   },
@@ -94,6 +96,33 @@ const people: Record<string, ShiftPerson> = {
     department: null,
     designation: null,
     companyId: 'co-1',
+    departmentId: null,
+    managerId: null,
+    active: true,
+  },
+  admin: {
+    id: 'admin',
+    firstName: 'Ada',
+    lastName: 'M',
+    email: 'ad@x.test',
+    role: 'ADMIN',
+    department: null,
+    designation: null,
+    companyId: 'co-1',
+    departmentId: null,
+    managerId: null,
+    active: true,
+  },
+  loner: {
+    id: 'loner',
+    firstName: 'Lee',
+    lastName: 'N',
+    email: 'l@x.test',
+    role: 'USER',
+    department: null,
+    designation: null,
+    companyId: 'co-1',
+    departmentId: null,
     managerId: null,
     active: true,
   },
@@ -133,6 +162,14 @@ describe('MyBreaksUseCase', () => {
     finishBreak: jest.fn(),
     findById: jest.fn(),
     listForUserBetween: jest.fn(),
+    // 4.0
+    endExpiredPaused: jest.fn(),
+    findPausedForUser: jest.fn(),
+    endPaused: jest.fn(),
+    markEnded: jest.fn(),
+    startQuick: jest.fn(),
+    pause: jest.fn(),
+    resume: jest.fn(),
   };
   const shiftsRepo = {
     list: jest.fn(),
@@ -162,6 +199,10 @@ describe('MyBreaksUseCase', () => {
     shiftsRepo.findById.mockResolvedValue(general);
     records.listForUserOnDate.mockResolvedValue([]);
     records.findOpenForUser.mockResolvedValue(null);
+    records.endExpiredPaused.mockResolvedValue(0);
+    records.findPausedForUser.mockResolvedValue(null);
+    records.endPaused.mockResolvedValue(0);
+    records.markEnded.mockResolvedValue(null);
     records.startScheduled.mockImplementation(async (rec: NewBreakRecord) => ({
       ok: true,
       record: startedRow(rec),
@@ -223,7 +264,7 @@ describe('MyBreaksUseCase', () => {
     expect(presence.broadcast).toHaveBeenCalled();
   });
 
-  it('asks for a reason when late, then routes to the manager', async () => {
+  it("asks for a reason when late, then routes to the department's managers", async () => {
     at('11:20');
     await expect(useCase.start(me('staff', Role.USER), { kind: 'MORNING' })).rejects.toMatchObject({
       code: 'REASON_REQUIRED',
@@ -243,14 +284,15 @@ describe('MyBreaksUseCase', () => {
     expect(records.startScheduled.mock.calls[0][0]).toMatchObject({
       reason: 'Customer escalation call',
       approverRole: 'MANAGER',
-      approverId: 'mgr',
+      // 4.0: routed by department; no approver id is written.
+      approverId: null,
       timing: 'LATE',
       minutesOff: 20,
     });
     expect(events.approvalRequested).toHaveBeenCalledTimes(1);
   });
 
-  it("sends a manager's early break to the Super Admin pool", async () => {
+  it("sends a manager's early break to the organisation Admin", async () => {
     at('10:35');
     await useCase.start(me('mgr', Role.MANAGER), {
       kind: 'MORNING',
@@ -260,9 +302,42 @@ describe('MyBreaksUseCase', () => {
       timing: 'EARLY',
       minutesOff: 25,
       approvalStatus: 'PENDING',
-      approverRole: 'SUPER_ADMIN',
+      approverRole: 'ADMIN',
       approverId: null,
     });
+  });
+
+  it('sends late staff without a department to the organisation Admin', async () => {
+    at('11:20');
+    await useCase.start(me('loner', Role.USER), { kind: 'MORNING', reason: 'Customer escalation call' });
+    expect(records.startScheduled.mock.calls[0][0]).toMatchObject({
+      approvalStatus: 'PENDING',
+      approverRole: 'ADMIN',
+      approverId: null,
+    });
+  });
+
+  it("never asks an Admin for a reason or an approval (nobody reviews the Admin's breaks)", async () => {
+    at('11:30');
+    const res = await useCase.start(me('admin', Role.ADMIN), { kind: 'MORNING' });
+    expect(res.record.timing).toBe('LATE');
+    expect(records.startScheduled.mock.calls[0][0]).toMatchObject({
+      timing: 'LATE',
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+    });
+    expect(events.approvalRequested).not.toHaveBeenCalled();
+    const day = await useCase.today(me('admin', Role.ADMIN));
+    expect(day.shift?.rules).toMatchObject({ reasonOnEarly: false, reasonOnLate: false, overrunReason: false });
+  });
+
+  it('ends a paused break before another scheduled break starts', async () => {
+    at('13:02');
+    await useCase.start(me('staff', Role.USER), { kind: 'LUNCH' });
+    expect(records.endPaused).toHaveBeenCalledWith('staff');
+    expect(records.endPaused.mock.invocationCallOrder[0]).toBeLessThan(
+      records.startScheduled.mock.invocationCallOrder[0],
+    );
   });
 
   it('never asks a Super Admin for approval', async () => {
@@ -307,13 +382,14 @@ describe('MyBreaksUseCase', () => {
     at('10:10');
     await expect(useCase.start(me('staff', Role.USER), { kind: 'MORNING' })).rejects.toMatchObject({
       code: 'BREAK_NOT_OPEN',
-      message: 'Your morning break opens at 10:30.',
+      message: 'Your morning break opens at 10:30 AM.',
     });
     at('12:05');
     await expect(
       useCase.start(me('staff', Role.USER), { kind: 'MORNING', reason: 'Long meeting today' }),
     ).rejects.toMatchObject({
       code: 'BREAK_WINDOW_CLOSED',
+      message: 'The morning break window closed at 12:00 PM. It counts as skipped.',
     });
   });
 
@@ -465,7 +541,7 @@ describe('MyBreaksUseCase', () => {
       expect(events.approvalRequested).not.toHaveBeenCalled();
     });
 
-    it('asks to count the overrun with askToCount and a reason, routed to the manager', async () => {
+    it("asks to count the overrun with askToCount and a reason, routed to the department's managers", async () => {
       at('11:25');
       records.findOpenForUser.mockResolvedValue(open());
       finishedAs({ ...open(), endedAt: ist('11:25'), approvalStatus: 'PENDING' }, true);
@@ -480,7 +556,7 @@ describe('MyBreaksUseCase', () => {
           overrunSec: 600,
           ask: {
             reason: 'Customer call ran long',
-            routing: { approverRole: 'MANAGER', approverId: 'mgr' },
+            routing: { approverRole: 'MANAGER', approverId: null },
           },
         },
         expect.any(Date),
@@ -512,7 +588,7 @@ describe('MyBreaksUseCase', () => {
       finishedAs({ ...open(), endedAt: ist('11:25'), approvalStatus: 'PENDING' }, true);
       await useCase.end(me('staff', Role.USER), { overrunReason: 'bus' });
       expect(records.finishBreak.mock.calls[0][1]).toMatchObject({
-        ask: { reason: 'bus', routing: { approverId: 'mgr' } },
+        ask: { reason: 'bus', routing: { approverRole: 'MANAGER', approverId: null } },
       });
     });
 
@@ -546,6 +622,301 @@ describe('MyBreaksUseCase', () => {
       finishedAs({ ...open(), endedAt: ist('11:16') });
       await useCase.end(me('staff', Role.USER), { askToCount: true, overrunReason: 'Short call' });
       expect(records.finishBreak.mock.calls[0][1]).toEqual({ overrunSec: 60, ask: null });
+    });
+  });
+
+  describe('4.0 quick breaks, pause and resume (SPEC 2.3)', () => {
+    const row = (over: Partial<BreakRecordRow> = {}): BreakRecordRow =>
+      ({
+        id: 'rec-1',
+        userId: 'staff',
+        date: '2026-10-13',
+        kind: 'LUNCH',
+        seq: 0,
+        presenceType: 'LUNCH',
+        shiftId: 'shift-general',
+        shiftName: 'General',
+        scheduledStart: ist('13:00'),
+        durationMin: 30,
+        windowOpen: ist('12:30'),
+        windowClose: ist('14:00'),
+        ringStart: null,
+        ringEnd: null,
+        presenceSessionId: 'ps-1',
+        startedAt: ist('13:00'),
+        endedAt: null,
+        timing: 'ON_TIME',
+        minutesOff: 0,
+        reason: null,
+        overrunReason: null,
+        source: 'AGENT',
+        approvalStatus: 'NOT_REQUIRED',
+        approverRole: null,
+        approverId: null,
+        decidedById: null,
+        decidedAt: null,
+        decisionNote: null,
+        createdAt: ist('13:00'),
+        ...over,
+      }) as BreakRecordRow;
+
+    it("today: ends expired paused breaks first, and shows quick breaks, the paused break and the running one", async () => {
+      at('13:30');
+      const paused = row({
+        state: 'PAUSED',
+        endedAt: ist('13:10'),
+        segments: [{ startedAt: ist('13:00'), endedAt: ist('13:10') }],
+      });
+      const quickDone = row({
+        id: 'q-1',
+        kind: 'QUICK',
+        presenceType: 'BREAK',
+        durationMin: null,
+        plannedMin: 5,
+        windowClose: null,
+        startedAt: ist('10:00'),
+        endedAt: ist('10:06'),
+        state: 'ENDED',
+        finalEndedAt: ist('10:06'),
+      });
+      const quickNow = row({
+        id: 'q-2',
+        kind: 'QUICK',
+        presenceType: 'BREAK',
+        durationMin: null,
+        plannedMin: 10,
+        windowClose: null,
+        startedAt: ist('13:25'),
+        state: 'ACTIVE',
+        segments: [{ startedAt: ist('13:25'), endedAt: null }],
+      });
+      records.listForUserOnDate.mockResolvedValue([paused, quickDone, quickNow]);
+      records.findOpenForUser.mockResolvedValue(quickNow);
+      records.findPausedForUser.mockResolvedValue(paused);
+
+      const day = await useCase.today(me('staff', Role.USER));
+      expect(records.endExpiredPaused).toHaveBeenCalledWith(ist('13:30'), 'staff');
+      expect(day.quickBreakMinutes).toEqual([5, 10, 15]);
+      expect(day.quick.map((q) => [q.id, q.takenSec, q.remainingSec])).toEqual([
+        ['q-1', 360, 0],
+        ['q-2', 300, 300],
+      ]);
+      expect(day.pausedBreak).toMatchObject({ id: 'rec-1', state: 'PAUSED', takenSec: 600, canResume: true });
+      expect(day.pausedBreak?.resumeUntil).toBe(ist('14:00').toISOString());
+      expect(day.active).toEqual({
+        id: 'q-2',
+        kind: 'QUICK',
+        segmentStartedAt: ist('13:25').toISOString(),
+        takenBeforeSec: 0,
+        plannedMin: 10,
+        durationMin: null,
+      });
+      const lunch = day.breaks.find((b) => b.kind === 'LUNCH')!;
+      expect(lunch).toMatchObject({ state: 'PAUSED', takenSec: 600, remainingSec: 1200, canResume: true });
+      expect(lunch.local12).toMatchObject({ start: '1:00 PM', windowClose: '2:00 PM' });
+    });
+
+    it('a resumed break reports the time taken before its running segment', async () => {
+      at('13:40');
+      const resumed = row({
+        state: 'ACTIVE',
+        segments: [
+          { startedAt: ist('13:00'), endedAt: ist('13:10') },
+          { startedAt: ist('13:30'), endedAt: null },
+        ],
+      });
+      records.listForUserOnDate.mockResolvedValue([resumed]);
+      records.findOpenForUser.mockResolvedValue(resumed);
+      const day = await useCase.today(me('staff', Role.USER));
+      expect(day.active).toMatchObject({ segmentStartedAt: ist('13:30').toISOString(), takenBeforeSec: 600, durationMin: 30 });
+      expect(day.activeBreak).toMatchObject({ takenSec: 1200, remainingSec: 600, state: 'ACTIVE' });
+    });
+
+    it('startQuick accepts 1 to 60 whole minutes only', async () => {
+      at('15:00');
+      for (const bad of [0, 61, 2.5, Number.NaN]) {
+        await expect(useCase.startQuick(me('staff', Role.USER), bad)).rejects.toMatchObject({
+          status: 422,
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      expect(records.startQuick).not.toHaveBeenCalled();
+    });
+
+    it('startQuick opens the break, needs no approval and answers the presence', async () => {
+      at('15:00');
+      records.startQuick.mockImplementation(async (input: any) => ({
+        ok: true,
+        record: row({ id: 'q-1', kind: 'QUICK', presenceType: 'BREAK', durationMin: null, plannedMin: input.plannedMin, startedAt: input.startedAt, windowClose: null, state: 'ACTIVE' }),
+        presenceSessionId: 'ps-q',
+      }));
+      const res = await useCase.startQuick(me('staff', Role.USER), 10);
+      expect(records.startQuick).toHaveBeenCalledWith(
+        {
+          userId: 'staff',
+          date: '2026-10-13',
+          plannedMin: 10,
+          startedAt: ist('15:00'),
+          calendarDay: '2026-10-13',
+          shiftId: 'shift-general',
+          shiftName: 'General',
+        },
+        ist('15:00'),
+      );
+      expect(res.record).toMatchObject({ kind: 'QUICK', plannedMin: 10, remainingSec: 600, approvalStatus: 'NOT_REQUIRED' });
+      expect(res.presence).toEqual({ status: 'BREAK', sessionId: 'ps-q', note: null, since: ist('15:00').toISOString(), elapsedSec: 0 });
+      expect(presence.broadcast).toHaveBeenCalledWith('staff', expect.objectContaining({ id: 'ps-q', type: 'BREAK' }), ist('15:00'));
+      expect(events.approvalRequested).not.toHaveBeenCalled();
+    });
+
+    it('startQuick can be back-dated (an away break) and counts from then', async () => {
+      at('15:00');
+      records.startQuick.mockImplementation(async (input: any) => ({
+        ok: true,
+        record: row({ id: 'q-1', kind: 'QUICK', presenceType: 'BREAK', durationMin: null, plannedMin: 15, startedAt: input.startedAt, windowClose: null }),
+        presenceSessionId: 'ps-q',
+      }));
+      const res = await useCase.startQuick(me('staff', Role.USER), 15, { startedAt: ist('14:52') });
+      expect(records.startQuick.mock.calls[0][0]).toMatchObject({ startedAt: ist('14:52'), calendarDay: '2026-10-13' });
+      expect(res.presence).toMatchObject({ since: ist('14:52').toISOString(), elapsedSec: 480 });
+    });
+
+    it.each([
+      ['ON_BREAK', 409],
+      ['IN_MEETING', 409],
+      ['DAY_NOT_STARTED', 409],
+      ['DAY_ENDED', 409],
+    ])('startQuick refused with %s answers %i with that code', async (code, status) => {
+      at('15:00');
+      records.startQuick.mockResolvedValue({ ok: false, code });
+      await expect(useCase.startQuick(me('staff', Role.USER), 5)).rejects.toMatchObject({ status, code });
+      expect(presence.broadcast).not.toHaveBeenCalled();
+    });
+
+    it('pause answers the slot with what is left and until when it can resume', async () => {
+      at('13:10');
+      records.pause.mockResolvedValue({
+        ok: true,
+        record: row({ state: 'PAUSED', endedAt: ist('13:10'), segments: [{ startedAt: ist('13:00'), endedAt: ist('13:10') }] }),
+        presenceSessionId: null,
+      });
+      const view = await useCase.pause(me('staff', Role.USER), 'rec-1');
+      expect(records.pause).toHaveBeenCalledWith('rec-1', 'staff', ist('13:10'));
+      expect(view).toMatchObject({
+        state: 'PAUSED',
+        takenSec: 600,
+        remainingSec: 1200,
+        canResume: true,
+        resumeUntil: ist('14:00').toISOString(),
+        segments: [{ startedAt: ist('13:00').toISOString(), endedAt: ist('13:10').toISOString() }],
+      });
+      // Back at work: the agent and boards hear the break is over for now.
+      expect(presence.broadcast).toHaveBeenCalledWith('staff', null, ist('13:10'));
+    });
+
+    it.each([
+      ['NOT_ACTIVE', 'That break is not running.'],
+      ['NOT_PAUSABLE', 'A quick break cannot be paused. End it instead.'],
+      ['NOT_FOUND', 'Unknown break'],
+    ])('pause refused with %s', async (code, message) => {
+      at('13:10');
+      records.pause.mockResolvedValue({ ok: false, code });
+      await expect(useCase.pause(me('staff', Role.USER), 'rec-1')).rejects.toMatchObject({
+        message,
+        code: code === 'NOT_FOUND' ? 'NOT_FOUND' : code,
+        status: code === 'NOT_FOUND' ? 404 : 409,
+      });
+    });
+
+    it('resume opens a new segment and broadcasts the break presence again', async () => {
+      at('13:30');
+      records.resume.mockResolvedValue({
+        ok: true,
+        record: row({
+          state: 'ACTIVE',
+          segments: [
+            { startedAt: ist('13:00'), endedAt: ist('13:10') },
+            { startedAt: ist('13:30'), endedAt: null },
+          ],
+        }),
+        presenceSessionId: 'ps-2',
+      });
+      const view = await useCase.resume(me('staff', Role.USER), 'rec-1');
+      expect(records.resume).toHaveBeenCalledWith('rec-1', 'staff', ist('13:30'), '2026-10-13');
+      expect(view).toMatchObject({ state: 'ACTIVE', takenSec: 600, canResume: false, resumeUntil: null });
+      expect(presence.broadcast).toHaveBeenCalledWith(
+        'staff',
+        expect.objectContaining({ id: 'ps-2', type: 'LUNCH', startedAt: ist('13:30'), endedAt: null }),
+        ist('13:30'),
+      );
+    });
+
+    it('resume after the window closed says when it closed, in 12-hour time', async () => {
+      at('14:05');
+      records.resume.mockResolvedValue({ ok: false, code: 'RESUME_WINDOW_CLOSED', record: row({ state: 'ENDED' }) });
+      await expect(useCase.resume(me('staff', Role.USER), 'rec-1')).rejects.toMatchObject({
+        status: 409,
+        code: 'RESUME_WINDOW_CLOSED',
+        message: 'The break window closed at 2:00 PM. The break has ended.',
+      });
+      records.resume.mockResolvedValue({ ok: false, code: 'RESUME_WINDOW_CLOSED' });
+      await expect(useCase.resume(me('staff', Role.USER), 'rec-1')).rejects.toMatchObject({
+        message: 'The break window has closed. The break has ended.',
+      });
+      for (const code of ['NOT_PAUSED', 'ON_BREAK', 'IN_MEETING']) {
+        records.resume.mockResolvedValue({ ok: false, code });
+        await expect(useCase.resume(me('staff', Role.USER), 'rec-1')).rejects.toMatchObject({ status: 409, code });
+      }
+    });
+
+    it('end from a 4.0 agent: never an overrun ask (the buffer covers it); overrun stored, break marked ended', async () => {
+      at('13:45');
+      records.findOpenForUser.mockResolvedValue(row());
+      records.finishBreak.mockResolvedValue({ row: row(), becamePending: false });
+      records.markEnded.mockResolvedValue(row({ endedAt: ist('13:45'), state: 'ENDED', finalEndedAt: ist('13:45') }));
+      const res = await useCase.end(me('staff', Role.USER), { askToCount: true, overrunReason: 'Customer call ran long' }, { agent40: true });
+      expect(records.finishBreak).toHaveBeenCalledWith('rec-1', { overrunSec: 900, ask: null }, ist('13:45'));
+      expect(records.markEnded).toHaveBeenCalledWith('rec-1', ist('13:45'));
+      expect(presence.endOpen).toHaveBeenCalledWith('staff', ist('13:45'));
+      expect(res).toMatchObject({ ended: true, record: { state: 'ENDED' } });
+      expect(events.approvalRequested).not.toHaveBeenCalled();
+    });
+
+    it('end of a quick break: no overrun even past its planned length, from any agent', async () => {
+      at('15:30');
+      const quick = row({ id: 'q-1', kind: 'QUICK', presenceType: 'BREAK', durationMin: null, plannedMin: 5, startedAt: ist('15:00'), windowClose: null });
+      records.findOpenForUser.mockResolvedValue(quick);
+      records.finishBreak.mockResolvedValue({ row: quick, becamePending: false });
+      await useCase.end(me('staff', Role.USER), { askToCount: true, overrunReason: 'Took longer than planned' });
+      expect(records.finishBreak).toHaveBeenCalledWith('q-1', { overrunSec: 0, ask: null }, ist('15:30'));
+      expect(records.markEnded).toHaveBeenCalledWith('q-1', ist('15:30'));
+    });
+
+    it('end of a paused break ends it at its pause', async () => {
+      at('13:50');
+      const paused = row({ state: 'PAUSED', endedAt: ist('13:10'), segments: [{ startedAt: ist('13:00'), endedAt: ist('13:10') }] });
+      records.findPausedForUser.mockResolvedValue(paused);
+      records.markEnded.mockResolvedValue({ ...paused, state: 'ENDED', finalEndedAt: ist('13:10') });
+      const res = await useCase.end(me('staff', Role.USER), {});
+      expect(records.markEnded).toHaveBeenCalledWith('rec-1', ist('13:50'));
+      expect(res).toMatchObject({ ended: true, record: { state: 'ENDED', takenSec: 600 } });
+      expect(presence.endOpen).not.toHaveBeenCalled();
+      expect(records.finishBreak).not.toHaveBeenCalled();
+    });
+
+    it('the overrun is measured over the segments, not from the first start', async () => {
+      at('13:50');
+      // 13:00-13:10 and 13:20-13:50: 40 min taken of 30, although 50 min passed.
+      const resumed = row({
+        segments: [
+          { startedAt: ist('13:00'), endedAt: ist('13:10') },
+          { startedAt: ist('13:20'), endedAt: null },
+        ],
+      });
+      records.findOpenForUser.mockResolvedValue(resumed);
+      records.finishBreak.mockResolvedValue({ row: resumed, becamePending: false });
+      await useCase.end(me('staff', Role.USER), {}, { agent40: true });
+      expect(records.finishBreak.mock.calls[0][1]).toEqual({ overrunSec: 600, ask: null });
     });
   });
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ForbiddenError, NotFoundError } from '@shared/exceptions/app.exception';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { CACHE_SERVICE, CacheService } from '@shared/cache/cache.port';
@@ -9,14 +9,13 @@ import { PublicUser } from '../user.types';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
 
 /**
- * Turns a user's automatic screenshots on or off. Admins may set it for anyone,
- * a manager only for their own reports.
+ * Turns a user's automatic screenshots on or off (docs/4.0/SPEC.md 1.2: Admin for
+ * their organisation, Super Admin for any; Managers no longer).
  *
  * Scope is deliberately narrow: this stops the agent's periodic capture and
- * nothing else. Activity tracking keeps running, and a manager's manual capture
- * still works — the two are unrelated.
+ * nothing else. Activity tracking keeps running, and manual capture still works.
  *
- * Idempotent, so two managers clicking a stale row don't get a conflict.
+ * Idempotent, so two admins clicking a stale row don't get a conflict.
  */
 @Injectable()
 export class SetUserScreenshotsUseCase {
@@ -31,18 +30,10 @@ export class SetUserScreenshotsUseCase {
     if (me.role === Role.USER) {
       throw new ForbiddenError('You are not allowed to change screenshot settings');
     }
-
-    const target = await this.users.findById(targetId);
-    // Deliberately "unknown" rather than 403 for someone they may not touch, so
-    // ids can't be probed for existence — same as changing a user's status.
-    if (!target || !this.access.ownsTarget(me, target)) {
-      throw new NotFoundError('Unknown user');
-    }
-
+    const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
     target.setScreenshotsEnabled(enabled);
     const saved = await this.users.save(target);
     await this.cache.del(`user:profile:${targetId}`);
-
     return UserMapper.toPublic(saved);
   }
 }

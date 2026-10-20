@@ -1,4 +1,4 @@
-import { BreakKind, BreakTiming } from '../shift.types';
+import { RecordKind, BreakTiming } from '../shift.types';
 
 /** A break needs a decision; tells whoever must decide it. */
 export class BreakApprovalRequestedEvent {
@@ -9,7 +9,7 @@ export class BreakApprovalRequestedEvent {
     public readonly subjectName: string,
     /** People to notify (the routed approver, or every Super Admin for the pool). */
     public readonly recipientIds: string[],
-    public readonly kind: BreakKind | null,
+    public readonly kind: RecordKind | null,
     public readonly timing: BreakTiming,
     public readonly minutesOff: number,
     public readonly reason: string | null,

@@ -6,8 +6,8 @@
 // Writes to the local database (through @prisma/client) only for what no API can do:
 // a skip left from yesterday, an item made overdue or escalated, a day in August.
 import ExcelJS from 'exceljs';
-import { AGENT_30_UA, AGENT_31_UA, Client, check, expectStatus, hm, summary, todayKey } from './lib.mjs';
-import { openDb, wallToUtc } from './db.mjs';
+import { AGENT_30_UA, AGENT_31_UA, Client, check, expectStatus, hm, summary, todayKey } from '../lib.mjs';
+import { openDb, wallToUtc } from '../db.mjs';
 
 const MIN = 60_000;
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));

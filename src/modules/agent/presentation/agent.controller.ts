@@ -15,7 +15,8 @@ import archiver from 'archiver';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
+import { AuditLogService } from '@shared/audit/audit-log.service';
+import { NotFoundError } from '@shared/exceptions/app.exception';
 import { UserAccessService } from '@modules/users/domain/services/user-access.service';
 import { TOKEN_SERVICE, TokenService } from '@shared/security/token.service.port';
 import {
@@ -45,7 +46,7 @@ const MAC_X64_ZIP_FILE_NAME = 'RXVision-mac-intel.zip';
  * Serves the desktop agents.
  *
  * Windows (default, `?platform=windows`): with `?userId=`, the caller (that
- * user's manager, or a Super Admin) gets a copy with a per-user enrollment token
+ * person themselves, their organisation's Admin, or a Super Admin) gets a copy with a per-user enrollment token
  * and server URL appended to the installer, so the employee runs it and it
  * enrolls itself. Without `userId`, the generic build is served (login screen).
  *
@@ -61,6 +62,7 @@ export class AgentController {
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(AGENT_BINARY_STORES) private readonly stores: AgentBinaryStores,
+    private readonly audit: AuditLogService,
   ) {}
 
   private readonly access = new UserAccessService();
@@ -268,25 +270,35 @@ export class AgentController {
   }
 
   /**
-   * Resolves the per-user enrollment config (server URL + token). Allowed for
-   * yourself, for a Super Admin (anyone except another Super Admin), and for a
-   * Manager (their own staff). The token is a credential for that person, so the
-   * same outranking rule as every other write applies.
+   * Resolves the per-user enrollment config (server URL + token). 4.0: only for
+   * whoever may change that person (docs/4.0/SPEC.md 1.2, 5.3: the Admin for their
+   * organisation's Managers and Staff, a Super Admin also for its Admin), never for
+   * yourself: the token is a 365-day credential, and minting one for yourself would
+   * outlive a sign-out key or a blocked password. Everyone else signs the agent in
+   * with their password. Someone outside the caller's organisation is "not found".
+   * The token carries the person's enrollVersion, so a key sign-out or a "sign out
+   * everywhere" password reset retires it.
    */
   private async buildConfig(me: AuthenticatedUser, userId: string): Promise<AgentEnrollConfig> {
     const target = await this.users.findById(userId);
-    if (!target) throw new NotFoundException('User not found.');
-
-    const self = target.id === me.id;
-    const allowed =
-      self ||
-      (this.access.ownsTarget(me, target) &&
-        !(target.role === Role.SUPER_ADMIN && me.role === Role.SUPER_ADMIN));
-    if (!allowed) {
-      throw new ForbiddenException('That user is not one of your reports.');
+    try {
+      this.access.assertCanEdit(me, target);
+    } catch (err) {
+      if (err instanceof NotFoundError) throw new NotFoundException('User not found.');
+      throw new ForbiddenException(
+        'Only the organisation admin can issue an installer or a setup code for this person.',
+      );
     }
+    const person = target!;
 
-    const token = await this.tokens.signEnrollmentToken(userId);
+    const token = await this.tokens.signEnrollmentToken(person.id, person.enrollVersion);
+    await this.audit.record({
+      actorId: me.id,
+      action: 'AGENT_ENROLLMENT_ISSUED',
+      entity: 'USER',
+      entityId: person.id,
+      metadata: { enrollVersion: person.enrollVersion, self: person.id === me.id },
+    });
     return {
       ApiBaseUrl: this.config.get<string>('agent.publicApiBaseUrl') ?? '',
       EnrollmentToken: token,

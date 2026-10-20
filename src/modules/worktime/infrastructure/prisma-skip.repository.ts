@@ -32,7 +32,7 @@ export class PrismaSkipRepository implements SkipRepository {
   ): Promise<CreateSkipResult> {
     const clock =
       record.approvalStatus === 'PENDING'
-        ? pendingClock(now, (await this.settings.get()).approvalSlaHours)
+        ? pendingClock(now, (await this.settings.forUser(record.userId)).approvalSlaHours)
         : {};
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -70,7 +70,8 @@ export class PrismaSkipRepository implements SkipRepository {
           select: { id: true },
         });
         if (onBreak) return { ok: false as const, code: 'ALREADY_ON_BREAK' as const };
-        if (record.approvalStatus === 'PENDING') await assertMonthOpen(tx, record.date);
+        if (record.approvalStatus === 'PENDING')
+          await assertMonthOpen(tx, record.date, record.userId);
         if (!open) {
           const day = await ensureOpenTx(tx, record.userId, generation, now, today);
           if (!day.ok) return { ok: false as const, code: day.code };
@@ -89,13 +90,16 @@ export class PrismaSkipRepository implements SkipRepository {
 
   async createAutoSkips(records: NewBreakRecord[], now: Date): Promise<BreakRecordRow[]> {
     if (!records.length) return [];
-    const sla = (await this.settings.get()).approvalSlaHours;
     const out: BreakRecordRow[] = [];
     for (const record of records) {
+      const sla = (await this.settings.forUser(record.userId)).approvalSlaHours;
       try {
         const created = await this.prisma.$transaction(async (tx) => {
           // Never a new pending item in a locked month (left out, not an error).
-          if (record.approvalStatus === 'PENDING' && (await isMonthLocked(tx, record.date))) {
+          if (
+            record.approvalStatus === 'PENDING' &&
+            (await isMonthLocked(tx, record.date, record.userId))
+          ) {
             return null;
           }
           return tx.breakRecord.create({

@@ -39,4 +39,8 @@ export class PatchSettingsDto {
   @ApiPropertyOptional({ type: Number, minimum: 30, maximum: 720, example: 240 })
   @Allow()
   autoCloseAfterShiftEndMin?: unknown;
+
+  @ApiPropertyOptional({ type: Number, minimum: 0, maximum: 60, example: 10 })
+  @Allow()
+  breakBufferMin?: unknown;
 }

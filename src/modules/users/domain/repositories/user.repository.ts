@@ -20,6 +20,12 @@ export interface CreateUserData {
   shiftEnd?: string;
   /** Who created the account; recorded on the initial shift assignment. */
   createdById?: string;
+  /** 4.0: the person's department (users.department holds its name). */
+  departmentId?: string | null;
+  /** 4.0: a Manager's departments. */
+  managedDepartmentIds?: string[];
+  /** 4.0: a Manager's view grants. */
+  grants?: { screenshots: boolean; timeline: boolean; activity: boolean };
 }
 
 /**
@@ -56,6 +62,12 @@ export interface ListUsersFilter extends SearchPageFilter {
   department?: string | null;
   managerId?: string;
   companyId?: string;
+  /** 4.0: only people in these departments. */
+  departmentIds?: string[];
+  /** 4.0: only these roles (role, when given, narrows further). */
+  roles?: Role[];
+  /** 4.0: never these roles. */
+  excludeRoles?: Role[];
   role?: Role;
   status?: UserStatus;
   /** Inclusive lower bound on when the user joined. */
@@ -65,7 +77,10 @@ export interface ListUsersFilter extends SearchPageFilter {
   sort?: UserSortOption;
 }
 
-export type ListUsersScope = Pick<ListUsersFilter, 'ids' | 'managerId'>;
+export type ListUsersScope = Pick<
+  ListUsersFilter,
+  'ids' | 'managerId' | 'companyId' | 'departmentIds' | 'roles' | 'excludeRoles'
+>;
 
 export interface UserRepository {
   findById(id: string): Promise<User | null>;
@@ -82,4 +97,9 @@ export interface UserRepository {
    * one-time "agent activated" notification without racing.
    */
   markAgentActivatedIfFirst(id: string): Promise<boolean>;
+  /**
+   * 4.0: invalidates the person's installer and setup-code tokens (they carry the
+   * version they were issued for). Answers the new version.
+   */
+  bumpEnrollVersion(id: string): Promise<number>;
 }

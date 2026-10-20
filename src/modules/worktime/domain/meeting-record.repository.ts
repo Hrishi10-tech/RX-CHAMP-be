@@ -17,6 +17,8 @@ export interface MeetingRecordRow {
   mode: 'LIVE' | 'PAST';
   agenda: string;
   participants: MeetingParticipantData[];
+  /** 4.0: who will mail the minutes of meeting. */
+  momSender?: string | null;
   startedAt: Date;
   endedAt: Date | null;
   durationSec: number | null;
@@ -38,6 +40,8 @@ export interface NewMeeting {
   date: string;
   agenda: string;
   participants: MeetingParticipantData[];
+  /** 4.0: who will mail the minutes. */
+  momSender?: string | null;
   approvalStatus: 'PENDING' | 'NOT_REQUIRED';
   routing: Routing;
 }

@@ -3,7 +3,8 @@ import { AgentGeneration } from './agent-generation';
 export const WORK_SESSION_REPOSITORY = Symbol('WORK_SESSION_REPOSITORY');
 
 export type WorkSessionEndReason = 'USER' | 'AUTO_CLOSED';
-export type WorkSessionSource = 'AGENT' | 'LEGACY' | 'BACKFILL';
+/** REPLAY (4.0): opened by an offline action replayed later (auditable, see agent_events). */
+export type WorkSessionSource = 'AGENT' | 'LEGACY' | 'BACKFILL' | 'REPLAY';
 
 export interface WorkSessionRecord {
   id: string;
@@ -47,6 +48,11 @@ export interface AutoCloseTxResult {
   newlyEnded: boolean;
   /** AUTO_SKIPPED records removed because their break was after the real end. */
   droppedSkips: number;
+  /**
+   * The session had been auto-closed before (a replayed action reopened it, which
+   * keeps endReason AUTO_CLOSED while open): nothing is announced again.
+   */
+  reclosed?: boolean;
 }
 
 export interface LastInputQuery {
@@ -148,4 +154,15 @@ export interface WorkSessionRepository {
 
   /** The last non-idle activity sample `at` inside each window, keyed by sessionId. */
   lastInputs(queries: LastInputQuery[]): Promise<Map<string, Date | null>>;
+
+  /** The person's latest work session that started at or before `at`. */
+  lastStartedAtOrBefore(userId: string, at: Date): Promise<WorkSessionRecord | null>;
+
+  /**
+   * Moves an AUTO_CLOSED session's end later, to `to` (an input that arrived late),
+   * with the day's End Day mark when that mark was the old end, and makes it a
+   * REPLAY session (it now rests on late evidence). False when the session changed
+   * meanwhile.
+   */
+  extendAutoClosed(session: WorkSessionRecord, to: Date): Promise<boolean>;
 }

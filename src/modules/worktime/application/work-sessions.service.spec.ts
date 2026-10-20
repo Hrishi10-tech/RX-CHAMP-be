@@ -58,11 +58,21 @@ function setup(
     loginTimes: jest.fn().mockResolvedValue([]),
   };
   const people = {
-    findAnyByIds: jest
-      .fn()
-      .mockResolvedValue([
-        { id: 'u1', firstName: 'Asha', lastName: 'Rao', managerId: 'm1', active: true },
-      ]),
+    findAnyByIds: jest.fn().mockResolvedValue([
+      {
+        id: 'u1',
+        firstName: 'Asha',
+        lastName: 'Rao',
+        role: 'USER',
+        departmentId: 'd1',
+        managerId: null,
+        companyId: 'co-1',
+        active: true,
+      },
+    ]),
+    // 4.0: the department's managers oversee Staff; with none, the Admin.
+    listDepartmentManagerIds: jest.fn().mockResolvedValue(['m1']),
+    listOrgAdminIds: jest.fn().mockResolvedValue(['a1']),
   };
   const events = {
     publish: jest.fn(async (_n: string, _p: unknown) => undefined),
@@ -78,6 +88,7 @@ function setup(
     })),
   };
   const settings = { get: jest.fn().mockResolvedValue({ autoCloseAfterShiftEndMin: 240 }) };
+  const breakRecords = { endPaused: jest.fn().mockResolvedValue(0) };
   const dayKeys = {
     keyFnFor: jest.fn(async () => dayKey),
     dayKeyAt: jest.fn(async (_userId: string, at: Date) => dayKey(at)),
@@ -85,17 +96,18 @@ function setup(
   const svc = new WorkSessionsService(
     repo as never,
     people as never,
+    breakRecords as never,
     events as never,
     days as never,
     settings as never,
     dayKeys as never,
   );
   const published = () => events.publish.mock.calls.map(([name, payload]) => ({ name, payload }));
-  return { svc, repo, events, days, published };
+  return { svc, repo, events, days, published, settings, people, breakRecords };
 }
 
 describe('WorkSessionsService auto-close', () => {
-  it('closes a stale session at the last input and tells the person and their manager', async () => {
+  it('closes a stale session at the last input and tells the person and their department managers', async () => {
     const { svc, repo, published } = setup();
     repo.listOpen.mockResolvedValue([session()]);
     repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '17:45')]]));
@@ -112,7 +124,8 @@ describe('WorkSessionsService auto-close', () => {
     expect(p[0].payload).toMatchObject({
       userId: 'u1',
       userName: 'Asha Rao',
-      managerId: 'm1',
+      // The notifications module resolves who oversees the person.
+      managerId: null,
       date: '2026-10-13',
     });
     const notices = p
@@ -122,7 +135,8 @@ describe('WorkSessionsService auto-close', () => {
     expect(notices[0]).toMatchObject({
       recipientIds: ['u1'],
       type: 'DAY_AUTO_CLOSED',
-      title: 'Your day was closed at 17:45',
+      // 4.0: 12-hour times in every backend-built string.
+      title: 'Your day was closed at 5:45 PM',
     });
     expect(notices[1]).toMatchObject({
       recipientIds: ['m1'],
@@ -130,6 +144,39 @@ describe('WorkSessionsService auto-close', () => {
       title: "Asha Rao's day was closed automatically",
       fromUserId: 'u1',
     });
+  });
+
+  it("tells the Admin when the department has no manager, and a Manager's Admin", async () => {
+    const { svc, repo, published, people } = setup();
+    people.listDepartmentManagerIds.mockResolvedValue([]);
+    repo.listOpen.mockResolvedValue([session()]);
+    await svc.autoCloseAll(ist('2026-10-14', '08:00'));
+    const toAdmin = published()
+      .filter((x) => x.name === NoticeEvent.eventName)
+      .map((x) => x.payload as NoticeEvent);
+    expect(toAdmin[1]).toMatchObject({ recipientIds: ['a1'] });
+
+    const second = setup();
+    second.people.findAnyByIds.mockResolvedValue([
+      {
+        id: 'u1',
+        firstName: 'Asha',
+        lastName: 'Rao',
+        role: 'MANAGER',
+        departmentId: 'd1',
+        managerId: null,
+        companyId: 'co-1',
+        active: true,
+      },
+    ]);
+    second.repo.listOpen.mockResolvedValue([session()]);
+    await second.svc.autoCloseAll(ist('2026-10-14', '08:00'));
+    const notices = second
+      .published()
+      .filter((x) => x.name === NoticeEvent.eventName)
+      .map((x) => x.payload as NoticeEvent);
+    expect(notices[1]).toMatchObject({ recipientIds: ['a1'] });
+    expect(second.people.listDepartmentManagerIds).not.toHaveBeenCalled();
   });
 
   it('leaves a session alone until shift end + 240 minutes has passed', async () => {
@@ -149,6 +196,43 @@ describe('WorkSessionsService auto-close', () => {
     repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-14', '01:00')]]));
     await svc.autoCloseAll(ist('2026-10-14', '08:00'));
     expect(repo.autoClose).toHaveBeenLastCalledWith(expect.anything(), ist('2026-10-13', '22:30'));
+  });
+
+  it("uses each person's organisation's auto-close minutes (settings are per organisation)", async () => {
+    const { svc, repo, settings, people } = setup();
+    people.findAnyByIds.mockResolvedValue([
+      {
+        id: 'u1',
+        firstName: 'Asha',
+        lastName: 'Rao',
+        role: 'USER',
+        departmentId: 'd1',
+        managerId: null,
+        companyId: 'co-1',
+        active: true,
+      },
+      {
+        id: 'u2',
+        firstName: 'Ravi',
+        lastName: 'K',
+        role: 'USER',
+        departmentId: 'd2',
+        managerId: null,
+        companyId: 'co-2',
+        active: true,
+      },
+    ]);
+    settings.get.mockImplementation(async (companyId?: string | null) => ({
+      autoCloseAfterShiftEndMin: companyId === 'co-2' ? 60 : 240,
+    }));
+    repo.listOpen.mockResolvedValue([session(), session({ id: 's2', userId: 'u2' })]);
+    // 19:31: past co-2's shift end + 60 min, not co-1's + 240 min.
+    expect(await svc.autoCloseAll(ist('2026-10-13', '19:31'))).toBe(1);
+    expect(repo.autoClose).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's2' }),
+      expect.any(Date),
+    );
+    expect(settings.get).toHaveBeenCalledWith('co-2');
   });
 
   it('uses start + 14 hours without a shift or on a day off', async () => {
@@ -175,6 +259,25 @@ describe('WorkSessionsService auto-close', () => {
     repo.autoClose.mockResolvedValueOnce({ closed: true, newlyEnded: false });
     await svc.autoCloseAll(ist('2026-10-14', '08:00'));
     expect(published().map((p) => p.name)).toEqual([NoticeEvent.eventName, NoticeEvent.eventName]);
+  });
+
+  it('a day closed again after a replayed action reopened it announces nothing (re-audit M2)', async () => {
+    const { svc, repo, events } = setup();
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.autoClose.mockResolvedValueOnce({ closed: true, newlyEnded: true, reclosed: true });
+    expect(await svc.autoCloseAll(ist('2026-10-14', '08:00'))).toBe(1);
+    expect(events.publish).not.toHaveBeenCalled();
+  });
+
+  it("a day's latest end is what the replay interceptor is told (no reopen past it)", async () => {
+    const { svc } = setup();
+    const s = session();
+    // The same limit the automatic close and a late input's move use.
+    const viaClose = await svc.latestEndOfSession(s);
+    expect(viaClose.getTime()).toBeGreaterThan(s.startedAt.getTime());
+    expect(
+      await svc.latestEndOfSession({ userId: s.userId, date: s.date, startedAt: s.startedAt }),
+    ).toEqual(viaClose);
   });
 
   it('one failing session does not stop the others', async () => {
@@ -214,6 +317,16 @@ describe('WorkSessionsService day state', () => {
     const dayOf = repo.startDay.mock.calls[0][4] as (at: Date) => string;
     expect(dayOf(now)).toBe('2026-10-14');
     expect(dayOf(ist('2026-10-15', '19:00'))).toBe('2026-10-15');
+  });
+
+  it('End Day first ends a paused break at its pause (4.0)', async () => {
+    const { svc, repo, breakRecords } = setup();
+    const now = ist('2026-10-14', '18:30');
+    await svc.endDay('u1', 'AGENT_31', now);
+    expect(breakRecords.endPaused).toHaveBeenCalledWith('u1');
+    expect(breakRecords.endPaused.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.endDay.mock.invocationCallOrder[0],
+    );
   });
 
   it('End Day on a night shift after midnight ends the shift-day it started on', async () => {
@@ -313,5 +426,79 @@ describe('WorkSessionsService day state', () => {
       ist('2026-10-14', '10:55'),
       '2026-10-14',
     );
+  });
+});
+
+/** The repository fake, to give it the methods a test needs. */
+const stub = (repo: unknown) => repo as Record<string, jest.Mock>;
+
+describe('WorkSessionsService.extendAutoClosed (an input that arrives after the auto-close)', () => {
+  // General: 09:30 to 18:30, auto-close 240 min after the shift end: latest end 22:30.
+  const autoClosed = (over: Partial<WorkSessionRecord> = {}) =>
+    session({
+      endedAt: ist('2026-10-13', '09:30'),
+      endReason: 'AUTO_CLOSED',
+      source: 'REPLAY',
+      ...over,
+    });
+
+  it('moves the close to the late input, inside the latest end', async () => {
+    const { svc, repo } = setup();
+    const s = autoClosed();
+    stub(repo).lastStartedAtOrBefore = jest.fn().mockResolvedValue(s);
+    stub(repo).extendAutoClosed = jest.fn().mockResolvedValue(true);
+    expect(await svc.extendAutoClosed('u1', ist('2026-10-13', '11:00'))).toBe(true);
+    expect(stub(repo).lastStartedAtOrBefore).toHaveBeenCalledWith('u1', ist('2026-10-13', '11:00'));
+    expect(stub(repo).extendAutoClosed).toHaveBeenCalledWith(s, ist('2026-10-13', '11:00'));
+    // At the close itself: nothing to move, the day already runs to it.
+    stub(repo).extendAutoClosed.mockClear();
+    expect(await svc.extendAutoClosed('u1', ist('2026-10-13', '09:30'))).toBe(true);
+    expect(stub(repo).extendAutoClosed).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['after the latest end', autoClosed(), ist('2026-10-13', '22:31')],
+    ['a day the person ended', autoClosed({ endReason: 'USER' }), ist('2026-10-13', '11:00')],
+    ['a session still open', session(), ist('2026-10-13', '11:00')],
+    [
+      'before the close (inside the session already)',
+      autoClosed({ endedAt: ist('2026-10-13', '12:00') }),
+      ist('2026-10-13', '11:00'),
+    ],
+  ])('never for an input %s', async (_why, s, at) => {
+    const { svc, repo } = setup();
+    stub(repo).lastStartedAtOrBefore = jest.fn().mockResolvedValue(s);
+    stub(repo).extendAutoClosed = jest.fn().mockResolvedValue(true);
+    expect(await svc.extendAutoClosed('u1', at)).toBe(false);
+    expect(stub(repo).extendAutoClosed).not.toHaveBeenCalled();
+  });
+
+  it('nothing to extend when there is no earlier session', async () => {
+    const { svc, repo } = setup();
+    stub(repo).lastStartedAtOrBefore = jest.fn().mockResolvedValue(null);
+    expect(await svc.extendAutoClosed('u1', ist('2026-10-13', '11:00'))).toBe(false);
+  });
+});
+
+describe('WorkSessionsService.workedAt (late activity samples)', () => {
+  it('is true inside a work session, open or closed, and false outside every one', async () => {
+    const { svc, repo } = setup();
+    const closed = session({ endedAt: ist('2026-10-13', '18:30'), endReason: 'USER' });
+    const overlapping = jest.fn().mockResolvedValue([closed]);
+    stub(repo).listOverlapping = overlapping;
+    expect(await svc.workedAt('u1', ist('2026-10-13', '12:00'))).toBe(true);
+    expect(await svc.workedAt('u1', ist('2026-10-13', '09:30'))).toBe(true);
+    // The end is not inside (a sample at End Day or later belongs to no session).
+    expect(await svc.workedAt('u1', ist('2026-10-13', '18:30'))).toBe(false);
+    expect(await svc.workedAt('u1', ist('2026-10-13', '09:29'))).toBe(false);
+    expect(overlapping).toHaveBeenCalledWith(
+      ['u1'],
+      ist('2026-10-13', '09:29'),
+      ist('2026-10-13', '09:29'),
+    );
+    overlapping.mockResolvedValue([session()]);
+    expect(await svc.workedAt('u1', ist('2026-10-14', '02:00'))).toBe(true);
+    overlapping.mockResolvedValue([]);
+    expect(await svc.workedAt('u1', ist('2026-10-13', '12:00'))).toBe(false);
   });
 });

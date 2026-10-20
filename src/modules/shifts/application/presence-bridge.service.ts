@@ -45,9 +45,9 @@ export class PresenceBridge {
   async broadcast(userId: string, open: PresenceSessionRecord | null, now: Date): Promise<void> {
     try {
       const context = await this.team.findContext(userId);
-      if (!context?.managerId) return;
-      this.gateway.emitToManager(
-        context.managerId,
+      if (!context) return;
+      await this.gateway.emitForSubject(
+        userId,
         PresenceMapper.toTeamMemberView(context.self, PresenceMapper.currentFrom(open, now)),
       );
     } catch (err) {

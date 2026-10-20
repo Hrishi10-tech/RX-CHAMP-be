@@ -1,22 +1,29 @@
-import { ArrayUnique, IsArray, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsId } from '@shared/validation/is-id';
 
 export class CreateCompanyDto {
-  @ApiProperty({ example: 'lakshmangroup' })
+  @ApiProperty({ example: 'lakshmangroup', minLength: 2, maxLength: 80 })
   @IsString()
-  @IsNotEmpty()
   @MaxLength(200)
   name!: string;
 
   @ApiPropertyOptional({
-    description:
-      'User ids (managers) to assign to the new company. Optional — omit to create an unassigned company.',
+    description: 'People with no organisation yet to put into the new one (3.x alias). Optional.',
     type: [String],
     example: ['f6653aad-b393-4b56-9306-08793dfdcaa0'],
   })
   @IsOptional()
   @IsArray()
   @ArrayUnique()
-  @IsString({ each: true })
+  @ArrayMaxSize(200)
+  @IsId({ each: true })
   managerIds?: string[];
 }

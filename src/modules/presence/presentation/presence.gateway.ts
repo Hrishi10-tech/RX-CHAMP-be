@@ -6,13 +6,12 @@ import { Namespace, Socket } from 'socket.io';
 import { AuthenticatedGateway } from '@shared/websocket/authenticated.gateway';
 import { SocketAccessService } from '@shared/websocket/socket-access.service';
 import { socketCors } from '@shared/websocket/socket-cors';
-import { managerRoom } from '@shared/websocket/socket-rooms';
 import { TeamMemberPresenceView } from '../application/presence.types';
 
 /**
- * Pushes live presence changes to managers. A manager's client connects and is
- * placed in a room keyed by their own user id; whenever one of their reports
- * switches status, the update is emitted to that room as `presence:update`.
+ * Pushes live presence changes to the people who oversee them (4.0): the
+ * organisation's admins and, for Staff, the managers of their department. A
+ * portal client joins those rooms when it connects (docs/4.0/SPEC.md 1.4).
  */
 @WebSocketGateway({
   namespace: '/presence',
@@ -30,12 +29,12 @@ export class PresenceGateway extends AuthenticatedGateway implements OnGatewayCo
     const userId = await this.authenticateOrDisconnect(client);
     if (!userId) return;
 
-    void client.join(managerRoom(userId));
-    this.logger.debug(`socket ${client.id} joined ${managerRoom(userId)}`);
+    await this.joinTeamRooms(client, userId, 'presence');
   }
 
-  /** Notify a manager that one of their reports changed presence. */
-  emitToManager(managerId: string, update: TeamMemberPresenceView): void {
-    this.server.to(managerRoom(managerId)).emit('presence:update', update);
+  /** Tell everyone who oversees `subjectId` that their presence changed. */
+  async emitForSubject(subjectId: string, update: TeamMemberPresenceView): Promise<void> {
+    const rooms = await this.roomsOfUser(subjectId);
+    if (rooms.length) this.server.to(rooms).emit('presence:update', update);
   }
 }

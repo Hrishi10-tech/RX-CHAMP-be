@@ -1,23 +1,22 @@
-import { ForbiddenException } from '@nestjs/common';
-import { Role } from '@shared/rbac/roles.enum';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { ScreenshotAccessReader } from '../domain/screenshot-access.reader';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import { assertCanViewSection, isAdminLike, PersonFactsReader } from '@shared/tenancy';
 
 /**
- * A user may view / request captures for a target when: it's themselves, they're
- * an admin, or they are the target's manager. Throws ForbiddenException otherwise.
+ * 4.0 (docs/4.0/SPEC.md 1.2, 2.2): viewing a person's screenshots needs the
+ * screenshots grant for a Manager (always for an Admin or Super Admin in the
+ * organisation). `change` (capture now, archive) is for admins only: a Manager's
+ * grant is view-only. 404 outside scope.
  */
 export async function assertCanAccess(
   me: AuthenticatedUser,
   targetUserId: string,
-  access: ScreenshotAccessReader,
+  facts: PersonFactsReader,
+  change = false,
 ): Promise<void> {
-  if (me.id === targetUserId) return;
-  if (me.role === Role.SUPER_ADMIN) return;
-
-  const managerId = await access.findManagerId(targetUserId);
-  if (managerId === undefined) throw new ForbiddenException('User not found');
-  if (managerId === me.id) return;
-
-  throw new ForbiddenException('You can only access screenshots for your own team');
+  if (me.id === targetUserId && !change) return;
+  assertCanViewSection(me, await facts.find(targetUserId), 'screenshots');
+  if (change && !isAdminLike(me)) {
+    throw new ForbiddenError('Only the organisation admin can capture or archive screenshots.');
+  }
 }

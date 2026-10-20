@@ -1,32 +1,18 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { NotFoundError } from '@shared/exceptions/app.exception';
-import {
-  COMPANY_REPOSITORY,
-  CompanyRepository,
-} from '../../domain/repositories/company.repository';
+import { Injectable } from '@nestjs/common';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { OrganisationsService } from '@modules/organisations/application/organisations.service';
 import { DeleteCompanyResult } from '../company.types';
 
 /**
- * Removes a company from the app, along with the members still attached to it.
- *
- * Soft delete throughout: every row keeps its history and simply stops being listed,
- * so a company deleted by mistake — and its people's attendance and activity — can be
- * brought back by clearing the stamp. Nothing here destroys data.
- *
- * Deleting a company with members in it is deliberate, not an accident to be blocked:
- * the caller is told the count up front and confirms against it. Returning the number
- * that actually went lets the caller say what happened rather than guess.
+ * 3.x DELETE /companies/:id, an alias of DELETE /organisations/:id. 4.0 change: a
+ * company with active people is no longer deleted along with them; it answers 409
+ * ORG_NOT_EMPTY. Blocked people still go with it (soft delete, same stamp).
  */
 @Injectable()
 export class DeleteCompanyUseCase {
-  constructor(@Inject(COMPANY_REPOSITORY) private readonly companies: CompanyRepository) {}
+  constructor(private readonly organisations: OrganisationsService) {}
 
-  async execute(id: string): Promise<DeleteCompanyResult> {
-    const company = await this.companies.findById(id);
-    if (!company) throw new NotFoundError('Unknown company');
-
-    const membersRemoved = await this.companies.softDelete(company.id);
-
-    return { deleted: true, id: company.id, name: company.name, membersRemoved };
+  async execute(me: AuthenticatedUser, id: string): Promise<DeleteCompanyResult> {
+    return this.organisations.remove(me, id);
   }
 }

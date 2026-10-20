@@ -1,3 +1,4 @@
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { ManagerLookupReader } from '@shared/rbac/manager-lookup.reader';
 import { TeamMemberRef, TeamMemberWithManager } from '@shared/types/user.types';
 
@@ -13,7 +14,7 @@ export type ActivityTeamMember = TeamMemberRef;
 export type ActivitySelf = TeamMemberWithManager & {
   screenshotsEnabled: boolean;
   /** Staff get their own pushes without activity figures (SPEC 1.8). */
-  role: 'SUPER_ADMIN' | 'MANAGER' | 'USER';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'USER';
 };
 
 /**
@@ -21,8 +22,8 @@ export type ActivitySelf = TeamMemberWithManager & {
  * view a user's activity, without reaching into the users module directly.
  */
 export interface ActivityAccessReader extends ManagerLookupReader {
-  /** Active users who report to the given manager. */
-  findReports(managerId: string): Promise<ActivityTeamMember[]>;
+  /** 4.0: active people the caller oversees (shared/tenancy peopleWhere). */
+  findReports(me: AuthenticatedUser): Promise<ActivityTeamMember[]>;
 
   /** The user's own profile + managerId (one query), `undefined` if not found. */
   findSelf(userId: string): Promise<ActivitySelf | undefined>;

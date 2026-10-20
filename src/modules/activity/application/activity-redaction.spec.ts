@@ -124,17 +124,47 @@ describe('GET /activity/me/current and /activity/user/:me/current', () => {
     const repo = { findLatestForUser: jest.fn().mockResolvedValue(sample) };
     const access = { findManagerId: jest.fn().mockResolvedValue('m1') };
     const workDays = { findEnd: jest.fn().mockResolvedValue(null) };
-    return new GetCurrentActivityUseCase(repo as never, access as never, workDays as never);
+    // 4.0: scope comes from the target's organisation and department.
+    const facts = {
+      find: jest.fn(async (id: string) => (id === 'u1' ? { id: 'u1', role: 'USER', companyId: 'c1', departmentId: 'd1' } : null)),
+    };
+    return new GetCurrentActivityUseCase(repo as never, access as never, facts as never, workDays as never);
   };
-  const user = (id: string, role: Role) => ({ id, role }) as unknown as AuthenticatedUser;
+  const user = (id: string, role: Role, over: Partial<AuthenticatedUser> = {}) =>
+    ({
+      id,
+      role,
+      companyId: 'c1',
+      orgId: 'c1',
+      managedDepartmentIds: role === Role.MANAGER ? ['d1'] : [],
+      grants: role === Role.MANAGER ? { screenshots: false, timeline: true, activity: false } : undefined,
+      ...over,
+    }) as unknown as AuthenticatedUser;
 
   it('staff get the status without app, title or URL', async () => {
     const view = await setup().execute(user('u1', Role.USER), 'u1');
     expect(view).toMatchObject({ status: 'ACTIVE', app: null, title: null, url: null });
   });
 
-  it("a manager sees a report's current app", async () => {
+  it("a manager with the timeline grant sees the current app of staff in their departments", async () => {
     const view = await setup().execute(user('m1', Role.MANAGER), 'u1');
     expect(view).toMatchObject({ app: 'EXCEL.EXE', title: 'Claims batch 7' });
+  });
+
+  it('a manager without the timeline grant gets 403 GRANT_REQUIRED; outside their departments 404', async () => {
+    await expect(
+      setup().execute(user('m1', Role.MANAGER, { grants: { screenshots: true, timeline: false, activity: true } }), 'u1'),
+    ).rejects.toMatchObject({ status: 403, code: 'GRANT_REQUIRED' });
+    await expect(
+      setup().execute(user('m1', Role.MANAGER, { managedDepartmentIds: ['d2'] }), 'u1'),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(setup().execute(user('m1', Role.MANAGER), 'ghost')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('an Admin sees anyone in the organisation; another organisation is 404', async () => {
+    await expect(setup().execute(user('ad', Role.ADMIN), 'u1')).resolves.toMatchObject({ app: 'EXCEL.EXE' });
+    await expect(
+      setup().execute(user('ad', Role.ADMIN, { companyId: 'c2', orgId: 'c2' }), 'u1'),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

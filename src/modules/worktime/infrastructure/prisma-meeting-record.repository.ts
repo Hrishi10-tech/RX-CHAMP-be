@@ -3,6 +3,7 @@ import { MeetingRecord, Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { assertMonthOpen } from '@shared/database/month-lock';
+import { RequestClock } from '@shared/tenancy';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { Routing } from '@modules/shifts/domain/break-record.repository';
 import { ApproverRole, BreakApprovalStatus } from '@modules/shifts/domain/shift.types';
@@ -45,6 +46,7 @@ export function meetingFromPrisma(r: MeetingRecord): MeetingRecordRow {
     mode: r.mode,
     agenda: r.agenda,
     participants: participantsOf(r.participants),
+    momSender: r.momSender,
     startedAt: r.startedAt,
     endedAt: r.endedAt,
     durationSec: r.durationSec,
@@ -95,10 +97,11 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     private readonly settings: AppSettingsService,
   ) {}
 
-  private async clockFor(status: string, now: Date) {
-    return status === 'PENDING'
-      ? pendingClock(now, (await this.settings.get()).approvalSlaHours)
-      : {};
+  /** The SLA clock of a pending item, in the person's organisation. */
+  private async clockFor(status: string, now: Date, userId: string | null) {
+    if (status !== 'PENDING') return {};
+    const settings = userId ? await this.settings.forUser(userId) : await this.settings.get();
+    return pendingClock(now, settings.approvalSlaHours);
   }
 
   async findById(id: string): Promise<MeetingRecordRow | null> {
@@ -141,7 +144,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     now: Date,
     today: string,
   ): Promise<StartLiveResult> {
-    const clock = await this.clockFor(input.approvalStatus, now);
+    const clock = await this.clockFor(input.approvalStatus, now, input.userId);
     return this.prisma.$transaction(async (tx) => {
       await lockUser(tx, input.userId);
       const open = await tx.workSession.findFirst({
@@ -174,7 +177,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
         if (!day.ok) return { ok: false as const, code: day.code };
         date = day.session.date;
       }
-      if (input.approvalStatus === 'PENDING') await assertMonthOpen(tx, date);
+      if (input.approvalStatus === 'PENDING') await assertMonthOpen(tx, date, input.userId);
       const session = await tx.presenceSession.create({
         data: {
           userId: input.userId,
@@ -191,6 +194,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
           mode: 'LIVE',
           agenda: input.agenda,
           participants: input.participants as unknown as Prisma.InputJsonValue,
+          momSender: input.momSender ?? null,
           startedAt: now,
           presenceSessionId: session.id,
           approvalStatus: input.approvalStatus,
@@ -220,7 +224,8 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
         return { kind: 'UNCHANGED' as const, record: row };
       }
       // A waiting meeting changes: its month must be open (never locked while one waits).
-      if (record.approvalStatus === 'PENDING') await assertMonthOpen(tx, record.date);
+      if (record.approvalStatus === 'PENDING')
+        await assertMonthOpen(tx, record.date, record.userId);
       let endedAt = now;
       if (record.presenceSessionId) {
         const session = await tx.presenceSession.findUnique({
@@ -257,7 +262,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     now: Date,
     today: string,
   ): Promise<CreatePastResult> {
-    const clock = await this.clockFor(input.approvalStatus, now);
+    const clock = await this.clockFor(input.approvalStatus, now, input.userId);
     const start = input.startedAt;
     const end = new Date(start.getTime() + input.durationSec * 1000);
     return this.prisma.$transaction(async (tx) => {
@@ -312,7 +317,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
           w.startedAt.getTime() <= start.getTime() && end.getTime() <= (w.endedAt ?? now).getTime(),
       );
       const date = covering?.date ?? today;
-      if (input.approvalStatus === 'PENDING') await assertMonthOpen(tx, date);
+      if (input.approvalStatus === 'PENDING') await assertMonthOpen(tx, date, input.userId);
       const record = await tx.meetingRecord.create({
         data: {
           userId: input.userId,
@@ -320,6 +325,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
           mode: 'PAST',
           agenda: input.agenda,
           participants: input.participants as unknown as Prisma.InputJsonValue,
+          momSender: input.momSender ?? null,
           startedAt: start,
           endedAt: end,
           durationSec: input.durationSec,
@@ -385,12 +391,18 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     decision: MeetingDecision,
   ): Promise<MeetingRecordRow | null> {
     if (!isUuid(id)) return null;
-    const clock = await this.clockFor(decision.status, new Date());
+    const owner =
+      decision.status === 'PENDING'
+        ? await this.prisma.meetingRecord.findUnique({ where: { id }, select: { userId: true } })
+        : null;
+    const clock = await this.clockFor(decision.status, RequestClock.now(), owner?.userId ?? null);
     return this.prisma.$transaction(async (tx) => {
-      const [found] = await tx.$queryRaw<{ date: string; ended_at: Date | null }[]>`
-        SELECT date, ended_at FROM meeting_records WHERE id = ${id}::uuid FOR UPDATE`;
+      const [found] = await tx.$queryRaw<
+        { date: string; ended_at: Date | null; user_id: string }[]
+      >`
+        SELECT date, ended_at, user_id::text AS user_id FROM meeting_records WHERE id = ${id}::uuid FOR UPDATE`;
       if (!found) return null;
-      await assertMonthOpen(tx, found.date);
+      await assertMonthOpen(tx, found.date, found.user_id);
       if (!found.ended_at && decision.status !== 'PENDING') {
         throw new ConflictError(
           'This meeting is still running. Decide it once it has ended.',

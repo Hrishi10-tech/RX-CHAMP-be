@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { AWAY_REPOSITORY, AwayRepository } from '../domain/away.repository';
 import { UserAccessChangedEvent } from '@modules/users/domain/events/user-access-changed.event';
 import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.policy';
 import {
@@ -24,6 +25,7 @@ export class MeetingRerouteSubscriber implements OnModuleInit {
   private readonly logger = new Logger(MeetingRerouteSubscriber.name);
 
   constructor(
+    @Inject(AWAY_REPOSITORY) private readonly away: AwayRepository,
     @Inject(EVENT_BUS) private readonly bus: EventBus,
     @Inject(MEETING_RECORD_REPOSITORY) private readonly meetings: MeetingRecordRepository,
     @Inject(SHIFT_PEOPLE_READER) private readonly people: ShiftPeopleReader,
@@ -38,12 +40,19 @@ export class MeetingRerouteSubscriber implements OnModuleInit {
   async handle(e: UserAccessChangedEvent): Promise<void> {
     const person = await this.people.findById(e.userId);
     const canApprove =
-      !!person && person.active && (person.role === 'MANAGER' || person.role === 'SUPER_ADMIN');
+      !!person &&
+      person.active &&
+      (person.role === 'MANAGER' || person.role === 'ADMIN' || person.role === 'SUPER_ADMIN');
     let moved = 0;
     if (!canApprove)
       moved += await this.rerouteAll(await this.meetings.listPendingForApprover(e.userId));
     if (person && (e.changes.includes('MANAGER') || e.changes.includes('ROLE'))) {
       moved += await this.rerouteAll(await this.meetings.listPendingForUser(e.userId));
+      // 4.0: away items follow the person's role and department too.
+      const route = BreakApprovalPolicy.route(person);
+      if (route.status === 'PENDING' && route.approverRole) {
+        moved += await this.away.reroutePending(e.userId, route.approverRole);
+      }
     }
     if (moved)
       this.logger.log(
@@ -62,7 +71,7 @@ export class MeetingRerouteSubscriber implements OnModuleInit {
     for (const r of rows) {
       const subject = await find(r.userId);
       if (!subject) continue;
-      const route = BreakApprovalPolicy.route(subject, await find(subject.managerId));
+      const route = BreakApprovalPolicy.route(subject);
       if (route.status !== 'PENDING') continue;
       if (route.approverId === r.approverId && route.approverRole === r.approverRole) continue;
       if (

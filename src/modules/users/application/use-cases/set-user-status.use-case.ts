@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
+import { AuditLogService } from '@shared/audit/audit-log.service';
+import { ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { CACHE_SERVICE, CacheService } from '@shared/cache/cache.port';
@@ -12,9 +13,10 @@ import { PublicUser } from '../user.types';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
 
 /**
- * Blocks (DISABLED) or unblocks (ACTIVE) a user. Idempotent — setting the status
- * a user already has succeeds quietly, so two admins clicking a stale list row
- * don't get a conflict.
+ * Blocks (DISABLED) or unblocks (ACTIVE) a person: Admin (their organisation's
+ * Managers and Staff) or Super Admin (also the organisation's Admin). Idempotent,
+ * so two admins clicking a stale list row don't get a conflict. Managers: 403 for
+ * their Staff, 404 for anyone else; Staff: 403.
  *
  * Blocking takes effect immediately: every authenticated request re-reads the
  * user's status, and login / refresh / agent-enrollment all reject non-ACTIVE.
@@ -27,26 +29,20 @@ export class SetUserStatusUseCase {
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(CACHE_SERVICE) private readonly cache: CacheService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    private readonly audit: AuditLogService,
   ) {}
 
   async execute(me: AuthenticatedUser, targetId: string, status: UserStatus): Promise<PublicUser> {
     if (me.role === Role.USER) {
       throw new ForbiddenError("You are not allowed to change a user's status");
     }
-    // Checked before the lookup so self always gets this message rather than the
-    // "unknown user" a manager would otherwise get for their own id.
+    // Checked before the lookup so self always gets this message.
     if (targetId === me.id) {
       throw new ValidationError('You cannot change your own account status');
     }
 
-    const target = await this.users.findById(targetId);
-    // Deliberately "unknown" and not 403 for a user they may not touch, so ids
-    // can't be probed for existence.
-    if (!target || !this.access.ownsTarget(me, target)) {
-      throw new NotFoundError('Unknown user');
-    }
-
-    await this.assertNotLastAdmin(target.role, target.isActive(), status);
+    const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
+    await this.assertNotLastSuperAdmin(target.role, target.isActive(), status);
 
     const changed = target.status !== status;
     target.changeStatus(status);
@@ -57,6 +53,13 @@ export class SetUserStatusUseCase {
         UserAccessChangedEvent.eventName,
         new UserAccessChangedEvent(targetId, ['STATUS'], new Date(), status === 'ACTIVE'),
       );
+      await this.audit.record({
+        actorId: me.id,
+        action: 'USER_STATUS_CHANGED',
+        entity: 'USER',
+        entityId: targetId,
+        metadata: { status },
+      });
     }
 
     return UserMapper.toPublic(saved);
@@ -64,10 +67,10 @@ export class SetUserStatusUseCase {
 
   /**
    * Blocking the only remaining active Super Admin would lock everyone out of
-   * every Super Admin route, with no way back in through the API. Only checked on
-   * a real ACTIVE -> DISABLED transition, so re-blocking stays idempotent.
+   * every Super Admin route. (4.0 people endpoints never reach a Super Admin;
+   * kept as a guard.) Only checked on a real ACTIVE -> DISABLED transition.
    */
-  private async assertNotLastAdmin(
+  private async assertNotLastSuperAdmin(
     role: Role,
     targetIsActive: boolean,
     next: UserStatus,

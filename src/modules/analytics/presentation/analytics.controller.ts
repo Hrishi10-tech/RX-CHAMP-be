@@ -18,7 +18,7 @@ export class AnalyticsController {
   constructor(private readonly getDashboard: GetDashboardAnalyticsUseCase) {}
 
   @Get(':userId')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       "A user's full dashboard analytics for a day: KPIs (with deltas + sparks), " +

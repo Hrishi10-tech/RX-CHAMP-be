@@ -1,6 +1,13 @@
 /** Longest span a single sample may represent (caps sleep / missed-heartbeat gaps). */
 export const MAX_GAP_SEC = 150;
 
+/**
+ * How old an offline backlog sample may be and still be stored: the offline replay
+ * window (an agent journal event may be up to 7 days old, docs/4.0/SPEC.md 6), so
+ * the activity of a day worked offline arrives with the day's actions.
+ */
+export const ACTIVITY_BACKLOG_MS = 7 * 24 * 60 * 60_000;
+
 /** A user with no sample newer than this is treated as offline (not tracking). */
 export const LIVE_GRACE_SEC = 150;
 

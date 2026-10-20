@@ -12,6 +12,23 @@ export const BREAK_LABEL: Record<BreakKind, string> = {
   EVENING: 'Evening break',
 };
 
+/** 4.0: a break record's kind: a scheduled one, or a quick break (docs/4.0/SPEC.md 2.3). */
+export type RecordKind = BreakKind | 'QUICK';
+
+export const RECORD_LABEL: Record<RecordKind, string> = {
+  ...BREAK_LABEL,
+  QUICK: 'Quick break',
+};
+
+/** A scheduled kind (morning, lunch, evening), not a quick break. */
+export function isScheduledKind(kind: RecordKind | null | undefined): kind is BreakKind {
+  return kind === 'MORNING' || kind === 'LUNCH' || kind === 'EVENING';
+}
+
+/** Quick break lengths the agent offers; the server accepts 1..60. */
+export const QUICK_BREAK_MINUTES = [5, 10, 15];
+export const QUICK_BREAK_MAX_MIN = 60;
+
 /** Which presence status a break puts the person in (what totals and boards show). */
 export const BREAK_PRESENCE_TYPE: Record<BreakKind, BreakPresenceType> = {
   MORNING: 'BREAK',
@@ -43,7 +60,8 @@ export type ShiftSource = 'OVERRIDE' | 'DEPARTMENT' | 'DEFAULT' | 'NONE';
 
 export type AssignmentTarget = 'DEPARTMENT' | 'USER';
 
-export type ApproverRole = 'SUPER_ADMIN' | 'MANAGER';
+/** Who an item waits for. SUPER_ADMIN appears only on 3.x rows the 4.0 backfill missed (treated as ADMIN). */
+export type ApproverRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER';
 
 export interface ShiftBreakDef {
   kind: BreakKind;

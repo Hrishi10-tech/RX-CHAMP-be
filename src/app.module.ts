@@ -9,6 +9,8 @@ import { SecurityModule } from '@shared/security/security.module';
 import { EventsModule } from '@shared/events/events.module';
 import { WebsocketModule } from '@shared/websocket/websocket.module';
 import { AppLoggerModule } from '@shared/logger/logger.module';
+import { TenancyModule } from '@shared/tenancy/tenancy.module';
+import { AuditModule } from '@shared/audit/audit.module';
 
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from '@modules/users/users.module';
@@ -26,6 +28,10 @@ import { ShiftsModule } from '@modules/shifts/shifts.module';
 import { SettingsModule } from '@modules/settings/settings.module';
 import { WorktimeModule } from '@modules/worktime/worktime.module';
 import { ReportsModule } from '@modules/reports/reports.module';
+import { CalendarModule } from '@modules/calendar/calendar.module';
+import { OrganisationsModule } from '@modules/organisations/organisations.module';
+import { DepartmentsModule } from '@modules/departments/departments.module';
+import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
 
 @Module({
   imports: [
@@ -35,6 +41,8 @@ import { ReportsModule } from '@modules/reports/reports.module';
     CoreModule,
     AppLoggerModule,
     PrismaModule,
+    TenancyModule,
+    AuditModule,
     CacheModule,
     SecurityModule,
     EventsModule,
@@ -53,8 +61,12 @@ import { ReportsModule } from '@modules/reports/reports.module';
     AgentModule,
     ShiftsModule,
     SettingsModule,
+    CalendarModule,
     WorktimeModule,
     ReportsModule,
+    OrganisationsModule,
+    DepartmentsModule,
+    SignOutKeysModule,
   ],
 })
 export class AppModule {}

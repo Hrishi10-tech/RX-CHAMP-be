@@ -36,6 +36,18 @@ export interface ShiftRepository {
   create(data: ShiftWriteData): Promise<ShiftRecord>;
   /** Replaces the definition, including all three breaks. */
   update(id: string, data: ShiftWriteData): Promise<ShiftRecord>;
+  /**
+   * Creates the shift unless its organisation (or the shared scope) has one of that
+   * name, ignoring case: the check and the insert run under one lock per scope, so
+   * two creations of one name cannot both succeed. An organisation's first shift
+   * becomes its default.
+   */
+  createUnique(data: ShiftWriteData): Promise<{ ok: true; shift: ShiftRecord } | { ok: false }>;
+  /** Replaces the definition unless another shift of its scope has the name (same lock). */
+  updateUnique(
+    id: string,
+    data: ShiftWriteData,
+  ): Promise<{ ok: true; shift: ShiftRecord } | { ok: false }>;
   softDelete(id: string): Promise<void>;
   /** Makes `id` the default for its company scope; clears any other default there. */
   setDefault(id: string): Promise<void>;

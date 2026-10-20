@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { assertAnyGrant, grantsOf } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
@@ -30,6 +31,7 @@ export function asShiftPerson(p: PersonRow): ShiftPerson {
     department: p.department,
     designation: p.designation,
     companyId: p.companyId,
+    departmentId: p.departmentId,
     managerId: p.managerId,
     active: p.active,
   };
@@ -54,9 +56,13 @@ export class TeamTodayService {
 
   async today(
     me: AuthenticatedUser,
-    q: { date?: string; managerId?: string },
+    q: { date?: string; managerId?: string; departmentId?: string },
     now: Date,
   ): Promise<TeamTodayView> {
+    // 4.0: a Manager needs at least one view grant (the same rule as GET /team), and
+    // hourly activity and quiet hours need the activity grant.
+    assertAnyGrant(me);
+    const activity = grantsOf(me).activity;
     const tz = appTimezone();
     const calendar = dateKeyInZone(now, tz);
     // Live (no date asked): each person's own working day, their open session's or
@@ -65,6 +71,8 @@ export class TeamTodayService {
     const asked = q.date ?? calendar;
     const people = await this.scope.scope(me, {
       managerId: q.managerId,
+      // One department, checked like in reports (re-audit L5).
+      departmentId: q.departmentId,
       fromDate: live ? addDaysToKey(calendar, -1) : asked,
       toDate: asked,
     });
@@ -87,7 +95,9 @@ export class TeamTodayService {
     const to = dates[dates.length - 1] ?? asked;
     const [data, buckets, pending, overdueApprovals, settings, openPresence] = await Promise.all([
       this.dayData.load(ids, from, to, now, { heal: true }),
-      this.dayData.bucketHours(ids, from, to, now),
+      activity
+        ? this.dayData.bucketHours(ids, from, to, now)
+        : Promise.resolve(new Map<string, readonly number[]>()),
       this.approvals.pendingByUserDate(ids, from, to, now),
       ids.length
         ? this.approvals.count({
@@ -97,7 +107,7 @@ export class TeamTodayService {
             userIds: ids,
           })
         : Promise.resolve(0),
-      this.settings.get(),
+      this.settings.get(people[0]?.companyId ?? null),
       live ? this.reader.presenceOverlapping(ids, now, now) : Promise.resolve([] as PresenceRow[]),
     ]);
     const pendingBy = new Map(pending.map((p) => [`${p.userId}|${p.date}`, p.pending]));
@@ -114,7 +124,9 @@ export class TeamTodayService {
         const shift = resolved.shift;
         const workday = isWorkdayFor(shift, date);
         const breakDay = this.days.forDate(resolved, date);
-        const hourly = this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin);
+        const hourly = activity
+          ? this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin)
+          : [];
         const first = d.sessions[0] ?? null;
         const last = d.sessions[d.sessions.length - 1] ?? null;
         const openSession = d.sessions.find((s) => s.endedAt === null) ?? null;

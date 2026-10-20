@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { CHAT_CONTACTS_READER, ChatContactsReader } from '../../domain/chat-contacts.reader';
 import { CHAT_REPOSITORY, ChatRepository } from '../../domain/chat.repository';
 import { ChatMapper } from '../chat.mapper';
@@ -11,8 +12,9 @@ export class ListThreadsUseCase {
     @Inject(CHAT_REPOSITORY) private readonly repo: ChatRepository,
   ) {}
 
-  async execute(meId: string): Promise<ChatThreadView[]> {
-    const contacts = await this.contacts.findContacts(meId);
+  async execute(me: AuthenticatedUser): Promise<ChatThreadView[]> {
+    const meId = me.id;
+    const contacts = await this.contacts.findContacts(me);
     const summaries = await this.repo.threadSummaries(
       meId,
       contacts.map((c) => c.id),

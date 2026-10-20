@@ -42,11 +42,11 @@ export class DayEndedSubscriber implements OnModuleInit {
     await this.sessions.endOpenForUser(event.userId, event.endedAt);
     await this.online.closeOpenForUser(event.userId, event.endedAt);
 
-    if (event.managerId) {
+    {
       const context = await this.team.findContext(event.userId);
       if (context) {
-        this.gateway.emitToManager(
-          event.managerId,
+        await this.gateway.emitForSubject(
+          event.userId,
           PresenceMapper.toTeamMemberView(
             context.self,
             PresenceMapper.currentFrom(null, event.endedAt, true),

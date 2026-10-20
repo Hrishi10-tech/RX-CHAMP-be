@@ -16,7 +16,8 @@ import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
 import { ParseIdPipe } from '@shared/validation/is-id';
-import { agentGeneration } from '../domain/agent-generation';
+import { agentGeneration, isAgent40 } from '../domain/agent-generation';
+import { RequestClock } from '@shared/tenancy';
 import {
   LogPastMeetingDto,
   ParticipantsQueryDto,
@@ -39,7 +40,11 @@ export class MeetingsController {
     @Body() body: StartMeetingDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.meetings.start(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.meetings.start(me, body, agentGeneration(userAgent), RequestClock.now(), {
+        agent40: isAgent40(userAgent),
+      }),
+    );
   }
 
   @Post('past')
@@ -52,7 +57,11 @@ export class MeetingsController {
     @Body() body: LogPastMeetingDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.meetings.logPast(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.meetings.logPast(me, body, agentGeneration(userAgent), RequestClock.now(), {
+        agent40: isAgent40(userAgent),
+      }),
+    );
   }
 
   @Get('me/today')
@@ -71,6 +80,6 @@ export class MeetingsController {
   @HttpCode(200)
   @ApiOperation({ summary: 'End a live meeting (idempotent); one under a minute is discarded' })
   async end(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
-    return envelope(await this.meetings.end(me, id, new Date()));
+    return envelope(await this.meetings.end(me, id, RequestClock.now()));
   }
 }

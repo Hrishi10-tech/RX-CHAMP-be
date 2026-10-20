@@ -1,10 +1,10 @@
 import {
   ApproverRole,
   BreakApprovalStatus,
-  BreakKind,
   BreakOutcome,
   BreakPresenceType,
   BreakTiming,
+  RecordKind,
 } from './shift.types';
 
 export const BREAK_RECORD_REPOSITORY = Symbol('BREAK_RECORD_REPOSITORY');
@@ -14,7 +14,7 @@ export interface BreakRecordRow {
   id: string;
   userId: string;
   date: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   seq: number;
   presenceType: BreakPresenceType;
   shiftId: string | null;
@@ -50,6 +50,44 @@ export interface BreakRecordRow {
   dueAt?: Date | null;
   escalatedAt?: Date | null;
   remindedAt?: Date | null;
+  // ---- 4.0 (docs/4.0/SPEC.md 2.3). Set by the Prisma adapter.
+  /** ACTIVE (a segment runs), PAUSED (none runs, not ended) or ENDED. */
+  state?: BreakState;
+  /** Quick breaks: the planned length (5, 10 or 15 from the agent). */
+  plannedMin?: number | null;
+  /** When the break was finally ended (4.0 rows; the last segment end for older ones). */
+  finalEndedAt?: Date | null;
+  /** The break's segments (each its own presence session), oldest first. */
+  segments?: BreakSegmentRow[];
+}
+
+export type BreakState = 'ACTIVE' | 'PAUSED' | 'ENDED';
+
+export interface BreakSegmentRow {
+  startedAt: Date;
+  /** Null while it runs. */
+  endedAt: Date | null;
+}
+
+/** The segments of a record; an older row without any reads as one from start to end. */
+export function segmentsOf(
+  r: Pick<BreakRecordRow, 'segments' | 'startedAt' | 'endedAt' | 'outcome'>,
+): BreakSegmentRow[] {
+  if (r.segments && r.segments.length) return r.segments;
+  if (outcomeOf(r) !== 'TAKEN') return [];
+  return [{ startedAt: r.startedAt, endedAt: r.endedAt }];
+}
+
+/** Seconds taken over all segments (open ones to `now`), whole seconds. */
+export function takenSecOf(
+  r: Pick<BreakRecordRow, 'segments' | 'startedAt' | 'endedAt' | 'outcome'>,
+  now: Date,
+): number {
+  let ms = 0;
+  for (const s of segmentsOf(r)) {
+    ms += Math.max(0, (s.endedAt ?? now).getTime() - s.startedAt.getTime());
+  }
+  return Math.floor(ms / 1000);
 }
 
 export function outcomeOf(r: Pick<BreakRecordRow, 'outcome'>): BreakOutcome {
@@ -87,7 +125,7 @@ export function needsComment(r: Pick<BreakRecordRow, 'outcome' | 'reason' | 'app
 export interface NewBreakRecord {
   userId: string;
   date: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   presenceType: BreakPresenceType;
   shiftId: string | null;
   shiftName: string | null;
@@ -129,6 +167,12 @@ export interface ApprovalFilter {
    * shared pool (approverRole set, no specific approver).
    */
   approverAny?: { approverId: string; approverRole: ApproverRole };
+  /** 4.0: only items of these subjects (organisation, optionally departments and roles). */
+  subjects?: { companyId: string; departmentIds?: string[]; roles?: string[] };
+  /** 4.0: an Admin's "mine": items waiting for the Admin, or escalated. */
+  adminPool?: boolean;
+  /** 4.0: never this person's own items. */
+  excludeUserId?: string;
   status?: BreakApprovalStatus[];
   date?: string;
   /** Strictly before this date (overdue). */
@@ -162,7 +206,7 @@ export interface FinishBreakResult {
   becamePending: boolean;
 }
 
-export interface BreakRecordRepository {
+export interface BreakRecordRepository extends BreakRecordRepository40 {
   findById(id: string): Promise<BreakRecordRow | null>;
   /** 3.1: many records at once (approval lists); unknown ids are left out. */
   listByIds(ids: string[]): Promise<BreakRecordRow[]>;
@@ -228,4 +272,60 @@ export interface BreakRecordRepository {
 
   /** Moves a still-pending record to another approver. False when it was decided meanwhile. */
   reroute(id: string, routing: Routing): Promise<boolean>;
+}
+
+/** 4.0: how a pause, resume, quick start or final end went. */
+export type BreakMoveResult =
+  | { ok: true; record: BreakRecordRow; presenceSessionId: string | null; closedMeeting?: boolean }
+  | {
+      ok: false;
+      code:
+        | 'NOT_FOUND'
+        | 'NOT_ACTIVE'
+        | 'NOT_PAUSED'
+        | 'NOT_PAUSABLE'
+        | 'RESUME_WINDOW_CLOSED'
+        | 'ON_BREAK'
+        | 'IN_MEETING'
+        | 'DAY_NOT_STARTED'
+        | 'DAY_ENDED';
+      record?: BreakRecordRow;
+    };
+
+export interface NewQuickBreak {
+  userId: string;
+  /** Shift-day the break belongs to. */
+  date: string;
+  plannedMin: number;
+  /** When it starts (now, or the away start for an away break). */
+  startedAt: Date;
+  /** Calendar day of the presence session (business time of startedAt). */
+  calendarDay: string;
+  shiftId: string | null;
+  shiftName: string | null;
+}
+
+/** 4.0 additions to the repository (docs/4.0/SPEC.md 2.3). */
+export interface BreakRecordRepository40 {
+  /** Opens a quick break under the person's lock: ON_BREAK, IN_MEETING, DAY_NOT_STARTED, DAY_ENDED. */
+  startQuick(input: NewQuickBreak, now: Date): Promise<BreakMoveResult>;
+  /** Closes the running segment of a scheduled break (NOT_ACTIVE; NOT_PAUSABLE for quick ones). */
+  pause(id: string, userId: string, now: Date): Promise<BreakMoveResult>;
+  /**
+   * Opens a new segment of a paused break while its window is open
+   * (NOT_PAUSED, RESUME_WINDOW_CLOSED, ON_BREAK, IN_MEETING, DAY_ENDED).
+   */
+  resume(id: string, userId: string, now: Date, calendarDay: string): Promise<BreakMoveResult>;
+  /** The person's paused break, if any. */
+  findPausedForUser(userId: string): Promise<BreakRecordRow | null>;
+  /**
+   * Marks a break ENDED: closes a running segment (and its presence session) at
+   * `at`; a paused one keeps its last segment end. Stores endedAt and takenSec.
+   * Idempotent (an ended one is returned as it is).
+   */
+  markEnded(id: string, at: Date): Promise<BreakRecordRow | null>;
+  /** Paused breaks whose window closed before `now` end at their last segment end. */
+  endExpiredPaused(now: Date, userId?: string): Promise<number>;
+  /** Ends the person's paused break, if any, at its last segment end (End Day). */
+  endPaused(userId: string): Promise<number>;
 }

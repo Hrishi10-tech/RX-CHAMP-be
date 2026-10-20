@@ -31,14 +31,15 @@ import {
 } from '../application/dto/approvals.dto';
 import { ApprovalsService } from '../application/approvals.service';
 
-/** The `:type` path segment: `break` or `meeting` (lower case), else 400. */
+/** The `:type` path segment: `break`, `meeting` or `away` (any case), else 400. */
 @Injectable()
 export class ParseApprovalTypePipe implements PipeTransform<string, ApprovalPathType> {
   transform(value: string): ApprovalPathType {
-    if (!(APPROVAL_PATH_TYPES as readonly string[]).includes(value)) {
-      throw new BadRequestException('type must be break or meeting');
+    const type = String(value ?? '').toLowerCase();
+    if (!(APPROVAL_PATH_TYPES as readonly string[]).includes(type)) {
+      throw new BadRequestException('type must be break, meeting or away');
     }
-    return value as ApprovalPathType;
+    return type as ApprovalPathType;
   }
 }
 
@@ -50,7 +51,7 @@ export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}
 
   @Get()
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'Break and meeting approvals in one list (default: pending, mine). Pending sorted by ' +
@@ -61,7 +62,7 @@ export class ApprovalsController {
   }
 
   @Get('summary')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Counts for the badge: pending, due soon, overdue, escalated, decided today',
   })
@@ -79,7 +80,7 @@ export class ApprovalsController {
 
   @Post('bulk-approve')
   @HttpCode(200)
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Approve up to 200 items; anything not yours or not pending is skipped',
   })
@@ -89,7 +90,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/approve')
   @HttpCode(200)
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Approve one item (optional note)' })
   async approve(
     @CurrentUser() me: AuthenticatedUser,
@@ -102,7 +103,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/reject')
   @HttpCode(200)
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Reject one item (a note of 3+ characters is required)' })
   async reject(
     @CurrentUser() me: AuthenticatedUser,
@@ -115,7 +116,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/reopen')
   @HttpCode(200)
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Put a decided item back to pending (the decider or a Super Admin)' })
   async reopen(
     @CurrentUser() me: AuthenticatedUser,

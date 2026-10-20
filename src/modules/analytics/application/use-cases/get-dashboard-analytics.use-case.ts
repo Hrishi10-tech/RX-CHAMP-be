@@ -1,6 +1,7 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { Role } from '@shared/rbac/roles.enum';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { assertCanSee, grantsOf, PersonFactsReader } from '@shared/tenancy';
+import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import { AuthenticatedUser, ViewGrants } from '@shared/rbac/authenticated-user';
 import { ActivityMapper } from '@modules/activity/application/activity.mapper';
 import { DEFAULT_WORKING_BASIS_SEC } from '@modules/activity/application/activity.constants';
 import { localDateString } from '@modules/activity/application/activity-date.util';
@@ -19,11 +20,17 @@ const WINDOW_DAYS = 7;
 
 @Injectable()
 export class GetDashboardAnalyticsUseCase {
-  constructor(@Inject(ANALYTICS_READER) private readonly reader: AnalyticsReader) {}
+  constructor(
+    @Inject(ANALYTICS_READER) private readonly reader: AnalyticsReader,
+    private readonly facts: PersonFactsReader,
+  ) {}
 
   async execute(me: AuthenticatedUser, userId: string, date?: string): Promise<DashboardAnalytics> {
-    await this.authorize(me, userId);
+    const grants = await this.authorize(me, userId);
+    return redactAnalytics(await this.build(userId, date), grants);
+  }
 
+  private async build(userId: string, date?: string): Promise<DashboardAnalytics> {
     const now = new Date();
     const day = date ?? localDateString(now);
     const dates = lastNDatesEndingAt(day, WINDOW_DAYS);
@@ -130,13 +137,51 @@ export class GetDashboardAnalyticsUseCase {
     };
   }
 
-  private async authorize(me: AuthenticatedUser, userId: string): Promise<void> {
-    if (me.id === userId) return;
-    if (me.role === Role.SUPER_ADMIN) return;
-    if (me.role === Role.MANAGER) {
-      const managerId = await this.reader.findManagerId(userId);
-      if (managerId === me.id) return;
+  /**
+   * 4.0: someone the caller may see; a Manager needs the timeline grant (top apps)
+   * or the activity grant (active and idle time, the hourly timeline, the heatmap,
+   * focus sessions and the score), and sees only those parts.
+   */
+  private async authorize(me: AuthenticatedUser, userId: string): Promise<ViewGrants> {
+    const all = { screenshots: true, timeline: true, activity: true };
+    if (me.id === userId) return all;
+    assertCanSee(me, await this.facts.find(userId));
+    const grants = grantsOf(me);
+    if (!grants.timeline && !grants.activity) {
+      throw new ForbiddenError(
+        'You do not have access to the timeline or activity.',
+        'GRANT_REQUIRED',
+      );
     }
-    throw new ForbiddenException('That user is not one of your reports.');
+    return grants;
   }
+}
+
+const NO_KPI: Kpi = { value: 0, deltaPct: null, spark: [] };
+
+/**
+ * The dashboard as a reader with these grants may see it: without the timeline
+ * grant no top apps; without the activity grant none of the keyboard and mouse
+ * figures (active, idle, the hourly timeline and heatmap, focus sessions, the
+ * activity-based focus trend and score). Break, lunch and meeting time stay.
+ */
+export function redactAnalytics(
+  d: DashboardAnalytics,
+  grants: { timeline: boolean; activity: boolean },
+): DashboardAnalytics {
+  let out = d;
+  if (!grants.timeline) out = { ...out, topApps: [] };
+  if (!grants.activity) {
+    out = {
+      ...out,
+      kpis: { ...out.kpis, active: NO_KPI, idle: NO_KPI },
+      workVsBreak: { ...out.workVsBreak, workSec: 0 },
+      timeline: [],
+      weeklyScore: [],
+      focusTrend: [],
+      dailyFlow: [],
+      focusSessions: [],
+    };
+  }
+  return out;
 }

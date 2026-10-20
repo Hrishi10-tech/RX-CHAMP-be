@@ -5,7 +5,7 @@
 // Needs a freshly reset and seeded database and a running API: see README.md.
 // BUDGET_MS (default 1500) is the slowest median accepted.
 import { randomUUID } from 'node:crypto';
-import { Client, check, expectStatus, summary } from './lib.mjs';
+import { Client, check, expectStatus, summary, SEED_ORG } from './lib.mjs';
 import { openDb, wallToUtc } from './db.mjs';
 
 const MONTH = '2026-08';
@@ -21,28 +21,39 @@ const db = await openDb();
 // Already written (a second run on the same database): time it again, nothing else.
 const written = !!(await db.user.findFirst({ where: { email: 'perf.m1@timechamp.test' } }));
 const sa = await new Client('superadmin').login('admin@timechamp.test', 'admin123');
+// 4.0: a Super Admin acts inside one organisation.
+sa.headers['x-org-id'] = SEED_ORG;
 const people = [];
 if (written) {
   console.log('\n# August is already written: timing only');
   for (const email of ['perf.m1@timechamp.test', 'perf.m1.s1@timechamp.test']) {
-    people.push(await db.user.findFirst({ where: { email }, select: { id: true } }));
+    people.push(await db.user.findFirst({ where: { email }, select: { id: true, departmentId: true } }));
   }
 } else {
   console.log('\n# 100 people');
   const roles = Object.fromEntries((await db.role.findMany()).map((r) => [r.name, r.id]));
   const joined = wallToUtc('2026-07-01', '09:00');
+  // 4.0: five departments of the seeded organisation, each with its manager and 19 Staff.
+  const depts = [];
   for (let m = 1; m <= 5; m++) {
+    const departmentId = randomUUID();
+    depts.push({ id: departmentId, companyId: SEED_ORG, name: `Perf Team ${m}`, icon: 'code' });
     const mid = randomUUID();
-    people.push({ id: mid, email: `perf.m${m}@timechamp.test`, role: roles.MANAGER, managerId: sa.user.id, dept: `Team ${m}` });
+    people.push({ id: mid, email: `perf.m${m}@timechamp.test`, role: roles.MANAGER, managerId: null, dept: `Perf Team ${m}`, departmentId });
     for (let s = 1; s <= 19; s++) {
-      people.push({ id: randomUUID(), email: `perf.m${m}.s${s}@timechamp.test`, role: roles.USER, managerId: mid, dept: `Team ${m}` });
+      people.push({ id: randomUUID(), email: `perf.m${m}.s${s}@timechamp.test`, role: roles.USER, managerId: mid, dept: `Perf Team ${m}`, departmentId });
     }
   }
+  await db.department.createMany({ data: depts });
   await db.user.createMany({
     data: people.map((p, i) => ({
       id: p.id, email: p.email, passwordHash: 'not-for-sign-in', firstName: 'Perf', lastName: `Person ${i + 1}`,
-      roleId: p.role, managerId: p.managerId, department: p.dept, createdAt: joined,
+      roleId: p.role, managerId: p.managerId, department: p.dept, departmentId: p.departmentId,
+      companyId: SEED_ORG, createdAt: joined,
     })),
+  });
+  await db.managerDepartment.createMany({
+    data: people.filter((p) => p.role === roles.MANAGER).map((p) => ({ managerId: p.id, departmentId: p.departmentId })),
   });
   check('100 people', people.length === 100);
 
@@ -134,8 +145,8 @@ check('a row per person in scope (100 and the demo accounts)', rowsOut.length >=
 check('31 days each', rowsOut.every((x) => x.days.length === 31), rowsOut[0]?.days?.length);
 const median = all.ms[Math.floor(all.ms.length / 2)];
 check(`median under ${BUDGET_MS} ms`, median < BUDGET_MS, Math.round(median));
-const team = await time('one manager\'s 19 (Super Admin, managerId)', `/reports/team/month?month=${MONTH}&managerId=${people[0].id}`);
-check('19 rows', team.first.body?.data?.rows?.length === 19, team.first.body?.data?.rows?.length);
+const team = await time('one department (Super Admin, departmentId)', `/reports/team/month?month=${MONTH}&departmentId=${people[1].departmentId}`);
+check('20 rows (the department: 19 Staff and their manager)', team.first.body?.data?.rows?.length === 20, team.first.body?.data?.rows?.length);
 const one = await time('one person\'s month', `/reports/person/${people[1].id}/month?month=${MONTH}`);
 check('person month', one.first.status === 200 && one.first.body?.data?.days?.length === 31, one.first.status);
 

@@ -19,6 +19,8 @@ function sessions() {
     startDay: jest.fn(),
     endDay: jest.fn(),
     openImplicitForSample: jest.fn().mockResolvedValue(null),
+    workedAt: jest.fn().mockResolvedValue(false),
+    extendAutoClosed: jest.fn().mockResolvedValue(false),
   };
 }
 
@@ -26,7 +28,7 @@ describe('EndDayFlow', () => {
   function setup() {
     const order: string[] = [];
     const s = sessions();
-    s.findOpen.mockResolvedValue({ id: 's1' });
+    s.findOpen.mockResolvedValue({ id: 's1', startedAt: new Date('2026-10-14T04:00:00.000Z') });
     s.endDay.mockImplementation(async () => {
       order.push('endDay');
       return {
@@ -37,12 +39,22 @@ describe('EndDayFlow', () => {
         session: { id: 's1' },
       };
     });
+    const PLANNED = [{ record: { id: 'planned-lunch', approvalStatus: 'PENDING' } }];
     const skips = {
-      saveEndDayComments: jest.fn(async () => {
-        order.push('comments');
+      planAutoSkipsFor: jest.fn(async () => {
+        order.push('planSkips');
+        return PLANNED;
       }),
-      autoSkipFor: jest.fn(async () => {
-        order.push('autoSkip');
+      checkEndDayComments: jest.fn(async (_me: unknown, c: { breakId: string }[]) => {
+        order.push('checkComments');
+        return c.map((x) => ({ id: x.breakId, text: 'ok' }));
+      }),
+      plannedNeedingComment: jest.fn(async () => [{ id: 'planned-lunch' }]),
+      createPlanned: jest.fn(async () => {
+        order.push('createSkips');
+      }),
+      writeEndDayComments: jest.fn(async () => {
+        order.push('writeComments');
       }),
     };
     const workday = {
@@ -59,13 +71,30 @@ describe('EndDayFlow', () => {
     return { flow, s, skips, workday, endDay, order };
   }
 
-  it('saves comments, checks overdue approvals, materialises skips, checks comments, then closes', async () => {
-    const { flow, skips, endDay, order } = setup();
+  it('judges everything first (comments, overdue approvals, the comment gate with the planned skips), then writes and closes', async () => {
+    const { flow, skips, workday, endDay, order } = setup();
     const comments = [{ breakId: 'b1', comment: 'Client escalation call' }];
     const res = await flow.execute(me, { comments }, 'AGENT_31', NOW);
-    expect(order).toEqual(['comments', 'approvalsGate', 'autoSkip', 'commentsGate', 'endDay']);
-    expect(skips.saveEndDayComments).toHaveBeenCalledWith(me, comments, NOW);
-    expect(skips.autoSkipFor).toHaveBeenCalledWith('u1', NOW, true);
+    expect(order).toEqual([
+      'planSkips',
+      'checkComments',
+      'approvalsGate',
+      'commentsGate',
+      'createSkips',
+      'writeComments',
+      'endDay',
+    ]);
+    expect(skips.planAutoSkipsFor).toHaveBeenCalledWith('u1', NOW, true);
+    expect(skips.checkEndDayComments).toHaveBeenCalledWith(me, comments, [
+      { record: { id: 'planned-lunch', approvalStatus: 'PENDING' } },
+    ]);
+    // The gate sees the auto-skips this End Day would create and the comments sent with it.
+    expect(workday.assertSkipsCommented).toHaveBeenCalledWith(
+      me,
+      NOW,
+      [{ id: 'planned-lunch' }],
+      new Set(['b1']),
+    );
     expect(endDay.finish).toHaveBeenCalledWith('u1', '2026-10-14', NOW);
     expect(res).toEqual({
       ok: true,
@@ -75,26 +104,38 @@ describe('EndDayFlow', () => {
     });
   });
 
-  it('a failed gate stops End Day', async () => {
-    const { flow, s, workday } = setup();
-    workday.assertSkipsCommented.mockRejectedValueOnce(
-      new ConflictError('x', 'SKIP_COMMENTS_REQUIRED'),
-    );
+  it('a refused End Day writes nothing: no auto-skip, no comment, no End Day (re-audit M1)', async () => {
+    for (const [gate, code] of [
+      ['assertSkipsCommented', 'SKIP_COMMENTS_REQUIRED'],
+      ['assertNoOverdueApprovals', 'APPROVALS_OVERDUE'],
+    ] as const) {
+      const { flow, s, skips, workday } = setup();
+      workday[gate].mockRejectedValueOnce(new ConflictError('x', code));
+      await expect(
+        flow.execute(me, { comments: [{ breakId: 'b1', comment: 'x' }] }, 'AGENT_31', NOW),
+      ).rejects.toMatchObject({ code });
+      expect(skips.createPlanned).not.toHaveBeenCalled();
+      expect(skips.writeEndDayComments).not.toHaveBeenCalled();
+      expect(s.endDay).not.toHaveBeenCalled();
+    }
+    // A bad comment too.
+    const { flow, s, skips } = setup();
+    skips.checkEndDayComments.mockRejectedValueOnce(new ConflictError('x', 'COMMENT_INVALID'));
     await expect(flow.execute(me, {}, 'AGENT_31', NOW)).rejects.toMatchObject({
-      code: 'SKIP_COMMENTS_REQUIRED',
+      code: 'COMMENT_INVALID',
     });
+    expect(skips.createPlanned).not.toHaveBeenCalled();
     expect(s.endDay).not.toHaveBeenCalled();
   });
 
-  it("a Manager's overdue approvals stop End Day before any open window becomes a skip", async () => {
-    const { flow, s, skips, workday } = setup();
-    workday.assertNoOverdueApprovals.mockRejectedValueOnce(
-      new ConflictError('x', 'APPROVALS_OVERDUE'),
-    );
+  it('an End Day older than the open session start is refused (re-audit L3)', async () => {
+    const { flow, s, skips } = setup();
+    s.findOpen.mockResolvedValue({ id: 's1', startedAt: new Date(NOW.getTime() + 60_000) });
     await expect(flow.execute(me, {}, 'AGENT_31', NOW)).rejects.toMatchObject({
-      code: 'APPROVALS_OVERDUE',
+      status: 422,
+      code: 'EVENT_TIME_INVALID',
     });
-    expect(skips.autoSkipFor).not.toHaveBeenCalled();
+    expect(skips.createPlanned).not.toHaveBeenCalled();
     expect(s.endDay).not.toHaveBeenCalled();
   });
 
@@ -243,6 +284,116 @@ describe('ReportActivityFlow', () => {
     expect(s.openImplicitForSample).not.toHaveBeenCalled();
   });
 
+  it('a sample taken during a work session that has closed since (an offline backlog) is stored as late', async () => {
+    const { flow, s, report } = setup();
+    s.workedAt.mockResolvedValue(true);
+    const body = { at: '2026-10-12T05:00:00.000Z', app: 'Excel', idle: false };
+    await flow.execute(me, body as never, 'AGENT_31', NOW);
+    expect(s.workedAt).toHaveBeenCalledWith('u1', new Date('2026-10-12T05:00:00.000Z'));
+    expect(report.execute).toHaveBeenCalledWith('u1', body, { late: true });
+    expect(report.ackWithoutStoring).not.toHaveBeenCalled();
+    expect(s.openImplicitForSample).not.toHaveBeenCalled();
+  });
+
+  it('a late input after the server auto-closed the day (before its latest end) moves the close and is stored', async () => {
+    const { flow, s, report } = setup();
+    s.extendAutoClosed.mockResolvedValue(true);
+    const body = { at: '2026-10-12T05:00:00.000Z', app: 'Excel', idle: false };
+    await flow.execute(me, body as never, 'AGENT_31', NOW, true);
+    expect(s.extendAutoClosed).toHaveBeenCalledWith('u1', new Date('2026-10-12T05:00:00.000Z'));
+    expect(report.execute).toHaveBeenCalledWith('u1', body, { late: true });
+  });
+
+  it('only a 4.x agent may move a close (re-audit M5): a 3.1 agent never does', async () => {
+    const { flow, s, report } = setup();
+    s.extendAutoClosed.mockResolvedValue(true);
+    const body = { at: '2026-10-12T05:00:00.000Z', app: 'Excel', idle: false };
+    await flow.execute(me, body as never, 'AGENT_31', NOW, false);
+    expect(s.extendAutoClosed).not.toHaveBeenCalled();
+    expect(report.execute).not.toHaveBeenCalled();
+    expect(report.ackWithoutStoring).toHaveBeenCalledWith('u1', NOW);
+  });
+
+  describe("a backlog that arrives while today's session is open (re-audit H2)", () => {
+    const today = { id: 's-today', startedAt: new Date('2026-10-14T04:00:00.000Z') };
+    const yesterday = { at: '2026-10-13T06:00:00.000Z', app: 'Excel', idle: false };
+
+    it('a sample inside a closed session of an earlier day is stored as late', async () => {
+      const { flow, s, report } = setup();
+      s.findOpen.mockResolvedValue(today);
+      s.workedAt.mockResolvedValue(true);
+      await flow.execute(me, yesterday as never, 'AGENT_31', NOW, true);
+      expect(s.workedAt).toHaveBeenCalledWith('u1', new Date(yesterday.at));
+      expect(report.execute).toHaveBeenCalledWith('u1', yesterday, { late: true });
+    });
+
+    it('a later input of a day the server auto-closed moves the close (4.x) and is stored as late', async () => {
+      const { flow, s, report } = setup();
+      s.findOpen.mockResolvedValue(today);
+      s.extendAutoClosed.mockResolvedValue(true);
+      await flow.execute(me, yesterday as never, 'AGENT_31', NOW, true);
+      expect(s.extendAutoClosed).toHaveBeenCalledWith('u1', new Date(yesterday.at));
+      expect(report.execute).toHaveBeenCalledWith('u1', yesterday, { late: true });
+    });
+
+    it('anything else before the open session reports as before (its day decides), never dropped silently here', async () => {
+      const { flow, s, report } = setup();
+      s.findOpen.mockResolvedValue(today);
+      await flow.execute(me, yesterday as never, 'AGENT_31', NOW, true);
+      expect(report.execute).toHaveBeenCalledWith('u1', yesterday);
+      expect(report.ackWithoutStoring).not.toHaveBeenCalled();
+    });
+
+    it('a sample inside the open session never takes the late path', async () => {
+      const { flow, s, report } = setup();
+      s.findOpen.mockResolvedValue(today);
+      const now = { at: '2026-10-14T11:59:00.000Z', app: 'Excel' };
+      await flow.execute(me, now as never, 'AGENT_31', NOW, true);
+      expect(s.workedAt).not.toHaveBeenCalled();
+      expect(s.extendAutoClosed).not.toHaveBeenCalled();
+      expect(report.execute).toHaveBeenCalledWith('u1', now);
+    });
+  });
+
+  it('an idle or locked late sample never moves a close', async () => {
+    const { flow, s, report } = setup();
+    s.extendAutoClosed.mockResolvedValue(true);
+    await flow.execute(
+      me,
+      { at: '2026-10-12T05:00:00.000Z', idle: true } as never,
+      'AGENT_31',
+      NOW,
+    );
+    await flow.execute(
+      me,
+      { at: '2026-10-12T05:01:00.000Z', locked: true } as never,
+      'AGENT_31',
+      NOW,
+    );
+    await flow.execute(
+      me,
+      { at: '2026-10-12T05:02:00.000Z', app: 'LockApp.exe' } as never,
+      'AGENT_31',
+      NOW,
+    );
+    expect(s.extendAutoClosed).not.toHaveBeenCalled();
+    expect(report.execute).not.toHaveBeenCalled();
+    expect(report.ackWithoutStoring).toHaveBeenCalledTimes(3);
+  });
+
+  it('a sample outside every work session is still not stored', async () => {
+    const { flow, s, report } = setup();
+    await flow.execute(
+      me,
+      { at: '2026-10-12T05:00:00.000Z', app: 'Excel' } as never,
+      'AGENT_31',
+      NOW,
+    );
+    expect(s.workedAt).toHaveBeenCalled();
+    expect(report.execute).not.toHaveBeenCalled();
+    expect(report.ackWithoutStoring).toHaveBeenCalledWith('u1', NOW);
+  });
+
   it("an older agent's first active sample opens the day implicitly", async () => {
     const { flow, s, report } = setup();
     await flow.execute(me, { app: 'Excel', idle: false } as never, 'LEGACY', NOW);
@@ -261,7 +412,7 @@ describe('ReportActivityFlow', () => {
 
   it('with a session open, every agent reports as before', async () => {
     const { flow, s, report } = setup();
-    s.findOpen.mockResolvedValue({ id: 's1' });
+    s.findOpen.mockResolvedValue({ id: 's1', startedAt: new Date('2026-10-14T04:00:00.000Z') });
     await flow.execute(me, { app: 'Excel' } as never, 'AGENT_31', NOW);
     expect(report.execute).toHaveBeenCalledWith('u1', { app: 'Excel' });
     expect(s.autoCloseIfStale).toHaveBeenCalledWith('u1', NOW);
@@ -269,7 +420,7 @@ describe('ReportActivityFlow', () => {
 
   it('staff get the ack without their active time; managers see theirs (SPEC 1.8)', async () => {
     const { flow, s, report } = setup();
-    s.findOpen.mockResolvedValue({ id: 's1' });
+    s.findOpen.mockResolvedValue({ id: 's1', startedAt: new Date('2026-10-14T04:00:00.000Z') });
     const full = {
       ok: true,
       activeSec: 5400,

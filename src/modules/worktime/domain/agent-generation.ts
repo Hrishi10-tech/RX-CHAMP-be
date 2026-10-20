@@ -21,3 +21,9 @@ export function agentGeneration(userAgent: string | null | undefined): AgentGene
 export function isAgent31(userAgent: string | null | undefined): boolean {
   return agentGeneration(userAgent) === 'AGENT_31';
 }
+
+/** 4.0+ agents (`RXVisionAgent/4.`): MoM sender required, no overrun asks, offline replay. */
+export function isAgent40(userAgent: string | null | undefined): boolean {
+  const m = AGENT_UA.exec(userAgent ?? '');
+  return !!m && Number(m[1]) >= 4;
+}

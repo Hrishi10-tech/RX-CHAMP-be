@@ -1,3 +1,4 @@
+import { PersonFactsReader } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import {
@@ -12,11 +13,12 @@ import { assertCanAccess } from '../screenshot-access';
 export class RequestCaptureUseCase {
   constructor(
     @Inject(SCREENSHOT_ACCESS_READER) private readonly access: ScreenshotAccessReader,
+    private readonly facts: PersonFactsReader,
     private readonly gateway: ScreenshotsGateway,
   ) {}
 
   async execute(me: AuthenticatedUser, targetUserId: string): Promise<{ requested: boolean }> {
-    await assertCanAccess(me, targetUserId, this.access);
+    await assertCanAccess(me, targetUserId, this.facts, true);
     this.gateway.emitCaptureRequest(targetUserId);
     return { requested: true };
   }

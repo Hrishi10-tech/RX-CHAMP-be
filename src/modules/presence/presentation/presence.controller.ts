@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { RequestClock } from '@shared/tenancy';
+import { agentGeneration } from '@modules/worktime/domain/agent-generation';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { RolesGuard } from '@shared/rbac/roles.guard';
@@ -45,15 +57,23 @@ export class PresenceController {
   @Post('start')
   @HttpCode(200)
   @ApiOperation({ summary: 'Start a break / lunch / meeting (closes any current status)' })
-  async start(@CurrentUser() me: AuthenticatedUser, @Body() body: StartPresenceDto) {
-    return envelope(await this.startPresence.execute(me.id, body));
+  async start(
+    @CurrentUser() me: AuthenticatedUser,
+    @Body() body: StartPresenceDto,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return envelope(
+      await this.startPresence.execute(me.id, body, agentGeneration(userAgent), RequestClock.now()),
+    );
   }
 
   @Post('end')
   @HttpCode(200)
   @ApiOperation({ summary: 'End the current status — back to working' })
-  async end(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.endPresence.execute(me.id));
+  async end(@CurrentUser() me: AuthenticatedUser, @Headers('user-agent') userAgent?: string) {
+    return envelope(
+      await this.endPresence.execute(me.id, agentGeneration(userAgent), RequestClock.now()),
+    );
   }
 
   @Post('heartbeat')
@@ -79,22 +99,22 @@ export class PresenceController {
   // ---- Manager endpoints ---------------------------------------------------
 
   @Get('team/live')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Live status of every report (manager)' })
   async teamLive(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.getTeamLive.execute(me.id));
+    return envelope(await this.getTeamLive.execute(me));
   }
 
   @Get('team/summary')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Day-wise break/lunch/meeting totals per report (manager)' })
   async teamSummary(@CurrentUser() me: AuthenticatedUser, @Query() query: PresenceSummaryQueryDto) {
-    const { date, rows } = await this.getTeamSummary.execute(me.id, query.date);
+    const { date, rows } = await this.getTeamSummary.execute(me, query.date);
     return envelope(rows, { meta: { date } });
   }
 
   @Get('team/:userId/current')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: "One report's current status + elapsed time (manager, or any user for a Super Admin)",
   })
@@ -103,7 +123,7 @@ export class PresenceController {
   }
 
   @Get('team/:userId/history')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: "One report's day-wise totals over the last N days (worked-hours trend)",
   })
@@ -116,7 +136,7 @@ export class PresenceController {
   }
 
   @Get('team/:userId/timeline')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: "One report's day split into hourly work/break/lunch/meeting buckets" })
   async userTimeline(
     @CurrentUser() me: AuthenticatedUser,

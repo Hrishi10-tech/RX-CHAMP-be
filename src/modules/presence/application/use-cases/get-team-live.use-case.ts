@@ -1,3 +1,5 @@
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { assertAnyGrant } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   PRESENCE_SESSION_REPOSITORY,
@@ -25,9 +27,11 @@ export class GetTeamLiveUseCase {
     @Inject(WORK_SESSION_STATE_READER) private readonly workSessions: WorkSessionStateReader,
   ) {}
 
-  async execute(managerId: string): Promise<TeamMemberPresenceView[]> {
+  async execute(me: AuthenticatedUser): Promise<TeamMemberPresenceView[]> {
+    // 4.0: a Manager needs at least one view grant (the same rule as GET /team).
+    assertAnyGrant(me);
     const now = new Date();
-    const reports = await this.team.findReports(managerId);
+    const reports = await this.team.findReports(me);
     if (reports.length === 0) return [];
 
     const ids = reports.map((r) => r.id);

@@ -1,3 +1,5 @@
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import { grantsOf } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { presenceScope } from './get-user-history.use-case';
@@ -36,19 +38,22 @@ export class GetUserTimelineUseCase {
     @Inject(IDLE_READER) private readonly idle: IdleReader,
   ) {}
 
-  async execute(
-    me: Pick<AuthenticatedUser, 'id' | 'role'>,
-    userId: string,
-    date?: string,
-  ): Promise<UserTimelineView> {
+  async execute(me: AuthenticatedUser, userId: string, date?: string): Promise<UserTimelineView> {
     const now = new Date();
     const day = date ?? localDateString(now);
 
     await presenceScope(this.team, me, userId);
+    if (me.id !== userId && !grantsOf(me).timeline) {
+      throw new ForbiddenError('You do not have access to the timeline.', 'GRANT_REQUIRED');
+    }
 
+    // Keyboard and mouse idle time is activity data (4.0: the activity grant).
+    const activity = me.id === userId || grantsOf(me).activity;
     const sessions = await this.sessions.listForUserByDate(userId, day);
     const intervals = await this.online.listIntervalsForUserByDate(userId, day);
-    const idleIntervals = await this.idle.listIdleIntervalsForUserByDate(userId, day);
+    const idleIntervals = activity
+      ? await this.idle.listIdleIntervalsForUserByDate(userId, day)
+      : [];
 
     const dayStart = new Date(`${day}T00:00:00`); // local midnight
     const buckets: PresenceTimelineBucket[] = [];

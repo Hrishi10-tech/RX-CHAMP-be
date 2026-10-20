@@ -17,7 +17,7 @@ describe('EndDayUseCase', () => {
   const access = { findSelf: jest.fn(), findReports: jest.fn(), findManagerId: jest.fn() } as any;
   const meetings = { listForUserByDate: jest.fn() } as any;
   const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
-  const gateway = { emitToUser: jest.fn(), emitToManager: jest.fn() } as any;
+  const gateway = { emitToUser: jest.fn(), emitForSubject: jest.fn().mockResolvedValue(undefined) } as any;
 
   let useCase: EndDayUseCase;
   beforeEach(() => {
@@ -108,7 +108,7 @@ describe('EndDayUseCase', () => {
     });
   });
 
-  it('pushes DAY_ENDED to the user and their manager straight away', async () => {
+  it('pushes DAY_ENDED to the user and to whoever oversees them (4.0 organisation and department rooms) straight away', async () => {
     access.findSelf.mockResolvedValue({
       id: 'user-1',
       firstName: 'Asha',
@@ -126,9 +126,9 @@ describe('EndDayUseCase', () => {
       current: { status: 'DAY_ENDED' },
     });
 
-    expect(gateway.emitToManager).toHaveBeenCalledTimes(1);
-    expect(gateway.emitToManager.mock.calls[0][0]).toBe('mgr-7');
-    expect(gateway.emitToManager.mock.calls[0][1]).toMatchObject({ status: 'DAY_ENDED' });
+    expect(gateway.emitForSubject).toHaveBeenCalledTimes(1);
+    expect(gateway.emitForSubject.mock.calls[0][0]).toBe('user-1');
+    expect(gateway.emitForSubject.mock.calls[0][1]).toMatchObject({ userId: 'user-1', status: 'DAY_ENDED' });
   });
 
   it('is idempotent: a second press keeps the original end time and fires nothing', async () => {

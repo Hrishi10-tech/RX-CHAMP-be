@@ -20,4 +20,21 @@ export class PrismaSettingsStore implements SettingsStore {
       update: { value: json, updatedById },
     });
   }
+
+  async companyOfUser(userId: string): Promise<string | null> {
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { companyId: true },
+    });
+    return row?.companyId ?? null;
+  }
+
+  async idleFactsOfUser(userId: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { companyId: true, departmentId: true, idleEnabled: true, idleMinutes: true },
+    });
+  }
 }

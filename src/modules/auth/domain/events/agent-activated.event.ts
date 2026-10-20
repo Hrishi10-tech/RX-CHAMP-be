@@ -1,14 +1,15 @@
 /**
  * Raised the first time an employee's agent enrolls (installs & activates). The
- * notifications module subscribes to turn this into a one-time persisted
- * notification + realtime bell update for the employee's manager.
+ * notifications module turns this into a one-time notification for whoever
+ * oversees them (4.0: the department's managers for Staff, the organisation's
+ * Admin for Managers).
  */
 export class AgentActivatedEvent {
   static readonly eventName = 'auth.agent-activated';
 
   constructor(
-    /** The manager who should be told their report is now set up. */
-    public readonly managerId: string,
+    /** 3.x reporting line, kept for compatibility; 4.0 routing ignores it. */
+    public readonly managerId: string | null,
     /** The employee whose agent just activated. */
     public readonly userId: string,
     public readonly userName: string,

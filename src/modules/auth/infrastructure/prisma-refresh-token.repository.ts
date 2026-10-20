@@ -195,6 +195,14 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
     return count;
   }
 
+  async revokeAgentSessions(userId: string): Promise<number> {
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null, userAgent: { startsWith: 'RXVisionAgent/' } },
+      data: { revokedAt: new Date() },
+    });
+    return count;
+  }
+
   async revoke(rawToken: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash: this.hash(rawToken), revokedAt: null },

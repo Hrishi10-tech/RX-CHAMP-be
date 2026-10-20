@@ -1,5 +1,6 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { Role } from '@shared/rbac/roles.enum';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import { grantsOf, hasAnyGrant } from '@shared/tenancy';
+import { NotFoundException, Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import {
   PRESENCE_SESSION_REPOSITORY,
@@ -58,14 +59,22 @@ export class GetProductivityUseCase {
     const denom = productiveSec + idleSec;
     const score = denom > 0 ? Math.round((1000 * productiveSec) / denom) / 100 : 0;
 
+    // Online and idle time (and what is made of them: the active part and the
+    // score) are activity data (re-audit L1): a Manager without the activity grant
+    // sees the meetings only.
+    if (me.id !== userId && !grantsOf(me).activity) {
+      return { date: day, score: 0, focusSec: 0, meetingSec, idleSec: 0, onlineSec: 0 };
+    }
     return { date: day, score, focusSec, meetingSec, idleSec, onlineSec };
   }
 
+  /** 4.0: someone the caller oversees, and a Manager needs at least one grant. */
   private async authorize(me: AuthenticatedUser, userId: string): Promise<void> {
     if (me.id === userId) return;
-    if (me.role === Role.SUPER_ADMIN) return;
-    const reports = await this.team.findReports(me.id);
-    if (reports.some((r) => r.id === userId)) return;
-    throw new ForbiddenException('That user is not one of your reports.');
+    const reports = await this.team.findReports(me);
+    if (!reports.some((r) => r.id === userId)) throw new NotFoundException('Unknown user');
+    if (!hasAnyGrant(me)) {
+      throw new ForbiddenError('You do not have access to this dashboard.', 'GRANT_REQUIRED');
+    }
   }
 }

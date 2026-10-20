@@ -4,6 +4,7 @@ import { Prisma, RoleName } from '@prisma/client';
 import { Role } from '@shared/rbac/roles.enum';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { PrismaService } from '@shared/database/prisma.service';
+import { lockOrganisation, orgNotFound } from '@shared/database/org-lock';
 import { User } from '../../domain/entities/user.entity';
 import {
   CreateUserData,
@@ -41,7 +42,19 @@ export class PostgresUserRepository implements UserRepository {
     if (filter.department !== undefined) where.department = filter.department;
     if (filter.managerId) where.managerId = filter.managerId;
     if (filter.companyId) where.companyId = filter.companyId;
-    if (filter.role) where.role = { name: filter.role as RoleName };
+    if (filter.departmentIds) where.departmentId = { in: filter.departmentIds.filter(isId) };
+    if (filter.role || filter.roles || filter.excludeRoles) {
+      // `role` narrows `roles` (a caller's scope); it never widens it.
+      const allowed = filter.role
+        ? [filter.role].filter((r) => !filter.roles || filter.roles.includes(r))
+        : filter.roles;
+      where.role = {
+        name: {
+          ...(allowed ? { in: allowed as RoleName[] } : {}),
+          ...(filter.excludeRoles ? { notIn: filter.excludeRoles as RoleName[] } : {}),
+        },
+      };
+    }
     if (filter.status) where.status = filter.status;
     // Both bounds are whole days, resolved by the caller — see ListUsersUseCase.
     if (filter.joinedFrom || filter.joinedTo) {
@@ -138,55 +151,111 @@ export class PostgresUserRepository implements UserRepository {
       shiftStart: u.shiftStart,
       shiftEnd: u.shiftEnd,
       screenshotsEnabled: u.screenshotsEnabled,
+      ...(u.departmentId !== undefined ? { departmentId: u.departmentId } : {}),
+      ...(u.grants
+        ? {
+            grantScreenshots: u.grants.screenshots,
+            grantTimeline: u.grants.timeline,
+            grantActivity: u.grants.activity,
+          }
+        : {}),
+      ...(u.idleEnabled !== undefined ? { idleEnabled: u.idleEnabled } : {}),
+      ...(u.idleMinutes !== undefined ? { idleMinutes: u.idleMinutes } : {}),
     };
+  }
+
+  private emailClash(err: unknown, email: string): ConflictError | null {
+    // `email` is globally unique and soft-deleted rows keep theirs, so the
+    // caller's findByEmail check (which filters deletedAt) can miss a holder.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002' &&
+      this.targets(err, 'email')
+    ) {
+      return new ConflictError(`Email '${email}' is already in use`, 'EMAIL_IN_USE');
+    }
+    return null;
   }
 
   async create(data: CreateUserData): Promise<User> {
     const columns = await this.toColumns(data);
-    const row = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: { email: data.email, ...columns },
-        include: WITH_RELATIONS,
-      });
-      // A shift chosen at creation is an explicit per-person assignment, so it
-      // shows (and can be cleared) on the Assign Shifts screen like any other.
-      if (data.shiftId) {
-        await tx.shiftAssignment.create({
-          data: {
-            target: 'USER',
-            userId: created.id,
-            companyId: created.companyId,
-            shiftId: data.shiftId,
-            effectiveFrom: dateKeyInZone(new Date(), appTimezone()),
-            createdById: data.createdById ?? null,
-          },
+    const managed = [...new Set(data.managedDepartmentIds ?? [])].filter(isId);
+    const row = await this.prisma
+      .$transaction(async (tx) => {
+        // 4.0: the organisation's row lock orders this against its deletion: a
+        // deleted (or deleting) organisation takes nobody new (404 ORG_NOT_FOUND).
+        if (data.companyId && !(await lockOrganisation(tx, data.companyId))) {
+          throw orgNotFound();
+        }
+        const created = await tx.user.create({
+          data: { email: data.email, ...columns },
+          select: { id: true, companyId: true },
         });
-      }
-      return created;
-    });
+        if (managed.length) {
+          await tx.managerDepartment.createMany({
+            data: managed.map((departmentId) => ({ managerId: created.id, departmentId })),
+            skipDuplicates: true,
+          });
+        }
+        // A shift chosen at creation is an explicit per-person assignment, so it
+        // shows (and can be cleared) on the Assign Shifts screen like any other.
+        if (data.shiftId) {
+          await tx.shiftAssignment.create({
+            data: {
+              target: 'USER',
+              userId: created.id,
+              companyId: created.companyId,
+              shiftId: data.shiftId,
+              effectiveFrom: dateKeyInZone(new Date(), appTimezone()),
+              createdById: data.createdById ?? null,
+            },
+          });
+        }
+        return tx.user.findUniqueOrThrow({ where: { id: created.id }, include: WITH_RELATIONS });
+      })
+      .catch((err: unknown) => {
+        throw this.emailClash(err, data.email) ?? err;
+      });
     return UserPersistenceMapper.toDomain(row);
   }
 
   async save(user: User): Promise<User> {
+    const columns = await this.toColumns(user);
+    const managed = user.managedDepartmentsToSave;
     try {
-      const row = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { ...(await this.toColumns(user)), email: user.email, status: user.status },
-        include: WITH_RELATIONS,
+      const row = await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { ...columns, email: user.email, status: user.status },
+        });
+        if (managed) {
+          // Replace the set: one delete, one insert.
+          await tx.managerDepartment.deleteMany({
+            where: { managerId: user.id, departmentId: { notIn: managed } },
+          });
+          if (managed.length) {
+            await tx.managerDepartment.createMany({
+              data: managed.map((departmentId) => ({ managerId: user.id, departmentId })),
+              skipDuplicates: true,
+            });
+          }
+        }
+        return tx.user.findUniqueOrThrow({ where: { id: user.id }, include: WITH_RELATIONS });
       });
+      user.markSaved();
       return UserPersistenceMapper.toDomain(row);
     } catch (err) {
-      // `email` is globally unique and soft-deleted rows keep theirs, so the
-      // caller's findByEmail check (which filters deletedAt) can miss a holder.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002' &&
-        this.targets(err, 'email')
-      ) {
-        throw new ConflictError(`Email '${user.email}' is already in use`);
-      }
-      throw err;
+      throw this.emailClash(err, user.email) ?? err;
     }
+  }
+
+  async bumpEnrollVersion(id: string): Promise<number> {
+    const row = await this.prisma.user.update({
+      where: { id },
+      data: { enrollVersion: { increment: 1 } },
+      select: { enrollVersion: true },
+    });
+    return row.enrollVersion;
   }
 
   private targets(err: Prisma.PrismaClientKnownRequestError, field: string): boolean {

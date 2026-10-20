@@ -74,9 +74,9 @@ export class StartDayUseCase {
         myUpdateFor(self?.role, ActivityMapper.toMyUpdate(current, daily)),
       );
 
-      if (self?.managerId) {
-        this.gateway.emitToManager(
-          self.managerId,
+      if (self) {
+        await this.gateway.emitForSubject(
+          userId,
           ActivityMapper.toLiveUpdate(self, latest, daily, now, false),
         );
       }

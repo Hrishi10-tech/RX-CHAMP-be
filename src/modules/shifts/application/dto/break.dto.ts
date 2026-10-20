@@ -35,6 +35,16 @@ export class StartBreakDto {
   reason?: string;
 }
 
+/** POST /breaks/quick/start (4.0). The agent offers 5, 10 or 15; the server accepts 1..60. */
+export class StartQuickBreakDto {
+  @ApiProperty({ minimum: 1, maximum: 60, example: 10 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  plannedMin!: number;
+}
+
 export class EndBreakDto {
   @ApiPropertyOptional({
     description:
@@ -160,10 +170,19 @@ export class TeamBreaksQueryDto {
   @Matches(DATE_KEY, { message: 'date must be YYYY-MM-DD' })
   date?: string;
 
-  @ApiPropertyOptional({ description: "Super Admin: limit to one manager's team" })
+  @ApiPropertyOptional({
+    description: "Admin, Super Admin: limit to the Staff of one manager's departments (4.0)",
+  })
   @IsOptional()
   @IsId()
   managerId?: string;
+
+  @ApiPropertyOptional({
+    description: '4.0: one department within the caller scope (404 outside it)',
+  })
+  @IsOptional()
+  @IsId({ message: 'departmentId must be a department id' })
+  departmentId?: string;
 }
 
 export class SummaryQueryDto {

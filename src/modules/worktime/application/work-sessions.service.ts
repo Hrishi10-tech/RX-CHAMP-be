@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { RequestClock } from '@shared/tenancy';
 import { NoticeEvent } from '@shared/events/notice.event';
-import { appTimezone, dateKeyInZone, hmInZone } from '@shared/utils/timezone';
+import { appTimezone, dateKeyInZone, time12InZone } from '@shared/utils/timezone';
 import { DayEndedEvent } from '@modules/activity/domain/events/day-ended.event';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { BreakDayService, ResolutionContext } from '@modules/shifts/application/break-day.service';
@@ -14,6 +15,10 @@ import {
   ShiftPeopleReader,
   ShiftPerson,
 } from '@modules/shifts/domain/shift-people.reader';
+import {
+  BREAK_RECORD_REPOSITORY,
+  BreakRecordRepository,
+} from '@modules/shifts/domain/break-record.repository';
 import { AgentGeneration } from '../domain/agent-generation';
 import { autoCloseAt, isStale, latestEndOf } from '../domain/auto-close';
 import { START_DAY_BACKDATE_MS } from '../domain/meetings';
@@ -44,6 +49,7 @@ export class WorkSessionsService {
   constructor(
     @Inject(WORK_SESSION_REPOSITORY) private readonly sessions: WorkSessionRepository,
     @Inject(SHIFT_PEOPLE_READER) private readonly people: ShiftPeopleReader,
+    @Inject(BREAK_RECORD_REPOSITORY) private readonly breakRecords: BreakRecordRepository,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly days: BreakDayService,
     private readonly settings: AppSettingsService,
@@ -66,6 +72,56 @@ export class WorkSessionsService {
     return this.sessions.findOpen(userId);
   }
 
+  findLastEnded(userId: string): Promise<WorkSessionRecord | null> {
+    return this.sessions.findLastEnded(userId);
+  }
+
+  /** Whether one of the person's work sessions (open or closed) covers the instant `at`. */
+  async workedAt(userId: string, at: Date): Promise<boolean> {
+    const t = at.getTime();
+    return (await this.sessions.listOverlapping([userId], at, at)).some(
+      (s) => s.startedAt.getTime() <= t && (s.endedAt === null || s.endedAt.getTime() > t),
+    );
+  }
+
+  /**
+   * An input (a non-idle activity sample) that arrives late, from an offline
+   * backlog, taken after the server auto-closed the person's day at the last input
+   * it knew of but before that day's latest end: the day was worked until then, so
+   * the automatic close moves to it (the auto-close rule, with the input that has
+   * arrived since) and the session becomes a REPLAY one, so it counts only where
+   * the samples cover it. Only a 4.x agent's samples get here (ReportActivityFlow).
+   * True when the day now runs to `at`.
+   */
+  async extendAutoClosed(userId: string, at: Date): Promise<boolean> {
+    const s = await this.sessions.lastStartedAtOrBefore(userId, at);
+    if (!s?.endedAt || s.endReason !== 'AUTO_CLOSED') return false;
+    const t = at.getTime();
+    if (t < s.endedAt.getTime()) return false;
+    const latestEnd = await this.latestEndOfSession(s);
+    if (t > latestEnd.getTime()) return false;
+    if (t === s.endedAt.getTime()) return true;
+    const moved = await this.sessions.extendAutoClosed(s, at);
+    if (moved) this.latestEndCache.delete(s.id);
+    return moved;
+  }
+
+  /**
+   * The latest end of one session's working day (ReplayDayLimits): no automatic
+   * close, nor a move of one, nor a replayed reopen, ever goes past it.
+   */
+  async latestEndOfSession(
+    s: Pick<WorkSessionRecord, 'userId' | 'date' | 'startedAt'>,
+  ): Promise<Date> {
+    const [people, ctx] = await Promise.all([
+      this.people.findAnyByIds([s.userId]),
+      this.days.context([s.userId]),
+    ]);
+    const person = people[0] ?? null;
+    const settings = await this.settings.get(person?.companyId ?? null);
+    return this.latestEndFor(s, person, ctx, settings.autoCloseAfterShiftEndMin);
+  }
+
   // ---- Start / End Day ----------------------------------------------------------
 
   async startDay(
@@ -80,12 +136,14 @@ export class WorkSessionsService {
       userId,
       startedAt,
       now,
-      generation === 'AGENT_31' ? 'AGENT' : 'LEGACY',
+      RequestClock.isReplay() ? 'REPLAY' : generation === 'AGENT_31' ? 'AGENT' : 'LEGACY',
       dayOf,
     );
   }
 
   async endDay(userId: string, generation: AgentGeneration, now: Date): Promise<EndDayTxResult> {
+    // 4.0: a paused break ends at its pause before the day closes.
+    await this.breakRecords.endPaused(userId);
     const today = await this.todayFor(userId, now);
     return this.sessions.endDay(
       userId,
@@ -162,19 +220,24 @@ export class WorkSessionsService {
 
   private async closeStale(open: WorkSessionRecord[], now: Date): Promise<number> {
     const userIds = [...new Set(open.map((s) => s.userId))];
-    const [people, ctx, settings] = await Promise.all([
+    const [people, ctx] = await Promise.all([
       this.people.findAnyByIds(userIds),
       this.days.context(userIds),
-      this.settings.get(),
     ]);
     const byId = new Map(people.map((p) => [p.id, p]));
+    // 4.0: settings are per organisation (docs/4.0/SPEC.md 1.4).
+    const orgs = [...new Set(open.map((s) => byId.get(s.userId)?.companyId ?? null))];
+    const settingsByOrg = new Map(
+      await Promise.all(orgs.map(async (o) => [o, await this.settings.get(o)] as const)),
+    );
     const stale: { session: WorkSessionRecord; latestEnd: Date }[] = [];
     for (const s of open) {
+      const person = byId.get(s.userId) ?? null;
       const latestEnd = this.latestEndFor(
         s,
-        byId.get(s.userId) ?? null,
+        person,
         ctx,
-        settings.autoCloseAfterShiftEndMin,
+        settingsByOrg.get(person?.companyId ?? null)!.autoCloseAfterShiftEndMin,
       );
       this.remember(s.id, latestEnd, now);
       if (isStale(latestEnd, now)) stale.push({ session: s, latestEnd });
@@ -201,6 +264,9 @@ export class WorkSessionsService {
         this.latestEndCache.delete(session.id);
         if (!res.closed) continue;
         closed += 1;
+        // A day closed once already (reopened by a replayed action) closes again
+        // silently: its overseers were told the first time (re-audit M2).
+        if (res.reclosed) continue;
         await this.announceAutoClose(
           session,
           closeAt,
@@ -221,7 +287,7 @@ export class WorkSessionsService {
    * start (see auto-close.ts).
    */
   latestEndFor(
-    session: WorkSessionRecord,
+    session: Pick<WorkSessionRecord, 'date' | 'startedAt'>,
     person: ShiftPerson | null,
     ctx: ResolutionContext,
     autoCloseAfterShiftEndMin: number,
@@ -248,25 +314,27 @@ export class WorkSessionsService {
     person: ShiftPerson | null,
   ): Promise<void> {
     const name = person ? personName(person) : 'A team member';
-    const managerId = person?.managerId ?? null;
     try {
       if (newlyEnded) {
+        // The notifications module resolves who oversees them (4.0: department
+        // managers, else the organisation's Admin).
         await this.events.publish(
           DayEndedEvent.eventName,
-          new DayEndedEvent(session.userId, name, managerId, session.date, closeAt),
+          new DayEndedEvent(session.userId, name, null, session.date, closeAt),
         );
       }
-      const at = hmInZone(closeAt, this.timezone);
+      const at = time12InZone(closeAt, this.timezone);
       const self = dayAutoClosedSelfCopy({ closedAt: at });
       await this.events.publish(
         NoticeEvent.eventName,
         new NoticeEvent([session.userId], NOTICE.DAY_AUTO_CLOSED, self.title, self.body, null),
       );
-      if (managerId && managerId !== session.userId) {
+      const overseers = await this.overseersOf(person);
+      if (overseers.length) {
         const mgr = dayAutoClosedManagerCopy({ name, closedAt: at });
         await this.events.publish(
           NoticeEvent.eventName,
-          new NoticeEvent([managerId], NOTICE.DAY_AUTO_CLOSED, mgr.title, mgr.body, session.userId),
+          new NoticeEvent(overseers, NOTICE.DAY_AUTO_CLOSED, mgr.title, mgr.body, session.userId),
         );
       }
     } catch (err) {
@@ -274,6 +342,21 @@ export class WorkSessionsService {
         `auto-close notices for ${session.userId} failed: ${(err as Error).message}`,
       );
     }
+  }
+
+  /** 4.0: Staff → their department's managers, else the Admin; a Manager → the Admin. */
+  private async overseersOf(person: ShiftPerson | null): Promise<string[]> {
+    if (!person?.companyId) return [];
+    let ids: string[] = [];
+    if (person.role === 'USER') {
+      ids = person.departmentId
+        ? await this.people.listDepartmentManagerIds(person.departmentId)
+        : [];
+      if (!ids.length) ids = await this.people.listOrgAdminIds(person.companyId);
+    } else if (person.role === 'MANAGER') {
+      ids = await this.people.listOrgAdminIds(person.companyId);
+    }
+    return [...new Set(ids)].filter((id) => id !== person.id);
   }
 }
 

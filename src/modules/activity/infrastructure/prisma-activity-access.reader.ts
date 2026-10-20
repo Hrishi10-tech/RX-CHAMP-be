@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { peopleWhere } from '@shared/tenancy';
 import {
   ActivityAccessReader,
   ActivitySelf,
@@ -37,9 +39,9 @@ export class PrismaActivityAccessReader implements ActivityAccessReader {
     return { ...rest, role: role.name };
   }
 
-  async findReports(managerId: string): Promise<ActivityTeamMember[]> {
+  async findReports(me: AuthenticatedUser): Promise<ActivityTeamMember[]> {
     const rows = await this.prisma.user.findMany({
-      where: { managerId, status: 'ACTIVE', deletedAt: null },
+      where: { AND: [peopleWhere(me), { status: 'ACTIVE' }] },
       select: { id: true, firstName: true, lastName: true, email: true, department: true },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     });

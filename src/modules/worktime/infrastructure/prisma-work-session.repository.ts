@@ -236,6 +236,8 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
       // 3.0 readers (presence, the older agents) judge the calendar day.
       const calendar = dateKeyInZone(now, appTimezone());
       if (open) {
+        // Never an end before the start (End Day refuses an older replayed one first).
+        if (now.getTime() < open.startedAt.getTime()) now = open.startedAt;
         const closed = await tx.workSession.update({
           where: { id: open.id },
           data: { endedAt: now, endReason: 'USER' },
@@ -326,24 +328,65 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
   async autoClose(session: WorkSessionRecord, closeAt: Date): Promise<AutoCloseTxResult> {
     return this.prisma.$transaction(async (tx) => {
       await lockUser(tx, session.userId);
-      const res = await tx.workSession.updateMany({
+      const before = await tx.workSession.findFirst({
         where: { id: session.id, endedAt: null },
-        data: { endedAt: closeAt, endReason: 'AUTO_CLOSED' },
+        select: { endReason: true, startedAt: true },
       });
-      if (res.count === 0) return { closed: false, newlyEnded: false, droppedSkips: 0 };
-      await closeOpenPresence(tx, session.userId, closeAt);
+      if (!before) return { closed: false, newlyEnded: false, droppedSkips: 0 };
+      // Never an end before the start.
+      const at = closeAt.getTime() < before.startedAt.getTime() ? before.startedAt : closeAt;
+      await tx.workSession.update({
+        where: { id: session.id },
+        data: { endedAt: at, endReason: 'AUTO_CLOSED' },
+      });
+      await closeOpenPresence(tx, session.userId, at);
       // Auto-skips owed only because the session was still open (scheduled after
-      // the real end) were never owed: they go, whatever their status or comment.
+      // the real end) were never owed: they go, unless a manager decided them
+      // already (a decision stays; re-audit M2).
       const dropped = await tx.breakRecord.deleteMany({
         where: {
           userId: session.userId,
           date: session.date,
           outcome: 'AUTO_SKIPPED',
-          scheduledStart: { gt: closeAt },
+          scheduledStart: { gt: at },
+          approvalStatus: { notIn: ['APPROVED', 'REJECTED'] },
         },
       });
-      const newlyEnded = await markDayEnded(tx, session.userId, session.date, closeAt);
-      return { closed: true, newlyEnded, droppedSkips: dropped.count };
+      const newlyEnded = await markDayEnded(tx, session.userId, session.date, at);
+      return {
+        closed: true,
+        newlyEnded,
+        droppedSkips: dropped.count,
+        reclosed: before.endReason === 'AUTO_CLOSED',
+      };
+    });
+  }
+
+  async lastStartedAtOrBefore(userId: string, at: Date): Promise<WorkSessionRecord | null> {
+    const row = await this.prisma.workSession.findFirst({
+      where: { userId, startedAt: { lte: at } },
+      orderBy: { startedAt: 'desc' },
+    });
+    return row ? sessionFromPrisma(row) : null;
+  }
+
+  async extendAutoClosed(session: WorkSessionRecord, to: Date): Promise<boolean> {
+    if (!session.endedAt) return false;
+    const from = session.endedAt;
+    return this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, session.userId);
+      // The day now rests on samples that arrived late: the evidence rule applies
+      // (REPLAY), its live part being covered by what the online agent sent.
+      const res = await tx.workSession.updateMany({
+        where: { id: session.id, endReason: 'AUTO_CLOSED', endedAt: from },
+        data: { endedAt: to, source: 'REPLAY' },
+      });
+      if (res.count === 0) return false;
+      await tx.workDayEnd.updateMany({
+        where: { userId: session.userId, date: session.date, endedAt: from },
+        data: { endedAt: to },
+      });
+      return true;
     });
   }
 

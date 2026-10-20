@@ -30,12 +30,13 @@ export class HourlyActivityService {
     now: Date,
   ): Promise<HourlyActivityView> {
     if (me.role === Role.USER) throw new ForbiddenError('Activity is visible to managers only.');
-    await this.scope.person(me, userId);
+    // 4.0: a Manager needs the activity grant.
+    const person = await this.scope.personSection(me, userId, 'activity');
     // Default: the person's working day now (a night shift's hours stay together).
     const day = date ?? (await this.dayKeys.dayKeyAt(userId, now));
     const [data, settings] = await Promise.all([
       this.dayData.load([userId], day, day, now, { heal: true }),
-      this.settings.get(),
+      this.settings.get(person.companyId),
     ]);
     const hours = await this.dayData.hourlyFor(
       data.day(userId, day),

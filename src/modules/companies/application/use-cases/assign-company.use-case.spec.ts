@@ -1,13 +1,14 @@
+// Unit test for AssignCompanyUseCase (4.0 alias): only people with no organisation
+// can be put into one; the answer is the person as /users shows them.
 import { Role } from '@shared/rbac/roles.enum';
-import { NotFoundError } from '@shared/exceptions/app.exception';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { CompanyAssignedEvent } from '@modules/users/domain/events/company-assigned.event';
+import { ConflictError, NotFoundError } from '@shared/exceptions/app.exception';
+import { superAdmin } from '@shared/testing/actors.testing-spec';
 import { User } from '@modules/users/domain/entities/user.entity';
 import { Email } from '@modules/users/domain/value-objects/email.vo';
 import { UserId } from '@modules/users/domain/value-objects/user-id.vo';
 import { AssignCompanyUseCase } from './assign-company.use-case';
 
-function buildManager(): User {
+function buildManager(companyId: string | null): User {
   return User.fromPersistence({
     id: UserId.create('mgr-1'),
     email: Email.create('manager@timechamp.test'),
@@ -18,7 +19,7 @@ function buildManager(): User {
     role: Role.MANAGER,
     department: null,
     managerId: null,
-    companyId: null,
+    companyId,
     companyName: null,
     shiftId: null,
     shiftStart: null,
@@ -30,51 +31,41 @@ function buildManager(): User {
   });
 }
 
-describe('AssignCompanyUseCase', () => {
-  const companies = { findById: jest.fn() } as any;
-  const users = { findById: jest.fn(), save: jest.fn() } as any;
-  const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
-  const me = { id: 'super-1', role: Role.SUPER_ADMIN } as AuthenticatedUser;
+describe('AssignCompanyUseCase (alias)', () => {
+  const organisations = { assignPerson: jest.fn() } as any;
+  const users = { findById: jest.fn() } as any;
+  const me = superAdmin();
 
   let useCase: AssignCompanyUseCase;
   beforeEach(() => {
     jest.clearAllMocks();
-    useCase = new AssignCompanyUseCase(companies, users, events);
+    useCase = new AssignCompanyUseCase(organisations, users);
   });
 
-  it('rejects an unknown company', async () => {
-    companies.findById.mockResolvedValue(null);
+  it('passes refusals through (unknown organisation, someone in another one)', async () => {
+    organisations.assignPerson.mockRejectedValueOnce(
+      new NotFoundError('That organisation does not exist.'),
+    );
     await expect(useCase.execute(me, 'c-x', 'mgr-1')).rejects.toBeInstanceOf(NotFoundError);
+    organisations.assignPerson.mockRejectedValueOnce(
+      new ConflictError('moving', 'PERSON_IN_ORGANISATION'),
+    );
+    await expect(useCase.execute(me, 'c-1', 'mgr-1')).rejects.toMatchObject({
+      code: 'PERSON_IN_ORGANISATION',
+    });
     expect(users.findById).not.toHaveBeenCalled();
   });
 
-  it('rejects an unknown user', async () => {
-    companies.findById.mockResolvedValue({ id: 'c-1', name: 'Acme', createdAt: new Date() });
-    users.findById.mockResolvedValue(null);
-    await expect(useCase.execute(me, 'c-1', 'nope')).rejects.toBeInstanceOf(NotFoundError);
-    expect(events.publish).not.toHaveBeenCalled();
-  });
-
-  it('links the user to the company and publishes CompanyAssignedEvent', async () => {
-    const manager = buildManager();
-    companies.findById.mockResolvedValue({ id: 'c-1', name: 'Acme', createdAt: new Date() });
-    users.findById.mockResolvedValue(manager);
-    users.save.mockImplementation(async (u: User) => u);
-
+  it('answers the person in their new organisation', async () => {
+    organisations.assignPerson.mockResolvedValue({
+      id: 'mgr-1',
+      companyId: 'c-1',
+      role: 'MANAGER',
+      changed: true,
+    });
+    users.findById.mockResolvedValue(buildManager('c-1'));
     const result = await useCase.execute(me, 'c-1', 'mgr-1');
-
-    expect(manager.companyId).toBe('c-1');
-    expect(result.companyId).toBe('c-1');
-    expect(users.save).toHaveBeenCalledWith(manager);
-    expect(events.publish).toHaveBeenCalledWith(
-      CompanyAssignedEvent.eventName,
-      expect.objectContaining({
-        userId: 'mgr-1',
-        userRole: Role.MANAGER,
-        companyId: 'c-1',
-        companyName: 'Acme',
-        assignedByUserId: 'super-1',
-      }),
-    );
+    expect(organisations.assignPerson).toHaveBeenCalledWith(me, 'c-1', 'mgr-1');
+    expect(result).toMatchObject({ id: 'mgr-1', companyId: 'c-1', role: Role.MANAGER });
   });
 });

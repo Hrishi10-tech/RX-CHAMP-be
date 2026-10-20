@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@shared/rbac/roles.enum';
+import { UserStatus } from '@shared/types/user.types';
 import {
   DEFAULT_USER_SORT,
   USER_SORT_OPTIONS,
@@ -19,6 +20,13 @@ import {
 } from '../../domain/repositories/user.repository';
 import { IsId } from '@shared/validation/is-id';
 
+const USER_STATUSES: UserStatus[] = ['ACTIVE', 'DISABLED'];
+
+/**
+ * GET /users (docs/4.0/SPEC.md 5.3). Filters combine; the caller's scope always
+ * wins (an Admin: their organisation; a Manager: Staff of their departments; Staff:
+ * themselves), whatever is asked.
+ */
 export class ListUsersQueryDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
@@ -39,6 +47,12 @@ export class ListUsersQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({ description: 'Same as q (3.x name)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
   search?: string;
 
   @ApiPropertyOptional({ enum: Role, description: 'Filter by role, e.g. MANAGER' })
@@ -46,24 +60,24 @@ export class ListUsersQueryDto {
   @IsEnum(Role)
   role?: Role;
 
-  @ApiPropertyOptional({ description: "Filter to a manager's team (their reports)" })
+  @ApiPropertyOptional({ description: 'People of one department (a Manager: one of theirs)' })
   @IsOptional()
-  @IsString()
-  managerId?: string;
+  @IsId({ message: 'departmentId must be a department id' })
+  departmentId?: string;
+
+  @ApiPropertyOptional({ enum: USER_STATUSES })
+  @IsOptional()
+  @IsIn(USER_STATUSES)
+  status?: UserStatus;
 
   @ApiPropertyOptional({
     example: 'Marketing',
-    description: 'Team / department. Exact match — a user with no team never matches.',
+    description: '3.x: department name, exact match.',
   })
   @IsOptional()
   @IsString()
   @MaxLength(120)
   department?: string;
-
-  @ApiPropertyOptional({ description: 'Company the user belongs to.' })
-  @IsOptional()
-  @IsId()
-  companyId?: string;
 
   @ApiPropertyOptional({
     example: '2026-08-01',

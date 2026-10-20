@@ -26,6 +26,24 @@ export function normalize(list: Interval[]): Interval[] {
   return out;
 }
 
+/**
+ * Sorted intervals with every gap of at most `gapMs` bridged (zero-length points
+ * take part, so a point within `gapMs` of an interval extends it). Points left on
+ * their own stay as they are; normalize() drops them.
+ */
+export function joinGaps(list: Interval[], gapMs: number): Interval[] {
+  const sorted = list
+    .filter((i) => i.end >= i.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: Interval[] = [];
+  for (const i of sorted) {
+    const last = out[out.length - 1];
+    if (last && i.start - last.end <= gapMs) last.end = Math.max(last.end, i.end);
+    else out.push({ start: i.start, end: i.end });
+  }
+  return out;
+}
+
 /** Total length of the union, in ms. */
 export function lengthMs(list: Interval[]): number {
   return normalize(list).reduce((sum, i) => sum + (i.end - i.start), 0);

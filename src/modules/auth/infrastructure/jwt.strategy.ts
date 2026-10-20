@@ -21,10 +21,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       ]),
       ignoreExpiration: false,
       secretOrKey: config.get<string>('jwt.accessSecret') ?? 'change-me-access',
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: AccessTokenPayload & { typ?: string }): Promise<AuthenticatedUser> {
+  async validate(
+    req: Request,
+    payload: AccessTokenPayload & { typ?: string },
+  ): Promise<AuthenticatedUser> {
     // A socket ticket is signed with this same secret, and it is readable by
     // JavaScript — unlike the httpOnly access cookie. Accepting one here would hand
     // anything that scraped a ticket a working API credential, which is exactly what
@@ -36,7 +40,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedError('Not signed in');
     }
 
-    const user = await this.reader.loadById(payload.sub);
+    // 4.0: a Super Admin acts inside the organisation named by X-Org-Id (ignored for
+    // everyone else, whose organisation is their own).
+    const orgHeader = req?.headers?.['x-org-id'];
+    const user = await this.reader.loadById(
+      payload.sub,
+      Array.isArray(orgHeader) ? orgHeader[0] : orgHeader,
+    );
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedError('Account is no longer active');
     }

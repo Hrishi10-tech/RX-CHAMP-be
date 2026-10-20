@@ -17,29 +17,47 @@ import { Role } from '@shared/rbac/roles.enum';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
+import { RequestClock } from '@shared/tenancy';
 import { ParseIdPipe } from '@shared/validation/is-id';
 import {
   CommentSkipDto,
   SkipBreakDto,
   StartBreakDto,
+  StartQuickBreakDto,
 } from '@modules/shifts/application/dto/break.dto';
 import { SkipsNeedingCommentQuery } from '@modules/shifts/application/skips-needing-comment.query';
 import { MyBreaksUseCase } from '@modules/shifts/application/use-cases/my-breaks.use-case';
 import { BreakDayView } from '@modules/shifts/application/shifts.types';
 import { DEFAULT_REASON_MIN_CHARS } from '@modules/shifts/domain/shift.types';
 import { agentGeneration } from '../domain/agent-generation';
-import { TeamTodayQueryDto } from '../application/dto/workday.dto';
+import { TeamQueryDto, TeamTodayQueryDto } from '../application/dto/workday.dto';
+import { TeamOverviewService } from '../application/team-overview.service';
 import { SkipsService } from '../application/skips.service';
 import { TeamTodayService } from '../application/team-today.service';
 import { WorkSessionsService } from '../application/work-sessions.service';
 import { WorkdayService } from '../application/workday.service';
+import { HistoryService } from '../application/history.service';
+import { HistoryQueryDto } from '../application/dto/workday.dto';
 
 @ApiTags('workday')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('workday')
 export class WorkdayController {
-  constructor(private readonly workday: WorkdayService) {}
+  constructor(
+    private readonly workday: WorkdayService,
+    private readonly history: HistoryService,
+  ) {}
+
+  @Get('me/history')
+  @ApiOperation({
+    summary:
+      "4.0: the signed-in person's month: focus against the monthly target from the calendar, " +
+      'paid and unpaid breaks, meetings (with the MoM sender), away time and its approvals',
+  })
+  async myHistory(@CurrentUser() me: AuthenticatedUser, @Query() q: HistoryQueryDto) {
+    return envelope(await this.history.month(me, q.month, RequestClock.now()));
+  }
 
   @Get('me/today')
   @ApiOperation({
@@ -99,8 +117,44 @@ export class WorkdayBreaksController {
     @Body() body: StartBreakDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    await this.sessions.ensureOpen(me.id, agentGeneration(userAgent), new Date());
+    await this.sessions.ensureOpen(me.id, agentGeneration(userAgent), RequestClock.now());
     return envelope(await this.mine.start(me, body));
+  }
+
+  @Post('quick/start')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '4.0: start a quick break of 1..60 minutes (the agent offers 5, 10, 15). 409 ON_BREAK, ' +
+      'IN_MEETING, DAY_NOT_STARTED, DAY_ENDED. No approval: pay comes from the allowance.',
+  })
+  async startQuick(
+    @CurrentUser() me: AuthenticatedUser,
+    @Body() body: StartQuickBreakDto,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    await this.sessions.ensureOpen(me.id, agentGeneration(userAgent), RequestClock.now());
+    return envelope(await this.mine.startQuick(me, body.plannedMin));
+  }
+
+  @Post(':id/pause')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '4.0: pause a running scheduled break (409 NOT_ACTIVE; NOT_PAUSABLE for quick breaks)',
+  })
+  async pause(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
+    return envelope(await this.mine.pause(me, id));
+  }
+
+  @Post(':id/resume')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '4.0: resume a paused break while its window is open (409 RESUME_WINDOW_CLOSED, ' +
+      'NOT_PAUSED, ON_BREAK, IN_MEETING)',
+  })
+  async resume(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
+    return envelope(await this.mine.resume(me, id));
   }
 
   @Post('skip')
@@ -111,7 +165,9 @@ export class WorkdayBreaksController {
     @Body() body: SkipBreakDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.skips.skip(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.skips.skip(me, body, agentGeneration(userAgent), RequestClock.now()),
+    );
   }
 
   @Post(':id/comment')
@@ -122,7 +178,7 @@ export class WorkdayBreaksController {
     @Param('id', new ParseIdPipe()) id: string,
     @Body() body: CommentSkipDto,
   ) {
-    return envelope(await this.skips.comment(me, id, body.comment, new Date()));
+    return envelope(await this.skips.comment(me, id, body.comment, RequestClock.now()));
   }
 }
 
@@ -131,10 +187,24 @@ export class WorkdayBreaksController {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('team')
 export class TeamController {
-  constructor(private readonly team: TeamTodayService) {}
+  constructor(
+    private readonly team: TeamTodayService,
+    private readonly teamOverview: TeamOverviewService,
+  ) {}
+
+  @Get()
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @ApiOperation({
+    summary:
+      '4.0 Team: everyone in scope with live status (WORKING, BREAK, MEETING, AWAY, NOT_STARTED, ' +
+      'ENDED), today focus against target, department, online and agent version. Managers need a grant.',
+  })
+  async list(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamQueryDto) {
+    return envelope(await this.teamOverview.team(me, q, new Date()));
+  }
 
   @Get('today')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'Team today: status, focus, breaks, meetings, late starts, pending approvals and ' +
@@ -142,5 +212,25 @@ export class TeamController {
   })
   async today(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamTodayQueryDto) {
     return envelope(await this.team.today(me, q, new Date()));
+  }
+}
+
+/** 4.0 Overview (docs/4.0/SPEC.md 5.4). */
+@ApiTags('overview')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('overview')
+export class OverviewController {
+  constructor(private readonly teamOverview: TeamOverviewService) {}
+
+  @Get()
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @ApiOperation({
+    summary:
+      'The organisation (Admin) or my departments (Manager): today, approvals, this month against ' +
+      'target, departments, needs attention, next holidays, working people per hour',
+  })
+  async get(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.teamOverview.overview(me, new Date()));
   }
 }

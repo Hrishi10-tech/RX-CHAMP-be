@@ -2,11 +2,37 @@ import { LIVE_GRACE_SEC } from '@modules/activity/application/activity.constants
 import { elapsedSeconds } from '@modules/activity/application/activity-date.util';
 import { User } from '../../domain/entities/user.entity';
 import { AgentPresence } from '../../domain/repositories/agent-presence.reader';
-import { AgentStatus, PublicUser, UserListItem } from '../user.types';
+import { AgentStatus, PublicUser, UserBriefItem, UserListItem } from '../user.types';
 
 export class UserMapper {
+  /** The 4.0 department, managed departments, grants and override. */
+  private static placement(user: User) {
+    return {
+      departmentId: user.departmentId,
+      departmentRef: user.departmentRef,
+      departments: user.managedDepartments,
+      grants: user.grants,
+      idle: { enabled: user.idleEnabled, minutes: user.idleMinutes },
+      idleEnabled: user.idleEnabled,
+      idleMinutes: user.idleMinutes,
+    };
+  }
+
+  /** GET /users for a Manager (their Staff) or Staff (themselves). */
+  static toBrief(user: User): UserBriefItem {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      designation: user.designation,
+      department: user.departmentRef?.name ?? user.department,
+      departmentRef: user.departmentRef,
+    };
+  }
+
   static toPublic(user: User): PublicUser {
     return {
+      ...this.placement(user),
       id: user.id,
       email: user.email,
       firstName: user.firstName,
@@ -53,6 +79,10 @@ export class UserMapper {
 
   static toListItem(user: User, presence?: AgentPresence, now: Date = new Date()): UserListItem {
     return {
+      ...this.placement(user),
+      designation: user.designation,
+      companyId: user.companyId,
+      shiftId: user.shiftId,
       id: user.id,
       email: user.email,
       firstName: user.firstName,

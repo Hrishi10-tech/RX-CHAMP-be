@@ -1,87 +1,50 @@
-// Unit test for CreateCompanyUseCase — duplicate guard, optional manager
-// assignment (links companyId + publishes CompanyAssignedEvent), and partial
-// failure reporting for unknown manager ids.
-import { Role } from '@shared/rbac/roles.enum';
+// Unit test for CreateCompanyUseCase (4.0: an alias of POST /organisations). The
+// organisation is created through OrganisationsService (name rules, Super Admin
+// only); managerIds put people with no organisation into it, and anyone who cannot
+// be put there is reported per id instead of failing the whole call.
 import { ConflictError } from '@shared/exceptions/app.exception';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { CompanyAssignedEvent } from '@modules/users/domain/events/company-assigned.event';
-import { User } from '@modules/users/domain/entities/user.entity';
-import { Email } from '@modules/users/domain/value-objects/email.vo';
-import { UserId } from '@modules/users/domain/value-objects/user-id.vo';
+import { superAdmin } from '@shared/testing/actors.testing-spec';
 import { CreateCompanyUseCase } from './create-company.use-case';
 
-function buildManager(id: string): User {
-  return User.fromPersistence({
-    id: UserId.create(id),
-    email: Email.create(`${id}@timechamp.test`),
-    passwordHash: 'hash',
-    firstName: 'Mary',
-    lastName: 'Manager',
-    designation: null,
-    role: Role.MANAGER,
-    department: null,
-    managerId: null,
-    companyId: null,
-    companyName: null,
-    shiftId: null,
-    shiftStart: null,
-    shiftEnd: null,
-    status: 'ACTIVE',
-    screenshotsEnabled: true,
-    agentActivatedAt: null,
-    createdAt: new Date(),
-  });
-}
-
-describe('CreateCompanyUseCase', () => {
-  const companies = { findByName: jest.fn(), create: jest.fn() } as any;
-  const users = { findById: jest.fn(), save: jest.fn() } as any;
-  const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
-  const me = { id: 'super-1', role: Role.SUPER_ADMIN } as AuthenticatedUser;
+describe('CreateCompanyUseCase (alias of POST /organisations)', () => {
+  const organisations = { create: jest.fn(), assignPerson: jest.fn() } as any;
+  const me = superAdmin();
+  const created = { id: 'c-1', name: 'lakshmangroup', createdAt: '2026-10-19T00:00:00.000Z' };
 
   let useCase: CreateCompanyUseCase;
   beforeEach(() => {
     jest.clearAllMocks();
-    useCase = new CreateCompanyUseCase(companies, users, events);
-    users.save.mockImplementation(async (u: User) => u);
+    useCase = new CreateCompanyUseCase(organisations);
+    organisations.create.mockResolvedValue(created);
   });
 
-  it('rejects a duplicate name', async () => {
-    companies.findByName.mockResolvedValue({ id: 'c-0', name: 'dup', createdAt: new Date() });
+  it('passes a duplicate-name refusal through', async () => {
+    organisations.create.mockRejectedValue(new ConflictError('exists', 'ORG_EXISTS'));
     await expect(useCase.execute({ name: 'dup' }, me)).rejects.toBeInstanceOf(ConflictError);
-    expect(companies.create).not.toHaveBeenCalled();
+    expect(organisations.assignPerson).not.toHaveBeenCalled();
   });
 
-  it('creates an unassigned company when no managerIds are given', async () => {
-    companies.findByName.mockResolvedValue(null);
-    companies.create.mockResolvedValue({ id: 'c-1', name: 'lakshmangroup', createdAt: new Date() });
-
+  it('creates an empty organisation when no managerIds are given', async () => {
     const result = await useCase.execute({ name: 'lakshmangroup' }, me);
-
-    expect(result.id).toBe('c-1');
-    expect(result.assignments).toEqual({ assigned: [], errors: [] });
-    expect(users.save).not.toHaveBeenCalled();
-    expect(events.publish).not.toHaveBeenCalled();
+    expect(organisations.create).toHaveBeenCalledWith(me, 'lakshmangroup');
+    expect(result).toEqual({ ...created, assignments: { assigned: [], errors: [] } });
   });
 
-  it('assigns provided managers to the new company and notifies them', async () => {
-    companies.findByName.mockResolvedValue(null);
-    companies.create.mockResolvedValue({ id: 'c-1', name: 'lakshmangroup', createdAt: new Date() });
-    const mgr = buildManager('mgr-1');
-    users.findById.mockImplementation(async (id: string) => (id === 'mgr-1' ? mgr : null));
-
+  it('assigns each person once and reports those it could not', async () => {
+    organisations.assignPerson.mockImplementation(
+      async (_me: unknown, _org: string, id: string) => {
+        if (id === 'ghost') throw new Error('Unknown person');
+        return { id, companyId: 'c-1', role: 'MANAGER', changed: true };
+      },
+    );
     const result = await useCase.execute(
-      { name: 'lakshmangroup', managerIds: ['mgr-1', 'ghost'] },
+      { name: 'lakshmangroup', managerIds: ['mgr-1', 'ghost', 'mgr-1'] },
       me,
     );
-
-    expect(mgr.companyId).toBe('c-1');
-    expect(result.assignments.assigned).toEqual(['mgr-1']);
-    expect(result.assignments.errors).toEqual([{ managerId: 'ghost', error: 'unknown user' }]);
-    expect(events.publish).toHaveBeenCalledTimes(1);
-    expect(events.publish).toHaveBeenCalledWith(
-      CompanyAssignedEvent.eventName,
-      expect.objectContaining({ userId: 'mgr-1', companyId: 'c-1', companyName: 'lakshmangroup' }),
-    );
+    expect(organisations.assignPerson).toHaveBeenCalledTimes(2);
+    expect(result.assignments).toEqual({
+      assigned: ['mgr-1'],
+      errors: [{ managerId: 'ghost', error: 'Unknown person' }],
+    });
   });
 });

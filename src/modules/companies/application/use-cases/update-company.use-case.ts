@@ -1,37 +1,18 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { ConflictError, NotFoundError } from '@shared/exceptions/app.exception';
-import { CompanyMapper } from '../mappers/company.mapper';
-import {
-  COMPANY_REPOSITORY,
-  CompanyRepository,
-} from '../../domain/repositories/company.repository';
+import { Injectable } from '@nestjs/common';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { OrganisationsService } from '@modules/organisations/application/organisations.service';
 import { PublicCompany, UpdateCompanyInput } from '../company.types';
 
-/**
- * Renames a company. The name is all a company holds of its own — its people and
- * their details belong to the users — so this is the whole of editing one.
- *
- * Guards the same uniqueness create does, or two companies could end up sharing a
- * name and nobody could tell which manager belonged to which.
- */
+/** 3.x PATCH /companies/:id, an alias of PATCH /organisations/:id (4.0 name rules). */
 @Injectable()
 export class UpdateCompanyUseCase {
-  constructor(@Inject(COMPANY_REPOSITORY) private readonly companies: CompanyRepository) {}
+  constructor(private readonly organisations: OrganisationsService) {}
 
-  async execute(id: string, input: UpdateCompanyInput): Promise<PublicCompany> {
-    const company = await this.companies.findById(id);
-    if (!company) throw new NotFoundError('Unknown company');
-
-    const name = input.name.trim();
-
-    // Saving a company under the name it already has is a no-op, not a clash with
-    // itself — only another company holding the name is a conflict.
-    const existing = await this.companies.findByName(name);
-    if (existing && existing.id !== company.id) {
-      throw new ConflictError(`Company '${name}' already exists`);
-    }
-
-    const renamed = await this.companies.rename(company.id, name);
-    return CompanyMapper.toPublic(renamed);
+  async execute(
+    me: AuthenticatedUser,
+    id: string,
+    input: UpdateCompanyInput,
+  ): Promise<PublicCompany> {
+    return this.organisations.rename(me, id, input.name);
   }
 }

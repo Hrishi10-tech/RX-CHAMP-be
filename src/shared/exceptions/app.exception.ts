@@ -60,6 +60,13 @@ export class ConflictError extends AppException {
   }
 }
 
+/** An endpoint that no longer exists in this version (the message says what replaced it). */
+export class GoneError extends AppException {
+  constructor(message = 'This endpoint is no longer available', code = 'GONE') {
+    super(410, code, message);
+  }
+}
+
 export class TooManyAttemptsError extends AppException {
   constructor(message = 'Too many attempts. Try again later.', code = 'TOO_MANY_ATTEMPTS') {
     super(429, code, message);

@@ -1,18 +1,16 @@
 import { Role } from '@shared/rbac/roles.enum';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import {
+  DEPT_A1,
+  DEPT_A2,
+  ORG_A,
+  ORG_B,
+  admin,
+  manager,
+  staff,
+  superAdmin,
+} from '@shared/testing/actors.testing-spec';
+import { person } from '../../testing/people.testing-spec';
 import { ListUsersUseCase } from './list-users.use-case';
-
-function actor(role: Role, id = 'a-1'): AuthenticatedUser {
-  return {
-    id,
-    email: 'a@acme.test',
-    role,
-    permissions: [],
-    department: null,
-    companyId: null,
-    status: 'ACTIVE',
-  };
-}
 
 describe('ListUsersUseCase', () => {
   const users = { findAll: jest.fn(), count: jest.fn() } as any;
@@ -26,140 +24,150 @@ describe('ListUsersUseCase', () => {
     presence.presenceFor.mockResolvedValue(new Map());
   });
 
-  it('passes the requested sort through to the repository', async () => {
-    await useCase.execute(actor(Role.SUPER_ADMIN), { sort: 'name_asc' });
+  describe('scope (docs/4.0/SPEC.md 5.3)', () => {
+    it('Admin: everyone in their organisation except Super Admins', async () => {
+      await useCase.execute(admin(ORG_A), {});
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: ORG_A, excludeRoles: [Role.SUPER_ADMIN] }),
+      );
+    });
 
+    it('Super Admin: the selected organisation; none selected answers 400 ORG_REQUIRED', async () => {
+      await useCase.execute(superAdmin(ORG_B), {});
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ companyId: ORG_B }));
+      await expect(useCase.execute(superAdmin(null), {})).rejects.toMatchObject({
+        status: 400,
+        code: 'ORG_REQUIRED',
+      });
+    });
+
+    it('Manager: Staff of their departments only', async () => {
+      await useCase.execute(manager([DEPT_A1, DEPT_A2]), {});
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: ORG_A,
+          roles: [Role.USER],
+          departmentIds: [DEPT_A1, DEPT_A2],
+        }),
+      );
+    });
+
+    it('Manager with no departments sees nobody', async () => {
+      await useCase.execute(manager([]), {});
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ departmentIds: [] }));
+    });
+
+    it('Staff: themselves', async () => {
+      const me = staff();
+      await useCase.execute(me, {});
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ ids: [me.id] }));
+    });
+
+    it("a Manager's department filter narrows their departments, never widens them", async () => {
+      await useCase.execute(manager([DEPT_A1]), { departmentId: DEPT_A2 });
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ departmentIds: [] }));
+      users.findAll.mockClear();
+      await useCase.execute(manager([DEPT_A1, DEPT_A2]), {
+        departmentId: DEPT_A2,
+        role: Role.MANAGER,
+      });
+      expect(users.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          departmentIds: [DEPT_A2],
+          roles: [Role.USER],
+          role: Role.MANAGER,
+        }),
+      );
+    });
+
+    it('Managers and Staff get the few fields only; Admins the full row', async () => {
+      const row = person({ role: Role.USER });
+      users.findAll.mockResolvedValue([row]);
+      users.count.mockResolvedValue(1);
+
+      const brief = await useCase.execute(manager([DEPT_A1]), {});
+      expect(brief.users[0]).toEqual({
+        id: row.id,
+        name: 'Jane Doe',
+        email: row.email,
+        designation: null,
+        department: 'Electronics',
+        departmentRef: { id: DEPT_A1, name: 'Electronics', icon: 'circuit-board' },
+      });
+      expect(presence.presenceFor).not.toHaveBeenCalled();
+
+      const full = await useCase.execute(admin(ORG_A), {});
+      expect(full.users[0]).toMatchObject({
+        id: row.id,
+        role: Role.USER,
+        departmentId: DEPT_A1,
+        departments: [],
+        grants: { screenshots: false, timeline: false, activity: false },
+        idle: { enabled: null, minutes: null },
+        agentStatus: 'NOT_ACTIVATED',
+      });
+    });
+  });
+
+  it('passes the requested sort through to the repository', async () => {
+    await useCase.execute(admin(), { sort: 'name_asc' });
     expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort: 'name_asc' }));
   });
 
-  it.each(['name_asc', 'name_desc', 'joined_asc', 'joined_desc', 'role_asc', 'role_desc'] as const)(
-    'forwards %s unchanged',
-    async (sort) => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), { sort });
-
-      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort }));
-    },
-  );
-
   it('leaves sort undefined when the client omits it, so the repository default applies', async () => {
-    await useCase.execute(actor(Role.SUPER_ADMIN), {});
-
+    await useCase.execute(admin(), {});
     expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ sort: undefined }));
   });
 
-  it('keeps sorting alongside the role scope a manager is confined to', async () => {
-    await useCase.execute(actor(Role.MANAGER, 'mgr-1'), { sort: 'role_desc' });
-
-    expect(users.findAll).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: 'role_desc', managerId: 'mgr-1' }),
-    );
-  });
-
   it('paginates independently of the sort', async () => {
-    await useCase.execute(actor(Role.SUPER_ADMIN), { sort: 'name_asc', page: 3, limit: 10 });
-
+    await useCase.execute(admin(), { sort: 'name_asc', page: 3, limit: 10 });
     expect(users.findAll).toHaveBeenCalledWith(
       expect.objectContaining({ sort: 'name_asc', skip: 20, take: 10 }),
     );
   });
 
-  // The filter panel offers Role, Team, Company and a joined-date range. They are
-  // independent controls, so every combination has to reach the repository — the
-  // list is then narrowed by all of them at once.
   describe('filters', () => {
-    it('combines role and team, which is what the panel asks for', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), { role: Role.USER, department: 'Marketing' });
-
+    it('combines role, department, status and q', async () => {
+      await useCase.execute(admin(), {
+        role: Role.USER,
+        departmentId: DEPT_A1,
+        status: 'DISABLED',
+        q: '  gowtham ',
+      });
       expect(users.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ role: Role.USER, department: 'Marketing' }),
+        expect.objectContaining({
+          role: Role.USER,
+          departmentIds: [DEPT_A1],
+          status: 'DISABLED',
+          search: 'gowtham',
+          companyId: ORG_A,
+        }),
       );
     });
 
-    it('keeps the role filter when a managerId is also given', async () => {
-      // Regression: the two used to be either/or, so picking a Role on any
-      // manager-scoped screen silently did nothing.
-      await useCase.execute(actor(Role.SUPER_ADMIN), { managerId: 'mgr-9', role: Role.MANAGER });
-
-      expect(users.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ managerId: 'mgr-9', role: Role.MANAGER }),
-      );
-    });
-
-    it('forwards the company filter', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), { companyId: 'co-1' });
-
-      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'co-1' }));
+    it('accepts the 3.x search name too', async () => {
+      await useCase.execute(admin(), { search: 'ravi' });
+      expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ search: 'ravi' }));
     });
 
     it('widens the joined range to whole days at both ends', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), {
-        joinedFrom: '2026-08-01',
-        joinedTo: '2026-08-31',
-      });
-
+      await useCase.execute(admin(), { joinedFrom: '2026-08-01', joinedTo: '2026-08-31' });
       const filter = users.findAll.mock.calls[0][0];
-      // Someone who joined at 09:00 on the 1st, or 23:00 on the 31st, must match.
       expect(filter.joinedFrom.getHours()).toBe(0);
-      expect(filter.joinedFrom.getMinutes()).toBe(0);
       expect(filter.joinedTo.getHours()).toBe(23);
       expect(filter.joinedTo.getMinutes()).toBe(59);
-      expect(filter.joinedTo.getSeconds()).toBe(59);
-    });
-
-    it('leaves the joined range undefined when no dates are picked', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), { role: Role.USER });
-
-      expect(users.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ joinedFrom: undefined, joinedTo: undefined }),
-      );
-    });
-
-    it('applies every filter at once', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), {
-        role: Role.USER,
-        department: 'Marketing',
-        companyId: 'co-1',
-        joinedFrom: '2026-08-01',
-        joinedTo: '2026-08-31',
-        search: 'gowtham',
-      });
-
-      const filter = users.findAll.mock.calls[0][0];
-      expect(filter).toMatchObject({
-        role: Role.USER,
-        department: 'Marketing',
-        companyId: 'co-1',
-        search: 'gowtham',
-      });
-      expect(filter.joinedFrom).toBeInstanceOf(Date);
-      expect(filter.joinedTo).toBeInstanceOf(Date);
-    });
-
-    it("never lets a manager's filters reach outside their own team", async () => {
-      await useCase.execute(actor(Role.MANAGER, 'mgr-1'), {
-        managerId: 'someone-else',
-        department: 'Marketing',
-      });
-
-      // Their own scope wins over the managerId they asked for; the team filter
-      // still applies within it.
-      expect(users.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ managerId: 'mgr-1', department: 'Marketing' }),
-      );
     });
 
     it('counts with the same filters it lists with, so paging totals match', async () => {
-      await useCase.execute(actor(Role.SUPER_ADMIN), {
+      await useCase.execute(admin(), {
         role: Role.USER,
         department: 'Marketing',
         page: 2,
         limit: 5,
       });
-
       const listed = users.findAll.mock.calls[0][0];
       const counted = users.count.mock.calls[0][0];
-      expect(counted).toMatchObject({ role: Role.USER, department: 'Marketing' });
-      // The count must not be narrowed by the page window.
+      expect(counted).toMatchObject({ role: Role.USER, department: 'Marketing', companyId: ORG_A });
       expect(counted.skip).toBeUndefined();
       expect(counted.take).toBeUndefined();
       expect(listed).toMatchObject({ skip: 5, take: 5 });

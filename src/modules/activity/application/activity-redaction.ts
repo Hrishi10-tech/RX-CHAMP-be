@@ -3,6 +3,7 @@ import {
   ActivityAck,
   CurrentActivityView,
   DailyActivityView,
+  LiveActivityUpdate,
   MyActivityUpdate,
 } from './activity.types';
 
@@ -12,7 +13,7 @@ import {
  * emptied. Managers and Super Admins see theirs. An unknown role counts as staff.
  */
 export function seesOwnActivity(role: string | null | undefined): boolean {
-  return role === Role.MANAGER || role === Role.SUPER_ADMIN;
+  return role === Role.MANAGER || role === Role.SUPER_ADMIN || role === Role.ADMIN;
 }
 
 /** The day view with active/idle zeroed and no hourly, apps or websites. */
@@ -46,6 +47,49 @@ export function redactMyUpdate(update: MyActivityUpdate): MyActivityUpdate {
     clockedOut: false,
     topApps: [],
   };
+}
+
+// ---- 4.0 manager grants (docs/4.0/SPEC.md 1.2): apps, window titles and sites are
+// the timeline; keyboard and mouse active and idle time, hourly activity and quiet
+// hours are activity. Each view keeps its shape with the other part emptied.
+
+/** A day view without the timeline part: no apps or websites. */
+export function withoutTimeline(daily: DailyActivityView): DailyActivityView {
+  return { ...daily, topApps: [], topWebsites: [] };
+}
+
+/** A day view without the activity part: no active or idle time, no hourly split. */
+export function withoutActivity(daily: DailyActivityView): DailyActivityView {
+  return {
+    ...daily,
+    activeSec: 0,
+    idleSec: 0,
+    extraSec: 0,
+    remainingSec: daily.workingBasisSec,
+    clockedOut: false,
+    hourly: [],
+  };
+}
+
+/** A day view as a reader with these grants may see it. */
+export function dailyFor(
+  daily: DailyActivityView,
+  grants: { timeline: boolean; activity: boolean },
+): DailyActivityView {
+  let out = daily;
+  if (!grants.timeline) out = withoutTimeline(out);
+  if (!grants.activity) out = withoutActivity(out);
+  return out;
+}
+
+/** The live board push (`activity:update`) as a reader with one of the two grants sees it. */
+export function liveUpdateFor(
+  update: LiveActivityUpdate,
+  view: 'timeline' | 'activity',
+): LiveActivityUpdate {
+  return view === 'timeline'
+    ? { ...update, activeSec: 0, idleSec: 0 }
+    : { ...update, app: null, title: null, url: null, topApps: [] };
 }
 
 /** The agent's report ack without the active time (dayEnded and the capture switches stay). */

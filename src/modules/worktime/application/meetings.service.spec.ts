@@ -21,6 +21,7 @@ const people: Record<string, ShiftPerson> = {
     department: 'Coding',
     designation: null,
     companyId: 'co-1',
+    departmentId: 'dept-coding',
     managerId: 'mgr',
     active: true,
   },
@@ -33,6 +34,7 @@ const people: Record<string, ShiftPerson> = {
     department: 'Coding',
     designation: null,
     companyId: 'co-1',
+    departmentId: 'dept-coding',
     managerId: 'sa',
     active: true,
   },
@@ -45,6 +47,20 @@ const people: Record<string, ShiftPerson> = {
     department: null,
     designation: null,
     companyId: 'co-1',
+    departmentId: null,
+    managerId: null,
+    active: true,
+  },
+  admin: {
+    id: 'admin',
+    firstName: 'Ada',
+    lastName: 'Min',
+    email: 'ad@x.test',
+    role: 'ADMIN',
+    department: null,
+    designation: null,
+    companyId: 'co-1',
+    departmentId: null,
     managerId: null,
     active: true,
   },
@@ -75,7 +91,7 @@ function meeting(over: Partial<MeetingRecordRow> = {}): MeetingRecordRow {
     presenceSessionId: 'ps1',
     approvalStatus: 'PENDING',
     approverRole: 'MANAGER',
-    approverId: 'mgr',
+    approverId: null,
     decidedById: null,
     decidedAt: null,
     decisionNote: null,
@@ -143,7 +159,7 @@ function setup() {
 }
 
 describe('MeetingsService.start', () => {
-  it('opens a live meeting routed to the manager, with clean participants', async () => {
+  it("opens a live meeting routed to the department's managers, with clean participants", async () => {
     const { svc, repo, notices } = setup();
     const res = await svc.start(
       me('staff', Role.USER),
@@ -161,7 +177,9 @@ describe('MeetingsService.start', () => {
       agenda: 'Sprint review',
       participants: [{ id: 'mgr', name: 'Maya' }, { name: 'Ravi' }],
       approvalStatus: 'PENDING',
-      routing: { approverRole: 'MANAGER', approverId: 'mgr' },
+      // 4.0: routed by department; no approver id is written.
+      routing: { approverRole: 'MANAGER', approverId: null },
+      momSender: null,
     });
     expect(repo.startLive.mock.calls[0][1]).toBe('AGENT_31');
     expect(res.presence).toMatchObject({
@@ -188,7 +206,7 @@ describe('MeetingsService.start', () => {
     expect((repo.startLive.mock.calls[0] as unknown[])[3]).toBe('2026-10-13');
   });
 
-  it("a Super Admin's meeting needs no approval", async () => {
+  it("a Super Admin's or an Admin's meeting needs no approval", async () => {
     const { svc, repo } = setup();
     await svc.start(
       me('sa', Role.SUPER_ADMIN),
@@ -196,10 +214,74 @@ describe('MeetingsService.start', () => {
       'AGENT_31',
       NOW,
     );
+    await svc.start(
+      me('admin', Role.ADMIN),
+      { participants: [], agenda: 'Org review' },
+      'AGENT_31',
+      NOW,
+    );
+    for (const call of repo.startLive.mock.calls) {
+      expect(call[0]).toMatchObject({
+        approvalStatus: 'NOT_REQUIRED',
+        routing: { approverRole: null, approverId: null },
+      });
+    }
+  });
+
+  it("a Manager's meeting goes to the organisation Admin", async () => {
+    const { svc, repo } = setup();
+    await svc.start(
+      me('mgr', Role.MANAGER),
+      { participants: [], agenda: 'Team sync' },
+      'AGENT_31',
+      NOW,
+    );
     expect(repo.startLive.mock.calls[0][0]).toMatchObject({
-      approvalStatus: 'NOT_REQUIRED',
-      routing: { approverRole: null, approverId: null },
+      approvalStatus: 'PENDING',
+      routing: { approverRole: 'ADMIN', approverId: null },
     });
+  });
+
+  it('a 4.0 agent must say who mails the minutes (2 to 80 characters); a 3.x agent may leave it out', async () => {
+    const { svc, repo } = setup();
+    for (const momSender of [undefined, '', '  ', 'A', 'x'.repeat(81)]) {
+      await expect(
+        svc.start(
+          me('staff', Role.USER),
+          { participants: [], agenda: 'Sync', momSender },
+          'AGENT_31',
+          NOW,
+          { agent40: true },
+        ),
+      ).rejects.toMatchObject({
+        status: 422,
+        code: 'MOM_SENDER_REQUIRED',
+        details: { field: 'momSender' },
+      });
+    }
+    expect(repo.startLive).not.toHaveBeenCalled();
+
+    const res = await svc.start(
+      me('staff', Role.USER),
+      { participants: [], agenda: 'Sync', momSender: '  Maya   Reddy ' },
+      'AGENT_31',
+      NOW,
+      { agent40: true },
+    );
+    expect(repo.startLive.mock.calls[0][0]).toMatchObject({ momSender: 'Maya Reddy' });
+    expect(res.meeting).toHaveProperty('momSender');
+
+    // 3.x: optional, but a given one is still checked.
+    await svc.start(me('staff', Role.USER), { participants: [], agenda: 'Sync' }, 'AGENT_31', NOW);
+    expect(repo.startLive.mock.calls[1][0]).toMatchObject({ momSender: null });
+    await expect(
+      svc.start(
+        me('staff', Role.USER),
+        { participants: [], agenda: 'Sync', momSender: 'A' },
+        'AGENT_31',
+        NOW,
+      ),
+    ).rejects.toMatchObject({ code: 'MOM_SENDER_REQUIRED' });
   });
 
   it('refuses a blank or long agenda before touching the day', async () => {
@@ -253,6 +335,8 @@ describe('MeetingsService.end', () => {
       fromUserId: 'staff',
     });
     expect(notices()[0].title).toContain('Asha Rao');
+    // 12-hour times in the notice (10:00 to 10:45 in India).
+    expect(notices()[0].body).toBe('45 min, 10:00 AM to 10:45 AM. Review it in Approvals.');
   });
 
   it('a meeting under a minute is discarded, and every repeat says so', async () => {
@@ -278,15 +362,14 @@ describe('MeetingsService.end', () => {
     expect(events.publish).not.toHaveBeenCalled();
   });
 
-  it("404 for an unknown meeting, 403 for someone else's", async () => {
+  it("404 for an unknown meeting and for someone else's (existence never leaks)", async () => {
     const { svc, repo } = setup();
     repo.findById.mockResolvedValueOnce(null);
-    await expect(svc.end(me('staff', Role.USER), 'nope', NOW)).rejects.toMatchObject({
-      status: 404,
-    });
-    await expect(svc.end(me('mgr', Role.MANAGER), 'm1', NOW)).rejects.toMatchObject({
-      status: 403,
-    });
+    const unknown = await svc.end(me('staff', Role.USER), 'nope', NOW).catch((e) => e);
+    const theirs = await svc.end(me('mgr', Role.MANAGER), 'm1', NOW).catch((e) => e);
+    expect(unknown).toMatchObject({ status: 404 });
+    expect(theirs).toMatchObject({ status: 404, code: unknown.code, message: unknown.message });
+    expect(repo.endLive).not.toHaveBeenCalled();
   });
 });
 
@@ -307,9 +390,44 @@ describe('MeetingsService.logPast', () => {
     expect(repo.createPast.mock.calls[0][0]).toMatchObject({
       startedAt: ist('09:45'),
       durationSec: 1800,
+      approvalStatus: 'PENDING',
+      routing: { approverRole: 'MANAGER', approverId: null },
     });
     expect(res.meeting.mode).toBe('PAST');
     expect(notices()[0].type).toBe('MEETING_REQUESTED');
+  });
+
+  it('a 4.0 agent logging an earlier meeting must name the minutes sender too', async () => {
+    const { svc, repo } = setup();
+    const dto = {
+      participants: [],
+      agenda: 'Client call',
+      startedAt: ist('09:45').toISOString(),
+      durationMin: 30,
+    };
+    await expect(
+      svc.logPast(me('staff', Role.USER), dto, 'AGENT_31', NOW, { agent40: true }),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: 'MOM_SENDER_REQUIRED',
+    });
+    await svc.logPast(me('staff', Role.USER), { ...dto, momSender: 'Asha' }, 'AGENT_31', NOW, {
+      agent40: true,
+    });
+    expect(repo.createPast.mock.calls[0][0]).toMatchObject({ momSender: 'Asha' });
+  });
+
+  it('refuses a startedAt that is not a time', async () => {
+    const { svc, repo } = setup();
+    await expect(
+      svc.logPast(
+        me('staff', Role.USER),
+        { participants: [], agenda: 'Call', startedAt: 'soon', durationMin: 30 },
+        'AGENT_31',
+        NOW,
+      ),
+    ).rejects.toMatchObject({ status: 400, details: { field: 'startedAt' } });
+    expect(repo.createPast).not.toHaveBeenCalled();
   });
 
   it('answers a conflict with 422 and what it collides with', async () => {

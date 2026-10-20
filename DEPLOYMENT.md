@@ -1,5 +1,9 @@
 # Deployment — AWS Lightsail + PM2 + nginx + Let's Encrypt
 
+> **Upgrading production to 4.0?** Follow `docs/4.0/DEPLOY.md` (snapshot, the three
+> 4.0 migrations, organisation setup, agent publish). This file describes setting up
+> a new server from scratch; its server, nginx and PM2 steps are unchanged in 4.0.
+
 Production runbook for the Time Champ backend (NestJS + Prisma, Socket.IO, S3).
 Target: a single Lightsail instance in **Mumbai (ap-south-1)** talking to the
 existing **RDS Aurora PostgreSQL** instance.

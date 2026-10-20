@@ -32,14 +32,22 @@ export class EnrollAgentUseCase {
 
   async execute(enrollmentToken: string, meta: RefreshTokenMeta): Promise<LoginResult> {
     let userId: string;
+    let enrollVersion: number;
     try {
-      userId = await this.tokens.verifyEnrollmentToken(enrollmentToken);
+      ({ userId, enrollVersion } = await this.tokens.verifyEnrollmentToken(enrollmentToken));
     } catch {
       throw new InvalidCredentialsError();
     }
 
     const user = await this.users.findById(userId);
     if (!user) throw new InvalidCredentialsError();
+    // 4.0: a key sign-out or a "sign out everywhere" password reset moves the
+    // version on, so installers and setup codes issued before it stop working.
+    if (enrollVersion !== user.enrollVersion) {
+      throw new InvalidCredentialsError(
+        'This installer or setup code is no longer valid. Ask your admin for a new one.',
+      );
+    }
 
     // The enrollment token already proved who this is, so naming the real reason
     // leaks nothing — and it stops the agent retrying against a blocked account.
@@ -56,10 +64,11 @@ export class EnrollAgentUseCase {
     });
     const { token: refreshToken } = await this.refreshTokens.issue(user.id, meta);
 
-    // First activation only: tell the manager their report is now set up. The
-    // repository stamp is atomic, so this fires exactly once per user.
+    // First activation only: tell whoever oversees them (4.0: the department's
+    // managers or the organisation's Admin, resolved by the notifications module).
+    // The repository stamp is atomic, so this fires exactly once per user.
     const firstActivation = await this.users.markAgentActivatedIfFirst(user.id);
-    if (firstActivation && user.managerId) {
+    if (firstActivation) {
       await this.events.publish(
         AgentActivatedEvent.eventName,
         new AgentActivatedEvent(user.managerId, user.id, user.name, new Date()),

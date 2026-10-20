@@ -7,12 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Three tiers: Super Admin -> Manager -> Staff (USER). The former ADMIN role was
-// folded into MANAGER by migration 20261013_shift_breaks_and_roles.
+// 4.0: Super Admin (platform) -> Admin (one organisation) -> Manager (one or more
+// departments) -> Staff (USER, one department). ADMIN was folded into MANAGER by
+// 20261013 and returns in 4.0 with the organisation-admin meaning.
 enum RoleName {
   SUPER_ADMIN
   MANAGER
   USER
+  ADMIN
 }
 
 enum UserStatus {
@@ -41,11 +43,17 @@ model Role {
   @@map("roles")
 }
 
+/// An organisation (4.0). The table keeps its 2.x name.
 model Company {
-  id     String  @id @default(uuid()) @db.Uuid
-  name   String
-  users  User[]
-  shifts Shift[]
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  users        User[]
+  shifts       Shift[]
+  departments  Department[]
+  calendarDays CalendarDay[]
+  signOutKeys  SignOutKey[]
+  monthLocks   MonthLock[]
+  reportRuns   ReportRun[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -101,6 +109,34 @@ enum BreakKind {
   MORNING
   LUNCH
   EVENING
+  /// 4.0: a quick break, any time of the shift (5, 10 or 15 minutes planned).
+  QUICK
+}
+
+/// 4.0: a break can be paused and resumed inside its window.
+enum BreakState {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+/// 4.0 away (input) tracking: what became of a stretch with no keyboard or mouse input.
+///   UNEXPLAINED   no reason given (End Day with the pop-up open, or not answered)
+///   PENDING       a reason that needs approval to count as focus time
+///   APPROVED / REJECTED  decided
+///   NOT_REQUIRED  kept for history only
+enum AwayStatus {
+  UNEXPLAINED
+  PENDING
+  APPROVED
+  REJECTED
+  NOT_REQUIRED
+}
+
+enum SignOutScope {
+  USERS
+  DEPARTMENTS
+  ORG
 }
 
 // How a break's start compares with its schedule.
@@ -205,6 +241,8 @@ model MeetingRecord {
   agenda            String
   /// [{ "id"?: uuid, "name": string }]
   participants      Json                @default("[]")
+  /// 4.0: who will mail the minutes of meeting (required from 4.0 agents).
+  momSender         String?             @map("mom_sender")
   startedAt         DateTime            @map("started_at")
   endedAt           DateTime?           @map("ended_at")
   durationSec       Int?                @map("duration_sec")
@@ -243,6 +281,9 @@ model AppSetting {
 /// A monthly report built at 00:30 on the 1st for one owner (3.1).
 model ReportRun {
   id          String   @id @default(uuid()) @db.Uuid
+  /// 4.0: the organisation the run covers.
+  companyId   String   @map("company_id") @db.Uuid
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   month       String
   /// TEAM | ALL
   scope       String
@@ -250,18 +291,22 @@ model ReportRun {
   generatedAt DateTime @default(now()) @map("generated_at")
   summary     Json
 
-  @@unique([month, scope, ownerId])
+  @@unique([companyId, month, scope, ownerId])
   @@index([ownerId, month])
   @@map("report_runs")
 }
 
 /// A month closed for payroll (3.1): reports read the snapshot, decisions are refused.
+/// 4.0: payroll month locks are per organisation.
 model MonthLock {
-  month      String   @id
+  companyId  String   @map("company_id") @db.Uuid
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  month      String
   lockedById String   @map("locked_by_id") @db.Uuid
   lockedAt   DateTime @default(now()) @map("locked_at")
   snapshot   Json
 
+  @@id([companyId, month])
   @@map("month_locks")
 }
 
@@ -345,6 +390,15 @@ model BreakRecord {
   dueAt             DateTime?           @map("due_at")
   escalatedAt       DateTime?           @map("escalated_at")
   remindedAt        DateTime?           @map("reminded_at")
+  /// 4.0: ACTIVE / PAUSED / ENDED. Pre-4.0 rows are ENDED or have an open presence session.
+  state             BreakState          @default(ENDED)
+  /// 4.0 quick breaks: the planned length in minutes (5, 10 or 15 from the agent).
+  plannedMin        Int?                @map("planned_min")
+  /// 4.0: when the break was finally ended (segments may have stopped earlier).
+  endedAt           DateTime?           @map("ended_at")
+  /// 4.0: seconds taken over all segments, stored when the break ends.
+  takenSec          Int?                @map("taken_sec")
+  segments          BreakSegment[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -393,6 +447,21 @@ model User {
   /// still request a shot by hand. Defaults on, so existing users are unaffected.
   screenshotsEnabled Boolean @default(true) @map("screenshots_enabled")
 
+  /// 4.0: the person's department (staff: required; managers: their own, optional).
+  departmentId       String?             @map("department_id") @db.Uuid
+  departmentRef      Department?         @relation("UserDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  /// 4.0 manager view grants, set by the organisation Admin.
+  grantScreenshots   Boolean             @default(false) @map("grant_screenshots")
+  grantTimeline      Boolean             @default(false) @map("grant_timeline")
+  grantActivity      Boolean             @default(false) @map("grant_activity")
+  /// 4.0 away tracking override: null = follow the department.
+  idleEnabled        Boolean?            @map("idle_enabled")
+  idleMinutes        Int?                @map("idle_minutes")
+  /// 4.0: bumped by a key sign-out or a credential reset; installer tokens carry it.
+  enrollVersion      Int                 @default(1) @map("enroll_version")
+  managedDepartments ManagerDepartment[]
+  awayEvents         AwayEvent[]
+
   refreshTokens    RefreshToken[]
   devices          Device[]
   dailyReports     DailyReport[]
@@ -414,6 +483,8 @@ model User {
   @@index([managerId])
   @@index([department])
   @@index([status])
+  @@index([companyId])
+  @@index([departmentId])
   @@map("users")
 }
 
@@ -545,6 +616,7 @@ model PresenceSession {
 
   breakRecord   BreakRecord?
   meetingRecord MeetingRecord?
+  breakSegment  BreakSegment?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -720,4 +792,141 @@ model AuditLog {
   @@index([actorId])
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// 4.0: organisations, departments, away tracking, calendar, sign-out keys, offline
+// ---------------------------------------------------------------------------
+
+/// A department of an organisation. Staff belong to one; managers to one or more.
+model Department {
+  id        String              @id @default(uuid()) @db.Uuid
+  companyId String              @map("company_id") @db.Uuid
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  /// Key from the themed icon set (docs/4.0/SPEC.md 7.6).
+  icon      String              @default("briefcase")
+  users     User[]              @relation("UserDepartment")
+  managers  ManagerDepartment[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([companyId])
+  @@map("departments")
+}
+
+model ManagerDepartment {
+  managerId    String     @map("manager_id") @db.Uuid
+  manager      User       @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  departmentId String     @map("department_id") @db.Uuid
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@id([managerId, departmentId])
+  @@index([departmentId])
+  @@map("manager_departments")
+}
+
+/// One stretch of a break (4.0 pause and resume). Each has its own presence session.
+model BreakSegment {
+  id                String           @id @default(uuid()) @db.Uuid
+  breakRecordId     String           @map("break_record_id") @db.Uuid
+  breakRecord       BreakRecord      @relation(fields: [breakRecordId], references: [id], onDelete: Cascade)
+  presenceSessionId String?          @unique @map("presence_session_id") @db.Uuid
+  presenceSession   PresenceSession? @relation(fields: [presenceSessionId], references: [id], onDelete: SetNull)
+  startedAt         DateTime         @map("started_at")
+  endedAt           DateTime?        @map("ended_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  @@index([breakRecordId])
+  @@map("break_segments")
+}
+
+/// A stretch with no input, explained (or not) through the agent's away pop-up.
+model AwayEvent {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId    String?    @map("company_id") @db.Uuid
+  /// Shift-day (YYYY-MM-DD) the stretch belongs to.
+  date         String
+  startedAt    DateTime   @map("started_at")
+  endedAt      DateTime?  @map("ended_at")
+  seconds      Int?
+  reasonKey    String?    @map("reason_key")
+  /// THINKING | MEETING | HARDWARE | OTHER | CUSTOM
+  reasonKind   String?    @map("reason_kind")
+  reasonLabel  String?    @map("reason_label")
+  comment      String?
+  /// [{ "id"?: uuid, "name": string }]
+  participants Json       @default("[]")
+  momSender    String?    @map("mom_sender")
+  status       AwayStatus
+  approverRole RoleName?  @map("approver_role")
+  decidedById  String?    @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime?  @map("decided_at")
+  decisionNote String?    @map("decision_note")
+  dueAt        DateTime?  @map("due_at")
+  escalatedAt  DateTime?  @map("escalated_at")
+  remindedAt   DateTime?  @map("reminded_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@index([companyId, status, date])
+  @@index([status, dueAt])
+  @@map("away_events")
+}
+
+/// A date whose working status differs from the organisation's week pattern (holidays,
+/// extra working days).
+model CalendarDay {
+  companyId   String   @map("company_id") @db.Uuid
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  date        String
+  isWorking   Boolean  @map("is_working")
+  label       String?
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@id([companyId, date])
+  @@map("calendar_days")
+}
+
+/// A 24-hour key an Admin issues so agents in its scope can sign out.
+model SignOutKey {
+  id            String       @id @default(uuid()) @db.Uuid
+  companyId     String       @map("company_id") @db.Uuid
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  phraseHash    String       @map("phrase_hash")
+  salt          String
+  scope         SignOutScope
+  userIds       String[]     @default([]) @map("user_ids")
+  departmentIds String[]     @default([]) @map("department_ids")
+  createdById   String       @map("created_by_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+  expiresAt     DateTime     @map("expires_at")
+  revokedAt     DateTime?    @map("revoked_at")
+  uses          Int          @default(0)
+
+  @@index([companyId, expiresAt])
+  @@map("sign_out_keys")
+}
+
+/// Offline replay idempotency: one row per agent event the server has applied.
+model AgentEvent {
+  userId        String   @map("user_id") @db.Uuid
+  clientEventId String   @map("client_event_id") @db.Uuid
+  kind          String
+  eventAt       DateTime @map("event_at")
+  receivedAt    DateTime @default(now()) @map("received_at")
+  status        Int
+  body          Json
+
+  @@id([userId, clientEventId])
+  @@index([receivedAt])
+  @@index([userId, eventAt])
+  @@map("agent_events")
 }

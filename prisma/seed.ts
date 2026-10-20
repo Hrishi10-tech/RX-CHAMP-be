@@ -9,6 +9,11 @@
 //   manager@timechamp.test / manager123  Manager
 //   user@timechamp.test    / user123     Staff (reports to the manager)
 //
+// 4.0: the demo organisation has a department (Engineering) and its own Admin:
+//   orgadmin@timechamp.test / orgadmin123  Admin of the demo organisation
+// The Super Admin belongs to the platform (no organisation) and acts inside one
+// by choosing it (X-Org-Id).
+//
 // It REFUSES to create those accounts when NODE_ENV=production unless
 // SEED_DEMO_DATA=true is also set, because well-known passwords must never
 // reach a live system.
@@ -33,6 +38,7 @@ const PERMISSIONS = [
 
 const ROLE_PERMISSIONS: Record<RoleName, string[]> = {
   SUPER_ADMIN: PERMISSIONS,
+  ADMIN: PERMISSIONS,
   MANAGER: PERMISSIONS.filter((p) => p !== 'MANAGE_COMPANY' && p !== 'MANAGE_SHIFT'),
   USER: [],
 };
@@ -106,7 +112,12 @@ async function main() {
   // A database that already has real people is never given demo accounts with
   // published passwords, whatever NODE_ENV says (a server .env often still reads
   // "development"). SEED_DEMO_DATA=true overrides, for a deliberate demo.
-  const demoEmails = ['admin@timechamp.test', 'manager@timechamp.test', 'user@timechamp.test'];
+  const demoEmails = [
+    'admin@timechamp.test',
+    'orgadmin@timechamp.test',
+    'manager@timechamp.test',
+    'user@timechamp.test',
+  ];
   const realUsers = await prisma.user.count({ where: { email: { notIn: demoEmails } } });
   if (realUsers > 0 && process.env.SEED_DEMO_DATA !== 'true') {
     console.log(`Roles ensured. ${realUsers} real account(s) found, so demo data was skipped.`);
@@ -143,6 +154,17 @@ async function main() {
   const roleId = async (name: RoleName) =>
     (await prisma.role.findUniqueOrThrow({ where: { name } })).id;
 
+  const engineering = await prisma.department.upsert({
+    where: { id: '00000000-0000-0000-0000-0000000000e1' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-0000000000e1',
+      companyId: company.id,
+      name: 'Engineering',
+      icon: 'code',
+    },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: 'admin@timechamp.test' },
     update: {},
@@ -152,6 +174,20 @@ async function main() {
       firstName: 'Praveen',
       lastName: '(Super Admin)',
       roleId: await roleId('SUPER_ADMIN'),
+      shiftStart: '09:30',
+      shiftEnd: '18:30',
+    },
+  });
+
+  const orgAdmin = await prisma.user.upsert({
+    where: { email: 'orgadmin@timechamp.test' },
+    update: {},
+    create: {
+      email: 'orgadmin@timechamp.test',
+      passwordHash: await bcrypt.hash('orgadmin123', saltRounds),
+      firstName: 'Anita',
+      lastName: 'Menon',
+      roleId: await roleId('ADMIN'),
       companyId: company.id,
       shiftStart: '09:30',
       shiftEnd: '18:30',
@@ -168,7 +204,8 @@ async function main() {
       lastName: 'Reddy',
       roleId: await roleId('MANAGER'),
       department: 'Engineering',
-      managerId: admin.id,
+      departmentId: engineering.id,
+      managerId: orgAdmin.id,
       companyId: company.id,
       shiftStart: '09:30',
       shiftEnd: '18:30',
@@ -185,6 +222,7 @@ async function main() {
       lastName: 'Kumar',
       roleId: await roleId('USER'),
       department: 'Engineering',
+      departmentId: engineering.id,
       managerId: manager.id,
       companyId: company.id,
       shiftStart: '09:30',
@@ -192,8 +230,15 @@ async function main() {
     },
   });
 
+  await prisma.managerDepartment.upsert({
+    where: { managerId_departmentId: { managerId: manager.id, departmentId: engineering.id } },
+    update: {},
+    create: { managerId: manager.id, departmentId: engineering.id },
+  });
+
   console.log('Seed complete:', {
     superAdmin: admin.email,
+    orgAdmin: orgAdmin.email,
     manager: manager.email,
     defaultShift: general.name,
   });

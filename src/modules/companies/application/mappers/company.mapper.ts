@@ -1,19 +1,7 @@
-import {
-  CompanyRecord,
-  CompanyWithStats,
-  ManagerUserRecord,
-} from '../../domain/repositories/company.repository';
-import { PublicCompany, PublicCompanyWithStats, PublicManagerUser } from '../company.types';
+import { CompanyWithStats } from '../../domain/repositories/company.repository';
+import { PublicCompanyWithStats } from '../company.types';
 
 export class CompanyMapper {
-  static toPublic(company: CompanyRecord): PublicCompany {
-    return {
-      id: company.id,
-      name: company.name,
-      createdAt: company.createdAt.toISOString(),
-    };
-  }
-
   static toStats(company: CompanyWithStats): PublicCompanyWithStats {
     const joinedOn = company.createdAt.toISOString();
     return {
@@ -32,9 +20,5 @@ export class CompanyMapper {
         userCount: m.userCount,
       })),
     };
-  }
-
-  static toManagerUser(user: ManagerUserRecord): PublicManagerUser {
-    return { id: user.id, name: user.name, role: user.role };
   }
 }

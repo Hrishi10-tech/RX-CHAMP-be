@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConflictError } from '@shared/exceptions/app.exception';
+import { ConflictError, UnprocessableError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { PresenceBridge } from '@modules/shifts/application/presence-bridge.service';
 import { AgentGeneration } from '@modules/worktime/domain/agent-generation';
@@ -78,14 +78,33 @@ export class EndDayFlow {
     now: Date,
   ): Promise<EndDayResponse> {
     await this.sessions.autoCloseIfStale(me.id, now);
-    if (dto.comments?.length) await this.skips.saveEndDayComments(me, dto.comments, now);
-    // An already ended day answers as it is, gates or not (idempotent). A Manager's
-    // overdue approvals are checked before any open window is turned into a skip,
-    // so a refused End Day leaves the day as it was.
-    const gated = generation === 'AGENT_31' && !!(await this.sessions.findOpen(me.id));
-    if (gated) await this.workday.assertNoOverdueApprovals(me, now);
-    await this.skips.autoSkipFor(me.id, now, true);
-    if (gated) await this.workday.assertSkipsCommented(me, now);
+    // Everything is judged before anything is written, so a refused End Day leaves
+    // no comment, no auto-skip, no notice and no End Day mark behind (re-audit M1):
+    // the comments (on existing skips and on the auto-skips this End Day would
+    // create, by the ids they will get), then, for a 3.1+ agent with the day open,
+    // a Manager's overdue approvals and the skip-comment gate. An already ended day
+    // answers as it is, gates or not (idempotent).
+    const open = await this.sessions.findOpen(me.id);
+    if (open && open.startedAt.getTime() > now.getTime()) {
+      throw new UnprocessableError(
+        'This End Day is older than the start of the open working day.',
+        'EVENT_TIME_INVALID',
+      );
+    }
+    const planned = await this.skips.planAutoSkipsFor(me.id, now, true);
+    const comments = await this.skips.checkEndDayComments(me, dto.comments ?? [], planned);
+    const gated = generation === 'AGENT_31' && !!open;
+    if (gated) {
+      await this.workday.assertNoOverdueApprovals(me, now);
+      await this.workday.assertSkipsCommented(
+        me,
+        now,
+        await this.skips.plannedNeedingComment(planned),
+        new Set(comments.map((c) => c.id)),
+      );
+    }
+    await this.skips.createPlanned(planned, now);
+    await this.skips.writeEndDayComments(me, comments, now);
     const result = await this.sessions.endDay(me.id, generation, now);
     if (result.kind === 'NOT_STARTED') {
       throw new ConflictError(
@@ -110,6 +129,15 @@ export class EndDayFlow {
 /**
  * POST /activity/report (SPEC 3.1): capture only while a session is open. A 3.1
  * agent with no open session tracks nothing (not stored, shouldCapture false).
+ *
+ * 4.0 backlog: a sample of time the open session does not cover (none is open, or
+ * it was taken before the open one started: the agent drains today's Start Day
+ * before yesterday's samples) is history. It is stored as its day's evidence when
+ * it falls inside one of the person's closed sessions, or, from a 4.x agent, when
+ * it is a later input of a day the server auto-closed before the backlog arrived
+ * (the close moves to it, within the day's latest end, and the session becomes a
+ * REPLAY one). Anything else of that kind is not stored.
+ *
  * An older agent's first active sample of today opens the session implicitly
  * (source LEGACY); its capture keeps the 3.0 rule (on until the day is ended),
  * because those agents treat shouldCapture=false as End Day.
@@ -126,8 +154,9 @@ export class ReportActivityFlow {
     body: ReportActivityDto,
     generation: AgentGeneration,
     now: Date,
+    offlineAgent = false,
   ): Promise<ActivityAck> {
-    const ack = await this.ack(me, body, generation, now);
+    const ack = await this.ack(me, body, generation, now, offlineAgent);
     // Staff never see activity (SPEC 1.8): the ack keeps its shape, without active time.
     return seesOwnActivity(me.role) ? ack : redactAck(ack);
   }
@@ -137,14 +166,23 @@ export class ReportActivityFlow {
     body: ReportActivityDto,
     generation: AgentGeneration,
     now: Date,
+    offlineAgent: boolean,
   ): Promise<ActivityAck> {
     await this.sessions.autoCloseIfStale(me.id, now);
     const open = await this.sessions.findOpen(me.id);
-    if (!open) {
-      if (generation === 'AGENT_31') return this.report.ackWithoutStoring(me.id, now);
-      const idle =
-        body.idle === true || body.locked === true || body.app?.trim() === LOCK_SCREEN_APP;
-      if (!idle) await this.sessions.openImplicitForSample(me.id, sampleInstant(body.at, now), now);
+    const idle = body.idle === true || body.locked === true || body.app?.trim() === LOCK_SCREEN_APP;
+    if (generation === 'AGENT_31') {
+      const at = sampleInstant(body.at, now);
+      if (!open || at.getTime() < open.startedAt.getTime()) {
+        const late =
+          at.getTime() < now.getTime() &&
+          ((await this.sessions.workedAt(me.id, at)) ||
+            (offlineAgent && !idle && (await this.sessions.extendAutoClosed(me.id, at))));
+        if (late) return this.report.execute(me.id, body, { late: true });
+        if (!open) return this.report.ackWithoutStoring(me.id, now);
+      }
+    } else if (!open && !idle) {
+      await this.sessions.openImplicitForSample(me.id, sampleInstant(body.at, now), now);
     }
     return this.report.execute(me.id, body);
   }

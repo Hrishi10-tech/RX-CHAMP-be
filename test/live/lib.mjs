@@ -13,10 +13,15 @@ if (PRODUCTION_HOSTS.includes(host)) {
 let failures = 0;
 let passes = 0;
 
+/** The seeded organisation (4.0 seed): a Super Admin sends it as X-Org-Id. */
+export const SEED_ORG = process.env.SEED_ORG ?? '00000000-0000-0000-0000-0000000000c1';
+
 /** The User-Agent a 3.1 desktop agent sends (SPEC 4). */
 export const AGENT_31_UA = 'RXVisionAgent/3.1.0 (Windows)';
 /** The User-Agent of the 3.0 agent: a legacy caller. */
 export const AGENT_30_UA = 'RXVisionAgent/3.0.0 (Windows)';
+/** The User-Agent of the 4.0 agent. */
+export const AGENT_40_UA = 'RXVisionAgent/4.0.0 (Windows)';
 
 export class Client {
   /** `ua`: the User-Agent to send (none: Node's default, which the API treats as legacy). */
@@ -24,12 +29,14 @@ export class Client {
     this.name = name;
     this.ua = ua;
     this.cookies = new Map();
+    /** Extra headers sent on every request (4.0: X-Org-Id for a Super Admin). */
+    this.headers = {};
   }
   cookieHeader() {
     return [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
   }
-  async req(method, path, body) {
-    const headers = { 'content-type': 'application/json', cookie: this.cookieHeader() };
+  async req(method, path, body, extra = {}) {
+    const headers = { 'content-type': 'application/json', cookie: this.cookieHeader(), ...this.headers, ...extra };
     if (this.ua) headers['user-agent'] = this.ua;
     const res = await fetch(BASE + path, {
       method,
@@ -61,8 +68,8 @@ export class Client {
   get(p) {
     return this.req('GET', p);
   }
-  post(p, b = {}) {
-    return this.req('POST', p, b);
+  post(p, b = {}, extra = {}) {
+    return this.req('POST', p, b, extra);
   }
   put(p, b = {}) {
     return this.req('PUT', p, b);

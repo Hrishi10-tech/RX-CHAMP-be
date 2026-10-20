@@ -36,5 +36,7 @@ import { PrismaRefreshTokenRepository } from './infrastructure/prisma-refresh-to
     { provide: AUTH_USER_READER, useClass: PrismaAuthUserReader },
     { provide: REFRESH_TOKEN_REPOSITORY, useClass: PrismaRefreshTokenRepository },
   ],
+  // 4.0: key sign-out (signout-keys module) ends the agent's sessions.
+  exports: [REFRESH_TOKEN_REPOSITORY],
 })
 export class AuthModule {}

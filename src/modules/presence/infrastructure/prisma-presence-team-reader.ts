@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { peopleWhere } from '@shared/tenancy';
 import {
   PresenceContext,
   PresenceTeamReader,
@@ -10,9 +12,9 @@ import {
 export class PrismaPresenceTeamReader implements PresenceTeamReader {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findReports(managerId: string): Promise<TeamMember[]> {
+  async findReports(me: AuthenticatedUser): Promise<TeamMember[]> {
     return this.prisma.user.findMany({
-      where: { managerId, status: 'ACTIVE', deletedAt: null },
+      where: { AND: [peopleWhere(me), { status: 'ACTIVE' }] },
       select: { id: true, firstName: true, lastName: true, email: true, department: true },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     });

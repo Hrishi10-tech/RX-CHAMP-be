@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ConflictError,
-  ForbiddenError,
   NotFoundError,
   UnprocessableError,
   ValidationError,
@@ -9,7 +8,7 @@ import {
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { appTimezone, hmInZone } from '@shared/utils/timezone';
+import { appTimezone, time12InZone } from '@shared/utils/timezone';
 import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.policy';
 import { BreakEvents, personName } from '@modules/shifts/application/break-events.service';
 import { PresenceBridge } from '@modules/shifts/application/presence-bridge.service';
@@ -47,6 +46,7 @@ export function meetingView(
     mode: m.mode,
     agenda: m.agenda,
     participants: m.participants.map((p) => (p.id ? { id: p.id, name: p.name } : { name: p.name })),
+    momSender: m.momSender ?? null,
     startedAt: m.startedAt.toISOString(),
     endedAt: m.endedAt?.toISOString() ?? null,
     inProgress,
@@ -87,15 +87,24 @@ export class MeetingsService {
   }
 
   private async route(person: ShiftPerson) {
-    const manager = person.managerId ? await this.people.findById(person.managerId) : null;
-    const r = BreakApprovalPolicy.route(person, manager);
+    const r = BreakApprovalPolicy.route(person);
     return {
       approvalStatus: r.status === 'PENDING' ? ('PENDING' as const) : ('NOT_REQUIRED' as const),
       routing: { approverRole: r.approverRole, approverId: r.approverId },
     };
   }
 
-  private async details(me: AuthenticatedUser, dto: StartMeetingDto) {
+  private async details(me: AuthenticatedUser, dto: StartMeetingDto, requireMom = false) {
+    const momSender = cleanText(dto.momSender ?? '') || null;
+    if (
+      (requireMom || momSender) &&
+      (!momSender || momSender.length < 2 || momSender.length > 80)
+    ) {
+      throw new UnprocessableError(
+        'Say who will mail the minutes of meeting (2 to 80 characters).',
+        'MOM_SENDER_REQUIRED',
+      ).withDetails({ field: 'momSender' });
+    }
     const agenda = cleanText(dto.agenda);
     if (!agenda || agenda.length > AGENDA_MAX) {
       throw new ValidationError(
@@ -107,7 +116,7 @@ export class MeetingsService {
     const known = ids.length
       ? await this.reader.knownPeopleIds(me.companyId, ids)
       : new Set<string>();
-    return { agenda, participants: cleanParticipants(dto.participants ?? [], known) };
+    return { agenda, participants: cleanParticipants(dto.participants ?? [], known), momSender };
   }
 
   async start(
@@ -115,14 +124,22 @@ export class MeetingsService {
     dto: StartMeetingDto,
     generation: AgentGeneration,
     now: Date,
+    opts: { agent40?: boolean } = {},
   ): Promise<{ meeting: MeetingRecordView; presence: CurrentPresenceLite }> {
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.person(me.id);
-    const { agenda, participants } = await this.details(me, dto);
+    const { agenda, participants, momSender } = await this.details(me, dto, !!opts.agent40);
     // The person's working day (a night shift past midnight is still the evening's).
     const today = await this.sessions.todayFor(me.id, now);
     const result = await this.meetings.startLive(
-      { userId: me.id, date: today, agenda, participants, ...(await this.route(person)) },
+      {
+        userId: me.id,
+        date: today,
+        agenda,
+        participants,
+        momSender,
+        ...(await this.route(person)),
+      },
       generation,
       now,
       today,
@@ -177,8 +194,8 @@ export class MeetingsService {
     now: Date,
   ): Promise<{ meeting: MeetingRecordView | null; discarded: boolean }> {
     const found = await this.meetings.findById(id);
-    if (!found) throw new NotFoundError('Unknown meeting');
-    if (found.userId !== me.id) throw new ForbiddenError('This meeting is not yours.');
+    // Someone else's meeting reads as unknown, so ids cannot be probed (4.0 audit L2).
+    if (!found || found.userId !== me.id) throw new NotFoundError('Unknown meeting');
     const result = await this.meetings.endLive(id, me.id, now);
     if (!result) throw new NotFoundError('Unknown meeting');
     if (result.kind === 'UNCHANGED')
@@ -194,10 +211,11 @@ export class MeetingsService {
     dto: LogPastMeetingDto,
     generation: AgentGeneration,
     now: Date,
+    opts: { agent40?: boolean } = {},
   ): Promise<{ meeting: MeetingRecordView }> {
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.person(me.id);
-    const { agenda, participants } = await this.details(me, dto);
+    const { agenda, participants, momSender } = await this.details(me, dto, !!opts.agent40);
     const startedAt = new Date(dto.startedAt);
     if (Number.isNaN(startedAt.getTime())) {
       throw new ValidationError(
@@ -215,6 +233,7 @@ export class MeetingsService {
         date: today,
         agenda,
         participants,
+        momSender,
         startedAt,
         durationSec: dto.durationMin * 60,
         ...(await this.route(person)),
@@ -295,8 +314,8 @@ export class MeetingsService {
         name: subject ? personName(subject) : 'Someone',
         agenda: m.agenda,
         minutes: wholeMinutes(m.durationSec ?? 0),
-        from: hmInZone(m.startedAt, tz),
-        to: hmInZone(m.endedAt, tz),
+        from: time12InZone(m.startedAt, tz),
+        to: time12InZone(m.endedAt, tz),
       });
       await this.events.publish(
         NoticeEvent.eventName,

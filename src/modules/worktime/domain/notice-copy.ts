@@ -1,4 +1,4 @@
-import { BREAK_LABEL, BreakKind } from '@modules/shifts/domain/shift.types';
+import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
 
 /**
  * Titles and bodies of the 3.1 notifications (SPEC 3.10). Short sentences naming
@@ -16,6 +16,8 @@ export const NOTICE = {
   APPROVALS_ESCALATED: 'APPROVALS_ESCALATED',
   MONTHLY_REPORT_READY: 'MONTHLY_REPORT_READY',
   DAY_AUTO_CLOSED: 'DAY_AUTO_CLOSED',
+  AWAY_REQUESTED: 'AWAY_REQUESTED',
+  AWAY_DECIDED: 'AWAY_DECIDED',
 } as const;
 
 export interface Copy {
@@ -51,8 +53,8 @@ export function shortDay(dateKey: string): string {
   return m >= 1 && m <= 12 ? `${d} ${SHORT[m - 1]}` : dateKey;
 }
 
-function lowerLabel(kind: BreakKind | null): string {
-  return kind ? BREAK_LABEL[kind].toLowerCase() : 'break';
+function lowerLabel(kind: RecordKind | null): string {
+  return kind ? RECORD_LABEL[kind].toLowerCase() : 'break';
 }
 
 /** "1 approval is", "3 approvals are". */
@@ -63,7 +65,7 @@ function approvalsAre(n: number): string {
 /** "Maya", "Maya and Arjun", "Maya, Arjun and 2 others". */
 export function namesList(names: string[]): string {
   const unique = [...new Set(names.filter((n) => n.trim().length))];
-  if (unique.length === 0) return 'the Super Admins';
+  if (unique.length === 0) return 'the Admin';
   if (unique.length === 1) return unique[0];
   if (unique.length === 2) return `${unique[0]} and ${unique[1]}`;
   if (unique.length === 3) return `${unique[0]}, ${unique[1]} and ${unique[2]}`;
@@ -78,7 +80,7 @@ export function asSentence(text: string): string {
 
 export function skipRequestedCopy(p: {
   name: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   reason: string | null;
 }): Copy {
   return {
@@ -91,7 +93,7 @@ export function skipRequestedCopy(p: {
 
 export function autoSkipRequestedCopy(p: {
   name: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   at: string;
 }): Copy {
   return {
@@ -102,7 +104,7 @@ export function autoSkipRequestedCopy(p: {
 
 export function skipCommentCopy(p: {
   name: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   date: string;
   comment: string;
 }): Copy {
@@ -140,21 +142,21 @@ export function meetingDecidedCopy(p: {
 export function dueSoonCopy(count: number): Copy {
   return {
     title: `${approvalsAre(count)} due within 12 hours`,
-    body: 'Decide them in Approvals before they go to the Super Admins.',
+    body: "Decide them in Approvals before they go to your organisation's Admin.",
   };
 }
 
 export function overdueCopy(count: number, slaHours: number): Copy {
   return {
     title: `${approvalsAre(count)} past ${slaHours} hours`,
-    body: 'They now show for the Super Admins too. Decide them in Approvals.',
+    body: "Your organisation's Admin has been told. Decide them in Approvals.",
   };
 }
 
 export function escalatedCopy(count: number, slaHours: number, approverNames: string[]): Copy {
   return {
     title: `${approvalsAre(count)} past ${slaHours} hours`,
-    body: `Waiting on ${namesList(approverNames)}. Any Super Admin can decide them in Approvals.`,
+    body: `Waiting on ${namesList(approverNames)}. You can decide them in Approvals.`,
   };
 }
 

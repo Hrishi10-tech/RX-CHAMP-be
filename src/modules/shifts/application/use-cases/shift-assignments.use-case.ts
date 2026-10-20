@@ -2,10 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { isAdminLike, managedDeptIds, requireOrg } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import { resolveShift } from '../../domain/shift-resolution';
 import {
+  PeopleQuery,
   SHIFT_PEOPLE_READER,
   ShiftPeopleReader,
   ShiftPerson,
@@ -35,8 +37,11 @@ function inForce(a: ShiftAssignmentRecord, dateKey: string): boolean {
 }
 
 /**
- * Who works which shift. Super Admin sets department shifts and may override
- * anyone; a Manager may override the shift of their own staff only.
+ * Who works which shift, per organisation (docs/4.0/SPEC.md 1.2: Shifts,
+ * assignments). The Admin (or a Super Admin inside the organisation) sets
+ * department shifts and personal overrides for its people; Managers read the
+ * assignments of their departments' Staff. Shifts used are the organisation's own
+ * or shared ones from before organisations; never another organisation's.
  *
  * Changes are dated and never rewrite the past: a change applies from today or a
  * later day, and breaks already taken keep the schedule they were taken under.
@@ -53,9 +58,20 @@ export class ShiftAssignmentsUseCase {
     return dateKeyInZone(new Date(), this.days.timezone);
   }
 
-  private assertStaffManager(me: AuthenticatedUser): void {
-    if (me.role !== Role.SUPER_ADMIN && me.role !== Role.MANAGER)
-      throw new ForbiddenError('Not allowed');
+  /** The caller's organisation: Admins and Super Admins read and write, Managers read. */
+  private orgOf(me: AuthenticatedUser, write = false): string {
+    const org = requireOrg(me);
+    if (!isAdminLike(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
+    if (write && !isAdminLike(me)) {
+      throw new ForbiddenError('Only the organisation admin can assign shifts.');
+    }
+    return org;
+  }
+
+  /** The people the caller may see here: the organisation, or a Manager's Staff. */
+  private scopeOf(me: AuthenticatedUser, org: string): PeopleQuery {
+    if (isAdminLike(me)) return { companyId: org };
+    return { companyId: org, roles: ['USER'], departmentIds: managedDeptIds(me) };
   }
 
   private assertFromToday(effectiveFrom: string, today: string): void {
@@ -67,23 +83,24 @@ export class ShiftAssignmentsUseCase {
     }
   }
 
-  private async shiftOrNull(shiftId: string | null): Promise<ShiftRecord | null> {
+  /** The organisation's shift or a shared one; another organisation's is unknown. */
+  private async shiftOrNull(shiftId: string | null, org: string): Promise<ShiftRecord | null> {
     if (shiftId === null) return null;
     const shift = await this.shifts.findById(shiftId);
-    if (!shift) throw new NotFoundError('Unknown shift');
+    if (!shift || (shift.companyId !== null && shift.companyId !== org)) {
+      throw new NotFoundError('Unknown shift');
+    }
     return shift;
   }
 
   // ---- Departments ---------------------------------------------------------
 
   async listDepartments(me: AuthenticatedUser): Promise<DepartmentAssignmentView[]> {
-    this.assertStaffManager(me);
+    const org = this.orgOf(me);
     const today = this.today();
-    const everyone = await this.people.listAllActive();
-    const scope =
-      me.role === Role.MANAGER ? everyone.filter((p) => p.managerId === me.id) : everyone;
+    const scope = await this.people.findMany(this.scopeOf(me, org));
     const [departments, ctx] = await Promise.all([
-      this.people.listDepartments(),
+      this.people.listDepartments(org),
       this.days.context(scope.map((p) => p.id)),
     ]);
 
@@ -98,7 +115,7 @@ export class ShiftAssignmentsUseCase {
     );
     for (const d of departments) {
       const k = `${d.companyId ?? '-'}|${d.departmentKey}`;
-      if (me.role === Role.MANAGER && !visibleKeys.has(k)) continue;
+      if (!isAdminLike(me) && !visibleKeys.has(k)) continue;
       groups.set(k, {
         department: d.department,
         key: d.departmentKey,
@@ -106,9 +123,10 @@ export class ShiftAssignmentsUseCase {
         people: d.people,
       });
     }
-    if (me.role === Role.SUPER_ADMIN) {
+    if (isAdminLike(me)) {
       for (const a of ctx.assignments) {
         if (a.target !== 'DEPARTMENT' || !a.departmentKey || !a.department) continue;
+        if (a.companyId !== org) continue;
         const k = `${a.companyId ?? '-'}|${a.departmentKey}`;
         if (!groups.has(k)) {
           groups.set(k, {
@@ -201,22 +219,15 @@ export class ShiftAssignmentsUseCase {
     me: AuthenticatedUser,
     dto: AssignDepartmentDto,
   ): Promise<DepartmentAssignmentView[]> {
-    if (me.role !== Role.SUPER_ADMIN)
-      throw new ForbiddenError('Only a Super Admin can set department shifts.');
+    const org = this.orgOf(me, true);
     const today = this.today();
     this.assertFromToday(dto.effectiveFrom, today);
     const department = dto.department.trim().replace(/\s+/g, ' ');
     const key = departmentKey(department);
     if (!key) throw new ValidationError('Name the department.');
-    const requested = dto.companyId ?? null;
-    if (requested && !(await this.shifts.companyExists(requested)))
-      throw new ValidationError('Unknown company');
-    const shift = await this.shiftOrNull(dto.shiftId);
-    if (shift?.companyId && requested && shift.companyId !== requested) {
-      throw new ValidationError('That shift belongs to another company.');
-    }
-    // A company's shift only ever applies to that company's department.
-    const companyId = requested ?? shift?.companyId ?? null;
+    // Always the caller's organisation, whatever the body says.
+    const shift = await this.shiftOrNull(dto.shiftId, org);
+    const companyId = org;
 
     await this.shifts.applyAssignments([
       {
@@ -241,11 +252,11 @@ export class ShiftAssignmentsUseCase {
     me: AuthenticatedUser,
     query: ListPeopleShiftsQueryDto,
   ): Promise<{ items: PersonShiftView[]; meta: PaginationMeta }> {
-    this.assertStaffManager(me);
+    const org = this.orgOf(me);
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
-    const filter = {
-      managerId: me.role === Role.MANAGER ? me.id : undefined,
+    const filter: PeopleQuery = {
+      ...this.scopeOf(me, org),
       search: query.search?.trim() || undefined,
       department: query.department?.trim() || undefined,
     };
@@ -302,16 +313,19 @@ export class ShiftAssignmentsUseCase {
   }
 
   async assignPeople(me: AuthenticatedUser, dto: AssignPeopleDto): Promise<AssignPeopleResult> {
-    this.assertStaffManager(me);
+    const org = this.orgOf(me, true);
     const today = this.today();
     this.assertFromToday(dto.effectiveFrom, today);
     const effectiveTo = dto.effectiveTo ?? null;
     if (effectiveTo && effectiveTo < dto.effectiveFrom) {
       throw new ValidationError('The last day cannot be before the first day.');
     }
-    const shift = await this.shiftOrNull(dto.shiftId);
+    const shift = await this.shiftOrNull(dto.shiftId, org);
     const ids = [...new Set(dto.userIds)];
-    const found = new Map((await this.people.findMany({ ids })).map((p) => [p.id, p]));
+    // Someone of another organisation is simply not found.
+    const found = new Map(
+      (await this.people.findMany({ ids, companyId: org })).map((p) => [p.id, p]),
+    );
 
     const rows: NewAssignment[] = [];
     const assigned: string[] = [];
@@ -322,12 +336,8 @@ export class ShiftAssignmentsUseCase {
         skipped.push({ id, reason: 'Not found or not active' });
         continue;
       }
-      if (me.role === Role.MANAGER && (p.managerId !== me.id || p.role !== 'USER')) {
-        skipped.push({ id, reason: 'Not in your team' });
-        continue;
-      }
-      if (shift?.companyId && p.companyId !== shift.companyId) {
-        skipped.push({ id, reason: 'That shift belongs to another company' });
+      if (p.role === 'SUPER_ADMIN') {
+        skipped.push({ id, reason: 'Not found or not active' });
         continue;
       }
       rows.push({

@@ -1,5 +1,5 @@
 import { isoWeekdayOfKey } from '@shared/utils/timezone';
-import { BREAK_LABEL } from '@modules/shifts/domain/shift.types';
+import { RECORD_LABEL } from '@modules/shifts/domain/shift.types';
 import { outcomeOf } from '@modules/shifts/domain/break-record.repository';
 import { overrunSeconds } from '@modules/shifts/domain/break-schedule';
 import { meetingsOfDay, PersonDayData } from '@modules/worktime/domain/day';
@@ -13,7 +13,7 @@ import {
 import { FocusBreakdown } from '@modules/worktime/domain/focus';
 import { activeMinOf, HourActivity, quietHoursOf } from '@modules/worktime/domain/hourly';
 import { Interval, intersect, normalize, span, subtract } from '@modules/worktime/domain/intervals';
-import { MonthTotals, PersonDaySummary, TimelineSegment } from './report.types';
+import { MonthTotals, PersonDaySummary, PersonMonthReport, TimelineSegment } from './report.types';
 
 /**
  * Report arithmetic (SPEC 1.9), as pure functions: one day's summary, a month's
@@ -36,6 +36,11 @@ export interface DaySummaryInput {
   now: Date;
   /** The person's first day (account created): earlier days without work are days off. */
   joinedOn?: string;
+  /**
+   * 4.0: the calendar and the allowance decide the working day and its target.
+   * Without it (3.1 callers), the shift's work days and shift − breaks apply.
+   */
+  plan?: { isWorkingDay: boolean; label: string | null; targetSec: number };
 }
 
 /** Before the person's first day, and nothing worked: not a working day for them. */
@@ -49,9 +54,9 @@ export function beforeJoining(
 
 export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
   const { data: d, focus } = i;
-  const workday =
-    !beforeJoining(i.date, i.joinedOn, d.sessions.length > 0) && isWorkdayFor(i.shift, i.date);
-  const shiftExpected = workday ? expectedSecOf(i.shift) : 0;
+  const joined = !beforeJoining(i.date, i.joinedOn, d.sessions.length > 0);
+  const workday = joined && (i.plan ? i.plan.isWorkingDay : isWorkdayFor(i.shift, i.date));
+  const shiftExpected = workday ? (i.plan ? i.plan.targetSec : expectedSecOf(i.shift)) : 0;
   const open = d.sessions.some((s) => s.endedAt === null);
   const first = d.sessions[0] ?? null;
   const last = d.sessions[d.sessions.length - 1] ?? null;
@@ -100,6 +105,16 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     pending: i.pending,
     quietHours: quietHoursOf(i.hourly),
     activeMin: activeMinOf(i.hourly),
+    label: i.plan?.label ?? null,
+    targetSec: shiftExpected,
+    paidBreakSec: focus.paidBreakSec ?? 0,
+    unpaidBreakSec: focus.unpaidBreakSec ?? 0,
+    awayApprovedSec: focus.awayApprovedSec ?? 0,
+    awayPendingSec: focus.awayPendingSec ?? 0,
+    awayRejectedSec: focus.awayRejectedSec ?? 0,
+    awayUnexplainedSec: focus.awayUnexplainedSec ?? 0,
+    unverifiedSec: focus.unverifiedSec ?? 0,
+    paidSec: focus.paidSec ?? focus.focusSec + (focus.paidBreakSec ?? 0),
   };
 }
 
@@ -114,6 +129,15 @@ const SUM_KEYS = [
   'rejectedMinusSec',
   'pending',
   'quietHours',
+  'targetSec',
+  'breakSec',
+  'meetingSec',
+  'paidBreakSec',
+  'unpaidBreakSec',
+  'awayApprovedSec',
+  'awayPendingSec',
+  'unverifiedSec',
+  'paidSec',
 ] as const;
 
 /** A month's totals: every number is the sum (or count) of its days. */
@@ -126,7 +150,7 @@ export function monthTotals(
   const workdayFocus = workdays.reduce((s, d) => s + d.focusSec, 0);
   const by = (c: string) => days.filter((d) => d.dayClass === c).length;
   const sums = Object.fromEntries(
-    SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + d[k], 0)]),
+    SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + (d[k] ?? 0), 0)]),
   ) as Record<(typeof SUM_KEYS)[number], number>;
   return {
     workdays: workdays.length,
@@ -160,8 +184,9 @@ export function teamTotals(
     'lateStarts',
     ...SUM_KEYS,
   ];
+  // A snapshot locked before a key existed has no value for it: it counts as 0.
   const sums = Object.fromEntries(
-    keys.map((k) => [k, rows.reduce((s, r) => s + (r.totals[k] as number), 0)]),
+    keys.map((k) => [k, rows.reduce((s, r) => s + ((r.totals[k] as number | undefined) ?? 0), 0)]),
   ) as Record<string, number>;
   const workdayFocus = rows.reduce(
     (s, r) =>
@@ -185,11 +210,33 @@ export function teamTotals(
     meetings: sums.meetings,
     approvedPlusSec: sums.approvedPlusSec,
     rejectedMinusSec: sums.rejectedMinusSec,
+    targetSec: sums.targetSec,
+    breakSec: sums.breakSec,
+    meetingSec: sums.meetingSec,
+    paidBreakSec: sums.paidBreakSec,
+    unpaidBreakSec: sums.unpaidBreakSec,
+    awayApprovedSec: sums.awayApprovedSec,
+    awayPendingSec: sums.awayPendingSec,
+    unverifiedSec: sums.unverifiedSec,
+    paidSec: sums.paidSec,
     pending: sums.pending,
     quietHours: sums.quietHours,
     needsALook: rows.some((r) => r.totals.needsALook),
     people: rows.length,
   };
+}
+
+/**
+ * A person-month from a snapshot locked before 4.0 had paidSec and unverifiedSec:
+ * paid time is then focus + paid breaks, unverified time none (nothing was a replay).
+ */
+export function withPayrollFields(p: PersonMonthReport): PersonMonthReport {
+  const fill = <T extends { focusSec: number; paidBreakSec?: number }>(x: T) => ({
+    ...x,
+    unverifiedSec: (x as { unverifiedSec?: number }).unverifiedSec ?? 0,
+    paidSec: (x as { paidSec?: number }).paidSec ?? x.focusSec + (x.paidBreakSec ?? 0),
+  });
+  return { ...p, totals: fill(p.totals), days: p.days.map(fill) };
 }
 
 /** Totals of an empty month (a person with no days to show). */
@@ -220,7 +267,7 @@ export function buildTimeline(d: PersonDayData, now: Date): TimelineSegment[] {
       if (p.type === 'MEETING') push('MEETING', piece, p.note ? `Meeting: ${p.note}` : 'Meeting');
       else {
         const rec = recordBySession.get(p.id);
-        const label = rec?.kind ? BREAK_LABEL[rec.kind] : p.type === 'LUNCH' ? 'Lunch' : 'Break';
+        const label = rec?.kind ? RECORD_LABEL[rec.kind] : p.type === 'LUNCH' ? 'Lunch' : 'Break';
         push(p.type, piece, label);
       }
     }

@@ -1,54 +1,34 @@
-// Unit test for UpdateCompanyUseCase — unknown company, the name-clash guard, and
-// that saving a company under its own name is allowed rather than a self-conflict.
+// Unit test for UpdateCompanyUseCase (4.0: an alias of PATCH /organisations/:id).
 import { ConflictError, NotFoundError } from '@shared/exceptions/app.exception';
+import { superAdmin } from '@shared/testing/actors.testing-spec';
 import { UpdateCompanyUseCase } from './update-company.use-case';
 
-describe('UpdateCompanyUseCase', () => {
-  const companies = { findById: jest.fn(), findByName: jest.fn(), rename: jest.fn() } as any;
-  const existing = { id: 'c1', name: 'RHYTHMRX', createdAt: new Date('2026-08-10') };
+describe('UpdateCompanyUseCase (alias of PATCH /organisations/:id)', () => {
+  const organisations = { rename: jest.fn() } as any;
+  const me = superAdmin();
 
   let useCase: UpdateCompanyUseCase;
   beforeEach(() => {
     jest.clearAllMocks();
-    useCase = new UpdateCompanyUseCase(companies);
+    useCase = new UpdateCompanyUseCase(organisations);
   });
 
-  it('rejects an unknown company', async () => {
-    companies.findById.mockResolvedValue(null);
+  it('renames through the organisations service', async () => {
+    organisations.rename.mockResolvedValue({ id: 'c1', name: 'Rhythm RX', createdAt: 'x' });
+    await expect(useCase.execute(me, 'c1', { name: '  Rhythm RX  ' })).resolves.toMatchObject({
+      name: 'Rhythm RX',
+    });
+    expect(organisations.rename).toHaveBeenCalledWith(me, 'c1', '  Rhythm RX  ');
+  });
 
-    await expect(useCase.execute('missing', { name: 'Anything' })).rejects.toBeInstanceOf(
+  it('passes unknown-organisation and clash refusals through', async () => {
+    organisations.rename.mockRejectedValueOnce(
+      new NotFoundError('That organisation does not exist.'),
+    );
+    await expect(useCase.execute(me, 'missing', { name: 'Anything' })).rejects.toBeInstanceOf(
       NotFoundError,
     );
-    expect(companies.rename).not.toHaveBeenCalled();
-  });
-
-  it('rejects a name another company already holds', async () => {
-    companies.findById.mockResolvedValue(existing);
-    companies.findByName.mockResolvedValue({ id: 'c2', name: 'A2C', createdAt: new Date() });
-
-    await expect(useCase.execute('c1', { name: 'A2C' })).rejects.toBeInstanceOf(ConflictError);
-    expect(companies.rename).not.toHaveBeenCalled();
-  });
-
-  it('allows a company to keep its own name', async () => {
-    companies.findById.mockResolvedValue(existing);
-    companies.findByName.mockResolvedValue(existing);
-    companies.rename.mockResolvedValue(existing);
-
-    await expect(useCase.execute('c1', { name: 'RHYTHMRX' })).resolves.toMatchObject({
-      id: 'c1',
-      name: 'RHYTHMRX',
-    });
-  });
-
-  it('trims the name before saving', async () => {
-    companies.findById.mockResolvedValue(existing);
-    companies.findByName.mockResolvedValue(null);
-    companies.rename.mockResolvedValue({ ...existing, name: 'Rhythm RX' });
-
-    const result = await useCase.execute('c1', { name: '  Rhythm RX  ' });
-
-    expect(companies.rename).toHaveBeenCalledWith('c1', 'Rhythm RX');
-    expect(result.name).toBe('Rhythm RX');
+    organisations.rename.mockRejectedValueOnce(new ConflictError('exists', 'ORG_EXISTS'));
+    await expect(useCase.execute(me, 'c1', { name: 'A2C' })).rejects.toBeInstanceOf(ConflictError);
   });
 });

@@ -19,6 +19,7 @@ const SELECT = {
   department: true,
   designation: true,
   companyId: true,
+  departmentId: true,
   managerId: true,
   status: true,
   deletedAt: true,
@@ -38,6 +39,7 @@ export function toPerson(r: Row): ShiftPerson {
     department: r.department,
     designation: r.designation,
     companyId: r.companyId,
+    departmentId: r.departmentId,
     managerId: r.managerId,
     // A soft-deleted person can never approve anything, whatever their status says.
     active: r.status === 'ACTIVE' && r.deletedAt === null,
@@ -50,6 +52,9 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
 
   private where(q: PeopleQuery): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = { deletedAt: null, status: 'ACTIVE' };
+    if (q.companyId) where.companyId = q.companyId;
+    if (q.departmentIds) where.departmentId = { in: q.departmentIds.filter(isUuid) };
+    if (q.roles) where.role = { name: { in: q.roles } };
     if (q.managerId) where.managerId = q.managerId;
     if (q.ids) where.id = { in: q.ids.filter(isUuid) };
     if (q.department) where.department = { equals: q.department.trim(), mode: 'insensitive' };
@@ -102,10 +107,15 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
     return rows.map(toPerson);
   }
 
-  async listDepartments(): Promise<DepartmentCount[]> {
+  async listDepartments(companyId?: string): Promise<DepartmentCount[]> {
     const rows = await this.prisma.user.groupBy({
       by: ['department', 'companyId'],
-      where: { deletedAt: null, status: 'ACTIVE', department: { not: null } },
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        department: { not: null },
+        ...(companyId ? { companyId } : {}),
+      },
       _count: { _all: true },
     });
     const merged = new Map<string, DepartmentCount>();
@@ -132,5 +142,27 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
       select: { id: true },
     });
     return rows.map((r) => r.id);
+  }
+
+  async listOrgAdminIds(companyId: string): Promise<string[]> {
+    if (!isUuid(companyId)) return [];
+    const rows = await this.prisma.user.findMany({
+      where: { deletedAt: null, status: 'ACTIVE', companyId, role: { name: 'ADMIN' } },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  async listDepartmentManagerIds(departmentId: string): Promise<string[]> {
+    if (!isUuid(departmentId)) return [];
+    const rows = await this.prisma.managerDepartment.findMany({
+      where: {
+        departmentId,
+        department: { deletedAt: null },
+        manager: { deletedAt: null, status: 'ACTIVE', role: { name: 'MANAGER' } },
+      },
+      select: { managerId: true },
+    });
+    return rows.map((r) => r.managerId);
   }
 }

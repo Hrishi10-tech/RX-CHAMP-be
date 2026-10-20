@@ -128,7 +128,7 @@ export class LoginUserUseCase {
   private async agentActivated(user: User): Promise<void> {
     try {
       const first = await this.users.markAgentActivatedIfFirst(user.id);
-      if (first && user.managerId && this.events) {
+      if (first && this.events) {
         await this.events.publish(
           AgentActivatedEvent.eventName,
           new AgentActivatedEvent(user.managerId, user.id, user.name, new Date()),

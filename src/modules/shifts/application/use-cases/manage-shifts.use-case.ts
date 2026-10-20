@@ -7,6 +7,7 @@ import {
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { isAdminLike, requireOrg } from '@shared/tenancy';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import { validateShiftDefinition } from '../../domain/break-schedule';
 import { SHIFT_PEOPLE_READER, ShiftPeopleReader } from '../../domain/shift-people.reader';
@@ -30,8 +31,12 @@ const RULE_DEFAULTS = {
 };
 
 /**
- * Shift definitions. Super Admin creates, edits, deletes and picks the default;
- * Managers may read them (to override a shift for their own staff).
+ * Shift definitions, per organisation (docs/4.0/SPEC.md 1.2 and 1.4). The Admin
+ * (or a Super Admin inside the organisation) creates, edits, deletes and picks the
+ * default of their organisation's shifts; Managers read them. Shared shifts from
+ * before organisations (no organisation) are visible in every organisation,
+ * read-only to Admins and editable by a Super Admin. Another organisation's shift
+ * is "unknown".
  */
 @Injectable()
 export class ManageShiftsUseCase {
@@ -41,57 +46,82 @@ export class ManageShiftsUseCase {
     private readonly days: BreakDayService,
   ) {}
 
-  private assertSuperAdmin(me: AuthenticatedUser): void {
-    if (me.role !== Role.SUPER_ADMIN)
-      throw new ForbiddenError('Only a Super Admin can change shifts.');
+  /** The caller's organisation; Staff may not read shifts here, only Admins write. */
+  private orgOf(me: AuthenticatedUser, write = false): string {
+    const org = requireOrg(me);
+    if (!isAdminLike(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
+    if (write && !isAdminLike(me)) {
+      throw new ForbiddenError('Only the organisation admin can change shifts.');
+    }
+    return org;
+  }
+
+  private visible(shift: ShiftRecord, org: string): boolean {
+    return shift.companyId === org || shift.companyId === null;
+  }
+
+  private async findVisible(org: string, id: string): Promise<ShiftRecord> {
+    const shift = await this.shifts.findById(id);
+    if (!shift || !this.visible(shift, org)) throw new NotFoundError('Unknown shift');
+    return shift;
+  }
+
+  /** A shift the caller may change: their organisation's, or a shared one for a Super Admin. */
+  private async findEditable(me: AuthenticatedUser, id: string): Promise<ShiftRecord> {
+    const org = this.orgOf(me, true);
+    const shift = await this.findVisible(org, id);
+    if (shift.companyId === null && me.role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenError(
+        'This shift is shared by every organisation and only a Super Admin can change it. Create your own shift instead.',
+        'SHIFT_SHARED',
+      );
+    }
+    return shift;
   }
 
   async list(me: AuthenticatedUser): Promise<ShiftView[]> {
-    if (me.role === Role.USER) throw new ForbiddenError('Not allowed');
-    const all = await this.shifts.list();
-    const usage = await this.usageFor(all);
+    const org = this.orgOf(me);
+    const all = (await this.shifts.list()).filter((s) => this.visible(s, org));
+    const usage = await this.usageFor(all, org);
     return all.map((s) => ShiftMapper.shiftView(s, usage.get(s.id) ?? emptyUsage()));
   }
 
   async get(me: AuthenticatedUser, id: string): Promise<ShiftView> {
-    if (me.role === Role.USER) throw new ForbiddenError('Not allowed');
-    const shift = await this.shifts.findById(id);
-    if (!shift) throw new NotFoundError('Unknown shift');
-    const usage = await this.usageFor([shift]);
+    const org = this.orgOf(me);
+    const shift = await this.findVisible(org, id);
+    const usage = await this.usageFor([shift], org);
     return ShiftMapper.shiftView(shift, usage.get(shift.id) ?? emptyUsage());
   }
 
   async create(me: AuthenticatedUser, dto: UpsertShiftDto): Promise<ShiftView> {
-    this.assertSuperAdmin(me);
-    const data = await this.toWriteData(dto);
-    if (await this.shifts.findByName(data.companyId, data.name)) {
+    const org = this.orgOf(me, true);
+    // Always the caller's organisation, whatever the body says.
+    const data = this.toWriteData(dto, org);
+    // The name check and the insert run under one lock per organisation, so two
+    // creations of one name never both succeed; the organisation's first shift
+    // becomes its default, so nobody is left with none.
+    const outcome = await this.shifts.createUnique(data);
+    if (!outcome.ok) {
       throw new ConflictError(`A shift called '${data.name.trim()}' already exists`);
     }
-    const created = await this.shifts.create(data);
-    // The first shift of all becomes the default, so nobody is left with none.
-    if ((await this.shifts.listDefaults()).length === 0) await this.shifts.setDefault(created.id);
     this.days.invalidate();
-    return this.get(me, created.id);
+    return this.get(me, outcome.shift.id);
   }
 
   async update(me: AuthenticatedUser, id: string, dto: UpsertShiftDto): Promise<ShiftView> {
-    this.assertSuperAdmin(me);
-    const existing = await this.shifts.findById(id);
-    if (!existing) throw new NotFoundError('Unknown shift');
-    const data = await this.toWriteData(dto);
-    const clash = await this.shifts.findByName(data.companyId, data.name);
-    if (clash && clash.id !== id) {
+    const existing = await this.findEditable(me, id);
+    // A shift stays in the organisation (or the shared scope) it belongs to.
+    const data = this.toWriteData(dto, existing.companyId);
+    const outcome = await this.shifts.updateUnique(id, data);
+    if (!outcome.ok) {
       throw new ConflictError(`A shift called '${data.name.trim()}' already exists`);
     }
-    await this.shifts.update(id, data);
     this.days.invalidate();
     return this.get(me, id);
   }
 
   async remove(me: AuthenticatedUser, id: string): Promise<{ deleted: true; id: string }> {
-    this.assertSuperAdmin(me);
-    const shift = await this.shifts.findById(id);
-    if (!shift) throw new NotFoundError('Unknown shift');
+    const shift = await this.findEditable(me, id);
     if (shift.isDefault) {
       throw new ConflictError(
         'This is the default shift. Make another shift the default first.',
@@ -112,9 +142,7 @@ export class ManageShiftsUseCase {
   }
 
   async makeDefault(me: AuthenticatedUser, id: string): Promise<ShiftView> {
-    this.assertSuperAdmin(me);
-    const shift = await this.shifts.findById(id);
-    if (!shift) throw new NotFoundError('Unknown shift');
+    await this.findEditable(me, id);
     await this.shifts.setDefault(id);
     this.days.invalidate();
     return this.get(me, id);
@@ -137,15 +165,11 @@ export class ManageShiftsUseCase {
     };
   }
 
-  private async toWriteData(dto: UpsertShiftDto): Promise<ShiftWriteData> {
-    const companyId = dto.companyId ?? null;
-    if (companyId && !(await this.shifts.companyExists(companyId))) {
-      throw new ValidationError('Unknown company');
-    }
+  private toWriteData(dto: UpsertShiftDto, companyId: string | null): ShiftWriteData {
     const { data, problems } = this.buildWriteData(dto);
     if (problems.length)
       throw new ValidationError(problems.join(' '), 'SHIFT_INVALID').withDetails({ problems });
-    return data;
+    return { ...data, companyId };
   }
 
   private buildWriteData(dto: UpsertShiftDto): { data: ShiftWriteData; problems: string[] } {
@@ -175,11 +199,14 @@ export class ManageShiftsUseCase {
     return { data, problems };
   }
 
-  /** Who each shift applies to today (people, departments, overrides). */
-  private async usageFor(shifts: ShiftRecord[]): Promise<Map<string, ShiftView['usage']>> {
+  /** Who each shift applies to today in the organisation (people, departments, overrides). */
+  private async usageFor(
+    shifts: ShiftRecord[],
+    org: string,
+  ): Promise<Map<string, ShiftView['usage']>> {
     const now = new Date();
     const today = dateKeyInZone(now, this.days.timezone);
-    const people = await this.people.listAllActive();
+    const people = await this.people.findMany({ companyId: org });
     const ctx = await this.days.context(people.map((p) => p.id));
     const out = new Map<string, ShiftView['usage']>();
     for (const s of shifts) out.set(s.id, emptyUsage());
@@ -195,7 +222,12 @@ export class ManageShiftsUseCase {
 
     const seen = new Set<string>();
     const deptRows = ctx.assignments
-      .filter((a) => a.target === 'DEPARTMENT' && a.effectiveFrom <= today)
+      .filter(
+        (a) =>
+          a.target === 'DEPARTMENT' &&
+          a.effectiveFrom <= today &&
+          (a.companyId === org || a.companyId === null),
+      )
       .sort((a, b) =>
         a.effectiveFrom === b.effectiveFrom
           ? b.createdAt.getTime() - a.createdAt.getTime()
@@ -204,7 +236,7 @@ export class ManageShiftsUseCase {
             : -1,
       );
     for (const a of deptRows) {
-      const key = `${a.companyId ?? '-'}|${a.departmentKey}`;
+      const key = a.departmentKey ?? '';
       if (seen.has(key)) continue;
       seen.add(key);
       if (a.shiftId && out.has(a.shiftId) && a.department)

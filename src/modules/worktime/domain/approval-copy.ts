@@ -1,11 +1,11 @@
-import { hmInZone } from '@shared/utils/timezone';
-import { BREAK_LABEL, BreakKind } from '@modules/shifts/domain/shift.types';
+import { time12InZone as hmInZone } from '@shared/utils/timezone';
+import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
 
 /**
  * What an approval item is, what deciding it does to focus time, and the short
  * lines a manager reads (SPEC 3.4). Pure. Copy rules: plain English, no em dash,
- * no exclamation mark, negatives with a real minus sign, times as HH:MM in the
- * business timezone.
+ * no exclamation mark, negatives with a real minus sign, times as h:mm AM in the
+ * business timezone (4.0).
  */
 
 export type ApprovalCategory =
@@ -17,7 +17,12 @@ export type ApprovalCategory =
   | 'BREAK_SKIP'
   | 'BREAK_AUTO_SKIP'
   | 'MEETING_LIVE'
-  | 'MEETING_PAST';
+  | 'MEETING_PAST'
+  | 'AWAY_THINKING'
+  | 'AWAY_MEETING'
+  | 'AWAY_HARDWARE'
+  | 'AWAY_OTHER'
+  | 'AWAY_CUSTOM';
 
 export const APPROVAL_CATEGORIES: ApprovalCategory[] = [
   'BREAK_EARLY',
@@ -29,7 +34,62 @@ export const APPROVAL_CATEGORIES: ApprovalCategory[] = [
   'BREAK_AUTO_SKIP',
   'MEETING_LIVE',
   'MEETING_PAST',
+  'AWAY_THINKING',
+  'AWAY_MEETING',
+  'AWAY_HARDWARE',
+  'AWAY_OTHER',
+  'AWAY_CUSTOM',
 ];
+
+/** 4.0 away kinds and their default labels (docs/4.0/SPEC.md 2.5). */
+export const AWAY_KIND_LABEL: Record<string, string> = {
+  THINKING: 'Thinking',
+  MEETING: 'Short meeting',
+  HARDWARE: 'Working on hardware',
+  OTHER: 'Other work',
+  CUSTOM: 'Other work',
+};
+
+export function awayCategory(kind: string | null): ApprovalCategory {
+  switch (kind) {
+    case 'THINKING':
+      return 'AWAY_THINKING';
+    case 'MEETING':
+      return 'AWAY_MEETING';
+    case 'HARDWARE':
+      return 'AWAY_HARDWARE';
+    case 'CUSTOM':
+      return 'AWAY_CUSTOM';
+    default:
+      return 'AWAY_OTHER';
+  }
+}
+
+/** "Away 25 min: Thinking". */
+export function awayTitle(label: string | null, kind: string | null, seconds: number): string {
+  const what = (label ?? '').trim() || AWAY_KIND_LABEL[kind ?? 'OTHER'] || 'Other work';
+  return `Away ${wholeMinutes(seconds)} min: ${what}`;
+}
+
+/** "2:05 PM to 2:30 PM · 25 min", plus people and the minutes sender for a short meeting. */
+export function awayDetail(
+  a: {
+    startedAt: Date;
+    endedAt: Date | null;
+    seconds: number;
+    participants: number;
+    momSender: string | null;
+  },
+  tz: string,
+): string {
+  const end = a.endedAt ?? new Date(a.startedAt.getTime() + a.seconds * 1000);
+  const people =
+    a.participants > 0
+      ? ` · ${a.participants === 1 ? '1 person' : `${a.participants} people`}`
+      : '';
+  const mom = a.momSender ? ` · minutes by ${a.momSender}` : '';
+  return `${hmInZone(a.startedAt, tz)} to ${hmInZone(end, tz)} · ${wholeMinutes(a.seconds)} min${people}${mom}`;
+}
 
 export type EffectMode = 'PLUS' | 'MINUS' | 'NONE';
 
@@ -92,7 +152,7 @@ export function approvalEffect(
     minutes: 0,
     text,
   });
-  const plusKind = category === 'BREAK_OVERRUN';
+  const plusKind = category === 'BREAK_OVERRUN' || category.startsWith('AWAY_');
   const minusKind =
     category === 'BREAK_SKIP' ||
     category === 'BREAK_AUTO_SKIP' ||
@@ -117,14 +177,14 @@ export function approvalEffect(
 }
 
 /** "the morning break", "lunch", "the evening break", "a break". */
-export function breakPhrase(kind: BreakKind | null, presenceType: 'BREAK' | 'LUNCH'): string {
+export function breakPhrase(kind: RecordKind | null, presenceType: 'BREAK' | 'LUNCH'): string {
   if (kind === 'LUNCH' || (!kind && presenceType === 'LUNCH')) return 'lunch';
-  if (kind) return `the ${BREAK_LABEL[kind].toLowerCase()}`;
+  if (kind) return `the ${RECORD_LABEL[kind].toLowerCase()}`;
   return 'a break';
 }
 
 export interface BreakTextInput {
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   presenceType: 'BREAK' | 'LUNCH';
   minutesOff: number;
   startedAt: Date;
@@ -138,7 +198,7 @@ export interface BreakTextInput {
 
 /** "Morning break skipped", "Back 15 min late from lunch", "Lunch break started 20 min late". */
 export function breakTitle(category: ApprovalCategory, r: BreakTextInput): string {
-  const label = r.kind ? BREAK_LABEL[r.kind] : r.presenceType === 'LUNCH' ? 'Lunch' : 'Break';
+  const label = r.kind ? RECORD_LABEL[r.kind] : r.presenceType === 'LUNCH' ? 'Lunch' : 'Break';
   switch (category) {
     case 'BREAK_SKIP':
       return `${label} skipped`;

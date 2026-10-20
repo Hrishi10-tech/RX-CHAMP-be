@@ -1,3 +1,4 @@
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { TeamMemberRef } from '@shared/types/user.types';
 
 export const PRESENCE_TEAM_READER = Symbol('PRESENCE_TEAM_READER');
@@ -17,8 +18,11 @@ export interface PresenceContext {
  * modules directly.
  */
 export interface PresenceTeamReader {
-  /** Active users who report to the given manager. */
-  findReports(managerId: string): Promise<TeamMember[]>;
+  /**
+   * 4.0: active people the caller oversees (shared/tenancy peopleWhere): the
+   * organisation for an Admin, the Staff of their departments for a Manager.
+   */
+  findReports(me: AuthenticatedUser): Promise<TeamMember[]>;
 
   /** The user's own profile + their manager id, or null if the user doesn't exist. */
   findContext(userId: string): Promise<PresenceContext | null>;

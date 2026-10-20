@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { ActivityBackfilledEvent } from '@shared/events/activity-backfilled.event';
 import { fullName } from '@shared/types/user.types';
 import {
   ACTIVITY_SAMPLE_REPOSITORY,
@@ -77,7 +78,14 @@ export class EndDayUseCase {
     if (!last || last.durationSec > 0 || last.at > endedAt) return;
 
     const dur = clamp(elapsedSeconds(last.at, endedAt), 0, MAX_GAP_SEC);
-    if (dur > 0) await this.samples.stampDuration(last.id, dur);
+    if (dur > 0) {
+      await this.samples.stampDuration(last.id, dur);
+      // The day may already read as closed: its cached hour buckets are stale now.
+      await this.events.publish(
+        ActivityBackfilledEvent.eventName,
+        new ActivityBackfilledEvent(userId),
+      );
+    }
   }
 
   /**
@@ -107,9 +115,9 @@ export class EndDayUseCase {
         myUpdateFor(self?.role, ActivityMapper.toMyUpdate(current, daily)),
       );
 
-      if (self?.managerId) {
-        this.gateway.emitToManager(
-          self.managerId,
+      if (self) {
+        await this.gateway.emitForSubject(
+          userId,
           ActivityMapper.toLiveUpdate(self, null, daily, endedAt, true),
         );
       }

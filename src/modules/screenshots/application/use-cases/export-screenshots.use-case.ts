@@ -1,3 +1,4 @@
+import { PersonFactsReader } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { SCREENSHOT_REPOSITORY, ScreenshotRepository } from '../../domain/screenshot.repository';
@@ -17,11 +18,12 @@ export class ExportScreenshotsUseCase {
   constructor(
     @Inject(SCREENSHOT_REPOSITORY) private readonly repo: ScreenshotRepository,
     @Inject(SCREENSHOT_ACCESS_READER) private readonly access: ScreenshotAccessReader,
+    private readonly facts: PersonFactsReader,
     private readonly s3: S3StorageService,
   ) {}
 
   async execute(me: AuthenticatedUser, query: ExportScreenshotsQueryDto): Promise<string> {
-    await assertCanAccess(me, query.userId, this.access);
+    await assertCanAccess(me, query.userId, this.facts);
 
     const records = await this.repo.listForUser(query.userId, {
       limit: ExportScreenshotsUseCase.MAX,

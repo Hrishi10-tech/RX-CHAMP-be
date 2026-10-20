@@ -7,6 +7,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from '@shared/config/configuration';
 import { validateEnv } from '@shared/config/env.validation';
 import { ResponseInterceptor } from '@shared/http/response.interceptor';
+import { ReplayInterceptor } from '@shared/http/replay.interceptor';
+import { AgentEventsCleanup } from '@shared/http/agent-events.cleanup';
 import { AllExceptionsFilter } from '@shared/http/all-exceptions.filter';
 import { rateLimitFor } from '@shared/security/rate-limits';
 import { throttleTracker } from '@shared/security/throttle-tracker';
@@ -41,7 +43,10 @@ import { throttleTracker } from '@shared/security/throttle-tracker';
     }),
   ],
   providers: [
+    // Offline replay first (outermost): a repeat answers the stored envelope as is.
+    { provide: APP_INTERCEPTOR, useClass: ReplayInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+    AgentEventsCleanup,
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { BreakApprovalRequestedEvent } from '@modules/shifts/domain/events/break-approval-requested.event';
 import { BreakDecidedEvent } from '@modules/shifts/domain/events/break-decided.event';
-import { BREAK_LABEL, BreakKind } from '@modules/shifts/domain/shift.types';
+import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
 import { ApprovalsDigestEvent } from '@modules/worktime/domain/events/approvals-digest.event';
 import { NOTIFICATION_REPOSITORY, NotificationRepository } from '../domain/notification.repository';
 import { NotificationsGateway } from '../presentation/notifications.gateway';
@@ -16,8 +16,8 @@ export function shortDate(dateKey: string): string {
   return m >= 1 && m <= 12 ? `${d} ${MONTHS[m - 1]}` : dateKey;
 }
 
-function breakName(kind: BreakKind | null): string {
-  return kind ? BREAK_LABEL[kind].toLowerCase() : 'an unscheduled break';
+function breakName(kind: RecordKind | null): string {
+  return kind ? RECORD_LABEL[kind].toLowerCase() : 'an unscheduled break';
 }
 
 function plural(n: number, word: string): string {

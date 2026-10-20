@@ -1,7 +1,11 @@
 /**
- * Organisation settings (SPEC 1.10): the Super Admin's knobs for the 48-hour rule,
- * attendance classes, late starts, quiet hours and the missed End Day auto-close.
- * Pure: no Nest, no Prisma.
+ * Organisation settings (SPEC 1.10; per organisation since 4.0): the Admin's knobs
+ * for the 48-hour rule, attendance classes, late starts, quiet hours, the missed
+ * End Day auto-close and (4.0) the paid break buffer. Pure: no Nest, no Prisma.
+ *
+ * The same JSON row (app_settings key `org:<companyId>`) also holds the calendar's
+ * week pattern and the input-tracking configuration; those have their own rules
+ * (calendar.rules, idle.rules) and are left untouched by these.
  */
 
 export interface AppSettings {
@@ -21,12 +25,19 @@ export interface AppSettings {
   quietHoursFlag: number;
   /** An open session is closed this many minutes after the shift ends. */
   autoCloseAfterShiftEndMin: number;
+  /** 4.0: paid minutes on top of the scheduled breaks for overruns and quick breaks. */
+  breakBufferMin: number;
 }
 
 export type SettingKey = keyof AppSettings;
 
-/** The single row in app_settings that holds these values. */
+/** The 3.x row in app_settings that held these values (the fallback for organisations). */
 export const SETTINGS_KEY = 'org';
+
+/** 4.0: one row per organisation. */
+export function orgSettingsKey(companyId: string): string {
+  return `org:${companyId}`;
+}
 
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = Object.freeze({
   approvalSlaHours: 48,
@@ -37,6 +48,7 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = Object.freeze({
   quietHourActiveMin: 20,
   quietHoursFlag: 4,
   autoCloseAfterShiftEndMin: 240,
+  breakBufferMin: 10,
 });
 
 type IntKey = Exclude<SettingKey, 'blockManagerEndDayWhenOverdue'>;
@@ -51,6 +63,7 @@ export const SETTING_BOUNDS: Readonly<Record<IntKey, { min: number; max: number 
     quietHourActiveMin: { min: 1, max: 59 },
     quietHoursFlag: { min: 1, max: 100 },
     autoCloseAfterShiftEndMin: { min: 30, max: 720 },
+    breakBufferMin: { min: 0, max: 60 },
   },
 );
 
@@ -63,6 +76,7 @@ const LABEL: Record<SettingKey, string> = {
   quietHourActiveMin: 'Quiet hour (active minutes)',
   quietHoursFlag: 'Quiet hours before a look',
   autoCloseAfterShiftEndMin: 'Auto-close after shift end (minutes)',
+  breakBufferMin: 'Paid break buffer (minutes)',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as SettingKey[];

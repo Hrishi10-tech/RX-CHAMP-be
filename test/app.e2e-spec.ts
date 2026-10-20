@@ -52,15 +52,24 @@ describe('RX Vision API (e2e)', () => {
     });
   });
 
-  it('signs in with cookies and lists users', async () => {
+  it('signs in with cookies and lists users (4.0: per organisation)', async () => {
     const { agent, user } = await signIn('admin@timechamp.test', 'admin123');
     expect(user.role).toBe('SUPER_ADMIN');
     expect(user).not.toHaveProperty('passwordHash');
 
-    const users = await agent.get('/api/v1/users').expect(200);
+    // A Super Admin chooses an organisation first.
+    const none = await agent.get('/api/v1/users').expect(400);
+    expect(none.body.error.code).toBe('ORG_REQUIRED');
+    const admin = await signIn('orgadmin@timechamp.test', 'orgadmin123');
+    const me = await admin.agent.get('/api/v1/me').expect(200);
+    const orgId = me.body.data.organisation.id as string;
+
+    const users = await agent.get('/api/v1/users').set('X-Org-Id', orgId).expect(200);
     expect(users.body.success).toBe(true);
     expect(Array.isArray(users.body.data)).toBe(true);
     expect(users.body.meta.total).toEqual(expect.any(Number));
+    const own = await admin.agent.get('/api/v1/users').expect(200);
+    expect(own.body.meta.total).toBe(users.body.meta.total);
   });
 
   it('GET /users without a session -> 401 UNAUTHORIZED', async () => {
@@ -79,16 +88,24 @@ describe('RX Vision API (e2e)', () => {
 
     // A manager sees their own staff only.
     const team = await manager.agent.get('/api/v1/shift-assignments/people').expect(200);
-    expect(team.body.data.map((p: { email: string }) => p.email)).toEqual(['user@timechamp.test']);
+    const emails = team.body.data.map((p: { email: string }) => p.email);
+    expect(emails).toContain('user@timechamp.test');
+    expect(emails).not.toContain('orgadmin@timechamp.test');
+    expect(emails).not.toContain('manager@timechamp.test');
   });
 
-  it('keeps activity from staff (SPEC 1.8): analytics and productivity 403, no current app', async () => {
+  it('keeps activity from staff (SPEC 1.8) and from managers without the grant', async () => {
+    const admin = await signIn('orgadmin@timechamp.test', 'orgadmin123');
     const manager = await signIn('manager@timechamp.test', 'manager123');
     const staff = await signIn('user@timechamp.test', 'user123');
     await staff.agent.get(`/api/v1/analytics/${staff.user.id}`).expect(403);
-    await manager.agent.get(`/api/v1/analytics/${staff.user.id}`).expect(200);
+    await admin.agent.get(`/api/v1/analytics/${staff.user.id}`).expect(200);
     await staff.agent.get(`/api/v1/productivity/${staff.user.id}`).expect(403);
-    await manager.agent.get(`/api/v1/productivity/${staff.user.id}`).expect(200);
+    await admin.agent.get(`/api/v1/productivity/${staff.user.id}`).expect(200);
+    // 4.0: the seed's manager has no view grants yet.
+    const denied = await manager.agent.get(`/api/v1/activity/user/${staff.user.id}/hourly`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.error.code).toBe('GRANT_REQUIRED');
     const current = await staff.agent.get('/api/v1/activity/me/current').expect(200);
     expect(current.body.data).toMatchObject({ app: null, title: null, url: null });
   });
@@ -112,7 +129,8 @@ describe('RX Vision API (e2e)', () => {
 
   // Last: it leaves this address over its failed sign-in limit for 10 minutes.
   it('stops password spraying from one address; people who signed in from it before still can', async () => {
-    const admin = await signIn('admin@timechamp.test', 'admin123');
+    const admin = await signIn('orgadmin@timechamp.test', 'orgadmin123');
+    const depts = await admin.agent.get('/api/v1/departments').expect(200);
     const email = `spray-check-${Date.now()}@timechamp.test`;
     await admin.agent
       .post('/api/v1/users')
@@ -122,6 +140,7 @@ describe('RX Vision API (e2e)', () => {
         email,
         password: 'Spray-Check-2026',
         role: 'USER',
+        departmentId: depts.body.data[0].id,
       })
       .expect(201);
     // One guess per account (the per-account lockout never trips): 401 until this
@@ -146,7 +165,7 @@ describe('RX Vision API (e2e)', () => {
     // Someone who signed in from this address before still gets in.
     await request(server)
       .post('/api/v1/auth/login')
-      .send({ email: 'admin@timechamp.test', password: 'admin123' })
+      .send({ email: 'orgadmin@timechamp.test', password: 'orgadmin123' })
       .expect(200);
   }, 120_000);
 });

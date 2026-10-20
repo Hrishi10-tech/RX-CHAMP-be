@@ -7,6 +7,7 @@ import {
   BreakTiming,
   ShiftRules,
   ShiftSource,
+  RecordKind,
 } from '../domain/shift.types';
 
 /** All times are ISO-8601 instants; "HH:MM" fields are in the business timezone. */
@@ -106,7 +107,7 @@ export interface PersonShiftView {
 export interface BreakRecordView {
   id: string;
   date: string;
-  kind: BreakKind | null;
+  kind: RecordKind | null;
   label: string;
   presenceType: BreakPresenceType;
   shiftName: string | null;
@@ -139,6 +140,19 @@ export interface BreakRecordView {
   dueAt: string | null;
   /** 3.1: a skip with no reason that is still PENDING: the person must comment. */
   needsComment: boolean;
+  // ---- 4.0 (docs/4.0/SPEC.md 2.3, 5.6)
+  /** ACTIVE (running), PAUSED, ENDED. */
+  state: 'ACTIVE' | 'PAUSED' | 'ENDED';
+  /** Seconds taken over every segment (running ones to now). */
+  takenSec: number;
+  /** Seconds left of its length (scheduled) or planned length (quick); never below 0. */
+  remainingSec: number;
+  /** Quick breaks: the planned length. */
+  plannedMin: number | null;
+  /** Paused and its window still open: it can be resumed until resumeUntil. */
+  canResume: boolean;
+  resumeUntil: string | null;
+  segments: { startedAt: string; endedAt: string | null }[];
 }
 
 /** A skip that is still waiting for the person's comment (SPEC 3.1). */
@@ -175,8 +189,17 @@ export interface BreakSlotView {
     ringStart: string;
     ringEnd: string;
   };
+  /** 4.0: the same times as "h:mm AM" for display. */
+  local12: { start: string; end: string; windowOpen: string; windowClose: string };
   /** The break as taken today, or null. */
   record: BreakRecordView | null;
+  // ---- 4.0: the slot's own state (NOT_TAKEN until it starts).
+  state: 'NOT_TAKEN' | 'ACTIVE' | 'PAUSED' | 'ENDED' | 'SKIPPED';
+  takenSec: number;
+  remainingSec: number;
+  canResume: boolean;
+  resumeUntil: string | null;
+  segments: { startedAt: string; endedAt: string | null }[];
 }
 
 /**
@@ -199,6 +222,21 @@ export interface MyBreakDayView {
   unscheduled: BreakRecordView[];
   /** The break running right now, if any. */
   activeBreak: BreakRecordView | null;
+  /** 4.0: today's quick breaks, oldest first. */
+  quick: BreakRecordView[];
+  /** 4.0: the paused break, if any. */
+  pausedBreak: BreakRecordView | null;
+  /** 4.0: the running break in a compact form for the agent's timer. */
+  active: {
+    id: string;
+    kind: RecordKind | null;
+    segmentStartedAt: string;
+    takenBeforeSec: number;
+    plannedMin: number | null;
+    durationMin: number | null;
+  } | null;
+  /** 4.0: quick break lengths the agent offers. */
+  quickBreakMinutes: number[];
 }
 
 /** GET /breaks/me/today in 3.1: the day view plus what the End Day dialog needs. */

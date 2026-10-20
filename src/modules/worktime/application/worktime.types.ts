@@ -18,6 +18,19 @@ export interface FocusView {
   pendingPlusSec: number;
   rejectedMinusSec: number;
   pendingMinusSec: number;
+  // ---- 4.0 (docs/4.0/SPEC.md 2.4)
+  paidBreakSec: number;
+  unpaidBreakSec: number;
+  bufferUsedSec: number;
+  quickBreakSec: number;
+  awayPendingSec: number;
+  awayApprovedSec: number;
+  awayRejectedSec: number;
+  awayUnexplainedSec: number;
+  /** Time in sessions an offline replay opened with no activity data from the agent (not focus, not paid). */
+  unverifiedSec: number;
+  /** Payroll time: focusSec + paidBreakSec. */
+  paidSec: number;
 }
 
 export type WorkdayState = 'NOT_STARTED' | 'OPEN' | 'ENDED';
@@ -58,6 +71,31 @@ export interface WorkdayTodayView {
    * midnight, or after a night shift), so the agent can show it instead of 0m.
    */
   lastEnded: { date: string; endedAt: string; focusSec: number } | null;
+  // ---- 4.0 (docs/4.0/SPEC.md 5.6)
+  /** The day's focus target (= expectedSec): shift − scheduled breaks − buffer on a working day. */
+  targetSec: number;
+  isWorkingDay: boolean;
+  /** The calendar's label for the day (a holiday), or null. */
+  dayLabel: string | null;
+  allowance: {
+    scheduledSec: number;
+    bufferSec: number;
+    totalSec: number;
+    /** Paid break time used today (scheduled within their length + buffer used). */
+    paidUsedSec: number;
+    bufferUsedSec: number;
+    unpaidSec: number;
+  };
+  away: { pendingSec: number; unexplainedSec: number };
+  config: {
+    idle: {
+      enabled: boolean;
+      minutes: number;
+      reasons: { key: string; label: string; kind: string; fields: string[] }[];
+    };
+    quickBreakMinutes: number[];
+    breakBufferMin: number;
+  };
 }
 
 export interface StartDayResponse {
@@ -87,6 +125,8 @@ export interface MeetingRecordView {
   mode: 'LIVE' | 'PAST';
   agenda: string;
   participants: MeetingParticipant[];
+  /** 4.0: who will mail the minutes of meeting. */
+  momSender: string | null;
   startedAt: string;
   endedAt: string | null;
   inProgress: boolean;
@@ -115,8 +155,22 @@ export interface ApprovalPersonLite {
   department: string | null;
 }
 
+/** 4.0: an away stretch as an approval item. */
+export interface AwayItemView {
+  id: string;
+  reasonKey: string | null;
+  reasonKind: string | null;
+  reasonLabel: string | null;
+  comment: string | null;
+  participants: MeetingParticipant[];
+  momSender: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  seconds: number;
+}
+
 export interface ApprovalItemView {
-  type: 'BREAK' | 'MEETING';
+  type: 'BREAK' | 'MEETING' | 'AWAY';
   id: string;
   category: ApprovalCategory;
   user: ApprovalPersonLite;
@@ -147,6 +201,8 @@ export interface ApprovalItemView {
   locked: boolean;
   break: BreakRecordView | null;
   meeting: MeetingRecordView | null;
+  /** 4.0. */
+  away: AwayItemView | null;
 }
 
 export interface ApprovalsSummaryView31 {
@@ -160,8 +216,8 @@ export interface ApprovalsSummaryView31 {
 }
 
 export interface BulkApproveResult31 {
-  approved: { type: 'break' | 'meeting'; id: string }[];
-  skipped: { type: 'break' | 'meeting'; id: string; reason: string }[];
+  approved: { type: 'break' | 'meeting' | 'away'; id: string }[];
+  skipped: { type: 'break' | 'meeting' | 'away'; id: string; reason: string }[];
 }
 
 export type TeamRowStatus = 'NOT_STARTED' | 'WORKING' | 'BREAK' | 'LUNCH' | 'MEETING' | 'DAY_ENDED';

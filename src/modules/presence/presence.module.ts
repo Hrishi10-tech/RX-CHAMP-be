@@ -12,6 +12,7 @@ import { PrismaIdleReader } from './infrastructure/prisma-idle-reader';
 import { PrismaDayEndReader } from './infrastructure/prisma-day-end.reader';
 import { PrismaWorkSessionStateReader } from './infrastructure/prisma-work-session-state.reader';
 import { DayEndedSubscriber } from './application/day-ended.subscriber';
+import { PresenceDayGate } from './application/presence-day.gate';
 import { StartPresenceUseCase } from './application/use-cases/start-presence.use-case';
 import { EndPresenceUseCase } from './application/use-cases/end-presence.use-case';
 import { HeartbeatUseCase } from './application/use-cases/heartbeat.use-case';
@@ -37,6 +38,7 @@ import { PresenceGateway } from './presentation/presence.gateway';
     { provide: WORK_SESSION_STATE_READER, useClass: PrismaWorkSessionStateReader },
     PresenceGateway,
     DayEndedSubscriber,
+    PresenceDayGate,
     StartPresenceUseCase,
     EndPresenceUseCase,
     HeartbeatUseCase,

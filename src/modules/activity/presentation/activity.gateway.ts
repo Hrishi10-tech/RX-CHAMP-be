@@ -6,8 +6,9 @@ import { Namespace, Socket } from 'socket.io';
 import { AuthenticatedGateway } from '@shared/websocket/authenticated.gateway';
 import { SocketAccessService } from '@shared/websocket/socket-access.service';
 import { socketCors } from '@shared/websocket/socket-cors';
-import { managerRoom, userRoom } from '@shared/websocket/socket-rooms';
+import { activityViewRoom, userRoom } from '@shared/websocket/socket-rooms';
 import { LiveActivityUpdate, MyActivityUpdate } from '../application/activity.types';
+import { liveUpdateFor } from '../application/activity-redaction';
 
 /**
  * Pushes live activity (active/idle status, the current app/website and the day's
@@ -35,10 +36,11 @@ export class ActivityGateway extends AuthenticatedGateway implements OnGatewayCo
     const userId = await this.authenticateOrDisconnect(client);
     if (!userId) return;
 
-    // Own dashboard updates, plus any team-board updates if this user manages reports.
+    // Own dashboard updates, plus the team rooms this person may watch (4.0: admins
+    // their organisation, managers their departments with the timeline or activity
+    // grant, each getting only the part of the push their grants allow).
     void client.join(userRoom(userId));
-    void client.join(managerRoom(userId));
-    this.logger.debug(`socket ${client.id} joined activity rooms for ${userId}`);
+    await this.joinTeamRooms(client, userId, 'activity');
   }
 
   /** Push the user their own live status + current app + running totals. */
@@ -46,8 +48,23 @@ export class ActivityGateway extends AuthenticatedGateway implements OnGatewayCo
     this.server.to(userRoom(userId)).emit('activity:me', update);
   }
 
-  /** Push a manager one report's live status + current app + running totals. */
-  emitToManager(managerId: string, update: LiveActivityUpdate): void {
-    this.server.to(managerRoom(managerId)).emit('activity:update', update);
+  /**
+   * Push one person's live status + current app + running totals to whoever
+   * oversees them (4.0): the organisation's admins and the department's managers
+   * with both grants get all of it; a manager with only the timeline grant gets it
+   * without active and idle time, one with only the activity grant without the
+   * app, title, URL and top apps.
+   */
+  async emitForSubject(subjectId: string, update: LiveActivityUpdate): Promise<void> {
+    const rooms = await this.roomsOfUser(subjectId);
+    if (!rooms.length) return;
+    this.server.to(rooms).emit('activity:update', update);
+    const depts = rooms.filter((r) => r.startsWith('dept:'));
+    for (const view of ['timeline', 'activity'] as const) {
+      if (!depts.length) break;
+      this.server
+        .to(depts.map((r) => activityViewRoom(r, view)))
+        .emit('activity:update', liveUpdateFor(update, view));
+    }
   }
 }

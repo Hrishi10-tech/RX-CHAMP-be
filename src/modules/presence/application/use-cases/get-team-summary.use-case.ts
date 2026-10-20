@@ -1,3 +1,5 @@
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { assertAnyGrant, grantsOf } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   PRESENCE_SESSION_REPOSITORY,
@@ -24,11 +26,14 @@ export class GetTeamSummaryUseCase {
     @Inject(DAY_END_READER) private readonly dayEnds: DayEndReader,
   ) {}
 
-  async execute(managerId: string, date?: string): Promise<TeamSummaryResult> {
+  async execute(me: AuthenticatedUser, date?: string): Promise<TeamSummaryResult> {
+    // 4.0: a Manager needs at least one view grant (the same rule as GET /team).
+    assertAnyGrant(me);
+    const activity = grantsOf(me).activity;
     const now = new Date();
     const day = date ?? localDateString(now);
 
-    const reports = await this.team.findReports(managerId);
+    const reports = await this.team.findReports(me);
     if (reports.length === 0) return { date: day, rows: [] };
 
     const reportIds = reports.map((r) => r.id);
@@ -52,6 +57,8 @@ export class GetTeamSummaryUseCase {
 
       const totals = PresenceMapper.totals(list, asOf);
       totals.onlineSec = onlineByUser.get(member.id) ?? 0;
+      // Keyboard and mouse idle time is activity data (4.0: the activity grant).
+      if (!activity) totals.idleSec = 0;
 
       const meetingNotes: MeetingNoteView[] = list
         .filter((s) => s.type === 'MEETING' && s.note)

@@ -35,6 +35,55 @@ export function expectedSecOf(shift: ShiftForAttendance | null): number {
   return Math.max(0, (lengthMin - breaksMin) * 60);
 }
 
+/** Shift length in seconds (no or invalid shift: 8 h). */
+export function shiftLengthSecOf(shift: Pick<ShiftForAttendance, 'start' | 'end'> | null): number {
+  if (!shift || !isValidHm(shift.start) || !isValidHm(shift.end)) return NO_SHIFT_EXPECTED_SEC;
+  let lengthMin = hmToMinutes(shift.end) - hmToMinutes(shift.start);
+  if (lengthMin <= 0) lengthMin += 1440;
+  return lengthMin * 60;
+}
+
+/** Minutes of the shift's enabled scheduled breaks (e.g. 20 + 40 + 20 = 80). */
+export function scheduledBreakMinOf(shift: Pick<ShiftForAttendance, 'breaks'> | null): number {
+  if (!shift) return 0;
+  return shift.breaks
+    .filter((b) => b.enabled)
+    .reduce((sum, b) => sum + Math.max(0, b.durationMin), 0);
+}
+
+/**
+ * 4.0 (docs/4.0/SPEC.md 2.4): the paid break allowance and the day's focus target.
+ *
+ *   allowanceSec = (scheduledMin + bufferMin) · 60
+ *   targetSec    = isWorkingDay ? max(0, shiftLengthSec − allowanceSec) : 0
+ *
+ * A 9-hour shift with 20 + 40 + 20 min of breaks and a 10 min buffer: 1 h 30 m
+ * paid allowance and a 7 h 30 m target. No shift: 8 h minus the buffer.
+ */
+export function allowanceOf(
+  shift: ShiftForAttendance | null,
+  bufferMin: number,
+): { scheduledSec: number; bufferSec: number; totalSec: number; shiftLengthSec: number } {
+  const scheduledSec = scheduledBreakMinOf(shift) * 60;
+  const bufferSec = Math.max(0, Math.round(bufferMin * 60));
+  return {
+    scheduledSec,
+    bufferSec,
+    totalSec: scheduledSec + bufferSec,
+    shiftLengthSec: shiftLengthSecOf(shift),
+  };
+}
+
+export function targetSecOf(
+  shift: ShiftForAttendance | null,
+  bufferMin: number,
+  isWorkingDay: boolean,
+): number {
+  if (!isWorkingDay) return 0;
+  const a = allowanceOf(shift, bufferMin);
+  return Math.max(0, a.shiftLengthSec - a.totalSec);
+}
+
 /** Whether `dateKey` is a working day (no shift: Monday to Saturday). */
 export function isWorkdayFor(shift: Pick<ShiftForAttendance, 'workDays'> | null, dateKey: string) {
   const days = shift ? shift.workDays : NO_SHIFT_WORK_DAYS;

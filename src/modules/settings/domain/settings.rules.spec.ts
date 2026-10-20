@@ -6,7 +6,7 @@ import {
 } from './settings.rules';
 
 describe('settings rules', () => {
-  it('has the SPEC 1.10 defaults', () => {
+  it('has the SPEC 1.10 defaults plus the 4.0 paid break buffer', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       approvalSlaHours: 48,
       blockManagerEndDayWhenOverdue: true,
@@ -16,7 +16,9 @@ describe('settings rules', () => {
       quietHourActiveMin: 20,
       quietHoursFlag: 4,
       autoCloseAfterShiftEndMin: 240,
+      breakBufferMin: 10,
     });
+    expect(SETTING_BOUNDS.breakBufferMin).toEqual({ min: 0, max: 60 });
   });
 
   it('applies a valid subset and reports what changed', () => {
@@ -42,6 +44,10 @@ describe('settings rules', () => {
     ['quietHoursFlag', 0],
     ['autoCloseAfterShiftEndMin', 29],
     ['autoCloseAfterShiftEndMin', 721],
+    ['breakBufferMin', -1],
+    ['breakBufferMin', 61],
+    ['breakBufferMin', 7.5],
+    ['breakBufferMin', '10'],
     ['blockManagerEndDayWhenOverdue', 'yes'],
     ['blockManagerEndDayWhenOverdue', 1],
   ])('refuses %s = %p with the field named', (field, value) => {
@@ -79,6 +85,20 @@ describe('settings rules', () => {
     expect(applySettingsPatch(DEFAULT_SETTINGS, { fullDayPct: 60, halfDayPct: 30 }).ok).toBe(true);
   });
 
+  it('sets the paid break buffer anywhere from 0 to 60 minutes', () => {
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 0 })).toEqual({
+      ok: true,
+      value: { ...DEFAULT_SETTINGS, breakBufferMin: 0 },
+      changed: ['breakBufferMin'],
+    });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 60 })).toMatchObject({ ok: true, changed: ['breakBufferMin'] });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 61 })).toMatchObject({
+      ok: false,
+      field: 'breakBufferMin',
+      message: 'Paid break buffer (minutes) must be a whole number from 0 to 60.',
+    });
+  });
+
   it('ignores unknown keys and undefined values', () => {
     const r = applySettingsPatch(DEFAULT_SETTINGS, {
       fullDayPct: undefined,
@@ -93,6 +113,12 @@ describe('settings rules', () => {
     expect(
       settingsFromStored({ approvalSlaHours: 24, quietHoursFlag: 999, lateStartGraceMin: 'x' }),
     ).toEqual({ ...DEFAULT_SETTINGS, approvalSlaHours: 24 });
+    // A 3.x row has no buffer: the default applies. A stored buffer is read, a bad one dropped.
+    expect(settingsFromStored({ approvalSlaHours: 24 }).breakBufferMin).toBe(10);
+    expect(settingsFromStored({ breakBufferMin: 0 }).breakBufferMin).toBe(0);
+    expect(settingsFromStored({ breakBufferMin: 90 }).breakBufferMin).toBe(10);
+    // Calendar and input-tracking keys in the same row are not settings.
+    expect(settingsFromStored({ weekPattern: [1, 2], idleDefaultEnabled: true })).toEqual(DEFAULT_SETTINGS);
     // A stored pair that contradicts itself falls back to the default pair.
     expect(settingsFromStored({ fullDayPct: 30, halfDayPct: 50 })).toMatchObject({
       fullDayPct: 80,

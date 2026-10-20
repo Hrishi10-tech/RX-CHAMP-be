@@ -40,7 +40,9 @@ export class ApprovalRerouteSubscriber implements OnModuleInit {
   async handle(e: UserAccessChangedEvent): Promise<void> {
     const person = await this.people.findById(e.userId);
     const canApprove =
-      !!person && person.active && (person.role === 'MANAGER' || person.role === 'SUPER_ADMIN');
+      !!person &&
+      person.active &&
+      (person.role === 'MANAGER' || person.role === 'ADMIN' || person.role === 'SUPER_ADMIN');
 
     let moved = 0;
     if (!canApprove) {
@@ -74,7 +76,7 @@ export class ApprovalRerouteSubscriber implements OnModuleInit {
     for (const r of rows) {
       const subject = await find(r.userId);
       if (!subject) continue;
-      const route = BreakApprovalPolicy.route(subject, await find(subject.managerId));
+      const route = BreakApprovalPolicy.route(subject);
       if (route.status !== 'PENDING') continue; // a Super Admin's own: nothing to approve, leave as is
       if (route.approverId === r.approverId && route.approverRole === r.approverRole) continue;
       if (

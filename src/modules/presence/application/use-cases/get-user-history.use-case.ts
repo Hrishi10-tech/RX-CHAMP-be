@@ -1,6 +1,6 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { assertAnyGrant, canSeePerson, grantsOf, PersonFacts } from '@shared/tenancy';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
 import {
   PRESENCE_SESSION_REPOSITORY,
   PresenceSessionRecord,
@@ -33,20 +33,26 @@ import { UserDailyPresenceView, UserPresenceHistoryView } from '../presence.type
  */
 export async function presenceScope(
   team: PresenceTeamReader,
-  me: Pick<AuthenticatedUser, 'id' | 'role'>,
+  me: AuthenticatedUser,
   userId: string,
+  facts?: PersonFacts | null,
 ): Promise<TeamMember[]> {
-  const direct = await team.findReports(me.id);
-  if (direct.some((r) => r.id === userId)) return direct;
-  if (me.role !== Role.SUPER_ADMIN)
-    throw new ForbiddenException('That user is not one of your reports.');
-  const ctx = await team.findContext(userId);
-  if (!ctx) throw new NotFoundException('Unknown user');
-  if (ctx.managerId) {
-    const peers = await team.findReports(ctx.managerId);
-    if (peers.some((r) => r.id === userId)) return peers;
+  // 4.0: the person must be someone the caller oversees (organisation, departments),
+  // and a Manager needs at least one view grant to see anyone's day (as GET /team).
+  const all = await team.findReports(me);
+  const found = all.find((r) => r.id === userId);
+  if (found) {
+    if (userId !== me.id) assertAnyGrant(me);
+    return all;
   }
-  return [ctx.self];
+  if (facts && canSeePerson(me, facts)) {
+    const ctx = await team.findContext(userId);
+    if (ctx) {
+      if (userId !== me.id) assertAnyGrant(me);
+      return [ctx.self];
+    }
+  }
+  throw new NotFoundException('Unknown user');
 }
 
 @Injectable()
@@ -58,11 +64,7 @@ export class GetUserHistoryUseCase {
     @Inject(IDLE_READER) private readonly idle: IdleReader,
   ) {}
 
-  async execute(
-    me: Pick<AuthenticatedUser, 'id' | 'role'>,
-    userId: string,
-    days = 7,
-  ): Promise<UserPresenceHistoryView> {
+  async execute(me: AuthenticatedUser, userId: string, days = 7): Promise<UserPresenceHistoryView> {
     const now = new Date();
     const span = Math.min(31, Math.max(1, days));
 
@@ -70,9 +72,13 @@ export class GetUserHistoryUseCase {
     const member = reports.find((r) => r.id === userId)!;
 
     const dates = this.lastNDates(now, span);
+    // Keyboard and mouse idle time is activity data (4.0: the activity grant).
+    const activity = userId === me.id || grantsOf(me).activity;
     const sessions = await this.sessions.listForUserInDates(userId, dates);
     const onlineByDate = await this.online.sumSecondsForUserByDates(userId, dates, now);
-    const idleByDate = await this.idle.sumIdleSecondsForUserByDates(userId, dates);
+    const idleByDate = activity
+      ? await this.idle.sumIdleSecondsForUserByDates(userId, dates)
+      : new Map<string, number>();
 
     // Team-average online per day, across all of the manager's reports.
     const reportIds = reports.map((r) => r.id);

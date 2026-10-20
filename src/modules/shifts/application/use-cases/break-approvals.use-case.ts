@@ -6,7 +6,7 @@ import {
   ValidationError,
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
+import { isAdminLike, RequestClock } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import {
@@ -21,6 +21,7 @@ import {
   ShiftPerson,
 } from '../../domain/shift-people.reader';
 import { BreakApprovalStatus } from '../../domain/shift.types';
+import { approvalFilterFor, assertApprover } from '../approval-scope';
 import { BreakApprovalPolicy } from '../break-approval.policy';
 import { BreakDayService } from '../break-day.service';
 import { BreakEvents, personName } from '../break-events.service';
@@ -37,15 +38,12 @@ import { cleanReason } from './my-breaks.use-case';
 const DECIDED: BreakApprovalStatus[] = ['APPROVED', 'REJECTED'];
 
 /**
- * Daily approval of off-schedule breaks.
+ * Daily approval of off-schedule breaks (the 3.0 /breaks/approvals endpoints; the
+ * unified /approvals inbox shares decideRecord and reopenRecord).
  *
- *   Staff break     -> their Manager decides (or the Super Admin pool when they
- *                      have no active manager).
- *   Manager break   -> any Super Admin decides.
- *   Super Admin     -> nothing to approve.
- *
- * A Super Admin may decide anything except their own; a Manager only what was
- * routed to them. Decisions are conditional updates, so two approvers acting at
+ * 4.0 routing (BreakApprovalPolicy): Staff to the Managers of their department or
+ * the Admin, Managers to the Admin, Admins and Super Admins need none. Nobody
+ * decides their own. Decisions are conditional updates, so two approvers acting at
  * once cannot both win.
  */
 @Injectable()
@@ -58,9 +56,7 @@ export class BreakApprovalsUseCase {
   ) {}
 
   private assertApprover(me: AuthenticatedUser): void {
-    if (me.role !== Role.SUPER_ADMIN && me.role !== Role.MANAGER) {
-      throw new ForbiddenError('Only managers and super admins approve breaks.');
-    }
+    assertApprover(me);
   }
 
   private today(): string {
@@ -69,9 +65,7 @@ export class BreakApprovalsUseCase {
 
   /** The approver part of the filter: what counts as "mine" (or everything). */
   private scopeFilter(me: AuthenticatedUser, scope: 'mine' | 'all' = 'mine'): ApprovalFilter {
-    if (me.role === Role.MANAGER) return { approverId: me.id };
-    if (scope === 'all') return {};
-    return { approverAny: { approverId: me.id, approverRole: 'SUPER_ADMIN' } };
+    return approvalFilterFor(me, scope);
   }
 
   async list(
@@ -143,7 +137,7 @@ export class BreakApprovalsUseCase {
     return { approved, skipped };
   }
 
-  /** Puts a decided break back to pending (a mis-click). The decider or a Super Admin. */
+  /** Puts a decided break back to pending (a mis-click). The decider or an Admin. */
   async reopen(me: AuthenticatedUser, id: string): Promise<ApprovalItemView> {
     const updated = await this.reopenRecord(me, id);
     return (await this.toItems(me, [updated]))[0];
@@ -156,14 +150,17 @@ export class BreakApprovalsUseCase {
   async reopenRecord(me: AuthenticatedUser, id: string): Promise<BreakRecordRow> {
     this.assertApprover(me);
     const record = await this.records.findById(id);
-    if (!record) throw new NotFoundError('Unknown break');
-    if (!BreakApprovalPolicy.canDecide(me, record))
+    const subject = record ? await this.people.findAnyByIds([record.userId]) : [];
+    if (!record || !BreakApprovalPolicy.canView(me, record, subject[0])) {
+      throw new NotFoundError('Unknown break');
+    }
+    if (!BreakApprovalPolicy.canDecide(me, record, subject[0]))
       throw new ForbiddenError('This break is not yours to decide.');
     if (!DECIDED.includes(record.approvalStatus)) {
       throw new ConflictError('Only an approved or rejected break can be reopened.', 'NOT_DECIDED');
     }
-    if (me.role !== Role.SUPER_ADMIN && record.decidedById !== me.id) {
-      throw new ForbiddenError('Only the person who decided it, or a Super Admin, can reopen it.');
+    if (!isAdminLike(me) && record.decidedById !== me.id) {
+      throw new ForbiddenError('Only the person who decided it, or the admin, can reopen it.');
     }
     const updated = await this.records.decide(id, DECIDED, {
       status: 'PENDING',
@@ -186,9 +183,9 @@ export class BreakApprovalsUseCase {
   }
 
   /**
-   * The decision rules, shared with the unified approvals (3.1): never your own,
-   * a Manager only what is routed to them, a Super Admin anything else; only a
-   * PENDING record; a locked month answers 409 MONTH_LOCKED.
+   * The decision rules, shared with the unified approvals: never your own, a
+   * Manager Staff in their departments, an Admin anything in the organisation;
+   * only a PENDING record; a locked month answers 409 MONTH_LOCKED.
    */
   async decideRecord(
     me: AuthenticatedUser,
@@ -198,9 +195,12 @@ export class BreakApprovalsUseCase {
   ): Promise<BreakRecordRow> {
     this.assertApprover(me);
     const record = await this.records.findById(id);
-    if (!record) throw new NotFoundError('Unknown break');
+    const [subject] = record ? await this.people.findAnyByIds([record.userId]) : [];
+    if (!record || !BreakApprovalPolicy.canView(me, record, subject)) {
+      throw new NotFoundError('Unknown break');
+    }
     if (record.userId === me.id) throw new ForbiddenError("You can't decide your own break.");
-    if (!BreakApprovalPolicy.canDecide(me, record)) {
+    if (!BreakApprovalPolicy.canDecide(me, record, subject)) {
       throw new ForbiddenError('This break is waiting for someone else to decide.');
     }
     if (record.approvalStatus !== 'PENDING') {
@@ -214,7 +214,7 @@ export class BreakApprovalsUseCase {
     const updated = await this.records.decide(id, ['PENDING'], {
       status,
       decidedById: me.id,
-      decidedAt: new Date(),
+      decidedAt: RequestClock.now(),
       note,
     });
     if (!updated)
@@ -241,7 +241,9 @@ export class BreakApprovalsUseCase {
     return rows.map((r) => ({
       ...ShiftMapper.recordView(r, now, names),
       user: personView(people.get(r.userId), r.userId),
-      canDecide: BreakApprovalPolicy.canDecide(me, r) && r.approvalStatus !== 'NOT_REQUIRED',
+      canDecide:
+        BreakApprovalPolicy.canDecide(me, r, people.get(r.userId)) &&
+        r.approvalStatus !== 'NOT_REQUIRED',
     }));
   }
 }

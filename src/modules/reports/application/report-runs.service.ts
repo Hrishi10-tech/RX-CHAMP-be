@@ -9,6 +9,8 @@ import { Cron } from '@nestjs/schedule';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { Role } from '@shared/rbac/roles.enum';
+import { grantsOf, requireOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { WORKTIME_READER, WorktimeReader } from '@modules/worktime/domain/worktime.reader';
 import { monthlyReportCopy, NOTICE } from '@modules/worktime/domain/notice-copy';
@@ -28,6 +30,8 @@ export function runSummary(persons: PersonMonthReport[]): Record<string, number>
     absent: sum((p) => p.totals.absent),
     extra: sum((p) => p.totals.extra),
     focusSec: sum((p) => p.totals.focusSec),
+    paidSec: sum((p) => p.totals.paidSec ?? 0),
+    unverifiedSec: sum((p) => p.totals.unverifiedSec ?? 0),
     expectedSec: sum((p) => p.totals.expectedSec),
     lateStarts: sum((p) => p.totals.lateStarts),
     pending: sum((p) => p.totals.pending),
@@ -36,16 +40,24 @@ export function runSummary(persons: PersonMonthReport[]): Record<string, number>
   };
 }
 
+/** A run summary without its activity figures (quiet hours, needs a look). */
+function withoutActivity(summary: Record<string, unknown>): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { quietHours, needsALook, ...rest } = summary;
+  return rest;
+}
+
 /** The catch-up waits this long after boot, so it never slows the start. */
 const BOOT_CATCH_UP_DELAY_MS = 20_000;
 
-const scopeOf = (role: string): 'TEAM' | 'ALL' => (role === 'SUPER_ADMIN' ? 'ALL' : 'TEAM');
+const scopeOf = (role: string): 'TEAM' | 'ALL' => (role === 'ADMIN' ? 'ALL' : 'TEAM');
 
 /**
- * Monthly reports (SPEC 1.9): at 00:30 business time on the 1st the previous
- * month is built once for everyone; each active Manager gets a run for their
- * team and each active Super Admin one for everyone, with a MONTHLY_REPORT_READY
- * notice. Upserts by (month, scope, owner), so a rerun is harmless. A catch-up on
+ * Monthly reports (SPEC 1.9; per organisation since 4.0): at 00:30 business time
+ * on the 1st the previous month is built once per organisation; each active
+ * Manager gets a run for the Staff of their departments and the organisation's
+ * Admin one for everyone, with a MONTHLY_REPORT_READY notice. Upserts by
+ * (organisation, month, scope, owner), so a rerun is harmless. A catch-up on
  * boot and at 01:00 daily makes the runs still missing for the previous month
  * (the API was down at 00:30, or the job failed), so it is idempotent.
  */
@@ -91,14 +103,21 @@ export class ReportRunsService implements OnApplicationBootstrap, OnModuleDestro
   }
 
   async list(me: AuthenticatedUser): Promise<{ items: ReportRunView[] }> {
-    const rows = await this.store.listRuns(me.id);
+    // A Super Admin sees the organisation's everyone runs (the Admin's).
+    const rows = await this.store.listRuns(
+      requireOrg(me),
+      me.role === Role.SUPER_ADMIN ? null : me.id,
+    );
+    // Quiet hours (and who needs a look for them) are activity data: a Manager
+    // without the activity grant never reads them, whenever the run was made.
+    const activity = grantsOf(me).activity;
     return {
       items: rows.map((r) => ({
         id: r.id,
         month: r.month,
         scope: r.scope,
         generatedAt: r.generatedAt.toISOString(),
-        summary: r.summary,
+        summary: activity ? r.summary : withoutActivity(r.summary),
       })),
     };
   }
@@ -147,16 +166,35 @@ export class ReportRunsService implements OnApplicationBootstrap, OnModuleDestro
   }
 
   /**
-   * Builds the month once and stores every owner's run (only the owners with
-   * no run for it yet, when `onlyMissing`); returns how many were stored.
+   * Builds the month once per organisation and stores every owner's run (only the
+   * owners with no run for it yet, when `onlyMissing`); returns how many were stored.
    */
   async generate(month: string, now: Date, onlyMissing = false): Promise<number> {
-    const everyone = await this.reader.listPeople({});
-    const have = onlyMissing ? await this.store.runKeys(month) : new Set<string>();
+    let runs = 0;
+    for (const companyId of await this.reader.listCompanyIds()) {
+      try {
+        runs += await this.generateFor(companyId, month, now, onlyMissing);
+      } catch (err) {
+        this.logger.warn(
+          `monthly report ${month} for ${companyId} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    return runs;
+  }
+
+  private async generateFor(
+    companyId: string,
+    month: string,
+    now: Date,
+    onlyMissing: boolean,
+  ): Promise<number> {
+    const everyone = await this.reader.listPeople({ companyId, excludeRoles: ['SUPER_ADMIN'] });
+    const have = onlyMissing ? await this.store.runKeys(companyId, month) : new Set<string>();
     const owners = everyone.filter(
       (p) =>
         p.active &&
-        (p.role === 'MANAGER' || p.role === 'SUPER_ADMIN') &&
+        (p.role === 'MANAGER' || p.role === 'ADMIN') &&
         !have.has(`${scopeOf(p.role)}|${p.id}`),
     );
     if (!owners.length) return 0;
@@ -167,15 +205,24 @@ export class ReportRunsService implements OnApplicationBootstrap, OnModuleDestro
       dates[dates.length - 1],
     );
     const inMonth = everyone.filter((p) => p.active || worked.has(p.id));
+    if (!inMonth.length) return 0;
     const built = await this.reports.buildMonth(inMonth, month, 'ALL', now);
+    const depts = await this.reader.managedDepartments(
+      owners.filter((o) => o.role === 'MANAGER').map((o) => o.id),
+    );
+    const deptOf = new Map(inMonth.map((p) => [p.id, p]));
     let runs = 0;
     for (const owner of owners) {
       const scope = scopeOf(owner.role);
+      const mine = new Set(depts.get(owner.id) ?? []);
       const persons =
         scope === 'ALL'
           ? built.persons
-          : built.persons.filter((p) => p.person.managerId === owner.id);
-      await this.store.upsertRun(month, scope, owner.id, runSummary(persons));
+          : built.persons.filter((p) => {
+              const row = deptOf.get(p.person.id);
+              return row?.role === 'USER' && !!row.departmentId && mine.has(row.departmentId);
+            });
+      await this.store.upsertRun(companyId, month, scope, owner.id, runSummary(persons));
       const copy = monthlyReportCopy(month, scope);
       await this.events.publish(
         NoticeEvent.eventName,

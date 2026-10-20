@@ -2,7 +2,7 @@
 // empty departments back on the default, no reason asked of a Super Admin, and an
 // agent password sign-in marking the agent activated.
 // Needs a freshly reset and seeded database: see README.md.
-import { BASE, Client, check, expectStatus, summary, todayKey } from './lib.mjs';
+import { BASE, Client, check, expectStatus, summary, todayKey } from '../lib.mjs';
 
 const sa = await new Client('superadmin').login('admin@timechamp.test', 'admin123');
 const mgr = await new Client('manager').login('manager@timechamp.test', 'manager123');

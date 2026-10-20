@@ -3,22 +3,24 @@ import { ApprovalCategory } from './approval-copy';
 
 export const APPROVALS_READER = Symbol('APPROVALS_READER');
 
-export type ApprovalType = 'BREAK' | 'MEETING';
+export type ApprovalType = 'BREAK' | 'MEETING' | 'AWAY';
 
 export interface ApprovalRef {
   type: ApprovalType;
   id: string;
 }
 
-/** Whose items a list covers. */
+/** Whose items a list covers (4.0: by organisation and department, docs/4.0/SPEC.md 1.3). */
 export type ApprovalScope =
-  /** Every item (a Super Admin's scope=all). */
+  /** No scope of its own: only for queries already limited to `userIds` the caller may see. */
   | { kind: 'ALL' }
-  /** Routed to this approver (a Manager's mine). */
-  | { kind: 'APPROVER'; approverId: string }
-  /** A Super Admin's mine: routed to them, the Super Admin pool, and every escalated item. */
-  | { kind: 'SUPER_ADMIN_MINE'; approverId: string }
-  /** The person's own items (GET /approvals/me). */
+  /** Everything in an organisation except the caller's own (an Admin's "all"). */
+  | { kind: 'ORG'; companyId: string; excludeUserId: string }
+  /** An Admin's "mine": waiting for the Admin, or escalated, in the organisation. */
+  | { kind: 'ORG_ADMIN_MINE'; companyId: string; excludeUserId: string }
+  /** A Manager's: Staff in these departments of the organisation. */
+  | { kind: 'DEPTS'; companyId: string; departmentIds: string[]; excludeUserId: string }
+  /** The person's own items (GET /approvals/me, agent History). */
   | { kind: 'SUBJECT'; userId: string };
 
 export type DecidedStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -32,7 +34,7 @@ export interface ApprovalQuery {
   overdueAt?: Date;
   /** Only items due in [from, to] (inclusive). */
   dueWithin?: { from: Date; to: Date };
-  /** Only items that were escalated to the Super Admins. */
+  /** Only items that were escalated (past due). */
   escalatedOnly?: boolean;
   date?: string;
   fromDate?: string;
@@ -49,11 +51,16 @@ export interface SlaClaim {
   userId: string;
   approverId: string | null;
   approverRole: ApproverRole | null;
+  /** The subject's organisation and department (who gets reminded and escalated to). */
+  companyId: string | null;
+  departmentId: string | null;
 }
 
 export interface DigestRow {
   approverId: string | null;
   approverRole: ApproverRole | null;
+  companyId: string | null;
+  departmentId: string | null;
   pending: number;
   dueSoon: number;
   overdue: number;
@@ -74,11 +81,8 @@ export interface ApprovalsReader {
     from: Date,
     to: Date,
   ): Promise<number>;
-  /** PENDING items routed to this approver (approverId) past their due time. */
-  overdueRoutedTo(
-    approverId: string,
-    now: Date,
-  ): Promise<{ count: number; oldestDueAt: Date | null }>;
+  /** Overdue pending items, and the earliest due time of any pending item (overdue or not). */
+  overdueIn(scope: ApprovalScope, now: Date): Promise<{ count: number; oldestDueAt: Date | null }>;
   /** Pending items due within 12h that were never reminded (nothing is marked). */
   remindersDue(now: Date): Promise<SlaClaim[]>;
   /** Pending items past due that were never escalated (nothing is marked). */
@@ -92,10 +96,10 @@ export interface ApprovalsReader {
    * process wrote during the deploy window. Returns how many.
    */
   fillMissingDueAt(slaHours: number): Promise<number>;
-  /** Pending, due within 24h and overdue counts per approver (id or pool), for the digest. */
+  /** Pending, due within 24h and overdue counts per organisation, department and approver role. */
   digestCounts(now: Date): Promise<DigestRow[]>;
-  /** Which of these months (YYYY-MM) are locked. */
-  lockedMonths(months: string[]): Promise<Set<string>>;
+  /** Which of these months (YYYY-MM) are locked, as `companyId|month`. */
+  lockedMonths(companyIds: string[], months: string[]): Promise<Set<string>>;
   /** PENDING items per (person, day) in a date range, and how many are past due. */
   pendingByUserDate(
     userIds: string[],
@@ -103,6 +107,6 @@ export interface ApprovalsReader {
     toDate: string,
     now: Date,
   ): Promise<{ userId: string; date: string; pending: number; overdue: number }[]>;
-  /** How many items dated in the month are PENDING (optionally only these people's). */
-  pendingInMonth(month: string, userIds?: string[]): Promise<number>;
+  /** How many items of the organisation dated in the month are PENDING (optionally only these people's). */
+  pendingInMonth(companyId: string, month: string, userIds?: string[]): Promise<number>;
 }

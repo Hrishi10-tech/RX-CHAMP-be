@@ -4,8 +4,12 @@ import { MeetingNoteSharedEvent } from '@modules/presence/domain/events/meeting-
 import { NOTIFICATION_REPOSITORY, NotificationRepository } from '../domain/notification.repository';
 import { NotificationMapper } from './notification.mapper';
 import { NotificationsGateway } from '../presentation/notifications.gateway';
+import { OversightRecipients } from './oversight-recipients.service';
 
-/** Turns an employee's meeting note into a persisted + realtime notification for their manager. */
+/**
+ * Turns an employee's meeting note into a persisted + realtime notification for
+ * whoever oversees them (4.0: department managers, or the organisation's Admin).
+ */
 @Injectable()
 export class MeetingNoteSharedSubscriber implements OnModuleInit {
   private readonly logger = new Logger(MeetingNoteSharedSubscriber.name);
@@ -14,6 +18,7 @@ export class MeetingNoteSharedSubscriber implements OnModuleInit {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(NOTIFICATION_REPOSITORY) private readonly notifications: NotificationRepository,
     private readonly gateway: NotificationsGateway,
+    private readonly recipients: OversightRecipients,
   ) {}
 
   onModuleInit(): void {
@@ -23,14 +28,17 @@ export class MeetingNoteSharedSubscriber implements OnModuleInit {
   }
 
   private async handle(event: MeetingNoteSharedEvent): Promise<void> {
-    const saved = await this.notifications.create({
-      userId: event.managerId,
-      type: 'MEETING_NOTE',
-      title: `${event.fromName} is in a meeting`,
-      body: event.note,
-    });
-
-    this.gateway.emitToUser(event.managerId, NotificationMapper.toView(saved));
-    this.logger.debug(`meeting note from ${event.fromUserId} → manager ${event.managerId}`);
+    const to = await this.recipients.of(event.fromUserId);
+    for (const userId of to) {
+      const saved = await this.notifications.create({
+        userId,
+        type: 'MEETING_NOTE',
+        title: `${event.fromName} is in a meeting`,
+        body: event.note,
+        fromUserId: event.fromUserId,
+      });
+      this.gateway.emitToUser(userId, NotificationMapper.toView(saved));
+    }
+    this.logger.debug(`meeting note from ${event.fromUserId} -> ${to.length} recipient(s)`);
   }
 }

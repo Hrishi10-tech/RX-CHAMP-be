@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { isAdminLike } from '@shared/tenancy';
 import { UserMapper } from '../mappers/user.mapper';
 import { UserAccessService } from '../../domain/services/user-access.service';
 import {
@@ -36,6 +37,14 @@ function endOfDay(date?: string): Date | undefined {
   return d;
 }
 
+/**
+ * GET /users (docs/4.0/SPEC.md 5.3).
+ *  - Admin, Super Admin (organisation selected): everyone in the organisation with
+ *    department, managed departments, grants, input-tracking override and agent state.
+ *  - Manager: the Staff of their departments, name, email, designation and department only.
+ *  - Staff: themselves, the same few fields.
+ * The caller's scope is applied last, so no filter can reach outside it.
+ */
 @Injectable()
 export class ListUsersUseCase {
   private readonly access = new UserAccessService();
@@ -50,33 +59,38 @@ export class ListUsersUseCase {
     const limit = query.limit ?? 20;
     const scope = this.access.listScopeFor(me);
 
+    // A department filter narrows a Manager's own departments, never widens them.
+    let departmentIds = scope.departmentIds;
+    if (query.departmentId) {
+      departmentIds = departmentIds
+        ? departmentIds.filter((id) => id === query.departmentId)
+        : [query.departmentId];
+    }
+
     const base: ListUsersFilter = {
-      search: query.search,
+      search: (query.q ?? query.search)?.trim() || undefined,
       sort: query.sort,
-      // Every filter is independent and they combine: Role AND Team AND Company AND
-      // joined-date range. Role used to be dropped whenever managerId was present
-      // (they were an either/or), which silently broke the Role filter on every
-      // manager-scoped screen.
       role: query.role,
+      status: query.status,
       department: query.department,
-      companyId: query.companyId,
-      managerId: query.managerId,
       joinedFrom: startOfDay(query.joinedFrom),
       joinedTo: endOfDay(query.joinedTo),
-      // Last, so the caller's own visibility always wins: a manager passing someone
-      // else's managerId still only ever sees their own reports.
       ...scope,
+      departmentIds,
     };
     const [list, total] = await Promise.all([
       this.users.findAll({ ...base, skip: (page - 1) * limit, take: limit }),
       this.users.count(base),
     ]);
 
+    if (!isAdminLike(me)) {
+      return { users: list.map((u) => UserMapper.toBrief(u)), total, page, limit };
+    }
+
     // Grouped lookups for the whole page, so the Status column costs a fixed few
     // queries rather than several per row.
     const now = new Date();
     const presence = await this.presence.presenceFor(list.map((u) => u.id));
-
     return {
       users: list.map((u) => UserMapper.toListItem(u, presence.get(u.id), now)),
       total,

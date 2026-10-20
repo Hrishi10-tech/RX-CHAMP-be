@@ -1,5 +1,5 @@
 import { Injectable, PipeTransform } from '@nestjs/common';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsOptional } from 'class-validator';
 import { ValidationError } from '@shared/exceptions/app.exception';
@@ -40,12 +40,19 @@ export class TeamDayQueryDto extends PersonDayQueryDto {
   @ArrayMaxSize(MAX_REPORT_USER_IDS)
   @IsId({ each: true })
   userIds?: string[];
+
+  @ApiPropertyOptional({
+    description: '4.0: only this department (one the caller may see, else 404)',
+  })
+  @IsOptional()
+  @IsId()
+  departmentId?: string;
 }
 
 /** GET /reports/team/month and its export */
 export class TeamMonthQueryDto extends MonthQueryDto {
   @ApiPropertyOptional({
-    description: "Super Admin: one manager's team (a Manager may only name themselves)",
+    description: "3.x: one manager's team. Ignored since 4.0 (use departmentId)",
   })
   @IsOptional()
   @IsId()
@@ -58,6 +65,13 @@ export class TeamMonthQueryDto extends MonthQueryDto {
   @ArrayMaxSize(MAX_REPORT_USER_IDS)
   @IsId({ each: true })
   userIds?: string[];
+
+  @ApiPropertyOptional({
+    description: '4.0: only this department (one the caller may see, else 404)',
+  })
+  @IsOptional()
+  @IsId()
+  departmentId?: string;
 }
 
 /** The `:month` path segment: "YYYY-MM", else 400 VALIDATION_ERROR (details.field "month"). */
@@ -69,4 +83,15 @@ export class ParseMonthPipe implements PipeTransform<string, string> {
     }
     return value;
   }
+}
+
+/** GET /reports/person/:id/timesheet?from&to (4.0; at most 366 days). */
+export class TimesheetQueryDto {
+  @ApiProperty({ example: '2026-09-01' })
+  @IsDateKey()
+  from!: string;
+
+  @ApiProperty({ example: '2026-09-30' })
+  @IsDateKey()
+  to!: string;
 }

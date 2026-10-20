@@ -12,6 +12,7 @@ export interface PublicCompanyManager {
   email: string;
   name: string;
   joinedOn: string;
+  /** 4.0: active Staff in the manager's departments. */
   userCount: number;
 }
 
@@ -23,15 +24,7 @@ export interface PublicCompanyWithStats extends PublicCompany {
   managers: PublicCompanyManager[];
 }
 
-export interface PublicManagerUser {
-  id: string;
-  name: string;
-  role: string;
-}
-
 export type ListCompaniesResult = PaginatedResult<'companies', PublicCompanyWithStats>;
-
-export type ListManagerUsersResult = PaginatedResult<'users', PublicManagerUser>;
 
 export interface CreateCompanyInput {
   name: string;
@@ -51,7 +44,7 @@ export interface DeleteCompanyResult {
   deleted: true;
   id: string;
   name: string;
-  /** Members soft-deleted alongside the company. */
+  /** Members soft-deleted alongside the company (4.0: blocked ones only). */
   membersRemoved: number;
 }
 

@@ -1,4 +1,14 @@
-import { dayClassOf, expectedSecOf, isWorkdayFor, lateStartOf } from './attendance';
+import {
+  allowanceOf,
+  dayClassOf,
+  expectedSecOf,
+  isWorkdayFor,
+  lateStartOf,
+  NO_SHIFT_EXPECTED_SEC,
+  scheduledBreakMinOf,
+  shiftLengthSecOf,
+  targetSecOf,
+} from './attendance';
 import { activeMinOf, buildHourly, quietHoursOf } from './hourly';
 
 const ist = (hm: string) => {
@@ -41,6 +51,77 @@ describe('expected time', () => {
     expect(isWorkdayFor(general, '2026-10-18')).toBe(false); // Sunday
     expect(isWorkdayFor(null, '2026-10-17')).toBe(true); // Saturday
     expect(isWorkdayFor({ workDays: [7] }, '2026-10-18')).toBe(true);
+  });
+});
+
+describe('4.0 paid break allowance and daily target (SPEC 2.4)', () => {
+  const nineHours = {
+    start: '09:00',
+    end: '18:00',
+    workDays: [1, 2, 3, 4, 5, 6],
+    breaks: [
+      { enabled: true, durationMin: 20 },
+      { enabled: true, durationMin: 40 },
+      { enabled: true, durationMin: 20 },
+    ],
+  };
+
+  it('9 h shift, 20 + 40 + 20 min breaks, 10 min buffer: 1 h 30 allowance, 7 h 30 target', () => {
+    expect(scheduledBreakMinOf(nineHours)).toBe(80);
+    expect(allowanceOf(nineHours, 10)).toEqual({
+      scheduledSec: 80 * 60,
+      bufferSec: 10 * 60,
+      totalSec: 90 * 60,
+      shiftLengthSec: 9 * 3600,
+    });
+    expect(targetSecOf(nineHours, 10, true)).toBe(7.5 * 3600);
+  });
+
+  it('a non-working day has no target', () => {
+    expect(targetSecOf(nineHours, 10, false)).toBe(0);
+    expect(targetSecOf(null, 10, false)).toBe(0);
+  });
+
+  it('no shift: 8 h minus the buffer', () => {
+    expect(allowanceOf(null, 10)).toEqual({
+      scheduledSec: 0,
+      bufferSec: 600,
+      totalSec: 600,
+      shiftLengthSec: NO_SHIFT_EXPECTED_SEC,
+    });
+    expect(targetSecOf(null, 10, true)).toBe(8 * 3600 - 600);
+    expect(targetSecOf(null, 0, true)).toBe(8 * 3600);
+  });
+
+  it('an overnight shift wraps midnight', () => {
+    const night = { ...nineHours, start: '22:00', end: '07:00' };
+    expect(shiftLengthSecOf(night)).toBe(9 * 3600);
+    expect(targetSecOf(night, 10, true)).toBe(7.5 * 3600);
+  });
+
+  it('disabled breaks are not paid; the buffer follows the setting', () => {
+    const lunchOnly = {
+      ...nineHours,
+      breaks: [
+        { enabled: false, durationMin: 20 },
+        { enabled: true, durationMin: 40 },
+        { enabled: false, durationMin: 20 },
+      ],
+    };
+    expect(allowanceOf(lunchOnly, 0).totalSec).toBe(40 * 60);
+    expect(targetSecOf(lunchOnly, 0, true)).toBe(8 * 3600 + 20 * 60);
+    expect(targetSecOf(lunchOnly, 60, true)).toBe(7 * 3600 + 20 * 60);
+  });
+
+  it('the target never goes below zero, and a negative buffer counts as none', () => {
+    const short = { ...nineHours, start: '09:00', end: '10:00' };
+    expect(targetSecOf(short, 10, true)).toBe(0);
+    expect(allowanceOf(nineHours, -5).bufferSec).toBe(0);
+  });
+
+  it('an invalid shift time falls back to 8 h', () => {
+    expect(shiftLengthSecOf({ start: '9am', end: '18:00' })).toBe(NO_SHIFT_EXPECTED_SEC);
+    expect(shiftLengthSecOf(null)).toBe(NO_SHIFT_EXPECTED_SEC);
   });
 });
 

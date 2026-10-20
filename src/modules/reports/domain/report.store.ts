@@ -22,24 +22,26 @@ export type LockMonthResult =
   /** Work sessions dated in the month still open, or items dated in it still PENDING. */
   | { ok: false; reason: 'OPEN_SESSIONS' | 'PENDING_APPROVALS'; count: number };
 
-/** report_runs and month_locks. */
+/** report_runs and month_locks, per organisation (4.0). */
 export interface ReportStore {
   upsertRun(
+    companyId: string,
     month: string,
     scope: 'TEAM' | 'ALL',
     ownerId: string,
     summary: Record<string, unknown>,
   ): Promise<void>;
-  listRuns(ownerId: string): Promise<ReportRunRow[]>;
-  /** `SCOPE|ownerId` of every run stored for the month. */
-  runKeys(month: string): Promise<Set<string>>;
+  /** The organisation's runs: one owner's, or (null) every ALL-scope run. */
+  listRuns(companyId: string, ownerId: string | null): Promise<ReportRunRow[]>;
+  /** `SCOPE|ownerId` of every run stored for the organisation's month. */
+  runKeys(companyId: string, month: string): Promise<Set<string>>;
   /**
    * When 3.1 first booted on this database (app_settings key `system`,
    * `firstBootAt`): stored once, at `now` if it was never stored, then read back.
    */
   recordFirstBoot(now: Date): Promise<Date>;
-  findLock(month: string): Promise<MonthLockRow | null>;
-  findSnapshot(month: string): Promise<MonthSnapshot | null>;
+  findLock(companyId: string, month: string): Promise<MonthLockRow | null>;
+  findSnapshot(companyId: string, month: string): Promise<MonthSnapshot | null>;
   /**
    * Locks a month in one transaction holding the month's exclusive advisory lock
    * (decisions and new pending items take the shared one): refused while a work
@@ -48,10 +50,11 @@ export interface ReportStore {
    * is (created false).
    */
   lockMonth(
+    companyId: string,
     month: string,
     lockedById: string,
     buildSnapshot: () => Promise<MonthSnapshot>,
   ): Promise<LockMonthResult>;
   /** True when a lock was removed. */
-  unlockMonth(month: string): Promise<boolean>;
+  unlockMonth(companyId: string, month: string): Promise<boolean>;
 }

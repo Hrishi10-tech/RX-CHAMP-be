@@ -1,6 +1,6 @@
 // Shifts, assignments, the break flow and approvals, end to end (101 checks).
 // Needs a freshly reset and seeded database: see README.md.
-import { Client, check, expectStatus, summary, hm, todayKey, minutesFromNow } from './lib.mjs';
+import { Client, check, expectStatus, summary, hm, todayKey, minutesFromNow } from '../lib.mjs';
 
 const sa = await new Client('superadmin').login('admin@timechamp.test', 'admin123');
 const mgr = await new Client('manager').login('manager@timechamp.test', 'manager123');

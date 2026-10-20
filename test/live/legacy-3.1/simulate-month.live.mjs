@@ -7,8 +7,8 @@
 // Needs a freshly reset and seeded database and a running API: see README.md.
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import { Client, check, expectStatus, summary, todayKey } from './lib.mjs';
-import { openDb, TZ, wallToUtc } from './db.mjs';
+import { Client, check, expectStatus, summary, todayKey } from '../lib.mjs';
+import { openDb, TZ, wallToUtc } from '../db.mjs';
 
 const MONTH = '2026-09';
 const DATES = Array.from({ length: 30 }, (_, i) => `${MONTH}-${String(i + 1).padStart(2, '0')}`);

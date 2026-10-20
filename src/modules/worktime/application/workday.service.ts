@@ -3,15 +3,22 @@ import { ConfigService } from '@nestjs/config';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { approverScopeOf } from './approver-scope';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
 import { SkipsNeedingCommentQuery } from '@modules/shifts/application/skips-needing-comment.query';
+import { SkipNeedingComment } from '@modules/shifts/application/shifts.types';
 import { shiftBounds } from '@modules/shifts/domain/break-schedule';
 import { SHIFT_PEOPLE_READER, ShiftPeopleReader } from '@modules/shifts/domain/shift-people.reader';
-import { DEFAULT_REASON_MIN_CHARS, ShiftRecord } from '@modules/shifts/domain/shift.types';
+import {
+  DEFAULT_REASON_MIN_CHARS,
+  QUICK_BREAK_MINUTES,
+  ShiftRecord,
+} from '@modules/shifts/domain/shift.types';
+import { DayPlanService } from './day-plan.service';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
-import { expectedSecOf, isWorkdayFor, lateStartOf } from '../domain/attendance';
+import { lateStartOf } from '../domain/attendance';
 import { FocusBreakdown } from '../domain/focus';
 import { portalUrlFrom } from '../domain/portal-url';
 import {
@@ -37,6 +44,16 @@ export function focusView(f: FocusBreakdown): FocusView {
     pendingPlusSec: f.pendingPlusSec,
     rejectedMinusSec: f.rejectedMinusSec,
     pendingMinusSec: f.pendingMinusSec,
+    paidBreakSec: f.paidBreakSec,
+    unpaidBreakSec: f.unpaidBreakSec,
+    bufferUsedSec: f.bufferUsedSec,
+    quickBreakSec: f.quickBreakSec,
+    awayPendingSec: f.awayPendingSec,
+    awayApprovedSec: f.awayApprovedSec,
+    awayRejectedSec: f.awayRejectedSec,
+    awayUnexplainedSec: f.awayUnexplainedSec,
+    unverifiedSec: f.unverifiedSec,
+    paidSec: f.paidSec,
   };
 }
 
@@ -44,7 +61,8 @@ export function sessionView(s: WorkSessionRecord): WorkSessionView {
   return {
     startedAt: s.startedAt.toISOString(),
     endedAt: s.endedAt?.toISOString() ?? null,
-    endReason: s.endReason,
+    // A reopened day keeps its AUTO_CLOSED reason while open: an open session has none.
+    endReason: s.endedAt ? s.endReason : null,
   };
 }
 
@@ -62,6 +80,7 @@ export class WorkdayService {
     private readonly skipsQuery: SkipsNeedingCommentQuery,
     private readonly settings: AppSettingsService,
     private readonly config: ConfigService,
+    private readonly plans: DayPlanService,
   ) {}
 
   /** GET /workday/me/today: closes a stale session and auto-skips first (lazily). */
@@ -90,25 +109,32 @@ export class WorkdayService {
       forDate ??
       open?.date ??
       (person ? this.days.dayWith(ctx, person, now).dateKey : dateKeyInZone(now, tz));
-    const [data, settings, skipsNeedingComment] = await Promise.all([
+    const [data, settings, skipsNeedingComment, pc, idle] = await Promise.all([
       this.dayData.load([me.id], date, date, now, { heal: true }),
-      this.settings.get(),
+      this.settings.get(me.companyId),
       this.skipsQuery.forUser(me.id, now),
+      this.plans.context([
+        person ?? { id: me.id, companyId: me.companyId, department: me.department },
+      ]),
+      this.settings.effectiveIdleFor(me.id),
     ]);
     const day = data.day(me.id, date);
-    const focus = focusOfDay(day, now);
-    const shift: ShiftRecord | null = person
-      ? this.days.resolveWith(ctx, person, date).shift
-      : null;
-    const workday = isWorkdayFor(shift, date);
+    const plan = pc.plan(
+      person ?? { id: me.id, companyId: me.companyId, department: me.department },
+      date,
+    );
+    const focus = focusOfDay(day, now, plan.bufferMin);
+    const shift: ShiftRecord | null = person ? plan.shift : null;
+    const workday = plan.isWorkingDay;
+    void ctx;
     const first = day.sessions[0] ?? null;
     const last = day.sessions[day.sessions.length - 1] ?? null;
     const state =
       open && open.date === date ? 'OPEN' : day.sessions.length ? 'ENDED' : 'NOT_STARTED';
 
-    const approver = me.role === Role.MANAGER || me.role === Role.SUPER_ADMIN;
+    const approverScope = approverScopeOf(me);
     const [overdue, lastEnded] = await Promise.all([
-      approver ? this.approvals.overdueRoutedTo(me.id, now) : Promise.resolve({ count: 0 }),
+      approverScope ? this.approvals.overdueIn(approverScope, now) : Promise.resolve({ count: 0 }),
       state === 'NOT_STARTED' ? this.lastEnded(me.id, date, now) : Promise.resolve(null),
     ]);
 
@@ -131,7 +157,7 @@ export class WorkdayService {
             )
           : null,
       shift: shift ? { id: shift.id, name: shift.name, start: shift.start, end: shift.end } : null,
-      expectedSec: workday ? expectedSecOf(shift) : 0,
+      expectedSec: plan.targetSec,
       skipsNeedingComment,
       overdueApprovals: overdue.count,
       endDayBlockedByOverdue:
@@ -145,6 +171,23 @@ export class WorkdayService {
         this.config.get<string[]>('corsOrigins'),
       ),
       lastEnded,
+      targetSec: plan.targetSec,
+      isWorkingDay: plan.isWorkingDay,
+      dayLabel: plan.label,
+      allowance: {
+        scheduledSec: plan.allowance.scheduledSec,
+        bufferSec: plan.allowance.bufferSec,
+        totalSec: plan.allowance.totalSec,
+        paidUsedSec: focus.paidBreakSec,
+        bufferUsedSec: focus.bufferUsedSec,
+        unpaidSec: focus.unpaidBreakSec,
+      },
+      away: { pendingSec: focus.awayPendingSec, unexplainedSec: focus.awayUnexplainedSec },
+      config: {
+        idle,
+        quickBreakMinutes: QUICK_BREAK_MINUTES,
+        breakBufferMin: settings.breakBufferMin,
+      },
     };
   }
 
@@ -179,9 +222,11 @@ export class WorkdayService {
   /** 409 APPROVALS_OVERDUE for a Manager with items past due, while the setting is on. */
   async assertNoOverdueApprovals(me: AuthenticatedUser, now: Date): Promise<void> {
     if (me.role !== Role.MANAGER) return;
-    const settings = await this.settings.get();
+    const settings = await this.settings.get(me.companyId);
     if (!settings.blockManagerEndDayWhenOverdue) return;
-    const overdue = await this.approvals.overdueRoutedTo(me.id, now);
+    const scope = approverScopeOf(me);
+    if (!scope) return;
+    const overdue = await this.approvals.overdueIn(scope, now);
     if (overdue.count > 0) {
       throw new ConflictError(
         `${overdue.count === 1 ? '1 approval is' : `${overdue.count} approvals are`} past ` +
@@ -195,8 +240,17 @@ export class WorkdayService {
   }
 
   /** 409 SKIP_COMMENTS_REQUIRED listing every skip still waiting for a comment. */
-  async assertSkipsCommented(me: AuthenticatedUser, now: Date): Promise<void> {
-    const breaks = await this.skipsQuery.forUser(me.id, now);
+  async assertSkipsCommented(
+    me: AuthenticatedUser,
+    now: Date,
+    planned: SkipNeedingComment[] = [],
+    commented: ReadonlySet<string> = new Set(),
+  ): Promise<void> {
+    // Judged before anything is written: the skips already waiting, and the
+    // auto-skips this End Day would create, less those commented in it.
+    const breaks = [...(await this.skipsQuery.forUser(me.id, now)), ...planned].filter(
+      (b) => !commented.has(b.id),
+    );
     if (breaks.length) {
       throw new ConflictError(
         breaks.length === 1

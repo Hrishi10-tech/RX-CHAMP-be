@@ -1,23 +1,18 @@
-import { ForbiddenException } from '@nestjs/common';
-import { Role } from '@shared/rbac/roles.enum';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { ActivityAccessReader } from '../domain/activity-access.reader';
+import { assertCanViewSection, PersonFactsReader, Section } from '@shared/tenancy';
 
 /**
- * A user may view a target's activity when: it's themselves, they're an admin,
- * or they are the target's manager. Throws ForbiddenException otherwise.
+ * 4.0 (docs/4.0/SPEC.md 1.2, 2.2): a person's own activity, anyone in the
+ * organisation for an Admin or Super Admin, Staff in their departments for a
+ * Manager with the grant for this section. 404 outside scope, 403 GRANT_REQUIRED
+ * without the grant.
  */
 export async function assertCanAccess(
   me: AuthenticatedUser,
   targetUserId: string,
-  access: ActivityAccessReader,
+  facts: PersonFactsReader,
+  section: Section = 'activity',
 ): Promise<void> {
   if (me.id === targetUserId) return;
-  if (me.role === Role.SUPER_ADMIN) return;
-
-  const managerId = await access.findManagerId(targetUserId);
-  if (managerId === undefined) throw new ForbiddenException('User not found');
-  if (managerId === me.id) return;
-
-  throw new ForbiddenException('You can only access activity for your own team');
+  assertCanViewSection(me, await facts.find(targetUserId), section);
 }

@@ -43,6 +43,16 @@ export class StartMeetingDto {
   @ValidateNested({ each: true })
   @Type(() => MeetingParticipantDto)
   participants: MeetingParticipantDto[] = [];
+
+  @ApiPropertyOptional({
+    description:
+      '4.0: who will mail the minutes of meeting (2..80 characters; required from 4.0 agents)',
+    example: 'Asha Rao',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  momSender?: string;
 }
 
 /** POST /meetings/past */

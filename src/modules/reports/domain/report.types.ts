@@ -13,6 +13,9 @@ export interface ReportPerson {
   role: string;
   department: string | null;
   designation: string | null;
+  /** 4.0: the person's department (absent in snapshots locked before 4.0). */
+  departmentId?: string | null;
+  /** 3.x reporting line, kept for older readers; not used for scope in 4.0. */
   managerId: string | null;
   managerName: string | null;
 }
@@ -43,6 +46,21 @@ export interface PersonDaySummary {
   pending: number;
   quietHours: number;
   activeMin: number;
+  // ---- 4.0 (docs/4.0/SPEC.md 2.4, 5.8)
+  /** The calendar's label for the date (a holiday), or null. */
+  label: string | null;
+  /** The day's focus target (= expectedSec). */
+  targetSec: number;
+  paidBreakSec: number;
+  unpaidBreakSec: number;
+  awayApprovedSec: number;
+  awayPendingSec: number;
+  awayRejectedSec: number;
+  awayUnexplainedSec: number;
+  /** Offline time with no activity data (REPLAY sessions the agent's samples do not cover). */
+  unverifiedSec: number;
+  /** Payroll time: focusSec + paidBreakSec. */
+  paidSec: number;
 }
 
 export interface TimelineSegment {
@@ -84,6 +102,19 @@ export interface MonthTotals {
   pending: number;
   quietHours: number;
   needsALook: boolean;
+  // ---- 4.0
+  /** Sum of every day's target (future working days included). */
+  targetSec: number;
+  breakSec: number;
+  meetingSec: number;
+  paidBreakSec: number;
+  unpaidBreakSec: number;
+  awayApprovedSec: number;
+  awayPendingSec: number;
+  /** Offline time with no activity data (absent from snapshots taken before it existed). */
+  unverifiedSec: number;
+  /** Payroll time: focusSec + paidBreakSec (absent from snapshots taken before it existed). */
+  paidSec: number;
 }
 
 export interface PersonMonthReport {

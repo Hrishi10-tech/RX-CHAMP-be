@@ -1,9 +1,14 @@
-import { BreakRecordRow, outcomeOf } from '@modules/shifts/domain/break-record.repository';
+import {
+  BreakRecordRow,
+  outcomeOf,
+  segmentsOf,
+} from '@modules/shifts/domain/break-record.repository';
+import { AwayRow } from './away.repository';
 import { computeFocus, FocusBreakdown } from './focus';
 import { Interval, intersect, lengthMs, normalize, span, toSec } from './intervals';
 import { MeetingRecordRow, MIN_LIVE_MEETING_SEC } from './meeting-record.repository';
 import { WorkSessionRecord } from './work-session.repository';
-import { PresenceRow } from './worktime.reader';
+import { CoverageRow, PresenceRow } from './worktime.reader';
 
 /** Everything one person's day is computed from. */
 export interface PersonDayData {
@@ -17,19 +22,40 @@ export interface PersonDayData {
   breakRecords: BreakRecordRow[];
   /** Meeting records dated `date`. */
   meetingRecords: MeetingRecordRow[];
+  /** 4.0: away stretches dated `date`. */
+  away?: AwayRow[];
+  /** 4.0: what the agent's activity samples cover of this day's REPLAY sessions. */
+  coverage?: CoverageRow[];
 }
 
-/** Focus for one loaded day (SPEC 1.3). */
-export function focusOfDay(d: PersonDayData, now: Date): FocusBreakdown {
+/**
+ * Focus for one loaded day (4.0: docs/4.0/SPEC.md 2.4). `bufferMin` is the
+ * organisation's paid break buffer (it only splits break time into paid and
+ * unpaid; focus itself does not depend on it).
+ */
+export function focusOfDay(d: PersonDayData, now: Date, bufferMin = 0): FocusBreakdown {
   return computeFocus({
-    sessions: d.sessions,
+    sessions: d.sessions.map((s) => ({
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      replay: s.source === 'REPLAY',
+    })),
+    coverage: d.coverage ?? [],
     presence: d.presence,
+    bufferMin,
+    away: (d.away ?? []).map((a) => ({
+      status: a.status,
+      startedAt: a.startedAt,
+      endedAt: a.endedAt ?? new Date(a.startedAt.getTime() + (a.seconds ?? 0) * 1000),
+    })),
     breakRecords: d.breakRecords.map((r) => ({
       outcome: outcomeOf(r),
       approvalStatus: r.approvalStatus,
       overrunAsked: r.overrunAsked ?? false,
       overrunSec: r.overrunSec ?? null,
       durationMin: r.durationMin,
+      kind: r.kind,
+      segments: outcomeOf(r) === 'TAKEN' ? segmentsOf(r) : [],
     })),
     meetingRecords: d.meetingRecords.map((m) => ({
       mode: m.mode,

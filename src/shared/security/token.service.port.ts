@@ -37,9 +37,19 @@ export interface TokenService {
    */
   signSocketTicket(payload: AccessTokenPayload): Promise<string>;
 
-  /** Long-lived, per-user token baked into an agent download for password-less enrollment. */
-  signEnrollmentToken(userId: string): Promise<string>;
+  /**
+   * Long-lived, per-user token baked into an agent download (or a setup code) for
+   * password-less enrollment. 4.0: it carries the person's enrollVersion, and is
+   * refused once that version moves on (key sign-out, credential reset).
+   */
+  signEnrollmentToken(userId: string, enrollVersion?: number): Promise<string>;
 
-  /** Verifies an enrollment token and returns its userId, or throws if invalid/expired. */
-  verifyEnrollmentToken(token: string): Promise<string>;
+  /** Verifies an enrollment token, or throws if invalid/expired. */
+  verifyEnrollmentToken(token: string): Promise<EnrollmentToken>;
+}
+
+export interface EnrollmentToken {
+  userId: string;
+  /** The enrollVersion it was issued for (1 for tokens from before 4.0). */
+  enrollVersion: number;
 }

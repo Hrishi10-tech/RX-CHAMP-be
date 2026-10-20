@@ -20,8 +20,8 @@ import { APPROVAL_CATEGORIES, ApprovalCategory } from '../../domain/approval-cop
 
 /** DECIDED = approved or rejected (the portal's "All decisions" tab). */
 export const APPROVAL_STATUS_QUERY = ['PENDING', 'APPROVED', 'REJECTED', 'DECIDED', 'ALL'] as const;
-export const APPROVAL_TYPES_QUERY = ['BREAK', 'MEETING'] as const;
-export const APPROVAL_PATH_TYPES = ['break', 'meeting'] as const;
+export const APPROVAL_TYPES_QUERY = ['BREAK', 'MEETING', 'AWAY'] as const;
+export const APPROVAL_PATH_TYPES = ['break', 'meeting', 'away'] as const;
 export type ApprovalPathType = (typeof APPROVAL_PATH_TYPES)[number];
 
 /** GET /approvals */
@@ -34,7 +34,8 @@ export class ApprovalsListQueryDto {
   @ApiPropertyOptional({
     enum: ['mine', 'all'],
     default: 'mine',
-    description: 'all: Super Admin only',
+    description:
+      'Admins: mine = waiting for the admin or escalated; all = the organisation. Managers: their departments either way.',
   })
   @IsOptional()
   @IsIn(['mine', 'all'])
@@ -43,7 +44,7 @@ export class ApprovalsListQueryDto {
   @ApiPropertyOptional({ enum: APPROVAL_TYPES_QUERY })
   @IsOptional()
   @IsIn(APPROVAL_TYPES_QUERY)
-  type?: 'BREAK' | 'MEETING';
+  type?: 'BREAK' | 'MEETING' | 'AWAY';
 
   @ApiPropertyOptional({ enum: APPROVAL_CATEGORIES })
   @IsOptional()

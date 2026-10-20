@@ -15,6 +15,7 @@ export class PrismaReportStore implements ReportStore {
   constructor(private readonly prisma: PrismaService) {}
 
   async upsertRun(
+    companyId: string,
     month: string,
     scope: 'TEAM' | 'ALL',
     ownerId: string,
@@ -22,15 +23,15 @@ export class PrismaReportStore implements ReportStore {
   ): Promise<void> {
     const json = summary as Prisma.InputJsonValue;
     await this.prisma.reportRun.upsert({
-      where: { month_scope_ownerId: { month, scope, ownerId } },
-      create: { month, scope, ownerId, summary: json },
+      where: { companyId_month_scope_ownerId: { companyId, month, scope, ownerId } },
+      create: { companyId, month, scope, ownerId, summary: json },
       update: { summary: json, generatedAt: new Date() },
     });
   }
 
-  async listRuns(ownerId: string): Promise<ReportRunRow[]> {
+  async listRuns(companyId: string, ownerId: string | null): Promise<ReportRunRow[]> {
     const rows = await this.prisma.reportRun.findMany({
-      where: { ownerId },
+      where: ownerId ? { companyId, ownerId } : { companyId, scope: 'ALL' },
       orderBy: [{ month: 'desc' }, { scope: 'asc' }],
       take: 120,
     });
@@ -47,9 +48,9 @@ export class PrismaReportStore implements ReportStore {
     }));
   }
 
-  async runKeys(month: string): Promise<Set<string>> {
+  async runKeys(companyId: string, month: string): Promise<Set<string>> {
     const rows = await this.prisma.reportRun.findMany({
-      where: { month },
+      where: { companyId, month },
       select: { scope: true, ownerId: true },
     });
     return new Set(rows.map((r) => `${r.scope}|${r.ownerId}`));
@@ -67,17 +68,17 @@ export class PrismaReportStore implements ReportStore {
     return at && !Number.isNaN(at.getTime()) ? at : now;
   }
 
-  async findLock(month: string): Promise<MonthLockRow | null> {
+  async findLock(companyId: string, month: string): Promise<MonthLockRow | null> {
     const row = await this.prisma.monthLock.findUnique({
-      where: { month },
+      where: { companyId_month: { companyId, month } },
       select: { month: true, lockedById: true, lockedAt: true },
     });
     return row ?? null;
   }
 
-  async findSnapshot(month: string): Promise<MonthSnapshot | null> {
+  async findSnapshot(companyId: string, month: string): Promise<MonthSnapshot | null> {
     const row = await this.prisma.monthLock.findUnique({
-      where: { month },
+      where: { companyId_month: { companyId, month } },
       select: { snapshot: true },
     });
     const snap = row?.snapshot as unknown as MonthSnapshot | undefined;
@@ -85,25 +86,30 @@ export class PrismaReportStore implements ReportStore {
   }
 
   async lockMonth(
+    companyId: string,
     month: string,
     lockedById: string,
     buildSnapshot: () => Promise<MonthSnapshot>,
   ): Promise<LockMonthResult> {
     return this.prisma.$transaction(async (tx) => {
-      await lockMonthExclusive(tx, month);
+      await lockMonthExclusive(tx, companyId, month);
       const existing = await tx.monthLock.findUnique({
-        where: { month },
+        where: { companyId_month: { companyId, month } },
         select: { month: true, lockedById: true, lockedAt: true },
       });
       if (existing) return { ok: true as const, lock: existing, created: false };
       const open = await tx.workSession.count({
-        where: { endedAt: null, date: { startsWith: `${month}-` } },
+        where: { endedAt: null, date: { startsWith: `${month}-` }, user: { companyId } },
       });
       if (open > 0) return { ok: false as const, reason: 'OPEN_SESSIONS' as const, count: open };
       const rows = await tx.$queryRaw<{ n: number }[]>`
         SELECT (
-          (SELECT count(*) FROM break_records WHERE approval_status = 'PENDING' AND left(date, 7) = ${month})
-          + (SELECT count(*) FROM meeting_records WHERE approval_status = 'PENDING' AND left(date, 7) = ${month})
+          (SELECT count(*) FROM break_records b JOIN users u ON u.id = b.user_id
+             WHERE b.approval_status = 'PENDING' AND left(b.date, 7) = ${month} AND u.company_id = ${companyId}::uuid)
+          + (SELECT count(*) FROM meeting_records m JOIN users u ON u.id = m.user_id
+             WHERE m.approval_status = 'PENDING' AND left(m.date, 7) = ${month} AND u.company_id = ${companyId}::uuid)
+          + (SELECT count(*) FROM away_events a
+             WHERE a.status = 'PENDING' AND left(a.date, 7) = ${month} AND a.company_id = ${companyId}::uuid)
         )::int AS n`;
       const pending = rows[0]?.n ?? 0;
       if (pending > 0) {
@@ -111,17 +117,22 @@ export class PrismaReportStore implements ReportStore {
       }
       const snapshot = await buildSnapshot();
       const lock = await tx.monthLock.create({
-        data: { month, lockedById, snapshot: snapshot as unknown as Prisma.InputJsonValue },
+        data: {
+          companyId,
+          month,
+          lockedById,
+          snapshot: snapshot as unknown as Prisma.InputJsonValue,
+        },
         select: { month: true, lockedById: true, lockedAt: true },
       });
       return { ok: true as const, lock, created: true };
     }, LOCK_TX);
   }
 
-  async unlockMonth(month: string): Promise<boolean> {
+  async unlockMonth(companyId: string, month: string): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
-      await lockMonthExclusive(tx, month);
-      const res = await tx.monthLock.deleteMany({ where: { month } });
+      await lockMonthExclusive(tx, companyId, month);
+      const res = await tx.monthLock.deleteMany({ where: { companyId, month } });
       return res.count > 0;
     });
   }

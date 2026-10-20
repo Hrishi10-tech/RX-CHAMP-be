@@ -30,10 +30,7 @@ export class GetCurrentPresenceUseCase {
    * Admin (anyone). Opening a person's dashboard seeds its status from this,
    * because `presence:update` only fires on a change.
    */
-  async forMember(
-    me: Pick<AuthenticatedUser, 'id' | 'role'>,
-    userId: string,
-  ): Promise<CurrentPresenceView> {
+  async forMember(me: AuthenticatedUser, userId: string): Promise<CurrentPresenceView> {
     await presenceScope(this.team, me, userId);
     return this.execute(userId);
   }

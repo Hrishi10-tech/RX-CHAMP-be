@@ -59,19 +59,23 @@ const general: ShiftRecord = {
 describe('LegacyBreakSubscriber', () => {
   const bus = { subscribe: jest.fn(), publish: jest.fn() } as any;
   const records = { listForUserOnDate: jest.fn(), createForSession: jest.fn() } as any;
+  // Who fires the presence event: staff in a department unless a test changes it.
+  let subject: Record<string, unknown> = {};
   const people = {
     findById: jest.fn(async (id: string) =>
       id === 'mgr'
-        ? { id: 'mgr', role: 'MANAGER', active: true, firstName: 'M', lastName: '' }
+        ? { id: 'mgr', role: 'MANAGER', active: true, firstName: 'M', lastName: '', companyId: 'org-a', departmentId: 'dept-1' }
         : {
             id,
             role: 'USER',
             active: true,
             managerId: 'mgr',
-            companyId: null,
-            department: null,
+            companyId: 'org-a',
+            department: 'Engineering',
+            departmentId: 'dept-1',
             firstName: 'S',
             lastName: '',
+            ...subject,
           },
     ),
   } as any;
@@ -85,6 +89,7 @@ describe('LegacyBreakSubscriber', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    subject = {};
     records.listForUserOnDate.mockResolvedValue([]);
     records.createForSession.mockImplementation(async (r: any) => ({ ...r, id: 'new' }));
     sub = new LegacyBreakSubscriber(bus, records, people, new BreakDayService(shifts), events);
@@ -107,7 +112,7 @@ describe('LegacyBreakSubscriber', () => {
     expect(events.approvalRequested).not.toHaveBeenCalled();
   });
 
-  it('sends a late lunch to the manager without a reason (older agents cannot give one)', async () => {
+  it("sends a late lunch to the department's managers without a reason (older agents cannot give one)", async () => {
     await fire('LUNCH', '13:25');
     expect(records.createForSession.mock.calls[0][0]).toMatchObject({
       kind: 'LUNCH',
@@ -115,9 +120,42 @@ describe('LegacyBreakSubscriber', () => {
       minutesOff: 25,
       reason: null,
       approvalStatus: 'PENDING',
-      approverId: 'mgr',
+      approverRole: 'MANAGER',
+      // 4.0: routed by department, never to the 3.x reporting manager by id.
+      approverId: null,
     });
     expect(events.approvalRequested).toHaveBeenCalled();
+  });
+
+  it('sends staff without a department, and managers, to the organisation Admin', async () => {
+    subject = { departmentId: null };
+    await fire('LUNCH', '13:25');
+    expect(records.createForSession.mock.calls[0][0]).toMatchObject({
+      approvalStatus: 'PENDING',
+      approverRole: 'ADMIN',
+      approverId: null,
+    });
+    subject = { role: 'MANAGER' };
+    await fire('BREAK', '14:30');
+    expect(records.createForSession.mock.calls[1][0]).toMatchObject({
+      timing: 'OUTSIDE_WINDOW',
+      approvalStatus: 'PENDING',
+      approverRole: 'ADMIN',
+      approverId: null,
+    });
+    expect(events.approvalRequested).toHaveBeenCalledTimes(2);
+  });
+
+  it("records an Admin's off-schedule break with nothing to approve", async () => {
+    subject = { role: 'ADMIN', departmentId: null };
+    await fire('BREAK', '14:30');
+    expect(records.createForSession.mock.calls[0][0]).toMatchObject({
+      timing: 'OUTSIDE_WINDOW',
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+      approverId: null,
+    });
+    expect(events.approvalRequested).not.toHaveBeenCalled();
   });
 
   it('flags a break outside every window', async () => {
@@ -126,6 +164,8 @@ describe('LegacyBreakSubscriber', () => {
       kind: null,
       timing: 'OUTSIDE_WINDOW',
       approvalStatus: 'PENDING',
+      approverRole: 'MANAGER',
+      approverId: null,
     });
   });
 

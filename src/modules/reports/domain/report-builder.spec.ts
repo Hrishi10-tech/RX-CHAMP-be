@@ -13,8 +13,9 @@ import {
   monthTotals,
   summarizeDay,
   teamTotals,
+  withPayrollFields,
 } from './report-builder';
-import { PersonDaySummary } from './report.types';
+import { MonthTotals, PersonDaySummary } from './report.types';
 
 // September 2026: Tue 1st; Sun 6th; Mon 7th.
 const IST_OFFSET_MS = 330 * 60_000;
@@ -167,6 +168,116 @@ function summarize(d: PersonDayData, over: Partial<DaySummaryInput> = {}): Perso
     ...over,
   });
 }
+
+describe('summarizeDay (4.0 calendar, target and allowance)', () => {
+  const plan = (
+    over: Partial<{ isWorkingDay: boolean; label: string | null; targetSec: number }> = {},
+  ) => ({
+    isWorkingDay: true,
+    label: null,
+    targetSec: 9 * H - 70 * 60,
+    ...over,
+  });
+
+  it('the target is the plan (shift − scheduled breaks − buffer), and the day class follows it', () => {
+    const date = '2026-09-07';
+    const d = day(date, {
+      sessions: [session(date, '09:30', '18:30')],
+      presence: [presence(date, 'LUNCH', '13:00', '13:45')],
+      breakRecords: [
+        breakRow(date, {
+          kind: 'LUNCH',
+          presenceType: 'LUNCH',
+          durationMin: 30,
+          startedAt: at(date, '13:00'),
+          endedAt: at(date, '13:45'),
+          overrunSec: 900,
+        }),
+      ],
+    });
+    const s = summarize(d, { focus: focusOfDay(d, NOW, 10), plan: plan() });
+    expect(s).toMatchObject({
+      workday: true,
+      label: null,
+      targetSec: 9 * H - 70 * 60,
+      expectedSec: 9 * H - 70 * 60,
+      focusSec: 9 * H - 45 * 60,
+      breakSec: 45 * 60,
+      paidBreakSec: 40 * 60,
+      unpaidBreakSec: 5 * 60,
+      dayClass: 'FULL',
+    });
+  });
+
+  it('the calendar decides the working day: a holiday is OFF with its label, a working Saturday expects time', () => {
+    // Monday 7 Sep made a holiday.
+    const holiday = summarize(day('2026-09-07'), {
+      plan: plan({ isWorkingDay: false, label: 'Onam', targetSec: 0 }),
+    });
+    expect(holiday).toMatchObject({
+      workday: false,
+      dayClass: 'OFF',
+      label: 'Onam',
+      targetSec: 0,
+      expectedSec: 0,
+    });
+    const workedHoliday = summarize(
+      day('2026-09-07', { sessions: [session('2026-09-07', '10:00', '12:00')] }),
+      {
+        plan: plan({ isWorkingDay: false, label: 'Onam', targetSec: 0 }),
+      },
+    );
+    expect(workedHoliday).toMatchObject({ dayClass: 'EXTRA', label: 'Onam' });
+    // Saturday 12 Sep is not in the shift's work days, but the calendar says it is a working day.
+    const saturday = summarize(day('2026-09-12'), { plan: plan() });
+    expect(saturday).toMatchObject({
+      workday: true,
+      dayClass: 'ABSENT',
+      targetSec: 9 * H - 70 * 60,
+    });
+  });
+
+  it('a future working day keeps its target but expects nothing yet', () => {
+    const s = summarize(day('2026-10-02'), { today: '2026-09-30', plan: plan() });
+    expect(s).toMatchObject({ dayClass: 'UPCOMING', targetSec: 9 * H - 70 * 60, expectedSec: 0 });
+  });
+
+  it('before joining there is no target even on a working day', () => {
+    expect(summarize(day('2026-09-07'), { joinedOn: '2026-09-15', plan: plan() })).toMatchObject({
+      workday: false,
+      targetSec: 0,
+      dayClass: 'OFF',
+    });
+  });
+
+  it('passes the away time through by status', () => {
+    const date = '2026-09-07';
+    const d = day(date, {
+      sessions: [session(date, '09:30', '18:30')],
+      away: [
+        { status: 'APPROVED', startedAt: at(date, '10:00'), endedAt: at(date, '10:20') },
+        { status: 'PENDING', startedAt: at(date, '11:00'), endedAt: at(date, '11:10') },
+        { status: 'REJECTED', startedAt: at(date, '12:00'), endedAt: at(date, '12:05') },
+        { status: 'UNEXPLAINED', startedAt: at(date, '14:00'), endedAt: at(date, '14:15') },
+      ] as never,
+    });
+    const s = summarize(d, { plan: plan() });
+    expect(s).toMatchObject({
+      awayApprovedSec: 20 * 60,
+      awayPendingSec: 10 * 60,
+      awayRejectedSec: 5 * 60,
+      awayUnexplainedSec: 15 * 60,
+      focusSec: 9 * H - 30 * 60,
+      pendingPlusSec: 10 * 60,
+    });
+  });
+
+  it('a 3.1 caller (no plan) keeps the shift days and shift − breaks as the target', () => {
+    const s = summarize(day('2026-09-07', { sessions: [session('2026-09-07', '09:30', '18:30')] }));
+    expect(s).toMatchObject({ label: null, targetSec: 8 * H, expectedSec: 8 * H });
+    expect(summarize(day('2026-09-12')).workday).toBe(false);
+  });
+});
 
 describe('summarizeDay', () => {
   it('a full day: focus at least 80% of shift length minus breaks', () => {
@@ -359,6 +470,16 @@ function summary(over: Partial<PersonDaySummary>): PersonDaySummary {
     pending: 0,
     quietHours: 0,
     activeMin: 0,
+    label: null,
+    targetSec: 0,
+    paidBreakSec: 0,
+    unpaidBreakSec: 0,
+    awayApprovedSec: 0,
+    awayPendingSec: 0,
+    awayRejectedSec: 0,
+    awayUnexplainedSec: 0,
+    unverifiedSec: 0,
+    paidSec: 0,
     ...over,
   };
 }
@@ -370,20 +491,36 @@ describe('monthTotals', () => {
       dayClass: 'FULL',
       focusSec: 8 * H,
       expectedSec: 8 * H,
+      targetSec: 8 * H,
+      breakSec: 3600,
+      paidBreakSec: 3000,
+      unpaidBreakSec: 600,
+      awayApprovedSec: 300,
+      awayPendingSec: 120,
+      awayRejectedSec: 60,
       skipped: 1,
       quietHours: 2,
+      paidSec: 8 * H + 3000,
     }),
     summary({
       date: '2026-09-02',
       dayClass: 'HALF',
       focusSec: 4 * H,
       expectedSec: 8 * H,
+      targetSec: 8 * H,
+      breakSec: 1800,
+      paidBreakSec: 1800,
+      meetingSec: 2700,
+      awayPendingSec: 600,
       lateStart: { minutes: 20 },
+      unverifiedSec: 2 * H,
+      paidSec: 4 * H + 1800,
     }),
     summary({
       date: '2026-09-03',
       dayClass: 'ABSENT',
       expectedSec: 8 * H,
+      targetSec: 8 * H,
       autoSkipped: 2,
       pending: 2,
     }),
@@ -401,12 +538,14 @@ describe('monthTotals', () => {
       dayClass: 'FULL',
       focusSec: 7 * H,
       expectedSec: 8 * H,
+      targetSec: 8 * H,
       approvedPlusSec: 600,
       rejectedMinusSec: 900,
       meetings: 3,
       quietHours: 1,
     }),
-    summary({ date: '2026-10-01', dayClass: 'UPCOMING' }),
+    // A future working day: no expected time yet, but its target counts for the month.
+    summary({ date: '2026-10-01', dayClass: 'UPCOMING', targetSec: 8 * H }),
   ];
 
   it('every number is the sum or count of its days', () => {
@@ -431,7 +570,50 @@ describe('monthTotals', () => {
       pending: 2,
       quietHours: 4,
       needsALook: true,
+      // 4.0: sums of the days.
+      targetSec: 40 * H,
+      breakSec: 5400,
+      meetingSec: 2700,
+      paidBreakSec: 4800,
+      unpaidBreakSec: 600,
+      awayApprovedSec: 300,
+      awayPendingSec: 720,
+      unverifiedSec: 2 * H,
+      paidSec: 12 * H + 4800,
     });
+  });
+
+  it('a snapshot day or total from before paidSec existed: paid = focus + paid breaks, unverified 0', () => {
+    const old = { ...days[0] } as Partial<PersonDaySummary>;
+    delete old.paidSec;
+    delete old.unverifiedSec;
+    const totals = monthTotals(days, '2026-09-30', 4) as Partial<MonthTotals>;
+    delete totals.paidSec;
+    delete totals.unverifiedSec;
+    const filled = withPayrollFields({
+      person: {
+        id: 'a',
+        name: 'A',
+        email: 'a@x',
+        role: 'USER',
+        department: null,
+        designation: null,
+        managerId: null,
+        managerName: null,
+      },
+      month: '2026-09',
+      locked: true,
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      totals: totals as MonthTotals,
+      days: [old as PersonDaySummary],
+      heatmap: [],
+    });
+    expect(filled.days[0]).toMatchObject({ paidSec: 8 * H + 3000, unverifiedSec: 0 });
+    expect(filled.totals).toMatchObject({ paidSec: 21 * H + 4800, unverifiedSec: 0 });
+    // A team over such rows still adds up (missing keys count as 0, never NaN).
+    const team = teamTotals([{ totals: totals as MonthTotals, days }], '2026-09-30');
+    expect(team.paidSec).toBe(0);
+    expect(team.unverifiedSec).toBe(0);
   });
 
   it('needs a look only at the flag; workdays stop at today', () => {
@@ -452,8 +634,22 @@ describe('monthTotals', () => {
 describe('teamTotals', () => {
   it('sums the rows, averages focus over all their working days, and needs a look if anyone does', () => {
     const a = [
-      summary({ date: '2026-09-01', focusSec: 8 * H, expectedSec: 8 * H, quietHours: 5 }),
-      summary({ date: '2026-09-02', focusSec: 6 * H, expectedSec: 8 * H, dayClass: 'HALF' }),
+      summary({
+        date: '2026-09-01',
+        focusSec: 8 * H,
+        expectedSec: 8 * H,
+        quietHours: 5,
+        targetSec: 8 * H,
+        paidBreakSec: 600,
+      }),
+      summary({
+        date: '2026-09-02',
+        focusSec: 6 * H,
+        expectedSec: 8 * H,
+        dayClass: 'HALF',
+        targetSec: 8 * H,
+        awayPendingSec: 60,
+      }),
     ];
     const b = [
       summary({
@@ -462,6 +658,10 @@ describe('teamTotals', () => {
         expectedSec: 8 * H,
         dayClass: 'HALF',
         pending: 1,
+        targetSec: 7.5 * H,
+        paidBreakSec: 300,
+        unpaidBreakSec: 120,
+        awayApprovedSec: 900,
       }),
     ];
     const rows = [
@@ -480,6 +680,11 @@ describe('teamTotals', () => {
       pending: 1,
       quietHours: 5,
       needsALook: true,
+      targetSec: 23.5 * H,
+      paidBreakSec: 900,
+      unpaidBreakSec: 120,
+      awayApprovedSec: 900,
+      awayPendingSec: 60,
     });
     expect(teamTotals([], '2026-09-30')).toMatchObject({
       people: 0,

@@ -1,44 +1,43 @@
-// Unit test for DeleteCompanyUseCase — unknown company is rejected, and a delete
-// reports how many members went with it so the caller can say what happened.
-import { NotFoundError } from '@shared/exceptions/app.exception';
+// Unit test for DeleteCompanyUseCase (4.0: an alias of DELETE /organisations/:id).
+// An organisation with active people is refused (409 ORG_NOT_EMPTY) rather than
+// deleted with them; the result shape of 3.x is kept.
+import { ConflictError, NotFoundError } from '@shared/exceptions/app.exception';
+import { superAdmin } from '@shared/testing/actors.testing-spec';
 import { DeleteCompanyUseCase } from './delete-company.use-case';
 
-describe('DeleteCompanyUseCase', () => {
-  const companies = { findById: jest.fn(), softDelete: jest.fn() } as any;
+describe('DeleteCompanyUseCase (alias of DELETE /organisations/:id)', () => {
+  const organisations = { remove: jest.fn() } as any;
+  const me = superAdmin();
 
   let useCase: DeleteCompanyUseCase;
   beforeEach(() => {
     jest.clearAllMocks();
-    useCase = new DeleteCompanyUseCase(companies);
+    useCase = new DeleteCompanyUseCase(organisations);
   });
 
-  it('rejects an unknown company without deleting anything', async () => {
-    companies.findById.mockResolvedValue(null);
-
-    await expect(useCase.execute('missing')).rejects.toBeInstanceOf(NotFoundError);
-    expect(companies.softDelete).not.toHaveBeenCalled();
+  it('rejects an unknown organisation', async () => {
+    organisations.remove.mockRejectedValue(new NotFoundError('missing'));
+    await expect(useCase.execute(me, 'missing')).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('deletes an empty company and reports no members removed', async () => {
-    companies.findById.mockResolvedValue({ id: 'c1', name: 'xelements', createdAt: new Date() });
-    companies.softDelete.mockResolvedValue(0);
+  it('refuses while active people remain', async () => {
+    organisations.remove.mockRejectedValue(new ConflictError('still has people', 'ORG_NOT_EMPTY'));
+    await expect(useCase.execute(me, 'c2')).rejects.toMatchObject({ code: 'ORG_NOT_EMPTY' });
+  });
 
-    await expect(useCase.execute('c1')).resolves.toEqual({
+  it('reports what was removed', async () => {
+    organisations.remove.mockResolvedValue({
       deleted: true,
       id: 'c1',
       name: 'xelements',
-      membersRemoved: 0,
+      membersRemoved: 2,
     });
-    expect(companies.softDelete).toHaveBeenCalledWith('c1');
-  });
-
-  it('reports the members that went with a populated company', async () => {
-    companies.findById.mockResolvedValue({ id: 'c2', name: 'RHYTHMRX', createdAt: new Date() });
-    companies.softDelete.mockResolvedValue(12);
-
-    const result = await useCase.execute('c2');
-
-    expect(result.membersRemoved).toBe(12);
-    expect(result.name).toBe('RHYTHMRX');
+    await expect(useCase.execute(me, 'c1')).resolves.toEqual({
+      deleted: true,
+      id: 'c1',
+      name: 'xelements',
+      membersRemoved: 2,
+    });
+    expect(organisations.remove).toHaveBeenCalledWith(me, 'c1');
   });
 });

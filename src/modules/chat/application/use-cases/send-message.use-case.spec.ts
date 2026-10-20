@@ -1,7 +1,9 @@
 import { ChatMessageSentEvent } from '../../domain/events/chat-message-sent.event';
+import { staff } from '@shared/testing/actors.testing-spec';
 import { SendMessageUseCase } from './send-message.use-case';
 
 describe('SendMessageUseCase', () => {
+  const me = { ...staff(), id: 'from-1' };
   const repo = { create: jest.fn() } as any;
   const contacts = { findContacts: jest.fn(), findSender: jest.fn(), canMessage: jest.fn() } as any;
   const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
@@ -25,18 +27,19 @@ describe('SendMessageUseCase', () => {
     useCase = new SendMessageUseCase(repo, contacts, events, gateway);
   });
 
-  it('refuses to message someone outside your line of the chart', async () => {
+  it('refuses to message someone outside your contacts', async () => {
     contacts.canMessage.mockResolvedValue(false);
 
-    await expect(useCase.execute('from-1', { toUserId: 'stranger', body: 'hi' })).rejects.toThrow(
-      /your manager or your own team/i,
-    );
+    await expect(useCase.execute(me, { toUserId: 'stranger', body: 'hi' })).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(contacts.canMessage).toHaveBeenCalledWith(me, 'stranger');
     expect(repo.create).not.toHaveBeenCalled();
     expect(gateway.emitToUser).not.toHaveBeenCalled();
   });
 
   it('delivers over the chat socket to both sides and raises the notification event', async () => {
-    const view = await useCase.execute('from-1', { toUserId: 'to-1', body: 'hello' });
+    const view = await useCase.execute(me, { toUserId: 'to-1', body: 'hello' });
 
     expect(view).toMatchObject({ id: 'm-1', mine: true });
     expect(gateway.emitToUser).toHaveBeenCalledTimes(2);
@@ -57,7 +60,7 @@ describe('SendMessageUseCase', () => {
   it('still sends when the sender cannot be named', async () => {
     contacts.findSender.mockResolvedValue(undefined);
 
-    await useCase.execute('from-1', { toUserId: 'to-1', body: 'hello' });
+    await useCase.execute(me, { toUserId: 'to-1', body: 'hello' });
 
     expect(events.publish.mock.calls[0][1]).toMatchObject({ fromName: 'Someone' });
   });
@@ -65,9 +68,9 @@ describe('SendMessageUseCase', () => {
   it('never fails the send because notifying failed', async () => {
     events.publish.mockRejectedValue(new Error('bus down'));
 
-    await expect(
-      useCase.execute('from-1', { toUserId: 'to-1', body: 'hello' }),
-    ).resolves.toMatchObject({ id: 'm-1' });
+    await expect(useCase.execute(me, { toUserId: 'to-1', body: 'hello' })).resolves.toMatchObject({
+      id: 'm-1',
+    });
 
     // The message itself was still delivered to both participants.
     expect(gateway.emitToUser).toHaveBeenCalledTimes(2);

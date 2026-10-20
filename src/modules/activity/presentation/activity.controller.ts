@@ -17,9 +17,10 @@ import { Role } from '@shared/rbac/roles.enum';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
+import { RequestClock } from '@shared/tenancy';
 import { RATE_LIMITS, RateLimit } from '@shared/security/rate-limits';
 import { ParseIdPipe } from '@shared/validation/is-id';
-import { agentGeneration } from '@modules/worktime/domain/agent-generation';
+import { agentGeneration, isAgent40 } from '@modules/worktime/domain/agent-generation';
 import { DayQueryDto, EndDayDto, StartDayDto } from '@modules/worktime/application/dto/workday.dto';
 import { HourlyActivityService } from '@modules/worktime/application/hourly-activity.service';
 import { ActivityDayQueryDto, ReportActivityDto } from '../application/dto';
@@ -59,7 +60,15 @@ export class ActivityController {
     @Body() body: ReportActivityDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.report.execute(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.report.execute(
+        me,
+        body,
+        agentGeneration(userAgent),
+        RequestClock.now(),
+        isAgent40(userAgent),
+      ),
+    );
   }
 
   @Post('end-day')
@@ -74,7 +83,9 @@ export class ActivityController {
     @Body() body: EndDayDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.endDay.execute(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.endDay.execute(me, body, agentGeneration(userAgent), RequestClock.now()),
+    );
   }
 
   @Post('start-day')
@@ -89,7 +100,9 @@ export class ActivityController {
     @Body() body: StartDayDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return envelope(await this.startDay.execute(me, body, agentGeneration(userAgent), new Date()));
+    return envelope(
+      await this.startDay.execute(me, body, agentGeneration(userAgent), RequestClock.now()),
+    );
   }
 
   @Get('me/current')
@@ -111,10 +124,10 @@ export class ActivityController {
   // ---- Manager endpoints ---------------------------------------------------
 
   @Get('team/live')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'What every report is using right now (manager)' })
   async teamLive(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.getTeamLive.execute(me.id));
+    return envelope(await this.getTeamLive.execute(me));
   }
 
   @Get('user/:userId/current')
@@ -138,7 +151,7 @@ export class ActivityController {
   }
 
   @Get('user/:userId/hourly')
-  @Roles(Role.MANAGER, Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       "One person's active minutes per hour and quiet hours for a day (Manager: own " +

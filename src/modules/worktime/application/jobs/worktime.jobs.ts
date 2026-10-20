@@ -13,6 +13,10 @@ import { AppSettingsService } from '@modules/settings/application/app-settings.s
 import { personName } from '@modules/shifts/application/break-events.service';
 import { SHIFT_PEOPLE_READER, ShiftPeopleReader } from '@modules/shifts/domain/shift-people.reader';
 import {
+  BREAK_RECORD_REPOSITORY,
+  BreakRecordRepository,
+} from '@modules/shifts/domain/break-record.repository';
+import {
   APPROVALS_READER,
   ApprovalRef,
   ApprovalsReader,
@@ -24,7 +28,7 @@ import { DayDataService } from '../day-data.service';
 import { SkipsService } from '../skips.service';
 import { WorkSessionsService } from '../work-sessions.service';
 
-/** Each item once (an item can reach several Super Admins). */
+/** Each item once (an item can reach several approvers). */
 function unique(refs: ApprovalRef[]): ApprovalRef[] {
   const seen = new Map<string, ApprovalRef>();
   for (const r of refs) seen.set(`${r.type}:${r.id}`, { type: r.type, id: r.id });
@@ -115,7 +119,10 @@ export class AutoCloseJob extends GuardedJob {
 @Injectable()
 export class AutoSkipJob extends GuardedJob {
   protected readonly logger = new Logger(AutoSkipJob.name);
-  constructor(private readonly skips: SkipsService) {
+  constructor(
+    private readonly skips: SkipsService,
+    @Inject(BREAK_RECORD_REPOSITORY) private readonly breakRecords: BreakRecordRepository,
+  ) {
     super();
   }
 
@@ -123,14 +130,63 @@ export class AutoSkipJob extends GuardedJob {
   async run(now: Date = new Date()): Promise<void> {
     await this.guarded('auto-skip', async () => {
       await this.skips.autoSkipAll(now);
+      // 4.0: a paused break whose window has closed ends at its pause.
+      const ended = await this.breakRecords.endExpiredPaused(now);
+      if (ended) this.logger.log(`ended ${ended} paused break(s) whose window closed`);
     });
   }
 }
 
 /**
+ * Who acts on approval items, resolved once per job run (docs/4.0/SPEC.md 1.3):
+ * MANAGER items go to the Managers of the subject's department (the Admin when
+ * the department has none); ADMIN items (and 3.x SUPER_ADMIN rows) go to the
+ * organisation's Admin. Never across organisations, never to the subject.
+ */
+class Recipients {
+  private readonly admins = new Map<string, Promise<string[]>>();
+  private readonly managers = new Map<string, Promise<string[]>>();
+
+  constructor(private readonly people: ShiftPeopleReader) {}
+
+  orgAdmins(companyId: string | null): Promise<string[]> {
+    if (!companyId) return Promise.resolve([]);
+    let hit = this.admins.get(companyId);
+    if (!hit) {
+      hit = this.people.listOrgAdminIds(companyId);
+      this.admins.set(companyId, hit);
+    }
+    return hit;
+  }
+
+  deptManagers(departmentId: string | null): Promise<string[]> {
+    if (!departmentId) return Promise.resolve([]);
+    let hit = this.managers.get(departmentId);
+    if (!hit) {
+      hit = this.people.listDepartmentManagerIds(departmentId);
+      this.managers.set(departmentId, hit);
+    }
+    return hit;
+  }
+
+  /** The people an item waits for. */
+  async approvers(c: {
+    approverRole: string | null;
+    companyId: string | null;
+    departmentId: string | null;
+    userId?: string;
+  }): Promise<string[]> {
+    let ids: string[] = [];
+    if (c.approverRole === 'MANAGER') ids = await this.deptManagers(c.departmentId);
+    if (!ids.length) ids = await this.orgAdmins(c.companyId);
+    return ids.filter((id) => id !== c.userId);
+  }
+}
+
+/**
  * Every 15 minutes (SPEC 1.7): one reminder per approver for what is due within
- * 12 hours, then escalation of what is past due: the approver hears it is
- * overdue, and every Super Admin gets one notice per run naming the approvers.
+ * 12 hours, then escalation of what is past due: the approvers hear it is
+ * overdue, and the organisation's Admin gets one notice per run naming them.
  * Notices go out first and only the items they reached are then marked reminded
  * or escalated (once, by a conditional update), so a failed notice is retried by
  * the next run. Runs never overlap in one process.
@@ -160,16 +216,27 @@ export class ApprovalsSlaJob extends GuardedJob {
    * escalated, so a failed notice is retried by the next run.
    */
   async tick(now: Date): Promise<number> {
-    const sla = (await this.settings.get()).approvalSlaHours;
-    // Rows an old process wrote during the deploy window get their clock now.
-    const filled = await this.reader.fillMissingDueAt(sla);
+    // Rows an old (3.x) process wrote during the deploy window get their clock now,
+    // from the shared defaults (only one organisation exists at that point).
+    const filled = await this.reader.fillMissingDueAt((await this.settings.get()).approvalSlaHours);
+    // 4.0: each organisation's own SLA in the wording.
+    const slaCache = new Map<string, Promise<number>>();
+    const slaOf = (companyId: string | null): Promise<number> => {
+      const key = companyId ?? '-';
+      let hit = slaCache.get(key);
+      if (!hit) {
+        hit = this.settings.get(companyId).then((x) => x.approvalSlaHours);
+        slaCache.set(key, hit);
+      }
+      return hit;
+    };
     if (filled) this.logger.log(`approvals: gave ${filled} pending item(s) a due time`);
-    const superAdmins = await this.people.listSuperAdminIds();
+    const who = new Recipients(this.people);
     let sent = 0;
 
     const reminders = await this.reader.remindersDue(now);
     const reminded: ApprovalRef[] = [];
-    for (const [approverId, items] of this.perApprover(reminders, superAdmins)) {
+    for (const [approverId, items] of await this.perApprover(reminders, who)) {
       const copy = dueSoonCopy(items.length);
       const n = await this.notify([approverId], NOTICE.APPROVALS_DUE_SOON, copy.title, copy.body);
       sent += n;
@@ -180,30 +247,45 @@ export class ApprovalsSlaJob extends GuardedJob {
     const escalated = await this.reader.escalationsDue(now);
     const marked: ApprovalRef[] = [];
     if (escalated.length) {
-      const direct = new Map<string, SlaClaim[]>();
-      for (const e of escalated) {
-        if (e.approverId) direct.set(e.approverId, [...(direct.get(e.approverId) ?? []), e]);
-      }
-      const toldApprover: SlaClaim[] = [];
-      for (const [approverId, items] of direct) {
-        const copy = overdueCopy(items.length, sla);
+      // Managers' items: the managers hear it is overdue, then the Admin is told.
+      const managerItems = escalated.filter((e) => e.approverRole === 'MANAGER');
+      const toldManagers = new Set<string>();
+      for (const [approverId, items] of await this.perApprover(managerItems, who)) {
+        const copy = overdueCopy(items.length, await slaOf(items[0]?.companyId ?? null));
         const n = await this.notify([approverId], NOTICE.APPROVALS_OVERDUE, copy.title, copy.body);
         sent += n;
-        if (n > 0) toldApprover.push(...items);
+        if (n > 0) for (const i of items) toldManagers.add(`${i.type}:${i.id}`);
       }
-      const approvers = await this.people.findAnyByIds([...direct.keys()]);
-      const copy = escalatedCopy(
-        escalated.length,
-        sla,
-        approvers.map((p) => personName(p)),
-      );
-      const n = await this.notify(superAdmins, NOTICE.APPROVALS_ESCALATED, copy.title, copy.body);
-      sent += n;
-      // Escalated means the Super Admins were told: then every item counts. If their
-      // notice failed, nothing is marked and the next run tries again (with no Super
-      // Admin at all, the approver's own notice is all there is).
-      if (n > 0) marked.push(...escalated);
-      else if (!superAdmins.length) marked.push(...toldApprover);
+      // Per organisation: its Admin gets one escalation naming the managers.
+      const byOrg = new Map<string, SlaClaim[]>();
+      for (const e of escalated) {
+        const key = e.companyId ?? '-';
+        byOrg.set(key, [...(byOrg.get(key) ?? []), e]);
+      }
+      for (const [companyId, items] of byOrg) {
+        const admins = (await who.orgAdmins(companyId === '-' ? null : companyId)).filter(
+          (id) => !items.every((i) => i.userId === id),
+        );
+        const managerIds = new Set<string>();
+        for (const i of items) {
+          if (i.approverRole === 'MANAGER') {
+            for (const m of await who.deptManagers(i.departmentId)) managerIds.add(m);
+          }
+        }
+        const managers = await this.people.findAnyByIds([...managerIds]);
+        const copy = escalatedCopy(
+          items.length,
+          await slaOf(companyId === '-' ? null : companyId),
+          managers.map((p) => personName(p)),
+        );
+        const n = await this.notify(admins, NOTICE.APPROVALS_ESCALATED, copy.title, copy.body);
+        sent += n;
+        // Escalated means the Admin was told: then every item counts. Without an
+        // Admin, the managers' overdue notice is all there is.
+        if (n > 0) marked.push(...items);
+        else if (!admins.length)
+          marked.push(...items.filter((i) => toldManagers.has(`${i.type}:${i.id}`)));
+      }
     }
     if (marked.length) await this.reader.markEscalated(unique(marked), now);
     if (reminded.length || marked.length) {
@@ -212,15 +294,11 @@ export class ApprovalsSlaJob extends GuardedJob {
     return sent;
   }
 
-  /** Items per approver, the Super Admin pool expanded to every Super Admin. */
-  private perApprover(claims: SlaClaim[], superAdmins: string[]): Map<string, SlaClaim[]> {
+  /** Items per approver. */
+  private async perApprover(claims: SlaClaim[], who: Recipients): Promise<Map<string, SlaClaim[]>> {
     const out = new Map<string, SlaClaim[]>();
-    const add = (id: string, c: SlaClaim) => out.set(id, [...(out.get(id) ?? []), c]);
     for (const c of claims) {
-      if (c.approverId) add(c.approverId, c);
-      else if (c.approverRole === 'SUPER_ADMIN') {
-        for (const id of superAdmins) if (id !== c.userId) add(id, c);
-      }
+      for (const id of await who.approvers(c)) out.set(id, [...(out.get(id) ?? []), c]);
     }
     return out;
   }
@@ -246,7 +324,7 @@ export class ApprovalsSlaJob extends GuardedJob {
 /**
  * The daily nudge (18:30 business time): every approver with something waiting
  * gets one notification with pending, due within 24 hours and overdue counts,
- * breaks and meetings together. Moved here from the shifts module in 3.1.
+ * breaks, meetings and away time together, per organisation (4.0).
  */
 @Injectable()
 export class ApprovalsDigestJob extends GuardedJob {
@@ -280,13 +358,9 @@ export class ApprovalsDigestJob extends GuardedJob {
       cur.overdue += g.overdue;
       per.set(id, cur);
     };
-    let superAdmins: string[] | null = null;
+    const who = new Recipients(this.people);
     for (const g of groups) {
-      if (g.approverId) add(g.approverId, g);
-      else if (g.approverRole === 'SUPER_ADMIN') {
-        superAdmins ??= await this.people.listSuperAdminIds();
-        for (const id of superAdmins) add(id, g);
-      }
+      for (const id of await who.approvers(g)) add(id, g);
     }
     const active = new Set((await this.people.findMany({ ids: [...per.keys()] })).map((p) => p.id));
     let sent = 0;

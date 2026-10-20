@@ -8,6 +8,12 @@ import {
   PresenceSessionRepository,
 } from '../domain/presence-session.repository';
 
+/** The close of a presence session at `now`, never before it started (re-audit M3). */
+function endNoEarlierThanStart(startedAt: Date, now: Date) {
+  const end = now.getTime() < startedAt.getTime() ? startedAt : now;
+  return { endedAt: end, durationSec: elapsedSeconds(startedAt, end) };
+}
+
 @Injectable()
 export class PrismaPresenceSessionRepository implements PresenceSessionRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -37,7 +43,7 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
       for (const s of open) {
         const row = await tx.presenceSession.update({
           where: { id: s.id },
-          data: { endedAt: now, durationSec: elapsedSeconds(s.startedAt, now) },
+          data: endNoEarlierThanStart(s.startedAt, now),
         });
         closed ??= this.toRecord(row);
       }
@@ -71,7 +77,7 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
       for (const s of open) {
         const row = await tx.presenceSession.update({
           where: { id: s.id },
-          data: { endedAt: now, durationSec: elapsedSeconds(s.startedAt, now) },
+          data: endNoEarlierThanStart(s.startedAt, now),
         });
         newest ??= this.toRecord(row);
       }

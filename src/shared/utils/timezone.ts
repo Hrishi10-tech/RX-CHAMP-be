@@ -102,6 +102,21 @@ export function hmInZone(date: Date, tz: string = appTimezone()): string {
   return `${pad2(p.hour)}:${pad2(p.minute)}`;
 }
 
+/** "HH:MM" (24-hour) as "h:mm AM" (docs/4.0/SPEC.md 2.10: every time a person reads). */
+export function hm12(hm: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hm);
+  if (!m) return hm;
+  const h = Number(m[1]) % 24;
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m[2]} ${suffix}`;
+}
+
+/** Local "h:mm AM" of `date` in `tz`, for text people read (notifications, approvals, Excel). */
+export function time12InZone(date: Date, tz: string = appTimezone()): string {
+  return hm12(hmInZone(date, tz));
+}
+
 /** Local hour (0-23) of `date` in `tz`. */
 export function hourInZone(date: Date, tz: string = appTimezone()): number {
   return zonedParts(date, tz).hour;

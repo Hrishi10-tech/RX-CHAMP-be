@@ -31,7 +31,7 @@ import { ParseIdPipe } from '@shared/validation/is-id';
 @ApiTags('shifts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.MANAGER)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
 @Controller('shifts')
 export class ShiftsController {
   constructor(private readonly manage: ManageShiftsUseCase) {}
@@ -44,7 +44,7 @@ export class ShiftsController {
 
   @Post('validate')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: 'Check a shift definition without saving it (the editor shows the problems live)',
   })
@@ -60,14 +60,14 @@ export class ShiftsController {
 
   @Post()
   @HttpCode(201)
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Create a shift with its morning, lunch and evening breaks' })
   async create(@CurrentUser() me: AuthenticatedUser, @Body() body: UpsertShiftDto) {
     return envelope(await this.manage.create(me, body));
   }
 
   @Put(':id')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: 'Replace a shift definition (applies from the next break that has not started)',
   })
@@ -81,7 +81,7 @@ export class ShiftsController {
 
   @Post(':id/default')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: 'Make this the default shift for people with no department or personal shift',
   })
@@ -93,7 +93,7 @@ export class ShiftsController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Delete a shift that is no longer assigned' })
   async remove(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
     return envelope(await this.manage.remove(me, id));
@@ -103,7 +103,7 @@ export class ShiftsController {
 @ApiTags('shifts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.MANAGER)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
 @Controller('shift-assignments')
 export class ShiftAssignmentsController {
   constructor(private readonly assignments: ShiftAssignmentsUseCase) {}
@@ -115,15 +115,16 @@ export class ShiftAssignmentsController {
   }
 
   @Put('departments')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: "Set a department's shift from a day onward (Super Admin)" })
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: "Set a department's shift from a day onward (Admin, Super Admin)" })
   async assignDepartment(@CurrentUser() me: AuthenticatedUser, @Body() body: AssignDepartmentDto) {
     return envelope(await this.assignments.assignDepartment(me, body));
   }
 
   @Get('people')
   @ApiOperation({
-    summary: 'People and the shift that applies to them today (a Manager sees their own staff)',
+    summary:
+      "People and the shift that applies to them today (a Manager: their departments' Staff, read-only)",
   })
   async people(@CurrentUser() me: AuthenticatedUser, @Query() query: ListPeopleShiftsQueryDto) {
     const { items, meta } = await this.assignments.listPeople(me, query);
@@ -131,8 +132,10 @@ export class ShiftAssignmentsController {
   }
 
   @Put('people')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: "Override people's shift for a period, or send them back to their department's",
+    summary:
+      "Override people's shift for a period, or send them back to their department's (Admin, Super Admin)",
   })
   async assignPeople(@CurrentUser() me: AuthenticatedUser, @Body() body: AssignPeopleDto) {
     return envelope(await this.assignments.assignPeople(me, body));

@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
+  Matches,
   ArrayMaxSize,
   IsArray,
   IsISO8601,
@@ -62,4 +64,38 @@ export class TeamTodayQueryDto extends DayQueryDto {
   @IsOptional()
   @IsId()
   managerId?: string;
+
+  @ApiPropertyOptional({
+    description: "4.0: one department (one of the caller's; another organisation's is 404)",
+  })
+  @IsOptional()
+  @IsId()
+  departmentId?: string;
+}
+
+/** GET /workday/me/history?month=YYYY-MM (4.0). */
+export class HistoryQueryDto {
+  @ApiPropertyOptional({ example: '2026-10', description: 'Default: the current month' })
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+}
+
+/** GET /team (4.0). */
+export class TeamQueryDto {
+  @ApiPropertyOptional({ enum: ['active', 'all'], default: 'all' })
+  @IsOptional()
+  @IsIn(['active', 'all'])
+  view?: 'active' | 'all';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsId()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ description: 'Part of a name, email or designation' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
 }

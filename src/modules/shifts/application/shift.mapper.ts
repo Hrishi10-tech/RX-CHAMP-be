@@ -1,10 +1,11 @@
-import { hmInZone, minutesToHm, hmToMinutes } from '@shared/utils/timezone';
-import { overrunSeconds } from '../domain/break-schedule';
+import { hmInZone, minutesToHm, hmToMinutes, time12InZone } from '@shared/utils/timezone';
 import {
   BreakRecordRow,
   isSkipRecord,
   needsComment,
   outcomeOf,
+  segmentsOf,
+  takenSecOf,
 } from '../domain/break-record.repository';
 import {
   BREAK_LABEL,
@@ -12,6 +13,8 @@ import {
   ShiftBreakDef,
   ShiftRecord,
   breakAllowsSkip,
+  RECORD_LABEL,
+  isScheduledKind,
 } from '../domain/shift.types';
 import {
   BreakRecordView,
@@ -74,14 +77,18 @@ export class ShiftMapper {
   }
 
   static recordView(r: BreakRecordRow, now: Date, names?: Map<string, string>): BreakRecordView {
-    const inProgress = r.endedAt === null;
-    const end = r.endedAt ?? now;
+    const state = stateOf(r);
+    const inProgress = state === 'ACTIVE';
+    const takenSec = isSkipRecord(r) ? 0 : takenSecOf(r, now);
+    const lengthMin = r.kind === 'QUICK' ? (r.plannedMin ?? null) : r.durationMin;
+    const canResume =
+      state === 'PAUSED' && !!r.windowClose && now.getTime() <= r.windowClose.getTime();
     return {
       id: r.id,
       date: r.date,
       kind: r.kind,
       label: r.kind
-        ? BREAK_LABEL[r.kind]
+        ? RECORD_LABEL[r.kind]
         : r.presenceType === 'LUNCH'
           ? 'Lunch (unscheduled)'
           : 'Break (unscheduled)',
@@ -92,11 +99,16 @@ export class ShiftMapper {
       startedAt: r.startedAt.toISOString(),
       endedAt: r.endedAt?.toISOString() ?? null,
       inProgress,
-      tookSec: Math.max(0, Math.round((end.getTime() - r.startedAt.getTime()) / 1000)),
+      tookSec: takenSec,
       // Stored when the break ended through /breaks/end; worked out otherwise.
+      // A quick break runs over its planned length (4.0).
       overrunSec:
-        r.overrunSec ??
-        (isSkipRecord(r) ? 0 : overrunSeconds(r.durationMin, r.startedAt, r.endedAt, now)),
+        r.kind === 'QUICK'
+          ? r.plannedMin
+            ? Math.max(0, takenSec - r.plannedMin * 60)
+            : 0
+          : (r.overrunSec ??
+            (isSkipRecord(r) || !r.durationMin ? 0 : Math.max(0, takenSec - r.durationMin * 60))),
       timing: r.timing,
       minutesOff: r.minutesOff,
       reason: r.reason,
@@ -112,6 +124,16 @@ export class ShiftMapper {
       commentedAt: r.commentedAt?.toISOString() ?? null,
       dueAt: r.dueAt?.toISOString() ?? null,
       needsComment: needsComment(r),
+      state,
+      takenSec,
+      remainingSec: lengthMin ? Math.max(0, lengthMin * 60 - takenSec) : 0,
+      plannedMin: r.plannedMin ?? null,
+      canResume,
+      resumeUntil: canResume ? r.windowClose!.toISOString() : null,
+      segments: segmentsOf(r).map((s) => ({
+        startedAt: s.startedAt.toISOString(),
+        endedAt: s.endedAt?.toISOString() ?? null,
+      })),
     };
   }
 
@@ -136,14 +158,27 @@ export class ShiftMapper {
         ringStart: hmInZone(slot.ringStart, tz),
         ringEnd: hmInZone(slot.ringEnd, tz),
       },
+      local12: {
+        start: time12InZone(slot.scheduledStart, tz),
+        end: time12InZone(slot.scheduledEnd, tz),
+        windowOpen: time12InZone(slot.windowOpen, tz),
+        windowClose: time12InZone(slot.windowClose, tz),
+      },
       record,
+      state: !record ? 'NOT_TAKEN' : record.outcome !== 'TAKEN' ? 'SKIPPED' : record.state,
+      takenSec: record?.takenSec ?? 0,
+      remainingSec: record ? record.remainingSec : slot.durationMin * 60,
+      canResume: record?.canResume ?? false,
+      resumeUntil: record?.resumeUntil ?? null,
+      segments: record?.segments ?? [],
     };
   }
 
   /** A skip waiting for its comment, for the agent's End Day dialog. Null if not one. */
   static skipNeedingComment(r: BreakRecordRow, minChars: number): SkipNeedingComment | null {
     const outcome = outcomeOf(r);
-    if (!r.kind || (outcome !== 'SKIPPED' && outcome !== 'AUTO_SKIPPED')) return null;
+    if (!isScheduledKind(r.kind) || (outcome !== 'SKIPPED' && outcome !== 'AUTO_SKIPPED'))
+      return null;
     return {
       id: r.id,
       date: r.date,
@@ -156,4 +191,15 @@ export class ShiftMapper {
       minChars,
     };
   }
+}
+
+/**
+ * A record's 4.0 state. Paused is stored; otherwise a running presence session
+ * (endedAt null) means ACTIVE, which also covers rows written by 3.x paths.
+ */
+export function stateOf(r: BreakRecordRow): 'ACTIVE' | 'PAUSED' | 'ENDED' {
+  if (isSkipRecord(r)) return 'ENDED';
+  if (r.state === 'PAUSED') return 'PAUSED';
+  if (r.state === 'ENDED' && r.finalEndedAt) return 'ENDED';
+  return r.endedAt === null ? 'ACTIVE' : 'ENDED';
 }

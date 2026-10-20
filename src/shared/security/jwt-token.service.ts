@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
   AccessTokenPayload,
+  EnrollmentToken,
   SOCKET_TICKET_TTL_SEC,
   SOCKET_TOKEN_TYPE,
   TokenService,
@@ -11,6 +12,8 @@ import {
 interface EnrollmentClaims {
   sub: string;
   typ: string;
+  /** 4.0: the person's enrollVersion when issued. */
+  ev?: number;
 }
 
 @Injectable()
@@ -33,9 +36,9 @@ export class JwtTokenService implements TokenService {
     );
   }
 
-  async signEnrollmentToken(userId: string): Promise<string> {
+  async signEnrollmentToken(userId: string, enrollVersion = 1): Promise<string> {
     return this.jwt.signAsync(
-      { sub: userId, typ: 'enroll' },
+      { sub: userId, typ: 'enroll', ev: enrollVersion },
       {
         secret: this.config.get<string>('jwt.enrollSecret'),
         expiresIn: this.config.get<string>('jwt.enrollTtl') ?? '365d',
@@ -43,7 +46,7 @@ export class JwtTokenService implements TokenService {
     );
   }
 
-  async verifyEnrollmentToken(token: string): Promise<string> {
+  async verifyEnrollmentToken(token: string): Promise<EnrollmentToken> {
     let claims: EnrollmentClaims;
     try {
       claims = await this.jwt.verifyAsync<EnrollmentClaims>(token, {
@@ -55,6 +58,8 @@ export class JwtTokenService implements TokenService {
     if (claims.typ !== 'enroll' || !claims.sub) {
       throw new UnauthorizedException('Not an enrollment token.');
     }
-    return claims.sub;
+    // Tokens from before 4.0 carry no version: they were issued for version 1.
+    const ev = Number.isInteger(claims.ev) && (claims.ev as number) > 0 ? (claims.ev as number) : 1;
+    return { userId: claims.sub, enrollVersion: ev };
   }
 }

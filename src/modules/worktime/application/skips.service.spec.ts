@@ -6,7 +6,7 @@ import { BreakRecordRow, NewBreakRecord } from '@modules/shifts/domain/break-rec
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { ShiftRecord } from '@modules/shifts/domain/shift.types';
 import { WorkSessionRecord } from '../domain/work-session.repository';
-import { SkipsService } from './skips.service';
+import { autoSkipId, SkipsService } from './skips.service';
 
 process.env.APP_TIMEZONE = 'Asia/Kolkata';
 
@@ -62,22 +62,30 @@ const general: ShiftRecord = {
   updatedAt: new Date('2026-01-01'),
 };
 
-const person = (id: string, role: ShiftPerson['role'], managerId: string | null): ShiftPerson => ({
+const person = (
+  id: string,
+  role: ShiftPerson['role'],
+  managerId: string | null,
+  departmentId: string | null = 'dept-billing',
+): ShiftPerson => ({
   id,
   firstName: id === 'staff' ? 'Asha' : id === 'mgr' ? 'Maya' : 'Sam',
   lastName: 'Rao',
   email: `${id}@x.test`,
   role,
-  department: 'Billing',
+  department: departmentId ? 'Billing' : null,
   designation: null,
   companyId: 'co-1',
+  departmentId,
   managerId,
   active: true,
 });
 const people: Record<string, ShiftPerson> = {
   staff: person('staff', 'USER', 'mgr'),
+  loner: person('loner', 'USER', null, null),
   mgr: person('mgr', 'MANAGER', 'sa'),
-  sa: person('sa', 'SUPER_ADMIN', null),
+  admin: person('admin', 'ADMIN', null, null),
+  sa: person('sa', 'SUPER_ADMIN', null, null),
 };
 
 const me = (id: string, role: Role): AuthenticatedUser =>
@@ -117,7 +125,7 @@ function row(over: Partial<BreakRecordRow>): BreakRecordRow {
     source: 'SYSTEM',
     approvalStatus: 'PENDING',
     approverRole: 'MANAGER',
-    approverId: 'mgr',
+    approverId: null,
     decidedById: null,
     decidedAt: null,
     decisionNote: null,
@@ -202,7 +210,7 @@ const staff = me('staff', Role.USER);
 const REASON = 'Client escalation call';
 
 describe('SkipsService.skip', () => {
-  it('skips an open window: SKIPPED now, timing judged, routed to the manager, manager told', async () => {
+  it("skips an open window: SKIPPED now, timing judged, routed to the department's managers, who are told", async () => {
     const { svc, skipsRepo, notices } = setup();
     const res = await svc.skip(
       staff,
@@ -221,7 +229,8 @@ describe('SkipsService.skip', () => {
       source: 'AGENT',
       approvalStatus: 'PENDING',
       approverRole: 'MANAGER',
-      approverId: 'mgr',
+      // 4.0: routed by department; no approver id is written.
+      approverId: null,
       durationMin: 15,
     });
     expect(skipsRepo.createSkip.mock.calls[0][1]).toBe('AGENT_31');
@@ -244,6 +253,54 @@ describe('SkipsService.skip', () => {
       approvalStatus: 'NOT_REQUIRED',
     });
     expect(events.publish).not.toHaveBeenCalled();
+  });
+
+  it("sends a manager's skip, and staff without a department, to the organisation Admin", async () => {
+    const { svc, skipsRepo } = setup();
+    await svc.skip(
+      me('mgr', Role.MANAGER),
+      { kind: 'MORNING', reason: REASON },
+      'AGENT_31',
+      ist('11:02'),
+    );
+    await svc.skip(
+      me('loner', Role.USER),
+      { kind: 'MORNING', reason: REASON },
+      'AGENT_31',
+      ist('11:02'),
+    );
+    for (const call of skipsRepo.createSkip.mock.calls) {
+      expect(call[0]).toMatchObject({
+        approvalStatus: 'PENDING',
+        approverRole: 'ADMIN',
+        approverId: null,
+      });
+    }
+  });
+
+  it("an Admin's skip needs no reason and no approval (nobody reviews the Admin)", async () => {
+    const { svc, skipsRepo, events } = setup();
+    await svc.skip(me('admin', Role.ADMIN), { kind: 'MORNING' }, 'AGENT_31', ist('11:02'));
+    expect(skipsRepo.createSkip.mock.calls[0][0]).toMatchObject({
+      reason: null,
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+    });
+    expect(events.publish).not.toHaveBeenCalled();
+  });
+
+  it('says when a window opens or closed in 12-hour time', async () => {
+    const { svc } = setup();
+    await expect(
+      svc.skip(staff, { kind: 'EVENING', reason: REASON }, 'AGENT_31', ist('11:02')),
+    ).rejects.toMatchObject({
+      message: 'Your evening break opens at 3:30 PM.',
+    });
+    await expect(
+      svc.skip(staff, { kind: 'MORNING', reason: REASON }, 'AGENT_31', ist('12:01')),
+    ).rejects.toMatchObject({
+      message: 'The morning break window closed at 12:00 PM.',
+    });
   });
 
   it.each([
@@ -361,15 +418,17 @@ describe('SkipsService.comment', () => {
     expect(notices()[0].recipientIds).toEqual(['mgr']);
   });
 
-  it('404 unknown, 403 not mine, 409 not needed, 422 too short', async () => {
+  it('404 unknown and not mine (the same answer), 409 not needed, 422 too short', async () => {
     const { svc, records } = setup();
-    await expect(
-      svc.comment(staff, 'nope', 'Was on a client call', ist('18:00')),
-    ).rejects.toMatchObject({ status: 404 });
+    const unknown = await svc
+      .comment(staff, 'nope', 'Was on a client call', ist('18:00'))
+      .catch((e) => e);
+    expect(unknown).toMatchObject({ status: 404 });
     records.findById.mockResolvedValue(row({ userId: 'other' }));
-    await expect(
-      svc.comment(staff, 'rec-1', 'Was on a client call', ist('18:00')),
-    ).rejects.toMatchObject({ status: 403 });
+    const theirs = await svc
+      .comment(staff, 'rec-1', 'Was on a client call', ist('18:00'))
+      .catch((e) => e);
+    expect(theirs).toMatchObject({ status: 404, code: unknown.code, message: unknown.message });
     records.findById.mockResolvedValue(row({ reason: 'Already said why' }));
     await expect(
       svc.comment(staff, 'rec-1', 'Was on a client call', ist('18:00')),
@@ -416,7 +475,8 @@ describe('SkipsService.saveEndDayComments', () => {
     ).rejects.toMatchObject({
       status: 422,
       code: 'COMMENT_INVALID',
-      details: { breakId: 'b2', problem: 'NOT_YOURS' },
+      // Someone else's break reads as unknown (never NOT_YOURS).
+      details: { breakId: 'b2', problem: 'NOT_FOUND' },
     });
     expect(records.addComment).not.toHaveBeenCalled();
   });
@@ -478,9 +538,31 @@ describe('SkipsService auto-skip', () => {
       reason: null,
       source: 'SYSTEM',
       approvalStatus: 'PENDING',
-      approverId: 'mgr',
+      approverRole: 'MANAGER',
+      approverId: null,
     });
     expect(notices()[0]).toMatchObject({ type: 'AUTO_SKIP_REQUESTED', recipientIds: ['mgr'] });
+    // The notice names the auto-skip time in 12-hour form.
+    expect(notices()[0].body).not.toMatch(/\b(1[3-9]|2[0-3]):\d{2}\b/);
+  });
+
+  it("auto-skips route like skips: a manager's to the Admin, an Admin's need no approval", async () => {
+    const { svc, skipsRepo, events, sessionsRepo } = setup();
+    sessionsRepo.listOverlapping.mockResolvedValue([workSession('09:30', null, 'mgr')]);
+    await svc.autoSkipFor('mgr', ist('12:05'), false);
+    expect(skipsRepo.createAutoSkips.mock.calls[0][0][0]).toMatchObject({
+      approvalStatus: 'PENDING',
+      approverRole: 'ADMIN',
+      approverId: null,
+    });
+    events.publish.mockClear();
+    sessionsRepo.listOverlapping.mockResolvedValue([workSession('09:30', null, 'admin')]);
+    await svc.autoSkipFor('admin', ist('12:05'), false);
+    expect(skipsRepo.createAutoSkips.mock.calls[1][0][0]).toMatchObject({
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+    });
+    expect(events.publish).not.toHaveBeenCalled();
   });
 
   it('ending the day inside an open window auto-skips that break at now', async () => {
@@ -506,5 +588,55 @@ describe('SkipsService auto-skip', () => {
     records.listForUsersOnDate.mockResolvedValue([]);
     expect(await svc.autoSkipAll(ist('12:05'))).toBe(1);
     expect(skipsRepo.createAutoSkips).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SkipsService: End Day judges the auto-skips before writing them (re-audit M1)', () => {
+  it('planning writes nothing and gives each auto-skip the id it will be created with', async () => {
+    const { svc, skipsRepo, events } = setup();
+    const planned = await svc.planAutoSkipsFor('staff', ist('12:05'), true);
+    expect(planned.map((p) => p.record.kind)).toEqual(['MORNING']);
+    expect(planned[0].record.id).toBe(autoSkipId('staff', '2026-10-13', 'MORNING'));
+    expect(skipsRepo.createAutoSkips).not.toHaveBeenCalled();
+    expect(events.publish).not.toHaveBeenCalled();
+    // The gate lists it like a skip waiting for a comment.
+    expect(await svc.plannedNeedingComment(planned)).toEqual([
+      expect.objectContaining({
+        id: planned[0].record.id,
+        kind: 'MORNING',
+        outcome: 'AUTO_SKIPPED',
+        minChars: expect.any(Number),
+      }),
+    ]);
+    // Created as planned, with that id.
+    expect(await svc.createPlanned(planned, ist('12:05'))).toBe(1);
+    expect(skipsRepo.createAutoSkips.mock.calls[0][0][0]).toMatchObject({
+      id: planned[0].record.id,
+    });
+  });
+
+  it('a comment on a planned auto-skip is checked by its id, nothing written', async () => {
+    const { svc, records } = setup();
+    const planned = await svc.planAutoSkipsFor('staff', ist('12:05'), true);
+    const id = planned[0].record.id;
+    await expect(
+      svc.checkEndDayComments(staff, [{ breakId: id, comment: 'Was on a client call' }], planned),
+    ).resolves.toEqual([{ id, text: 'Was on a client call' }]);
+    await expect(
+      svc.checkEndDayComments(staff, [{ breakId: id, comment: 'short' }], planned),
+    ).rejects.toMatchObject({ code: 'COMMENT_INVALID', details: { problem: 'TOO_SHORT' } });
+    // Without the plan the same id is unknown.
+    await expect(
+      svc.checkEndDayComments(staff, [{ breakId: id, comment: 'Was on a client call' }]),
+    ).rejects.toMatchObject({ details: { problem: 'NOT_FOUND' } });
+    expect(records.addComment).not.toHaveBeenCalled();
+  });
+
+  it('auto-skip ids are stable per person, day and kind, and shaped as UUIDs', () => {
+    const a = autoSkipId('u1', '2026-10-13', 'LUNCH');
+    expect(a).toBe(autoSkipId('u1', '2026-10-13', 'LUNCH'));
+    expect(a).not.toBe(autoSkipId('u2', '2026-10-13', 'LUNCH'));
+    expect(a).not.toBe(autoSkipId('u1', '2026-10-14', 'LUNCH'));
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });

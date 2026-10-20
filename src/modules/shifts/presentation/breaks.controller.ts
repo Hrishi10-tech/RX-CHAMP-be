@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { isAgent40 } from '@modules/worktime/domain/agent-generation';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { RolesGuard } from '@shared/rbac/roles.guard';
@@ -42,11 +53,16 @@ export class BreaksController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'End the running break: back to work (idempotent). Over the grace: askToCount ' +
-      'true asks the manager to count the minutes (needs a reason), false leaves them out.',
+      'End the running or paused break: back to work (idempotent). 3.x agents over the ' +
+      'grace: askToCount true asks the manager to count the minutes (needs a reason), false ' +
+      'leaves them out. 4.0 agents and quick breaks are never asked (the paid buffer covers it).',
   })
-  async end(@CurrentUser() me: AuthenticatedUser, @Body() body: EndBreakDto) {
-    return envelope(await this.mine.end(me, body));
+  async end(
+    @CurrentUser() me: AuthenticatedUser,
+    @Body() body: EndBreakDto,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return envelope(await this.mine.end(me, body, { agent40: isAgent40(userAgent) }));
   }
 
   @Get('me/history')
@@ -58,7 +74,7 @@ export class BreaksController {
   // ---- Approvers -----------------------------------------------------------
 
   @Get('approvals')
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Breaks waiting for (or given) a decision' })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ApprovalsQueryDto) {
     const { items, meta } = await this.approvals.list(me, query);
@@ -66,7 +82,7 @@ export class BreaksController {
   }
 
   @Get('approvals/summary')
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Counts for the approvals badge: pending today, overdue, decided today',
   })
@@ -76,7 +92,7 @@ export class BreaksController {
 
   @Post('approvals/bulk-approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Approve many at once; anything not yours or already decided is skipped',
   })
@@ -86,7 +102,7 @@ export class BreaksController {
 
   @Post('approvals/:id/approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Approve one break' })
   async approve(
     @CurrentUser() me: AuthenticatedUser,
@@ -98,7 +114,7 @@ export class BreaksController {
 
   @Post('approvals/:id/reject')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Reject one break (a note is required; the staff member sees it)' })
   async reject(
     @CurrentUser() me: AuthenticatedUser,
@@ -110,14 +126,14 @@ export class BreaksController {
 
   @Post('approvals/:id/reopen')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Put a decided break back to pending' })
   async reopen(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
     return envelope(await this.approvals.reopen(me, id));
   }
 
   @Get('team')
-  @Roles(Role.SUPER_ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: "One day of a team's breaks: taken, late, early, skipped, running" })
   async teamDay(@CurrentUser() me: AuthenticatedUser, @Query() query: TeamBreaksQueryDto) {
     return envelope(await this.team.execute(me, query));

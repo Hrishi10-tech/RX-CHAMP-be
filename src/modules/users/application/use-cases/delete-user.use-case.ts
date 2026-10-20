@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
+import { AuditLogService } from '@shared/audit/audit-log.service';
+import { ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { CACHE_SERVICE, CacheService } from '@shared/cache/cache.port';
@@ -9,6 +10,10 @@ import { UserAccessService } from '../../domain/services/user-access.service';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
 import { DeleteUserResult } from '../user.types';
 
+/**
+ * Deletes a person (soft delete; history kept): Admin for their organisation's
+ * Managers and Staff, Super Admin also its Admin (who can then be replaced).
+ */
 @Injectable()
 export class DeleteUserUseCase {
   private readonly access = new UserAccessService();
@@ -17,15 +22,14 @@ export class DeleteUserUseCase {
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(CACHE_SERVICE) private readonly cache: CacheService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    private readonly audit: AuditLogService,
   ) {}
 
   async execute(me: AuthenticatedUser, targetId: string): Promise<DeleteUserResult> {
     if (me.role === Role.USER) throw new ForbiddenError('Not allowed');
+    if (targetId === me.id) throw new ValidationError('You cannot delete yourself');
 
-    const target = await this.users.findById(targetId);
-    if (!target) throw new NotFoundError('Unknown user');
-    if (target.id === me.id) throw new ValidationError('You cannot delete yourself');
-    if (!this.access.ownsTarget(me, target)) throw new ForbiddenError('Not your team member');
+    const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
     if (target.role === Role.SUPER_ADMIN && target.isActive()) {
       const superAdmins = await this.users.count({ role: Role.SUPER_ADMIN, status: 'ACTIVE' });
       if (superAdmins <= 1) {
@@ -39,6 +43,13 @@ export class DeleteUserUseCase {
       UserAccessChangedEvent.eventName,
       new UserAccessChangedEvent(target.id, ['DELETED'], new Date(), false),
     );
+    await this.audit.record({
+      actorId: me.id,
+      action: 'USER_DELETED',
+      entity: 'USER',
+      entityId: target.id,
+      metadata: { role: target.role, companyId: target.companyId },
+    });
 
     return { deleted: true, id: target.id };
   }

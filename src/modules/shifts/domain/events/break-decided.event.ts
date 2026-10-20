@@ -1,4 +1,4 @@
-import { BreakKind, BreakOutcome } from '../shift.types';
+import { RecordKind, BreakOutcome } from '../shift.types';
 
 /** A break record was approved or rejected; tells the person who took (or skipped) it. */
 export class BreakDecidedEvent {
@@ -9,7 +9,7 @@ export class BreakDecidedEvent {
     public readonly decision: 'APPROVED' | 'REJECTED',
     public readonly deciderId: string,
     public readonly deciderName: string,
-    public readonly kind: BreakKind | null,
+    public readonly kind: RecordKind | null,
     public readonly date: string,
     public readonly note: string | null,
     public readonly at: Date,

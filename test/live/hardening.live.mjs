@@ -3,7 +3,7 @@
 // for the demo staff account for 15 minutes, so run it last.
 // Needs a freshly reset and seeded database: see README.md.
 import { createRequire } from 'node:module';
-import { Client, check, expectStatus, summary, BASE } from './lib.mjs';
+import { Client, check, expectStatus, summary, BASE, SEED_ORG } from './lib.mjs';
 
 // The socket client comes from the portal's dependencies (npm ci in web-portal).
 let io = null;
@@ -44,6 +44,8 @@ check('new password signs in', true);
 
 console.log('\n# Admin sets a password and signs someone out everywhere');
 const sa = await new Client('superadmin').login('admin@timechamp.test', 'admin123');
+// 4.0: a Super Admin acts inside one organisation.
+sa.headers['x-org-id'] = SEED_ORG;
 r = await sa.post(`/users/${mgr.user.id}/password`, { newPassword: 'Reset-Passw0rd', signOutEverywhere: true });
 check('SA resets the manager password', r.status === 200 && r.body.data?.signedOut === true, r.body);
 await new Promise((s) => setTimeout(s, 300));

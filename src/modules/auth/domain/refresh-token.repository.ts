@@ -27,6 +27,11 @@ export interface RefreshTokenRepository {
   /** Ends every session the person has (all devices, the agent included). */
   revokeAllForUser(userId: string): Promise<number>;
   /**
+   * 4.0 key sign-out: ends the person's desktop-agent sessions (refresh tokens
+   * issued to the RXVisionAgent user agent), leaving their portal sessions alone.
+   */
+  revokeAgentSessions(userId: string): Promise<number>;
+  /**
    * Deletes tokens that died before the cutoff — expired, or revoked. Neither can
    * authenticate anyone, so the rows are weight without meaning. Answers how many.
    */

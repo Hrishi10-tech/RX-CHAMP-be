@@ -5,6 +5,7 @@ import { OnGatewayInit } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
 import { SocketHandshakeAuth, SocketTokenClaims } from './socket.types';
 import { SocketAccessService, accountRoom } from './socket-access.service';
+import { LiveSection, membersRoom } from './socket-rooms';
 
 /**
  * Access token from the `accessToken` cookie, an `Authorization: Bearer` header,
@@ -56,6 +57,41 @@ export abstract class AuthenticatedGateway implements OnGatewayInit {
     }
     await client.join(accountRoom(userId));
     return userId;
+  }
+
+  /** 4.0: joins the organisation and department rooms for this namespace's live data. */
+  protected async joinTeamRooms(
+    client: Socket,
+    userId: string,
+    section: LiveSection,
+  ): Promise<void> {
+    const rooms = await this.access.roomsFor(userId, this.orgHintOf(client), section);
+    if (rooms.length) await client.join(rooms);
+  }
+
+  /**
+   * 4.0: joins the organisation's members room (config pushes to agents and portal);
+   * a Super Admin joins the organisation picked in the portal.
+   */
+  protected async joinMembersRoom(client: Socket, userId: string): Promise<void> {
+    const companyId = await this.access.membersOrgOf(userId, this.orgHintOf(client));
+    if (companyId) await client.join(membersRoom(companyId));
+  }
+
+  /** The organisation a Super Admin's portal names (auth.orgId, ?orgId or X-Org-Id). */
+  private orgHintOf(client: Socket): string | null {
+    const auth = client.handshake.auth as Record<string, unknown> | undefined;
+    const fromAuth = typeof auth?.orgId === 'string' ? auth.orgId : null;
+    const fromQuery =
+      typeof client.handshake.query?.orgId === 'string' ? client.handshake.query.orgId : null;
+    const header = client.handshake.headers['x-org-id'];
+    const fromHeader = typeof header === 'string' ? header : null;
+    return fromAuth ?? fromQuery ?? fromHeader;
+  }
+
+  /** 4.0: the rooms a live update about this person goes to. */
+  protected roomsOfUser(userId: string): Promise<string[]> {
+    return this.access.roomsOfUser(userId);
   }
 
   private tokenFrom(client: Socket): string | null {

@@ -1,3 +1,6 @@
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import { grantsOf } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ACTIVITY_SAMPLE_REPOSITORY,
@@ -18,9 +21,13 @@ export class GetTeamLiveUseCase {
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
   ) {}
 
-  async execute(managerId: string): Promise<TeamMemberActivityView[]> {
+  async execute(me: AuthenticatedUser): Promise<TeamMemberActivityView[]> {
+    // Live apps are timeline data: a Manager needs the timeline grant (4.0).
+    if (!grantsOf(me).timeline) {
+      throw new ForbiddenError('You do not have access to the timeline.', 'GRANT_REQUIRED');
+    }
     const now = new Date();
-    const reports = await this.access.findReports(managerId);
+    const reports = await this.access.findReports(me);
     if (reports.length === 0) return [];
 
     const ids = reports.map((r) => r.id);

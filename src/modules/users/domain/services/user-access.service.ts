@@ -1,43 +1,59 @@
-import { Role, assignableRoles, outranks } from '@shared/rbac/roles.enum';
-import { UnauthorizedAction } from '@shared/exceptions/domain.exception';
+import { Role, assignableRoles } from '@shared/rbac/roles.enum';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
+import {
+  assertCanEdit,
+  canEditPerson,
+  canSeePerson,
+  isAdminLike,
+  managedDeptIds,
+  orgOf,
+  PersonFacts,
+  requireOrg,
+} from '@shared/tenancy';
 import { ListUsersScope } from '../repositories/user.repository';
 import { User } from '../entities/user.entity';
 
-export interface ActorContext {
-  id: string;
-  role: Role;
-  department: string | null;
+/** The caller (the signed-in user). */
+export type ActorContext = AuthenticatedUser;
+
+export function factsOf(u: User): PersonFacts {
+  return { id: u.id, role: u.role, companyId: u.companyId, departmentId: u.departmentId };
 }
 
 /**
- * Who may see and change whom.
- *
- * Super Admin -> Manager -> Staff. A Super Admin reaches everyone. A Manager
- * reaches only their direct reports (users.manager_id) and only ever acts on
- * Staff. Staff reach only themselves. Writes additionally require the actor to
- * outrank the target, so nobody can act on a peer or a superior, with one
- * exception: a Super Admin may act on another Super Admin (there is nobody
- * above them to do it), guarded elsewhere so the last one cannot be removed.
+ * Who may see and change whom (4.0, docs/4.0/SPEC.md 1.2), on top of the shared
+ * tenancy rules: an Admin or Super Admin (in the organisation they act in) sees
+ * and changes its Managers and Staff (a Super Admin also its Admin); a Manager
+ * sees the Staff of their departments and changes nobody; Staff see themselves.
  */
 export class UserAccessService {
-  private readonly listScopes: Record<Role, (actor: ActorContext) => ListUsersScope> = {
-    [Role.SUPER_ADMIN]: () => ({}),
-    [Role.MANAGER]: (actor) => ({ managerId: actor.id }),
-    [Role.USER]: (actor) => ({ ids: [actor.id] }),
-  };
-
   isAdminRole(role: Role): boolean {
-    return role === Role.SUPER_ADMIN;
+    return role === Role.SUPER_ADMIN || role === Role.ADMIN;
   }
 
+  /**
+   * The list filter for everyone the caller may see. A Super Admin must have
+   * chosen an organisation (400 ORG_REQUIRED); anyone else without one sees
+   * themselves only.
+   */
   listScopeFor(actor: ActorContext): ListUsersScope {
-    return this.listScopes[actor.role](actor);
+    if (actor.role === Role.SUPER_ADMIN) requireOrg(actor);
+    const companyId = orgOf(actor);
+    if (!companyId) return { ids: [actor.id] };
+    if (isAdminLike(actor)) return { companyId, excludeRoles: [Role.SUPER_ADMIN] };
+    if (actor.role === Role.MANAGER) {
+      return { companyId, roles: [Role.USER], departmentIds: managedDeptIds(actor) };
+    }
+    return { ids: [actor.id] };
   }
 
-  assertCanCreate(actor: ActorContext): void {
-    if (assignableRoles(actor.role).length === 0) {
-      throw new UnauthorizedAction('You cannot create users');
+  /** Admin, or a Super Admin inside an organisation (400 ORG_REQUIRED without one). */
+  assertCanCreate(actor: ActorContext): string {
+    if (!isAdminLike(actor)) {
+      throw new ForbiddenError('Only the organisation admin can add people.');
     }
+    return requireOrg(actor);
   }
 
   /** Whether `actor` may give a new or existing account the role `role`. */
@@ -46,22 +62,21 @@ export class UserAccessService {
   }
 
   canView(actor: ActorContext, target: User): boolean {
-    if (target.id === actor.id) return true;
-    if (actor.role === Role.SUPER_ADMIN) return true;
-    if (actor.role === Role.MANAGER) return target.managerId === actor.id;
-    return false;
+    return canSeePerson(actor, factsOf(target));
   }
 
   /**
    * Whether `actor` may change `target` (edit, block, delete, screenshots,
-   * agent download). Self-service is handled by each use case, not here.
+   * agent download, credentials). Self-service is handled by each use case.
    */
   ownsTarget(actor: ActorContext, target: User): boolean {
-    if (target.id === actor.id) return false;
-    if (actor.role === Role.SUPER_ADMIN) return true;
-    if (actor.role === Role.MANAGER) {
-      return target.managerId === actor.id && outranks(actor.role, target.role);
-    }
-    return false;
+    return canEditPerson(actor, factsOf(target));
+  }
+
+  /** 404 when `target` is missing or out of sight; 403 when visible but not editable. */
+  assertCanEdit(actor: ActorContext, target: User | null | undefined): User {
+    if (!target) return assertCanEdit(actor, null, 'user') as never;
+    assertCanEdit(actor, factsOf(target), 'user');
+    return target;
   }
 }

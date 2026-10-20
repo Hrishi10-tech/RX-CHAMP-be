@@ -25,9 +25,12 @@ export class ChatController {
   ) {}
 
   @Get('contacts')
-  @ApiOperation({ summary: 'People the signed-in user can message (manager, reports, teammates)' })
+  @ApiOperation({
+    summary:
+      'People the signed-in user can message (4.0: their departments, managers and the organisation admin)',
+  })
   async contacts(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.listContacts.execute(me.id));
+    return envelope(await this.listContacts.execute(me));
   }
 
   @Get('threads')
@@ -35,7 +38,7 @@ export class ChatController {
     summary: 'Conversation list: each contact with last-message preview + unread count',
   })
   async threads(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.listThreads.execute(me.id));
+    return envelope(await this.listThreads.execute(me));
   }
 
   @Get('unread')
@@ -54,6 +57,6 @@ export class ChatController {
   @HttpCode(201)
   @ApiOperation({ summary: 'Send a message to another user' })
   async send(@CurrentUser() me: AuthenticatedUser, @Body() body: SendMessageDto) {
-    return envelope(await this.sendMessage.execute(me.id, body));
+    return envelope(await this.sendMessage.execute(me, body));
   }
 }

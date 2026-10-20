@@ -1,3 +1,4 @@
+import { PersonFactsReader } from '@shared/tenancy';
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import {
@@ -18,11 +19,12 @@ export class GetCurrentActivityUseCase {
   constructor(
     @Inject(ACTIVITY_SAMPLE_REPOSITORY) private readonly repo: ActivitySampleRepository,
     @Inject(ACTIVITY_ACCESS_READER) private readonly access: ActivityAccessReader,
+    private readonly facts: PersonFactsReader,
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
   ) {}
 
   async execute(me: AuthenticatedUser, userId: string): Promise<CurrentActivityView> {
-    await assertCanAccess(me, userId, this.access);
+    await assertCanAccess(me, userId, this.facts, 'timeline');
     const now = new Date();
     const latest = await this.repo.findLatestForUser(userId);
     // Signed off for the day reads as DAY_ENDED, not as "stopped reporting".

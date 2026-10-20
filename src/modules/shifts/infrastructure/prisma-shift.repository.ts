@@ -140,6 +140,79 @@ export class PrismaShiftRepository implements ShiftRepository {
     return this.toRecord(row);
   }
 
+  /**
+   * Serialises shift name checks within one organisation (or the shared scope) for
+   * the rest of the transaction, so two writes of the same name cannot both pass
+   * the check (no unique index: older databases may hold duplicates already).
+   */
+  private async lockNames(tx: Prisma.TransactionClient, companyId: string | null): Promise<void> {
+    const key = `rxv:shift-name:${companyId ?? 'shared'}`;
+    await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtext(${key}))) AS l`;
+  }
+
+  private nameClash(
+    tx: Prisma.TransactionClient,
+    companyId: string | null,
+    name: string,
+    exceptId?: string,
+  ) {
+    return tx.shift.findFirst({
+      where: {
+        deletedAt: null,
+        companyId,
+        name: { equals: name.trim(), mode: 'insensitive' },
+        ...(exceptId ? { NOT: { id: exceptId } } : {}),
+      },
+      select: { id: true },
+    });
+  }
+
+  async createUnique(
+    data: ShiftWriteData,
+  ): Promise<{ ok: true; shift: ShiftRecord } | { ok: false }> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      await this.lockNames(tx, data.companyId);
+      if (await this.nameClash(tx, data.companyId, data.name)) return null;
+      const created = await tx.shift.create({
+        data: { ...this.columns(data), breaks: { create: this.breakRows(data) } },
+        include: WITH_BREAKS,
+      });
+      // An organisation's first shift becomes its default (under the same lock).
+      if (data.companyId) {
+        const hasDefault = await tx.shift.findFirst({
+          where: { companyId: data.companyId, isDefault: true, deletedAt: null },
+          select: { id: true },
+        });
+        if (!hasDefault) {
+          return tx.shift.update({
+            where: { id: created.id },
+            data: { isDefault: true },
+            include: WITH_BREAKS,
+          });
+        }
+      }
+      return created;
+    });
+    return row ? { ok: true, shift: this.toRecord(row) } : { ok: false };
+  }
+
+  async updateUnique(
+    id: string,
+    data: ShiftWriteData,
+  ): Promise<{ ok: true; shift: ShiftRecord } | { ok: false }> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      await this.lockNames(tx, data.companyId);
+      if (await this.nameClash(tx, data.companyId, data.name, id)) return null;
+      await tx.shiftBreak.deleteMany({ where: { shiftId: id } });
+      return tx.shift.update({
+        where: { id },
+        data: { ...this.columns(data), breaks: { create: this.breakRows(data) } },
+        include: WITH_BREAKS,
+      });
+    });
+    return row ? { ok: true, shift: this.toRecord(row) } : { ok: false };
+  }
+
   async softDelete(id: string): Promise<void> {
     await this.prisma.shift.update({
       where: { id },

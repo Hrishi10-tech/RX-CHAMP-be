@@ -21,15 +21,21 @@ export class BreakEvents {
     @Inject(SHIFT_PEOPLE_READER) private readonly people: ShiftPeopleReader,
   ) {}
 
-  /** Who must decide a pending record: the routed approver, or every Super Admin. */
-  async recipientsFor(
-    record: Pick<BreakRecordRow, 'userId' | 'approverId' | 'approverRole'>,
-  ): Promise<string[]> {
-    if (record.approverId) return record.approverId === record.userId ? [] : [record.approverId];
-    if (record.approverRole === 'SUPER_ADMIN') {
-      return (await this.people.listSuperAdminIds()).filter((id) => id !== record.userId);
+  /**
+   * Who must decide a pending item (docs/4.0/SPEC.md 1.3): the Managers of the
+   * subject's department for MANAGER items (the organisation's Admin when the
+   * department has none), the Admin for ADMIN items. Never the subject.
+   */
+  async recipientsFor(record: Pick<BreakRecordRow, 'userId' | 'approverRole'>): Promise<string[]> {
+    if (!record.approverRole) return [];
+    const subject = await this.people.findById(record.userId);
+    if (!subject?.companyId) return [];
+    let ids: string[] = [];
+    if (record.approverRole === 'MANAGER' && subject.departmentId) {
+      ids = await this.people.listDepartmentManagerIds(subject.departmentId);
     }
-    return [];
+    if (!ids.length) ids = await this.people.listOrgAdminIds(subject.companyId);
+    return ids.filter((id) => id !== record.userId);
   }
 
   async approvalRequested(

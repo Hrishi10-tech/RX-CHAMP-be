@@ -26,9 +26,15 @@ import {
   PersonDayQueryDto,
   TeamDayQueryDto,
   TeamMonthQueryDto,
+  TimesheetQueryDto,
 } from '../application/dto/reports.dto';
 import { MonthLockService } from '../application/month-lock.service';
-import { exportFileName, payrollWorkbook } from '../application/report-export';
+import {
+  exportFileName,
+  payrollWorkbook,
+  timesheetFileName,
+  timesheetWorkbook,
+} from '../application/report-export';
 import { ReportRunsService } from '../application/report-runs.service';
 import { ReportsService } from '../application/reports.service';
 
@@ -49,7 +55,7 @@ function sendWorkbook(res: Response, body: Buffer, fileName: string): void {
 @ApiTags('reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.MANAGER, Role.SUPER_ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
 @Controller('reports')
 export class ReportsController {
   constructor(
@@ -105,10 +111,37 @@ export class ReportsController {
     sendWorkbook(res, file, exportFileName(month, report.person.name));
   }
 
+  @Get('person/:userId/timesheet')
+  @ApiOperation({
+    summary:
+      "4.0: one person's timesheet for a range (at most 366 days): in and out, focus against target, " +
+      'paid and unpaid breaks, meetings, away time, the day class, and totals',
+  })
+  async timesheet(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('userId', ParseIdPipe) userId: string,
+    @Query() q: TimesheetQueryDto,
+  ) {
+    return envelope(await this.reports.timesheet(me, userId, q.from, q.to, new Date()));
+  }
+
+  @Get('person/:userId/timesheet.xlsx')
+  @ApiProduces(XLSX)
+  @ApiOperation({ summary: '4.0: the same timesheet as an Excel workbook' })
+  async timesheetXlsx(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('userId', ParseIdPipe) userId: string,
+    @Query() q: TimesheetQueryDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const t = await this.reports.timesheet(me, userId, q.from, q.to, new Date());
+    sendWorkbook(res, await timesheetWorkbook(t), timesheetFileName(t.person.name, q.from, q.to));
+  }
+
   @Get('team/day')
   @ApiOperation({ summary: 'Everyone in scope (or userIds) for one day' })
   async teamDay(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamDayQueryDto) {
-    return envelope(await this.reports.teamDay(me, q.date, q.userIds, new Date()));
+    return envelope(await this.reports.teamDay(me, q.date, q.userIds, new Date(), q.departmentId));
   }
 
   @Get('team/month')
@@ -122,6 +155,7 @@ export class ReportsController {
         q.managerId,
         q.userIds,
         now,
+        q.departmentId,
       ),
     );
   }
@@ -144,6 +178,7 @@ export class ReportsController {
       q.managerId,
       q.userIds,
       now,
+      q.departmentId,
     );
     const file = await payrollWorkbook(persons, appTimezone());
     sendWorkbook(res, file, exportFileName(month, 'team'));
@@ -166,7 +201,7 @@ export class ReportsController {
 
   @Post('months/:month/lock')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       'Lock a month for payroll (409 PENDING_APPROVALS while anything dated in it is pending)',
@@ -176,7 +211,7 @@ export class ReportsController {
   }
 
   @Delete('months/:month/lock')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Unlock a month' })
   async unlock(
     @CurrentUser() me: AuthenticatedUser,

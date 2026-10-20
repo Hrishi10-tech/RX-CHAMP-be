@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Sets every shift's hours, working days and break times from one JSON file,
-// through the API (so the API's own validation applies), as a Super Admin.
+// through the API (so the API's own validation applies), for one organisation.
+// 4.0: run it as the organisation's Admin, or as a Super Admin with --org <id>.
 //
 // Why: after the 3.0 database update a 2.x shift keeps its name and hours but has
 // no break times, so nobody gets a break ring and nothing can be skipped until
 // each shift is set. This does it in one step on deploy day, or at any later time.
 //
 // Usage (Node 18 or later, from backend/):
-//   RXV_ADMIN_EMAIL=<super admin email> RXV_ADMIN_PASSWORD=<password> \
+//   RXV_ADMIN_EMAIL=<admin email> RXV_ADMIN_PASSWORD=<password> \
 //     node scripts/configure-shifts.mjs --api https://<api-host>/api/v1 --file shifts.json [--dry-run]
+//   A Super Admin adds --org <organisation id> (run without it to list the organisations).
 //
 // shifts.json (see scripts/shifts.example.json):
 //   {
@@ -51,6 +53,7 @@ function args(argv) {
     if (a === '--dry-run') out.dryRun = true;
     else if (a === '--api') out.api = argv[++i];
     else if (a === '--file') out.file = argv[++i];
+    else if (a === '--org') out.org = argv[++i];
     else if (a === '--help' || a === '-h') out.help = true;
     else throw new Error(`Unknown argument: ${a}`);
   }
@@ -80,6 +83,8 @@ class Api {
   constructor(base) {
     this.base = base.replace(/\/+$/, '');
     this.cookie = '';
+    /** 4.0: the organisation a Super Admin acts in (X-Org-Id). */
+    this.org = '';
   }
 
   async call(method, path, body) {
@@ -89,6 +94,7 @@ class Api {
         'content-type': 'application/json',
         accept: 'application/json',
         ...(this.cookie ? { cookie: this.cookie } : {}),
+        ...(this.org ? { 'x-org-id': this.org } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -108,7 +114,8 @@ class Api {
     if (r.status !== 200 || !r.json?.success) {
       fail(`sign-in refused (${r.status}): ${r.json?.message ?? 'no message'}`);
     }
-    if (r.json.data?.user?.role !== 'SUPER_ADMIN') fail('this account is not a Super Admin');
+    const role = r.json.data?.user?.role;
+    if (role !== 'SUPER_ADMIN' && role !== 'ADMIN') fail('this account is not an Admin or a Super Admin');
     if (!this.cookie) fail('the API did not return a session cookie');
     return r.json.data.user;
   }
@@ -187,12 +194,12 @@ function describe(body) {
 async function main() {
   const opts = args(process.argv);
   if (opts.help || !opts.api || !opts.file) {
-    console.log('Usage: RXV_ADMIN_EMAIL=... RXV_ADMIN_PASSWORD=... node scripts/configure-shifts.mjs --api https://<api-host>/api/v1 --file shifts.json [--dry-run]');
+    console.log('Usage: RXV_ADMIN_EMAIL=... RXV_ADMIN_PASSWORD=... node scripts/configure-shifts.mjs --api https://<api-host>/api/v1 --file shifts.json [--org <id>] [--dry-run]');
     process.exit(opts.help ? 0 : 1);
   }
   const email = process.env.RXV_ADMIN_EMAIL;
   const password = process.env.RXV_ADMIN_PASSWORD;
-  if (!email || !password) fail('set RXV_ADMIN_EMAIL and RXV_ADMIN_PASSWORD (a Super Admin)');
+  if (!email || !password) fail('set RXV_ADMIN_EMAIL and RXV_ADMIN_PASSWORD (the Admin, or a Super Admin)');
 
   let config;
   try {
@@ -206,7 +213,20 @@ async function main() {
 
   const api = new Api(opts.api);
   const me = await api.signIn(email, password);
-  console.log(`Signed in as ${me.email} (Super Admin) at ${api.base}${opts.dryRun ? ' · dry run' : ''}`);
+  if (me.role === 'SUPER_ADMIN') {
+    if (!opts.org) {
+      const orgs = await api.call('GET', '/organisations');
+      const rows = Array.isArray(orgs.json?.data) ? orgs.json.data : [];
+      console.log('Organisations:');
+      for (const o of rows) console.log(`  ${o.id}  ${o.name}`);
+      fail('a Super Admin must choose one with --org <id>');
+    }
+    api.org = opts.org;
+  } else if (opts.org) {
+    fail('--org is for a Super Admin; an Admin always works in their own organisation');
+  }
+  const where = me.role === 'SUPER_ADMIN' ? `Super Admin, organisation ${api.org}` : 'Admin';
+  console.log(`Signed in as ${me.email} (${where}) at ${api.base}${opts.dryRun ? ' · dry run' : ''}`);
 
   const list = await api.call('GET', '/shifts');
   if (list.status !== 200 || !Array.isArray(list.json?.data)) fail(`could not list shifts (${list.status})`);

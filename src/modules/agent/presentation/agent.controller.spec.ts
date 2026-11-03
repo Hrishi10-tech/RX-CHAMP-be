@@ -36,7 +36,7 @@ const actor = (id: string, role: Role, over: Partial<AuthenticatedUser> = {}) =>
     ...over,
   }) as unknown as AuthenticatedUser;
 
-function setup() {
+function setup(stores: unknown = {}) {
   const config = {
     get: jest.fn((k: string) =>
       k === 'agent.publicApiBaseUrl' ? 'https://api.test/api/v1' : undefined,
@@ -53,7 +53,7 @@ function setup() {
     config as never,
     tokens as never,
     users as never,
-    {} as never,
+    stores as never,
     audit as never,
   );
   return { controller, tokens };
@@ -103,5 +103,64 @@ describe('GET /agent/setup-code (4.0)', () => {
       status: 404,
     });
     expect(tokens.signEnrollmentToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /agent/download-ticket + GET /agent/download/direct (direct download)', () => {
+  const available = { windows: { info: jest.fn(async () => ({ available: true })) } };
+  const urlOf = (r: unknown) => (r as { data: { url: string } }).data.url;
+  const ticketOf = (url: string) => new URL(url).searchParams.get('ticket')!;
+
+  it('returns a link on the public API host', async () => {
+    const { controller } = setup(available);
+    const url = urlOf(await controller.downloadTicket(actor('admin', Role.ADMIN)));
+    expect(url.startsWith('https://api.test/api/v1/agent/download/direct?ticket=')).toBe(true);
+  });
+
+  it('checks per-user access before issuing (Admin not across organisations: 404)', async () => {
+    const { controller } = setup(available);
+    await expect(
+      controller.downloadTicket(actor('admin', Role.ADMIN), 'far'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('refuses when the agent is not uploaded (404)', async () => {
+    const { controller } = setup({
+      windows: { info: jest.fn(async () => ({ available: false })) },
+    });
+    await expect(controller.downloadTicket(actor('admin', Role.ADMIN))).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('a ticket works once; a second use or a made-up one is 403', async () => {
+    const { controller } = setup(available);
+    const serve = jest
+      .spyOn(controller as unknown as { serve: () => Promise<void> }, 'serve')
+      .mockResolvedValue(undefined);
+    const me = actor('admin', Role.ADMIN);
+    const ticket = ticketOf(urlOf(await controller.downloadTicket(me, 'staff')));
+    await controller.downloadDirect({} as never, ticket);
+    expect(serve).toHaveBeenCalledWith(me, {}, 'staff', 'windows');
+    await expect(controller.downloadDirect({} as never, ticket)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(controller.downloadDirect({} as never, 'nope')).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  it('an expired ticket is 403', async () => {
+    const { controller } = setup(available);
+    jest
+      .spyOn(controller as unknown as { serve: () => Promise<void> }, 'serve')
+      .mockResolvedValue();
+    const ticket = ticketOf(urlOf(await controller.downloadTicket(actor('admin', Role.ADMIN))));
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now + 61_000);
+    await expect(controller.downloadDirect({} as never, ticket)).rejects.toMatchObject({
+      status: 403,
+    });
+    jest.restoreAllMocks();
   });
 });

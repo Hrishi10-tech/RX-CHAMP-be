@@ -4,6 +4,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -12,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import archiver from 'archiver';
+import { randomBytes } from 'crypto';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -41,6 +43,8 @@ import {
 
 const MAC_ZIP_FILE_NAME = 'RXVision-mac.zip';
 const MAC_X64_ZIP_FILE_NAME = 'RXVision-mac-intel.zip';
+/** How long a direct-download link from POST /agent/download-ticket stays valid. */
+const DOWNLOAD_TICKET_TTL_MS = 60_000;
 
 /**
  * Serves the desktop agents.
@@ -144,6 +148,89 @@ export class AgentController {
     @Res() res: Response,
     @Query('userId') userId?: string,
     @Query('platform') platformRaw?: string,
+  ): Promise<void> {
+    await this.serve(me, res, userId, platformRaw);
+  }
+
+  /**
+   * A one-minute, single-use link to download the agent straight from the API host.
+   *
+   * The portal is served through a host (AWS Amplify) that refuses responses over a
+   * few MB (413), so the installer cannot come back through the portal's /api proxy.
+   * The page asks for a ticket here (a small JSON reply, through the proxy, with the
+   * sign-in cookie), then opens the returned URL, which the browser fetches from the
+   * API host directly. Access is checked now, exactly as for a download, and again
+   * when the ticket is used.
+   */
+  @Post('download-ticket')
+  @UseGuards(JwtAuthGuard)
+  @ApiQuery({ name: 'userId', required: false })
+  @ApiQuery({ name: 'platform', required: false, enum: AGENT_PLATFORMS })
+  @ApiOperation({ summary: 'A one-minute link to download the agent from the API host directly' })
+  async downloadTicket(
+    @CurrentUser() me: AuthenticatedUser,
+    @Query('userId') userId?: string,
+    @Query('platform') platformRaw?: string,
+  ): Promise<EnvelopePayload<{ url: string; expiresInSec: number }>> {
+    const platform = this.platformOf(platformRaw);
+    const info = await this.storeFor(platform).info();
+    if (!info.available) {
+      throw new NotFoundException(
+        `The ${isMacPlatform(platform) ? 'macOS' : 'Windows'} agent is not available on the server yet.`,
+      );
+    }
+    if (userId) await this.buildConfig(me, userId);
+
+    this.sweepTickets();
+    const ticket = randomBytes(32).toString('base64url');
+    this.tickets.set(ticket, {
+      me,
+      userId: userId || undefined,
+      platform,
+      expiresAt: Date.now() + DOWNLOAD_TICKET_TTL_MS,
+    });
+    const base = (this.config.get<string>('agent.publicApiBaseUrl') ?? '').replace(/\/+$/, '');
+    // Without a public API URL configured, fall back to the proxied path (works
+    // locally; large files may still be refused by a size-limited host).
+    const path = `/agent/download/direct?ticket=${encodeURIComponent(ticket)}`;
+    return envelope({
+      url: base ? `${base}${path}` : `/api/v1${path}`,
+      expiresInSec: DOWNLOAD_TICKET_TTL_MS / 1000,
+    });
+  }
+
+  /** The download behind a ticket from POST /agent/download-ticket (no cookie needed). */
+  @Get('download/direct')
+  @ApiQuery({ name: 'ticket', required: true })
+  @ApiOperation({ summary: 'Download the agent with a ticket (opened by the browser directly)' })
+  async downloadDirect(@Res() res: Response, @Query('ticket') ticket?: string): Promise<void> {
+    const entry = ticket ? this.tickets.get(ticket) : undefined;
+    // Single use: gone the moment it is presented, valid or not.
+    if (ticket) this.tickets.delete(ticket);
+    if (!entry || entry.expiresAt < Date.now()) {
+      throw new ForbiddenException(
+        'This download link has expired. Go back to the portal and download again.',
+      );
+    }
+    await this.serve(entry.me, res, entry.userId, entry.platform);
+  }
+
+  /** Outstanding download tickets (one API instance: ecosystem.config.js runs one). */
+  private readonly tickets = new Map<
+    string,
+    { me: AuthenticatedUser; userId?: string; platform: AgentPlatform; expiresAt: number }
+  >();
+
+  private sweepTickets(): void {
+    const now = Date.now();
+    for (const [k, v] of this.tickets) if (v.expiresAt < now) this.tickets.delete(k);
+  }
+
+  private async serve(
+    me: AuthenticatedUser,
+    res: Response,
+    userId: string | undefined,
+    platformRaw: string | undefined,
   ): Promise<void> {
     const platform = this.platformOf(platformRaw);
     const store = this.storeFor(platform);

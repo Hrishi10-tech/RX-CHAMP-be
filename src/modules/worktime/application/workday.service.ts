@@ -54,6 +54,7 @@ export function focusView(f: FocusBreakdown): FocusView {
     awayUnexplainedSec: f.awayUnexplainedSec,
     unverifiedSec: f.unverifiedSec,
     paidSec: f.paidSec,
+    adjustedSec: f.adjustedSec ?? 0,
   };
 }
 

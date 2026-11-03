@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ForbiddenError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { isAdminLike, managedDeptIds, requireOrg } from '@shared/tenancy';
+import { isAdminLike, managedDeptIds, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import { resolveShift } from '../../domain/shift-resolution';
@@ -61,8 +61,8 @@ export class ShiftAssignmentsUseCase {
   /** The caller's organisation: Admins and Super Admins read and write, Managers read. */
   private orgOf(me: AuthenticatedUser, write = false): string {
     const org = requireOrg(me);
-    if (!isAdminLike(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
-    if (write && !isAdminLike(me)) {
+    if (!seesWholeOrg(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
+    if (write && !seesWholeOrg(me)) {
       throw new ForbiddenError('Only the organisation admin can assign shifts.');
     }
     return org;
@@ -70,7 +70,7 @@ export class ShiftAssignmentsUseCase {
 
   /** The people the caller may see here: the organisation, or a Manager's Staff. */
   private scopeOf(me: AuthenticatedUser, org: string): PeopleQuery {
-    if (isAdminLike(me)) return { companyId: org };
+    if (seesWholeOrg(me)) return { companyId: org };
     return { companyId: org, roles: ['USER'], departmentIds: managedDeptIds(me) };
   }
 
@@ -115,7 +115,7 @@ export class ShiftAssignmentsUseCase {
     );
     for (const d of departments) {
       const k = `${d.companyId ?? '-'}|${d.departmentKey}`;
-      if (!isAdminLike(me) && !visibleKeys.has(k)) continue;
+      if (!seesWholeOrg(me) && !visibleKeys.has(k)) continue;
       groups.set(k, {
         department: d.department,
         key: d.departmentKey,
@@ -123,7 +123,7 @@ export class ShiftAssignmentsUseCase {
         people: d.people,
       });
     }
-    if (isAdminLike(me)) {
+    if (seesWholeOrg(me)) {
       for (const a of ctx.assignments) {
         if (a.target !== 'DEPARTMENT' || !a.departmentKey || !a.department) continue;
         if (a.companyId !== org) continue;

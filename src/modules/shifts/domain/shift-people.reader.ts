@@ -1,6 +1,6 @@
 export const SHIFT_PEOPLE_READER = Symbol('SHIFT_PEOPLE_READER');
 
-export type PersonRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'USER';
+export type PersonRole = 'SUPER_ADMIN' | 'SUPER_MANAGER' | 'ADMIN' | 'MANAGER' | 'USER';
 
 export interface ShiftPerson {
   id: string;
@@ -13,6 +13,10 @@ export interface ShiftPerson {
   companyId: string | null;
   /** 4.0: the person's department. */
   departmentId: string | null;
+  /** 3.3: the organisation's name, where the reader loads it (combined views). */
+  companyName?: string | null;
+  /** 3.3: the person's organisation was deleted (nobody decides their items any more). */
+  companyDeleted?: boolean;
   /** 3.x reporting line; 4.0 no longer reads it for access or routing. */
   managerId: string | null;
   active: boolean;

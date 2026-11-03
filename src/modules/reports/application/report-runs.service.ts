@@ -9,7 +9,7 @@ import { Cron } from '@nestjs/schedule';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
+import { Role, seesEveryOrg } from '@shared/rbac/roles.enum';
 import { grantsOf, requireOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { WORKTIME_READER, WorktimeReader } from '@modules/worktime/domain/worktime.reader';
@@ -106,7 +106,7 @@ export class ReportRunsService implements OnApplicationBootstrap, OnModuleDestro
     // A Super Admin sees the organisation's everyone runs (the Admin's).
     const rows = await this.store.listRuns(
       requireOrg(me),
-      me.role === Role.SUPER_ADMIN ? null : me.id,
+      seesEveryOrg(me.role) ? null : me.id,
     );
     // Quiet hours (and who needs a look for them) are activity data: a Manager
     // without the activity grant never reads them, whenever the run was made.

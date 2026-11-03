@@ -40,7 +40,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedError('Not signed in');
     }
 
-    // 4.0: a Super Admin acts inside the organisation named by X-Org-Id (ignored for
+    // 4.0: a Super Admin (and the 3.3 Super Manager) acts inside the organisation
+    // named by X-Org-Id (ignored for
     // everyone else, whose organisation is their own).
     const orgHeader = req?.headers?.['x-org-id'];
     const user = await this.reader.loadById(

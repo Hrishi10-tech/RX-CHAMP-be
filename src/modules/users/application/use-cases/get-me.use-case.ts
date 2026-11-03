@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
+import { Role, seesEveryOrg } from '@shared/rbac/roles.enum';
 import { grantsOf, hasAnyGrant, isAdminLike, orgOf } from '@shared/tenancy';
 import { MePermissions, MeView } from '../user.types';
 
@@ -11,23 +11,29 @@ export function permissionsOf(me: AuthenticatedUser): MePermissions {
   const org = orgOf(me);
   const adminInOrg = isAdminLike(me) && !!org && !me.orgHeaderInvalid;
   const manager = me.role === Role.MANAGER && !!org;
+  // 3.3: the Super Manager sees and decides like an Admin but administers nothing.
+  const superManager = me.role === Role.SUPER_MANAGER && !!org && !me.orgHeaderInvalid;
+  const overseer = adminInOrg || superManager;
   const grants = org ? grantsOf(me) : { screenshots: false, timeline: false, activity: false };
   return {
     canManageOrganisations: me.role === Role.SUPER_ADMIN,
     canManageOrg: adminInOrg,
-    canManagePeople: adminInOrg,
+    canManagePeople: overseer,
     canManageDepartments: adminInOrg,
     canManageShifts: adminInOrg,
-    canSeeTeam: adminInOrg || (manager && hasAnyGrant(me)),
-    canSeeScreenshots: (adminInOrg || manager) && grants.screenshots,
-    canSeeTimeline: (adminInOrg || manager) && grants.timeline,
-    canSeeActivity: (adminInOrg || manager) && grants.activity,
-    canApprove: adminInOrg || manager,
-    canSeeReports: adminInOrg || manager,
-    canSeeTeamBreaks: adminInOrg || manager,
-    canUseMessages: adminInOrg || manager,
+    canSeeTeam: overseer || (manager && hasAnyGrant(me)),
+    canSeeScreenshots: (overseer || manager) && grants.screenshots,
+    canSeeTimeline: (overseer || manager) && grants.timeline,
+    canSeeActivity: (overseer || manager) && grants.activity,
+    canApprove: overseer || manager,
+    canSeeReports: overseer || manager,
+    canSeeTeamBreaks: overseer || manager,
+    canUseMessages: overseer || manager,
     canUsePortal: me.role !== Role.USER,
-    needsOrganisation: me.role === Role.SUPER_ADMIN && !org,
+    needsOrganisation: seesEveryOrg(me.role) && !org,
+    isSuperManager: me.role === Role.SUPER_MANAGER,
+    canAdjustFocus: me.role === Role.SUPER_MANAGER,
+    canSeeAgentHealth: overseer || (manager && hasAnyGrant(me)) || seesEveryOrg(me.role),
   };
 }
 

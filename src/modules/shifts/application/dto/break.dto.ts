@@ -117,6 +117,13 @@ export class ApprovalsQueryDto {
   @IsBoolean()
   overdue?: boolean;
 
+  @ApiPropertyOptional({
+    description: '3.3: Super Manager or Super Admin on "All organisations": one organisation',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -183,6 +190,15 @@ export class TeamBreaksQueryDto {
   @IsOptional()
   @IsId({ message: 'departmentId must be a department id' })
   departmentId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '3.3: Super Manager or Super Admin on "All organisations": one organisation ' +
+      '(departmentId and managerId need one)',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 export class SummaryQueryDto {
@@ -190,6 +206,13 @@ export class SummaryQueryDto {
   @IsOptional()
   @Matches(DATE_KEY, { message: 'date must be YYYY-MM-DD' })
   date?: string;
+
+  @ApiPropertyOptional({
+    description: '3.3: Super Manager or Super Admin on "All organisations": one organisation',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 export class MyHistoryQueryDto {

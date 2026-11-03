@@ -3,9 +3,13 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
+  Logger,
+  PayloadTooLargeException,
 } from '@nestjs/common';
+import { AgentContactService } from '@modules/agent-health/application/agent-contact.service';
 import {
   SCREENSHOT_REPOSITORY,
   ScreenshotKind,
@@ -18,8 +22,15 @@ import {
 } from '../../domain/screenshot-policy.reader';
 import { S3StorageService } from '../../infrastructure/s3-storage.service';
 import { OcrService } from '../../infrastructure/ocr.service';
+import {
+  MAX_OCR_BYTES,
+  normaliseScreenshot,
+  sniffImageType,
+} from '../../infrastructure/image-normaliser';
 import { ScreenshotMapper } from '../screenshot.mapper';
 import { ScreenshotView, UploadScreenshotInput } from '../screenshot.types';
+
+export { sniffImageType };
 
 /** Local calendar day (YYYY-MM-DD), server timezone — matches activity + presence. */
 function localDateString(d: Date): string {
@@ -28,38 +39,62 @@ function localDateString(d: Date): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
-/** The image type from its first bytes; the client's declared type is not trusted. */
-export function sniffImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | null {
-  if (
-    buffer.length >= 8 &&
-    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-  ) {
-    return 'image/png';
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)
-    return 'image/jpeg';
-  return null;
-}
-
 /** A capture stamped this far ahead of the server clock is taken as "now". */
 const MAX_FUTURE_SKEW_MS = 2 * 60_000;
 
-/** The agent uploads a captured screenshot: store the image in S3, record it in the DB. */
+/**
+ * Largest upload accepted (3.3; was 8 MB). A two-monitor 4K PNG is 20 MB and was
+ * refused with 413 on every attempt, which is how screenshots came to work for
+ * some people and not others. The image is re-encoded on arrival, so the limit
+ * only bounds what travels, not what is stored. nginx must allow at least this
+ * much (`client_max_body_size`, see DEPLOYMENT.md).
+ */
+export const MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024;
+
+/** Textract is given this long; a slow OCR must never hold up the agent. */
+export const OCR_TIMEOUT_MS = 20_000;
+
+/**
+ * The agent uploads a captured screenshot: normalise it, store it in S3, record
+ * it, answer. OCR runs afterwards, in the background. Every refusal is recorded
+ * against the person (GET /agent-health shows the last one and why).
+ */
 @Injectable()
 export class UploadScreenshotUseCase {
+  private readonly logger = new Logger(UploadScreenshotUseCase.name);
+
   constructor(
     @Inject(SCREENSHOT_REPOSITORY) private readonly repo: ScreenshotRepository,
     @Inject(DAY_END_READER) private readonly dayEnds: DayEndReader,
     @Inject(SCREENSHOT_POLICY_READER) private readonly policy: ScreenshotPolicyReader,
     private readonly s3: S3StorageService,
     private readonly ocr: OcrService,
+    private readonly contacts: AgentContactService,
   ) {}
 
   async execute(userId: string, input: UploadScreenshotInput): Promise<ScreenshotView> {
-    if (!input.buffer?.length) throw new BadRequestException('Empty screenshot');
-    // Only real PNG/JPEG images are stored, served with the type they really are.
-    const contentType = sniffImageType(input.buffer);
-    if (!contentType) throw new BadRequestException('Screenshots must be PNG or JPEG images');
+    try {
+      return await this.accept(userId, input);
+    } catch (err) {
+      this.recordRefusal(userId, err, input.buffer?.length ?? 0);
+      throw err;
+    }
+  }
+
+  private async accept(userId: string, input: UploadScreenshotInput): Promise<ScreenshotView> {
+    const size = input.buffer?.length ?? 0;
+    if (!size) throw new BadRequestException('Empty screenshot');
+    if (size > MAX_SCREENSHOT_BYTES) {
+      // Rounded up, so a file one byte over never reads as "32 MB; the limit is 32 MB".
+      const shown = Math.ceil((size / 1048576) * 100) / 100;
+      throw new PayloadTooLargeException(
+        `Screenshot is ${shown} MB (${size.toLocaleString('en-US')} bytes); the limit is ${MAX_SCREENSHOT_BYTES / 1048576} MB.`,
+      );
+    }
+    // Only real PNG/JPEG images are stored; the declared type is not trusted.
+    if (!sniffImageType(input.buffer)) {
+      throw new BadRequestException('Screenshots must be PNG or JPEG images');
+    }
 
     const now = new Date();
     const claimed = input.takenAt && !Number.isNaN(input.takenAt.getTime()) ? input.takenAt : now;
@@ -81,16 +116,53 @@ export class UploadScreenshotUseCase {
       throw new ConflictException('Your working day has ended; captures have stopped.');
     }
 
-    const key = this.s3.buildKey(userId, takenAt, randomUUID());
+    // One predictable size whatever the screen produced (a bounded JPEG).
+    const image = (await normaliseScreenshot(input.buffer))!;
+    if (image.reencoded) {
+      this.logger.debug(
+        `screenshot of ${userId}: ${mb(size)} MB -> ${mb(image.bytes.length)} MB (${image.width}x${image.height})`,
+      );
+    }
+    const key = this.s3.buildKey(userId, takenAt, randomUUID(), image.extension);
+    await this.s3.upload(key, image.bytes, image.contentType);
+    const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText: null });
 
-    // Store the image, and OCR it (best-effort) so it becomes text-searchable.
-    const [, ocrText] = await Promise.all([
-      this.s3.upload(key, input.buffer, contentType),
-      this.ocr.extractText(input.buffer),
-    ]);
-    const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText });
+    // OCR after the answer: the agent never waits on Textract, and a slow or
+    // failing OCR costs the search index one shot, never the shot itself.
+    this.ocrLater(rec.id, image.bytes);
 
     const url = await this.s3.presignGet(key);
     return ScreenshotMapper.toView(rec, url);
   }
+
+  /** Best effort, bounded by OCR_TIMEOUT_MS; the result lands when it lands. */
+  private ocrLater(id: string, image: Buffer): void {
+    if (image.length > MAX_OCR_BYTES) return;
+    const run = async () => {
+      const text = await this.ocr.extractText(image, OCR_TIMEOUT_MS);
+      if (text) await this.repo.setOcrText(id, text);
+    };
+    setImmediate(() => {
+      run().catch((err: Error) => this.logger.warn(`OCR of ${id} skipped: ${err.message}`));
+    });
+  }
+
+  private recordRefusal(userId: string, err: unknown, bytes: number): void {
+    if (!(err instanceof HttpException)) return;
+    const status = err.getStatus();
+    const code =
+      status === 413
+        ? 'TOO_LARGE'
+        : status === 403
+          ? 'AUTO_OFF'
+          : status === 409
+            ? 'DAY_ENDED'
+            : bytes === 0
+              ? 'EMPTY'
+              : 'NOT_AN_IMAGE';
+    this.contacts.refused(userId, { status, code, reason: err.message, bytes });
+    this.logger.warn(`screenshot of ${userId} refused (${code}, ${bytes} bytes): ${err.message}`);
+  }
 }
+
+const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;

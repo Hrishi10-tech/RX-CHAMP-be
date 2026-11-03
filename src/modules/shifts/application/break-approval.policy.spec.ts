@@ -117,7 +117,31 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
       decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager'],
       views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin'],
     },
-    { name: 'Super Admin without an organisation', me: actor('sa', Role.SUPER_ADMIN), decides: [], views: [] },
+    {
+      // 3.3 combined approvals: judged in the subject's own organisation.
+      name: 'Super Admin on All organisations',
+      me: actor('sa', Role.SUPER_ADMIN),
+      decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'staffOrgB', 'managerOrgB'],
+      views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin', 'staffOrgB', 'managerOrgB'],
+    },
+    {
+      name: 'Super Manager on All organisations',
+      me: actor('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null }),
+      decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'staffOrgB', 'managerOrgB'],
+      views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin', 'staffOrgB', 'managerOrgB'],
+    },
+    {
+      name: 'Super Manager in org A',
+      me: actor('sm', Role.SUPER_MANAGER, { companyId: null, orgId: ORG_A }),
+      decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager'],
+      views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin'],
+    },
+    {
+      name: 'Super Admin with an unknown X-Org-Id',
+      me: actor('sa', Role.SUPER_ADMIN, { orgHeaderInvalid: true }),
+      decides: [],
+      views: [],
+    },
     {
       name: 'Admin of org A',
       me: actor('admin', Role.ADMIN),
@@ -211,5 +235,48 @@ describe('toPerson', () => {
     expect(toPerson({ ...row, deletedAt: null }).active).toBe(true);
     expect(toPerson({ ...row, deletedAt: null, status: 'DISABLED' }).active).toBe(false);
     expect(toPerson({ ...row, deletedAt: null })).toMatchObject({ companyId: ORG_A, departmentId: 'dept-1', role: 'MANAGER' });
+  });
+});
+
+describe('BreakApprovalPolicy on All organisations (3.3)', () => {
+  const sm = actor('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+
+  it('nobody decides or sees items of a deleted organisation, or of someone in none', () => {
+    const gone = person('staff-gone', 'USER', { companyId: ORG_B, companyDeleted: true });
+    const none = person('staff-none', 'USER', { companyId: null });
+    for (const s of [gone, none]) {
+      expect(BreakApprovalPolicy.canDecide(sm, { userId: s.id }, s)).toBe(false);
+      expect(BreakApprovalPolicy.canView(sm, { userId: s.id }, s)).toBe(false);
+    }
+  });
+
+  it('a Manager or Admin is never widened to other organisations', () => {
+    const admin = actor('admin', Role.ADMIN);
+    const staffB = person('staff-b', 'USER', { companyId: ORG_B });
+    expect(BreakApprovalPolicy.canDecide(admin, { userId: staffB.id }, staffB)).toBe(false);
+    expect(BreakApprovalPolicy.canView(admin, { userId: staffB.id }, staffB)).toBe(false);
+  });
+
+  it('toPerson carries the organisation name and whether it was deleted', () => {
+    const row = {
+      id: 'u1',
+      firstName: 'A',
+      lastName: 'B',
+      email: 'a@x.test',
+      department: null,
+      designation: null,
+      companyId: ORG_B,
+      departmentId: null,
+      managerId: null,
+      status: 'ACTIVE',
+      deletedAt: null,
+      role: { name: 'USER' },
+    } as unknown as Parameters<typeof toPerson>[0];
+    expect(toPerson({ ...row, company: { name: 'Beta', deletedAt: null } })).toMatchObject({
+      companyName: 'Beta',
+      companyDeleted: false,
+    });
+    expect(toPerson({ ...row, company: { name: 'Beta', deletedAt: new Date() } }).companyDeleted).toBe(true);
+    expect(toPerson(row)).not.toHaveProperty('companyName');
   });
 });

@@ -179,7 +179,8 @@ export class SkipsService {
     }
 
     // 4.0: nobody reviews an Admin's or a Super Admin's breaks (NOT_REQUIRED).
-    const reviewed = person.role !== 'SUPER_ADMIN' && person.role !== 'ADMIN';
+    const reviewed =
+      person.role !== 'SUPER_ADMIN' && person.role !== 'SUPER_MANAGER' && person.role !== 'ADMIN';
     const reason = cleanReason(dto.reason);
     if (reviewed && (reason?.length ?? 0) < shift.reasonMinChars) {
       throw new UnprocessableError(

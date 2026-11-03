@@ -124,7 +124,7 @@ export class ActivityController {
   // ---- Manager endpoints ---------------------------------------------------
 
   @Get('team/live')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'What every report is using right now (manager)' })
   async teamLive(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.getTeamLive.execute(me));
@@ -151,7 +151,7 @@ export class ActivityController {
   }
 
   @Get('user/:userId/hourly')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       "One person's active minutes per hour and quiet hours for a day (Manager: own " +

@@ -42,6 +42,10 @@ export class PostgresUserRepository implements UserRepository {
     if (filter.department !== undefined) where.department = filter.department;
     if (filter.managerId) where.managerId = filter.managerId;
     if (filter.companyId) where.companyId = filter.companyId;
+    else if (filter.anyOrg) {
+      where.companyId = { not: null };
+      where.company = { deletedAt: null };
+    }
     if (filter.departmentIds) where.departmentId = { in: filter.departmentIds.filter(isId) };
     if (filter.role || filter.roles || filter.excludeRoles) {
       // `role` narrows `roles` (a caller's scope); it never widens it.

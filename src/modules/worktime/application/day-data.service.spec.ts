@@ -24,6 +24,7 @@ function setup() {
     reader as never,
     {} as never,
     events as never,
+    {} as never,
   );
   svc.onModuleInit();
   /** What report-activity announces when samples change a closed day. */
@@ -39,11 +40,15 @@ function loaded(rows: {
   meetings?: any[];
   away?: any[];
   presence?: any[];
+  adjustments?: any[];
 }) {
   const sessions = { listForUsersBetween: jest.fn().mockResolvedValue(rows.sessions ?? []) };
   const breaks = { listForUsersBetween: jest.fn().mockResolvedValue(rows.breaks ?? []) };
   const meetings = { listForUsersBetween: jest.fn().mockResolvedValue(rows.meetings ?? []) };
   const away = { listForUsers: jest.fn().mockResolvedValue(rows.away ?? []) };
+  const adjustments = {
+    listForUsersBetween: jest.fn().mockResolvedValue(rows.adjustments ?? []),
+  };
   const reader = {
     presenceOverlapping: jest.fn().mockResolvedValue(rows.presence ?? []),
     activityCoverage: jest.fn().mockResolvedValue([]),
@@ -62,11 +67,12 @@ function loaded(rows: {
     reader as never,
     meetingService as never,
     events as never,
+    adjustments as never,
   );
   svc.onModuleInit();
   const backfilled = (userId: string) =>
     handlers.get(ActivityBackfilledEvent.eventName)!(new ActivityBackfilledEvent(userId));
-  return { svc, sessions, breaks, meetings, away, reader, meetingService, backfilled };
+  return { svc, sessions, breaks, meetings, away, adjustments, reader, meetingService, backfilled };
 }
 
 const at = (iso: string) => new Date(iso);
@@ -128,6 +134,48 @@ describe('DayDataService.load', () => {
     expect(set.day('u1', '2026-10-14').away!.map((a) => a.id)).toEqual(['a2']);
     expect(set.day('u2', '2026-10-13').away!.map((a) => a.id)).toEqual(['a3']);
     expect(set.day('u2', '2026-10-14').away).toEqual([]);
+  });
+
+  it('3.3: manual adjustments are read once and enter the focus of their own (person, day) only', async () => {
+    const adj = (id: string, userId: string, date: string, deltaSec: number, voided = false) => ({
+      id,
+      userId,
+      date,
+      deltaSec,
+      reason: 'Agent crashed',
+      createdById: 'sm',
+      createdAt: NOW,
+      voidedAt: voided ? NOW : null,
+      voidedById: voided ? 'sm' : null,
+    });
+    const t = loaded({
+      sessions: [sess('u1', '2026-10-13', '2026-10-13T04:00:00Z', '2026-10-13T08:00:00Z')],
+      adjustments: [
+        adj('a1', 'u1', '2026-10-13', 30 * 60),
+        adj('a2', 'u1', '2026-10-13', 3600, true),
+        adj('a3', 'u1', '2026-10-14', 45 * 60),
+        adj('a4', 'u2', '2026-10-13', -5 * 3600),
+      ],
+    });
+    const set = await t.svc.load(['u1', 'u2'], '2026-10-13', '2026-10-14', NOW);
+    expect(t.adjustments.listForUsersBetween).toHaveBeenCalledTimes(1);
+    expect(t.adjustments.listForUsersBetween).toHaveBeenCalledWith(
+      ['u1', 'u2'],
+      '2026-10-13',
+      '2026-10-14',
+    );
+    // 4 h worked + 30 min by hand; the voided hour does not count but stays on the day.
+    const d = set.day('u1', '2026-10-13');
+    expect(d.adjustments!.map((a) => a.id)).toEqual(['a1', 'a2']);
+    expect(focusOfDay(d, NOW)).toMatchObject({ focusSec: 4.5 * 3600, adjustedSec: 1800 });
+    expect(focusOfDay(d, NOW).paidSec).toBe(4.5 * 3600);
+    // A day with no work: the adjustment alone is its focus time.
+    expect(focusOfDay(set.day('u1', '2026-10-14'), NOW).focusSec).toBe(45 * 60);
+    // Never below zero.
+    expect(focusOfDay(set.day('u2', '2026-10-13'), NOW)).toMatchObject({
+      focusSec: 0,
+      adjustedSec: -5 * 3600,
+    });
   });
 
   it('a day keeps only the presence overlapping its sessions; no sessions, no presence query', async () => {

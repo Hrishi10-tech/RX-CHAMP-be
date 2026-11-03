@@ -684,6 +684,7 @@ describe('ReportsService (4.0 day plans and per-day engine)', () => {
       {} as never,
       {} as never,
       personDays as never,
+      {} as never,
     );
     return { svc, personDays, scope, store };
   }
@@ -722,6 +723,7 @@ describe('ReportsService (4.0 day plans and per-day engine)', () => {
       awayPendingSec: 300,
       unverifiedSec: 0,
       paidSec: 9 * H,
+      adjustedSec: 0,
       status: 'FULL',
     });
     expect(t.rows[0]).toMatchObject({ focusSec: 4 * H, unverifiedSec: H, paidSec: 5.5 * H });
@@ -748,6 +750,7 @@ describe('ReportsService (4.0 day plans and per-day engine)', () => {
       awayPendingSec: 600,
       unverifiedSec: H,
       paidSec: 14.5 * H,
+      adjustedSec: 0,
     });
   });
 

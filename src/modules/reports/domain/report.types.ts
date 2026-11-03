@@ -1,6 +1,10 @@
 import { BreakRecordView } from '@modules/shifts/application/shifts.types';
 import { BreakKind } from '@modules/shifts/domain/shift.types';
-import { ApprovalItemView, MeetingRecordView } from '@modules/worktime/application/worktime.types';
+import {
+  ApprovalItemView,
+  FocusAdjustmentView,
+  MeetingRecordView,
+} from '@modules/worktime/application/worktime.types';
 import { DayClass } from '@modules/worktime/domain/attendance';
 import { HourActivity } from '@modules/worktime/domain/hourly';
 
@@ -61,6 +65,11 @@ export interface PersonDaySummary {
   unverifiedSec: number;
   /** Payroll time: focusSec + paidBreakSec. */
   paidSec: number;
+  /**
+   * 3.3: signed seconds added to focus by hand (Super Manager), already inside
+   * focusSec and paidSec; 0 on an untouched day, absent from older snapshots.
+   */
+  adjustedSec?: number;
 }
 
 export interface TimelineSegment {
@@ -80,6 +89,8 @@ export interface PersonDayReport {
   meetings: MeetingRecordView[];
   approvals: ApprovalItemView[];
   hourly: HourActivity[];
+  /** 3.3: the day's manual focus adjustments, newest first, voided ones included. */
+  adjustments?: FocusAdjustmentView[];
 }
 
 export interface MonthTotals {
@@ -115,6 +126,8 @@ export interface MonthTotals {
   unverifiedSec: number;
   /** Payroll time: focusSec + paidBreakSec (absent from snapshots taken before it existed). */
   paidSec: number;
+  /** 3.3: signed seconds added to focus by hand over the month (already inside focusSec). */
+  adjustedSec?: number;
 }
 
 export interface PersonMonthReport {

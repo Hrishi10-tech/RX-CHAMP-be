@@ -13,6 +13,7 @@ import {
   manager,
   staff,
   superAdmin,
+  superManager,
 } from '@shared/testing/actors.testing-spec';
 import { User } from '../../domain/entities/user.entity';
 import { fakeDepartments, person } from '../../testing/people.testing-spec';
@@ -323,5 +324,71 @@ describe('CreateUsersUseCase: email, shift, bulk', () => {
       { email: 'second@acme.test', error: 'That department does not exist in this organisation.' },
       { email: 'third@acme.test', error: 'Use a password of 8 to 128 characters.' },
     ]);
+  });
+});
+
+describe('CreateUsersUseCase: the Super Manager and role assignment (3.3)', () => {
+  const MANAGER_ROW = {
+    ...STAFF_ROW,
+    role: 'MANAGER',
+    departmentId: undefined,
+    departmentIds: [DEPT_A1],
+  };
+
+  it('the Super Manager adds Staff to the organisation picked, with a department', async () => {
+    const { useCase, users } = setup();
+    const { errors } = await useCase.execute(superManager(ORG_A), [STAFF_ROW], true);
+    expect(errors).toEqual([]);
+    expect(users.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role: Role.USER, companyId: ORG_A, departmentId: DEPT_A1 }),
+    );
+  });
+
+  it('the Super Manager needs an organisation picked (400 ORG_REQUIRED)', async () => {
+    const { useCase, users } = setup();
+    await expect(useCase.execute(superManager(null), [STAFF_ROW], true)).rejects.toMatchObject({
+      status: 400,
+      code: 'ORG_REQUIRED',
+    });
+    expect(users.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['MANAGER', 'SUPER_MANAGER'])(
+    'the Super Manager cannot add a %s (403 ROLE_NOT_ALLOWED)',
+    async (role) => {
+      const { useCase, users } = setup();
+      const row = role === 'MANAGER' ? MANAGER_ROW : { ...STAFF_ROW, role };
+      await expect(useCase.execute(superManager(ORG_A), [row], true)).rejects.toMatchObject({
+        status: 403,
+        code: 'ROLE_NOT_ALLOWED',
+      });
+      expect(users.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('an Admin cannot make a Super Manager (403); a Super Admin is sent to /super-managers (400)', async () => {
+    const { useCase } = setup();
+    await expect(
+      useCase.execute(admin(ORG_A), [{ ...STAFF_ROW, role: 'SUPER_MANAGER' }], true),
+    ).rejects.toMatchObject({ status: 403, code: 'ROLE_NOT_ALLOWED' });
+    await expect(
+      useCase.execute(superAdmin(ORG_A), [{ ...STAFF_ROW, role: 'SUPER_MANAGER' }], true),
+    ).rejects.toMatchObject({ status: 400, code: 'USE_SUPER_MANAGERS' });
+  });
+
+  it('a blocked Super Manager account is never reused as Staff', async () => {
+    const blocked = person({
+      id: IDS.superManager,
+      email: 'new.person@acme.test',
+      role: Role.SUPER_MANAGER,
+      companyId: null,
+      departmentId: null,
+      status: 'DISABLED',
+    });
+    const { useCase, users } = setup([blocked]);
+    await expect(useCase.execute(superAdmin(ORG_A), [STAFF_ROW], true)).rejects.toMatchObject({
+      code: 'EMAIL_IN_USE',
+    });
+    expect(users.save).not.toHaveBeenCalled();
   });
 });

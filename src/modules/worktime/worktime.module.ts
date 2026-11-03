@@ -6,12 +6,14 @@ import { CalendarModule } from '@modules/calendar/calendar.module';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
 import { APPROVALS_READER } from './domain/approvals.reader';
 import { AWAY_REPOSITORY } from './domain/away.repository';
+import { FOCUS_ADJUSTMENT_REPOSITORY } from './domain/focus-adjustment.repository';
 import { MEETING_RECORD_REPOSITORY } from './domain/meeting-record.repository';
 import { SKIP_REPOSITORY } from './domain/skip.repository';
 import { WORK_SESSION_REPOSITORY } from './domain/work-session.repository';
 import { WORKTIME_READER } from './domain/worktime.reader';
 import { PrismaApprovalsReader } from './infrastructure/prisma-approvals.reader';
 import { PrismaAwayRepository } from './infrastructure/prisma-away.repository';
+import { PrismaFocusAdjustmentRepository } from './infrastructure/prisma-focus-adjustment.repository';
 import { PrismaMeetingRecordRepository } from './infrastructure/prisma-meeting-record.repository';
 import { PrismaSkipRepository } from './infrastructure/prisma-skip.repository';
 import { PrismaWorkSessionRepository } from './infrastructure/prisma-work-session.repository';
@@ -20,6 +22,7 @@ import { ApprovalsService } from './application/approvals.service';
 import { AwayService } from './application/away.service';
 import { DayDataService } from './application/day-data.service';
 import { DayPlanService } from './application/day-plan.service';
+import { FocusAdjustmentsService } from './application/focus-adjustments.service';
 import { HistoryService } from './application/history.service';
 import { PersonDaysService } from './application/person-days.service';
 import { HourlyActivityService } from './application/hourly-activity.service';
@@ -39,6 +42,7 @@ import { WorkSessionsService } from './application/work-sessions.service';
 import { WorkdayService } from './application/workday.service';
 import { ApprovalsController } from './presentation/approvals.controller';
 import { AwayController } from './presentation/away.controller';
+import { FocusAdjustmentsController } from './presentation/focus-adjustments.controller';
 import { MeetingsController } from './presentation/meetings.controller';
 import {
   OverviewController,
@@ -47,6 +51,8 @@ import {
   WorkdayController,
 } from './presentation/workday.controller';
 import { TeamOverviewService } from './application/team-overview.service';
+import { CombinedViewsService } from './application/combined-views.service';
+import { OrganisationsOverviewController } from './presentation/organisations-overview.controller';
 
 /**
  * The 3.1 working day: work sessions (Start Day to End Day, the implicit legacy
@@ -68,6 +74,8 @@ import { TeamOverviewService } from './application/team-overview.service';
     MeetingsController,
     ApprovalsController,
     AwayController,
+    FocusAdjustmentsController,
+    OrganisationsOverviewController,
   ],
   providers: [
     { provide: WORK_SESSION_REPOSITORY, useClass: PrismaWorkSessionRepository },
@@ -80,6 +88,8 @@ import { TeamOverviewService } from './application/team-overview.service';
     { provide: WORKTIME_READER, useClass: PrismaWorktimeReader },
     { provide: APPROVALS_READER, useClass: PrismaApprovalsReader },
     { provide: AWAY_REPOSITORY, useClass: PrismaAwayRepository },
+    { provide: FOCUS_ADJUSTMENT_REPOSITORY, useClass: PrismaFocusAdjustmentRepository },
+    FocusAdjustmentsService,
     WorkSessionsService,
     SkipsService,
     MeetingsService,
@@ -93,6 +103,7 @@ import { TeamOverviewService } from './application/team-overview.service';
     PeopleScopeService,
     TeamTodayService,
     TeamOverviewService,
+    CombinedViewsService,
     HourlyActivityService,
     AutoCloseJob,
     AutoSkipJob,
@@ -117,6 +128,7 @@ import { TeamOverviewService } from './application/team-overview.service';
     APPROVALS_READER,
     MEETING_RECORD_REPOSITORY,
     AWAY_REPOSITORY,
+    FocusAdjustmentsService,
   ],
 })
 export class WorktimeModule {}

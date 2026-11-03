@@ -115,6 +115,7 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     awayUnexplainedSec: focus.awayUnexplainedSec ?? 0,
     unverifiedSec: focus.unverifiedSec ?? 0,
     paidSec: focus.paidSec ?? focus.focusSec + (focus.paidBreakSec ?? 0),
+    adjustedSec: focus.adjustedSec ?? 0,
   };
 }
 
@@ -138,6 +139,7 @@ const SUM_KEYS = [
   'awayPendingSec',
   'unverifiedSec',
   'paidSec',
+  'adjustedSec',
 ] as const;
 
 /** A month's totals: every number is the sum (or count) of its days. */
@@ -219,6 +221,7 @@ export function teamTotals(
     awayPendingSec: sums.awayPendingSec,
     unverifiedSec: sums.unverifiedSec,
     paidSec: sums.paidSec,
+    adjustedSec: sums.adjustedSec,
     pending: sums.pending,
     quietHours: sums.quietHours,
     needsALook: rows.some((r) => r.totals.needsALook),

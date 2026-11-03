@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { grantsOf, isAdminLike, requireOrg } from '@shared/tenancy';
+import { grantsOf, isAdminLike, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, time12InZone } from '@shared/utils/timezone';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
@@ -12,6 +12,7 @@ import { BREAK_LABEL, BreakKind, isScheduledKind } from '@modules/shifts/domain/
 import { ApprovalsService } from '@modules/worktime/application/approvals.service';
 import { DayDataService } from '@modules/worktime/application/day-data.service';
 import { DayPlanService, PlanContext } from '@modules/worktime/application/day-plan.service';
+import { FocusAdjustmentsService } from '@modules/worktime/application/focus-adjustments.service';
 import { PersonDaysService } from '@modules/worktime/application/person-days.service';
 import { meetingsOfDay } from '@modules/worktime/domain/day';
 import { Timesheet, TimesheetRow } from './report-export';
@@ -84,6 +85,7 @@ export class ReportsService {
     private readonly settings: AppSettingsService,
     private readonly plans: DayPlanService,
     private readonly personDays: PersonDaysService,
+    private readonly adjustments: FocusAdjustmentsService,
   ) {}
 
   private today(now: Date): string {
@@ -164,6 +166,7 @@ export class ReportsService {
       awayPendingSec: 0,
       unverifiedSec: 0,
       paidSec: 0,
+      adjustedSec: 0,
     };
     for (let date = from; date <= to; date = addDaysToKey(date, 1)) {
       const day = set.day(person, date);
@@ -188,6 +191,7 @@ export class ReportsService {
         awayPendingSec: s.awayPendingSec,
         unverifiedSec: s.unverifiedSec,
         paidSec: s.paidSec,
+        adjustedSec: s.adjustedSec ?? 0,
         status: s.dayClass,
       };
       rows.push(row);
@@ -206,6 +210,7 @@ export class ReportsService {
       totals.awayPendingSec += row.awayPendingSec;
       totals.unverifiedSec += row.unverifiedSec;
       totals.paidSec += row.paidSec;
+      totals.adjustedSec += row.adjustedSec;
     }
     return {
       person: {
@@ -263,6 +268,7 @@ export class ReportsService {
       meetings: d.meetingRecords.map((m) => meetingView(m, now, names)),
       approvals: await this.approvals.itemsFor(me, [userId], day, day, now),
       hourly,
+      adjustments: await this.adjustments.views(d.adjustments ?? []),
     };
   }
 
@@ -362,7 +368,7 @@ export class ReportsService {
       fromDate: dates[0],
       toDate: dates[dates.length - 1],
     });
-    const scope: 'TEAM' | 'ALL' = isAdminLike(me) ? 'ALL' : 'TEAM';
+    const scope: 'TEAM' | 'ALL' = seesWholeOrg(me) ? 'ALL' : 'TEAM';
     const snapshot = await this.store.findSnapshot(requireOrg(me), month);
     const activity = this.mayActivity(me);
     const built = snapshot

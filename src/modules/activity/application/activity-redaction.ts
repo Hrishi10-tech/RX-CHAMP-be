@@ -13,7 +13,12 @@ import {
  * emptied. Managers and Super Admins see theirs. An unknown role counts as staff.
  */
 export function seesOwnActivity(role: string | null | undefined): boolean {
-  return role === Role.MANAGER || role === Role.SUPER_ADMIN || role === Role.ADMIN;
+  return (
+    role === Role.MANAGER ||
+    role === Role.SUPER_ADMIN ||
+    role === Role.SUPER_MANAGER ||
+    role === Role.ADMIN
+  );
 }
 
 /** The day view with active/idle zeroed and no hourly, apps or websites. */

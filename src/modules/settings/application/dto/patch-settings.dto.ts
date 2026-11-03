@@ -43,4 +43,12 @@ export class PatchSettingsDto {
   @ApiPropertyOptional({ type: Number, minimum: 0, maximum: 60, example: 10 })
   @Allow()
   breakBufferMin?: unknown;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    example: true,
+    description: '3.3: the Super Manager may adjust focus time by hand (meant for a rollout)',
+  })
+  @Allow()
+  focusAdjustmentsEnabled?: unknown;
 }

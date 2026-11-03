@@ -17,10 +17,17 @@ export class OcrService {
     });
   }
 
-  async extractText(image: Buffer): Promise<string | null> {
+  /**
+   * The text in an image, or null (no text, not configured, failed, or past
+   * `timeoutMs`). Never throws: OCR only feeds the search box.
+   */
+  async extractText(image: Buffer, timeoutMs = 20_000): Promise<string | null> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
     try {
       const res = await this.client.send(
         new DetectDocumentTextCommand({ Document: { Bytes: image } }),
+        { abortSignal: abort.signal },
       );
       const lines = (res.Blocks ?? [])
         .filter((b) => b.BlockType === 'LINE' && b.Text)
@@ -28,8 +35,13 @@ export class OcrService {
       const text = lines.join('\n').trim();
       return text.length ? text : null;
     } catch (e) {
-      this.logger.warn(`OCR failed: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      this.logger.warn(
+        abort.signal.aborted ? `OCR gave up after ${timeoutMs} ms` : `OCR failed: ${msg}`,
+      );
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

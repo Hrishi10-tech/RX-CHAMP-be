@@ -18,6 +18,7 @@ export const NOTICE = {
   DAY_AUTO_CLOSED: 'DAY_AUTO_CLOSED',
   AWAY_REQUESTED: 'AWAY_REQUESTED',
   AWAY_DECIDED: 'AWAY_DECIDED',
+  FOCUS_ADJUSTED: 'FOCUS_ADJUSTED',
 } as const;
 
 export interface Copy {
@@ -181,5 +182,30 @@ export function dayAutoClosedManagerCopy(p: { name: string; closedAt: string }):
   return {
     title: `${p.name}'s day was closed automatically`,
     body: `End Day was not pressed. The day was closed at the last input, ${p.closedAt}.`,
+  };
+}
+
+/** To the person whose focus time the Super Manager changed by hand (3.3). */
+export function focusAdjustedCopy(i: {
+  date: string;
+  deltaSec: number;
+  reason: string;
+  voided: boolean;
+}): Copy {
+  const min = Math.round(Math.abs(i.deltaSec) / 60);
+  const day = shortDay(i.date);
+  if (i.voided) {
+    return {
+      title: `Adjustment undone: ${day}`,
+      body:
+        `The ${min} minutes ${i.deltaSec < 0 ? 'taken off' : 'added to'} your focus time for ${day} ` +
+        'have been undone. That day is back to what the app recorded.',
+    };
+  }
+  return {
+    title: `Focus time adjusted: ${day}`,
+    body:
+      `The Super Manager ${i.deltaSec < 0 ? `took ${min} minutes off` : `added ${min} minutes to`} ` +
+      `your focus time for ${day}: ${i.reason}`,
   };
 }

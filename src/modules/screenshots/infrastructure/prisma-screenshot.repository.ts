@@ -25,6 +25,11 @@ export class PrismaScreenshotRepository implements ScreenshotRepository {
     return this.toRecord(row);
   }
 
+  async setOcrText(id: string, text: string | null): Promise<void> {
+    // updateMany: a row archived or deleted meanwhile is simply not there.
+    await this.prisma.screenshot.updateMany({ where: { id }, data: { ocrText: text } });
+  }
+
   async listForUser(userId: string, filter: ListScreenshotsFilter): Promise<ScreenshotRecord[]> {
     const rows = await this.prisma.screenshot.findMany({
       where: this.where(userId, filter),

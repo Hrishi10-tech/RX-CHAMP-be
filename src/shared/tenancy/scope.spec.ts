@@ -14,11 +14,14 @@ import {
   isAdminLike,
   isManager,
   managedDeptIds,
+  orgInView,
   orgOf,
   peopleWhere,
+  peopleWhereAnyOrg,
   PersonFacts,
   requireOrg,
   Section,
+  seesWholeOrg,
   visibleDeptIds,
 } from './scope';
 
@@ -71,6 +74,9 @@ const MGR_NO_GRANTS = actor(Role.MANAGER, {
 });
 const STAFF_A = actor(Role.USER, { id: 'staff-me', departmentId: 'dept-1' });
 const STAFF_NO_ORG = actor(Role.USER, { id: 'staff-noorg', companyId: null, orgId: null });
+// 3.3: the Super Manager belongs to no organisation and acts in the one picked.
+const SM_IN_A = actor(Role.SUPER_MANAGER, { companyId: null, orgId: ORG_A });
+const SM_ALL = actor(Role.SUPER_MANAGER, { companyId: null, orgId: null });
 
 // ---- targets
 const person = (
@@ -96,6 +102,7 @@ const T = {
   adminOrgB: person('t-admin-b', Role.ADMIN, ORG_B, null),
   superAdmin: person('t-sa', Role.SUPER_ADMIN, null, null),
   superAdminWithCompany: person('t-sa2', Role.SUPER_ADMIN, ORG_A, null),
+  superManager: person('t-sm', Role.SUPER_MANAGER, null, null),
 };
 type TargetName = keyof typeof T;
 const TARGETS = Object.keys(T) as TargetName[];
@@ -233,6 +240,11 @@ const SEE: Record<string, { me: AuthenticatedUser; sees: TargetName[] }> = {
     sees: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'managerA', 'adminA'],
   },
   'Super Admin without an organisation': { me: SA_PLATFORM, sees: [] },
+  'Super Manager in org A': {
+    me: SM_IN_A,
+    sees: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'managerA', 'adminA'],
+  },
+  'Super Manager on All organisations': { me: SM_ALL, sees: [] },
   'Admin of org A': {
     me: ADMIN_A,
     sees: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'managerA', 'adminA'],
@@ -284,9 +296,22 @@ describe('canSeePerson', () => {
 const EDIT: Record<string, { me: AuthenticatedUser; edits: TargetName[] }> = {
   'Super Admin in org A': {
     me: SA_IN_A,
-    edits: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'managerA', 'adminA'],
+    edits: [
+      'staffDept1',
+      'staffDept2',
+      'staffDept3',
+      'staffNoDept',
+      'managerA',
+      'adminA',
+      'superManager',
+    ],
   },
-  'Super Admin without an organisation': { me: SA_PLATFORM, edits: [] },
+  'Super Admin without an organisation': { me: SA_PLATFORM, edits: ['superManager'] },
+  'Super Manager in org A': {
+    me: SM_IN_A,
+    edits: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept'],
+  },
+  'Super Manager on All organisations': { me: SM_ALL, edits: [] },
   'Admin of org A': {
     me: ADMIN_A,
     edits: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'managerA'],
@@ -513,5 +538,71 @@ describe('peopleWhere', () => {
       expect(matches(where, gone)).toBe(false);
       expect(matches(peopleWhere(me, { includeDeleted: true }), gone)).toBe(canSeePerson(me, gone));
     }
+  });
+});
+
+describe('the Super Manager (3.3)', () => {
+  it('acts in the organisation picked with X-Org-Id, or none ("All organisations")', () => {
+    expect(orgOf(SM_IN_A)).toBe(ORG_A);
+    expect(orgOf(SM_ALL)).toBeNull();
+    expect(orgInView(SM_IN_A)).toBe(ORG_A);
+    expect(orgInView(SM_ALL)).toBeNull();
+    expect(refusal(() => requireOrg(SM_ALL))).toEqual({ status: 400, code: 'ORG_REQUIRED' });
+    expect(refusal(() => orgInView({ ...SM_IN_A, orgHeaderInvalid: true }))).toEqual({
+      status: 404,
+      code: 'ORG_NOT_FOUND',
+    });
+  });
+
+  it('sees the whole organisation with every grant, but is not admin-like', () => {
+    expect(seesWholeOrg(SM_IN_A)).toBe(true);
+    expect(isAdminLike(SM_IN_A)).toBe(false);
+    expect(grantsOf(SM_IN_A)).toEqual({ screenshots: true, timeline: true, activity: true });
+    expect(visibleDeptIds(SM_IN_A)).toBeNull();
+  });
+
+  it('changes Staff only: Managers and Admins answer 403 with the reason, other organisations 404', () => {
+    expect(refusal(() => assertCanEdit(SM_IN_A, T.staffDept1))).toBeNull();
+    for (const t of [T.managerA, T.adminA]) {
+      const r = refusal(() => assertCanEdit(SM_IN_A, t));
+      expect(r?.status).toBe(403);
+      try {
+        assertCanEdit(SM_IN_A, t);
+      } catch (e) {
+        expect((e as Error).message).toMatch(/Staff only/);
+      }
+    }
+    expect(refusal(() => assertCanEdit(SM_IN_A, T.staffOrgB))?.status).toBe(404);
+  });
+
+  it('Super Manager accounts: a Super Admin changes them from anywhere; nobody else sees them', () => {
+    expect(refusal(() => assertCanEdit(SA_PLATFORM, T.superManager))).toBeNull();
+    expect(refusal(() => assertCanEdit(SA_IN_A, T.superManager))).toBeNull();
+    for (const me of [SM_IN_A, SM_ALL, ADMIN_A, MGR_A, STAFF_A]) {
+      expect(refusal(() => assertCanEdit(me, T.superManager))?.status).toBe(404);
+    }
+  });
+
+  it('peopleWhere in an organisation is the Admin view', () => {
+    expect(peopleWhere(SM_IN_A)).toEqual({
+      companyId: ORG_A,
+      role: { name: { not: Role.SUPER_ADMIN } },
+      deletedAt: null,
+    });
+  });
+
+  it('peopleWhereAnyOrg: everyone in every live organisation on "All organisations"', () => {
+    const all = {
+      companyId: { not: null },
+      company: { deletedAt: null },
+      role: { name: { not: Role.SUPER_ADMIN } },
+      deletedAt: null,
+    };
+    expect(peopleWhereAnyOrg(SM_ALL)).toEqual(all);
+    expect(peopleWhereAnyOrg(SA_PLATFORM)).toEqual(all);
+    expect(peopleWhereAnyOrg(SM_IN_A)).toEqual(peopleWhere(SM_IN_A));
+    // Everyone else stays inside their own organisation.
+    expect(peopleWhereAnyOrg(ADMIN_A)).toEqual(peopleWhere(ADMIN_A));
+    expect(refusal(() => peopleWhereAnyOrg(STAFF_NO_ORG))?.status).toBe(403);
   });
 });

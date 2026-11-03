@@ -2,9 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { AuditLogService } from '@shared/audit/audit-log.service';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { UserAccessChangedEvent } from '@shared/events/user-access-changed.event';
-import { ValidationError } from '@shared/exceptions/app.exception';
+import { ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { isSuperManager } from '@shared/tenancy';
 import { UserGrants } from '../../domain/entities/user.entity';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
 import { UserAccessService } from '../../domain/services/user-access.service';
@@ -29,6 +30,10 @@ export class SetUserGrantsUseCase {
   ) {}
 
   async execute(me: AuthenticatedUser, targetId: string, grants: UserGrants): Promise<PublicUser> {
+    // 3.3: the Super Manager never changes grants.
+    if (isSuperManager(me)) {
+      throw new ForbiddenError('Only the organisation admin changes grants.', 'ADMIN_ONLY');
+    }
     const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
     if (target.role !== Role.MANAGER) {
       throw new ValidationError('Grants apply to managers only.', 'NOT_A_MANAGER');

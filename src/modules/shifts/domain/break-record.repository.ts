@@ -168,7 +168,14 @@ export interface ApprovalFilter {
    */
   approverAny?: { approverId: string; approverRole: ApproverRole };
   /** 4.0: only items of these subjects (organisation, optionally departments and roles). */
-  subjects?: { companyId: string; departmentIds?: string[]; roles?: string[] };
+  subjects?: {
+    /** One organisation (required unless liveOrgsOnly). */
+    companyId?: string;
+    departmentIds?: string[];
+    roles?: string[];
+    /** 3.3 "All organisations": only people of a live (not deleted) organisation. */
+    liveOrgsOnly?: boolean;
+  };
   /** 4.0: an Admin's "mine": items waiting for the Admin, or escalated. */
   adminPool?: boolean;
   /** 4.0: never this person's own items. */

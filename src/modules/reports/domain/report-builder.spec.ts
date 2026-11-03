@@ -280,6 +280,35 @@ describe('summarizeDay (4.0 calendar, target and allowance)', () => {
 });
 
 describe('summarizeDay', () => {
+  it('3.3: a manual adjustment enters focus, paid time and the day class; voided ones do not', () => {
+    const adj = (deltaSec: number, voided = false) => ({
+      id: `a${deltaSec}`,
+      userId: 'u1',
+      date: '2026-09-07',
+      deltaSec,
+      reason: 'Agent missed Start Day',
+      createdById: 'sm',
+      createdAt: NOW,
+      voidedAt: voided ? NOW : null,
+      voidedById: voided ? 'sm' : null,
+    });
+    // 09:30 to 13:30, 4 h: a HALF day on its own.
+    const base = day('2026-09-07', { sessions: [session('2026-09-07', '09:30', '13:30')] });
+    expect(summarize(base)).toMatchObject({ focusSec: 4 * H, adjustedSec: 0, dayClass: 'HALF' });
+    const s = summarize({ ...base, adjustments: [adj(3 * H), adj(H, true)] });
+    expect(s).toMatchObject({
+      focusSec: 7 * H,
+      paidSec: 7 * H,
+      adjustedSec: 3 * H,
+      dayClass: 'FULL',
+    });
+    // Taken off: never below zero.
+    expect(summarize({ ...base, adjustments: [adj(-5 * H)] })).toMatchObject({
+      focusSec: 0,
+      adjustedSec: -5 * H,
+    });
+  });
+
   it('a full day: focus at least 80% of shift length minus breaks', () => {
     const s = summarize(
       day('2026-09-07', {
@@ -580,6 +609,8 @@ describe('monthTotals', () => {
       awayPendingSec: 720,
       unverifiedSec: 2 * H,
       paidSec: 12 * H + 4800,
+      // 3.3: no day was adjusted by hand.
+      adjustedSec: 0,
     });
   });
 
@@ -641,6 +672,7 @@ describe('teamTotals', () => {
         quietHours: 5,
         targetSec: 8 * H,
         paidBreakSec: 600,
+        adjustedSec: 30 * 60,
       }),
       summary({
         date: '2026-09-02',
@@ -662,6 +694,7 @@ describe('teamTotals', () => {
         paidBreakSec: 300,
         unpaidBreakSec: 120,
         awayApprovedSec: 900,
+        adjustedSec: -10 * 60,
       }),
     ];
     const rows = [
@@ -685,6 +718,7 @@ describe('teamTotals', () => {
       unpaidBreakSec: 120,
       awayApprovedSec: 900,
       awayPendingSec: 60,
+      adjustedSec: 20 * 60,
     });
     expect(teamTotals([], '2026-09-30')).toMatchObject({
       people: 0,

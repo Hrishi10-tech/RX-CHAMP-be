@@ -31,7 +31,7 @@ export class DepartmentsController {
   constructor(private readonly departments: DepartmentsService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'Departments of the organisation with staff count, managers and input tracking (Manager: their own)',
@@ -41,7 +41,7 @@ export class DepartmentsController {
   }
 
   @Get('icons')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'The icon keys a department can use (SPEC 7.6)' })
   icons() {
     return envelope([...DEPARTMENT_ICONS]);

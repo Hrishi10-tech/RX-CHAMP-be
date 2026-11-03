@@ -10,8 +10,10 @@ import {
   manager,
   staff,
   superAdmin,
+  superManager,
 } from '@shared/testing/actors.testing-spec';
-import { cast, fakeUsers } from '../../testing/people.testing-spec';
+import { Role } from '@shared/rbac/roles.enum';
+import { cast, fakeUsers, person } from '../../testing/people.testing-spec';
 import { DeleteUserUseCase } from './delete-user.use-case';
 import { SetUserGrantsUseCase } from './set-user-grants.use-case';
 import { SetUserIdleUseCase } from './set-user-idle.use-case';
@@ -208,5 +210,108 @@ describe('credentials and removal are Admin-only (4.0)', () => {
     expect(d.audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'USER_DELETED' }),
     );
+  });
+});
+
+describe('the Super Manager and Super Manager accounts (3.3)', () => {
+  const SM_ACCOUNT = '10000000-0000-0000-0000-000000000003';
+  function withAccount() {
+    const d = deps();
+    const account = person({
+      id: SM_ACCOUNT,
+      role: Role.SUPER_MANAGER,
+      companyId: null,
+      departmentId: null,
+    });
+    const users = fakeUsers([...Object.values(d.people), account]);
+    return { ...d, users };
+  }
+
+  it('the Super Manager never changes grants or input tracking (403 ADMIN_ONLY)', async () => {
+    const d = deps();
+    const grants = new SetUserGrantsUseCase(d.users as any, d.events as any, d.audit as any);
+    const idle = new SetUserIdleUseCase(d.users as any, d.events as any);
+    await expect(grants.execute(superManager(ORG_A), IDS.managerA1, ALL)).rejects.toMatchObject({
+      status: 403,
+      code: 'ADMIN_ONLY',
+    });
+    await expect(idle.execute(superManager(ORG_A), IDS.staffA1, true, 5)).rejects.toMatchObject({
+      status: 403,
+      code: 'ADMIN_ONLY',
+    });
+    expect(d.users.save).not.toHaveBeenCalled();
+  });
+
+  it('the Super Manager sets passwords and deletes Staff, never Managers (403)', async () => {
+    const d = deps();
+    const password = new SetUserPasswordUseCase(
+      d.users as any,
+      d.hasher,
+      d.events as any,
+      d.audit as any,
+    );
+    const del = new DeleteUserUseCase(
+      d.users as any,
+      d.cache as any,
+      d.events as any,
+      d.audit as any,
+    );
+    await expect(
+      password.execute(superManager(ORG_A), IDS.staffA1, 'NewPass!123'),
+    ).resolves.toMatchObject({ updated: true });
+    await expect(
+      password.execute(superManager(ORG_A), IDS.managerA1, 'NewPass!123'),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(del.execute(superManager(ORG_A), IDS.managerA1)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(del.execute(superManager(ORG_A), IDS.staffA1)).resolves.toMatchObject({
+      deleted: true,
+    });
+  });
+
+  it('a Super Admin resets and deletes a Super Manager account with no organisation selected', async () => {
+    const d = withAccount();
+    const password = new SetUserPasswordUseCase(
+      d.users as any,
+      d.hasher,
+      d.events as any,
+      d.audit as any,
+    );
+    const del = new DeleteUserUseCase(
+      d.users as any,
+      d.cache as any,
+      d.events as any,
+      d.audit as any,
+    );
+    await expect(
+      password.execute(superAdmin(null), SM_ACCOUNT, 'NewPass!123'),
+    ).resolves.toMatchObject({ updated: true });
+    await expect(del.execute(superAdmin(null), SM_ACCOUNT)).resolves.toEqual({
+      deleted: true,
+      id: SM_ACCOUNT,
+    });
+  });
+
+  it('an Admin or the Super Manager cannot touch a Super Manager account (404)', async () => {
+    const d = withAccount();
+    const del = new DeleteUserUseCase(
+      d.users as any,
+      d.cache as any,
+      d.events as any,
+      d.audit as any,
+    );
+    for (const me of [admin(ORG_A), superManager(ORG_A)]) {
+      await expect(del.execute(me, SM_ACCOUNT)).rejects.toMatchObject({ status: 404 });
+    }
+  });
+
+  it('input tracking does not apply to a Super Manager account (400)', async () => {
+    const d = withAccount();
+    const idle = new SetUserIdleUseCase(d.users as any, d.events as any);
+    await expect(idle.execute(superAdmin(null), SM_ACCOUNT, true, 5)).rejects.toMatchObject({
+      status: 400,
+      code: 'NOT_TRACKED',
+    });
   });
 });

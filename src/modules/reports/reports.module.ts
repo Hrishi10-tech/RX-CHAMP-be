@@ -5,6 +5,7 @@ import { WorktimeModule } from '@modules/worktime/worktime.module';
 import { MonthLockService } from './application/month-lock.service';
 import { ReportRunsService } from './application/report-runs.service';
 import { ReportsService } from './application/reports.service';
+import { CombinedReportsService } from './application/combined-reports.service';
 import { REPORT_STORE } from './domain/report.store';
 import { PrismaReportStore } from './infrastructure/prisma-report.store';
 import { ReportsController } from './presentation/reports.controller';
@@ -22,6 +23,7 @@ import { ReportsController } from './presentation/reports.controller';
     ReportsService,
     MonthLockService,
     ReportRunsService,
+    CombinedReportsService,
   ],
 })
 export class ReportsModule {}

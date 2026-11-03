@@ -30,7 +30,12 @@ import {
 } from '../application/dto';
 import { BreakApprovalsUseCase } from '../application/use-cases/break-approvals.use-case';
 import { MyBreaksUseCase } from '../application/use-cases/my-breaks.use-case';
-import { TeamBreaksUseCase } from '../application/use-cases/team-breaks.use-case';
+import {
+  combineTeamBreaks,
+  TeamBreaksUseCase,
+} from '../application/use-cases/team-breaks.use-case';
+import { OrgsInViewService } from '@shared/tenancy';
+import { dateKeyInZone, appTimezone } from '@shared/utils/timezone';
 import { ParseIdPipe } from '@shared/validation/is-id';
 
 @ApiTags('breaks')
@@ -42,6 +47,7 @@ export class BreaksController {
     private readonly mine: MyBreaksUseCase,
     private readonly approvals: BreakApprovalsUseCase,
     private readonly team: TeamBreaksUseCase,
+    private readonly orgs: OrgsInViewService,
   ) {}
 
   // ---- Everyone (agent and portal) -----------------------------------------
@@ -74,7 +80,7 @@ export class BreaksController {
   // ---- Approvers -----------------------------------------------------------
 
   @Get('approvals')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Breaks waiting for (or given) a decision' })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ApprovalsQueryDto) {
     const { items, meta } = await this.approvals.list(me, query);
@@ -82,17 +88,17 @@ export class BreaksController {
   }
 
   @Get('approvals/summary')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Counts for the approvals badge: pending today, overdue, decided today',
   })
   async summary(@CurrentUser() me: AuthenticatedUser, @Query() query: SummaryQueryDto) {
-    return envelope(await this.approvals.summary(me, query.date));
+    return envelope(await this.approvals.summary(me, query.date, query.companyId));
   }
 
   @Post('approvals/bulk-approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Approve many at once; anything not yours or already decided is skipped',
   })
@@ -102,7 +108,7 @@ export class BreaksController {
 
   @Post('approvals/:id/approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Approve one break' })
   async approve(
     @CurrentUser() me: AuthenticatedUser,
@@ -114,7 +120,7 @@ export class BreaksController {
 
   @Post('approvals/:id/reject')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Reject one break (a note is required; the staff member sees it)' })
   async reject(
     @CurrentUser() me: AuthenticatedUser,
@@ -126,16 +132,25 @@ export class BreaksController {
 
   @Post('approvals/:id/reopen')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Put a decided break back to pending' })
   async reopen(@CurrentUser() me: AuthenticatedUser, @Param('id', new ParseIdPipe()) id: string) {
     return envelope(await this.approvals.reopen(me, id));
   }
 
   @Get('team')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: "One day of a team's breaks: taken, late, early, skipped, running" })
   async teamDay(@CurrentUser() me: AuthenticatedUser, @Query() query: TeamBreaksQueryDto) {
-    return envelope(await this.team.execute(me, query));
+    // 3.3: "All organisations" runs it per organisation and concatenates the rows.
+    const { results } = await this.orgs.each(
+      me,
+      query.companyId,
+      (run) => this.team.execute(run.me, query),
+      { needsOneOrg: !!(query.managerId || query.departmentId) },
+    );
+    return envelope(
+      combineTeamBreaks(results, query.date ?? dateKeyInZone(new Date(), appTimezone())),
+    );
   }
 }

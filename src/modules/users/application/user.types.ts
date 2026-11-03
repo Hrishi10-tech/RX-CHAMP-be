@@ -86,6 +86,8 @@ export interface UserListItem {
   idleEnabled: boolean | null;
   idleMinutes: number | null;
   companyId: string | null;
+  /** 3.3: the organisation's name, for the organisation chip on combined lists. */
+  companyName: string | null;
   shiftId: string | null;
 }
 
@@ -142,6 +144,12 @@ export interface MePermissions {
   canUsePortal: boolean;
   /** A Super Admin on the platform view must pick an organisation for org pages. */
   needsOrganisation: boolean;
+  /** 3.3: the caller is the Super Manager (Overview home, organisation chips). */
+  isSuperManager: boolean;
+  /** 3.3: may adjust focus time by hand (the Super Manager only). */
+  canAdjustFocus: boolean;
+  /** 3.3: may open Agent health (Managers, Admins, the Super Manager, Super Admins). */
+  canSeeAgentHealth: boolean;
 }
 
 export interface CreateUsersResult {

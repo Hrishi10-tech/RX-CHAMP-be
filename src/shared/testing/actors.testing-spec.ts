@@ -13,6 +13,7 @@ export const DEPT_B1 = '00000000-0000-0000-0000-0000000000b1';
 
 export const IDS = {
   superAdmin: '10000000-0000-0000-0000-000000000001',
+  superManager: '10000000-0000-0000-0000-000000000002',
   adminA: '10000000-0000-0000-0000-0000000000a1',
   adminB: '10000000-0000-0000-0000-0000000000b1',
   managerA1: '20000000-0000-0000-0000-0000000000a1',
@@ -32,7 +33,7 @@ function base(id: string, role: Role, companyId: string | null): AuthenticatedUs
     department: null,
     companyId,
     status: 'ACTIVE',
-    orgId: role === Role.SUPER_ADMIN ? null : companyId,
+    orgId: role === Role.SUPER_ADMIN || role === Role.SUPER_MANAGER ? null : companyId,
     departmentId: null,
     managedDepartmentIds: [],
   };
@@ -41,6 +42,11 @@ function base(id: string, role: Role, companyId: string | null): AuthenticatedUs
 /** A Super Admin acting in `orgId` (X-Org-Id), or on the platform view when omitted. */
 export function superAdmin(orgId: string | null = null): AuthenticatedUser {
   return { ...base(IDS.superAdmin, Role.SUPER_ADMIN, null), orgId };
+}
+
+/** 3.3: the Super Manager (no organisation of its own) acting in `orgId`, or All organisations. */
+export function superManager(orgId: string | null = null): AuthenticatedUser {
+  return { ...base(IDS.superManager, Role.SUPER_MANAGER, null), orgId };
 }
 
 export function admin(org: string = ORG_A): AuthenticatedUser {

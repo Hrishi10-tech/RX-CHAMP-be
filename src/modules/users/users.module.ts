@@ -20,10 +20,12 @@ import { SetUserScreenshotsUseCase } from './application/use-cases/set-user-scre
 import { SetUserStatusUseCase } from './application/use-cases/set-user-status.use-case';
 import { UpdateUserUseCase } from './application/use-cases/update-user.use-case';
 import { SetUserPasswordUseCase } from './application/use-cases/set-user-password.use-case';
+import { SuperManagersUseCase } from './application/use-cases/super-managers.use-case';
 import { MeController, UsersController } from './presentation/users.controller';
+import { SuperManagersController } from './presentation/super-managers.controller';
 
 @Module({
-  controllers: [UsersController, MeController],
+  controllers: [UsersController, MeController, SuperManagersController],
   providers: [
     { provide: USER_REPOSITORY, useClass: PostgresUserRepository },
     { provide: SHIFT_READER, useClass: PrismaShiftReader },
@@ -41,6 +43,7 @@ import { MeController, UsersController } from './presentation/users.controller';
     SetUserScreenshotsUseCase,
     UpdateUserUseCase,
     SetUserPasswordUseCase,
+    SuperManagersUseCase,
   ],
   exports: [USER_REPOSITORY, GetProfileUseCase],
 })

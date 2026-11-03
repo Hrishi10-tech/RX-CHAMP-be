@@ -32,6 +32,7 @@ import { DEFAULT_REASON_MIN_CHARS } from '@modules/shifts/domain/shift.types';
 import { agentGeneration } from '../domain/agent-generation';
 import { TeamQueryDto, TeamTodayQueryDto } from '../application/dto/workday.dto';
 import { TeamOverviewService } from '../application/team-overview.service';
+import { CombinedViewsService } from '../application/combined-views.service';
 import { SkipsService } from '../application/skips.service';
 import { TeamTodayService } from '../application/team-today.service';
 import { WorkSessionsService } from '../application/work-sessions.service';
@@ -190,10 +191,11 @@ export class TeamController {
   constructor(
     private readonly team: TeamTodayService,
     private readonly teamOverview: TeamOverviewService,
+    private readonly combined: CombinedViewsService,
   ) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       '4.0 Team: everyone in scope with live status (WORKING, BREAK, MEETING, AWAY, NOT_STARTED, ' +
@@ -204,14 +206,15 @@ export class TeamController {
   }
 
   @Get('today')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'Team today: status, focus, breaks, meetings, late starts, pending approvals and ' +
       "hourly activity per person (Manager: own reports; Super Admin: everyone or one manager's team)",
   })
   async today(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamTodayQueryDto) {
-    return envelope(await this.team.today(me, q, new Date()));
+    // 3.3: "All organisations" combines every organisation (rows carry companyName).
+    return envelope(await this.combined.teamToday(me, q, new Date()));
   }
 }
 
@@ -224,7 +227,7 @@ export class OverviewController {
   constructor(private readonly teamOverview: TeamOverviewService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'The organisation (Admin) or my departments (Manager): today, approvals, this month against ' +

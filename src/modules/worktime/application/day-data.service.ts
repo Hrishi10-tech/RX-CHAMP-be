@@ -10,6 +10,11 @@ import { addDaysToKey, appTimezone, dateKeyInZone } from '@shared/utils/timezone
 import { ACTIVITY_BACKLOG_MS } from '@modules/activity/application/activity.constants';
 import { AWAY_REPOSITORY, AwayRepository, AwayRow } from '../domain/away.repository';
 import { intervalsOfDay, PersonDayData } from '../domain/day';
+import { FocusAdjustmentRecord } from '../domain/focus-adjustment';
+import {
+  FOCUS_ADJUSTMENT_REPOSITORY,
+  FocusAdjustmentRepository,
+} from '../domain/focus-adjustment.repository';
 import { buildHourly, HourActivity } from '../domain/hourly';
 import {
   MEETING_RECORD_REPOSITORY,
@@ -90,6 +95,7 @@ export class DayDataSet {
   private readonly meetings: Map<string, MeetingRecordRow[]>;
   private readonly away: Map<string, AwayRow[]>;
   private readonly coverageBySession: Map<string, CoverageRow[]>;
+  private readonly adjustments: Map<string, FocusAdjustmentRecord[]>;
 
   constructor(
     sessions: WorkSessionRecord[],
@@ -99,6 +105,7 @@ export class DayDataSet {
     private readonly now: Date,
     away: AwayRow[] = [],
     coverage: CoverageRow[] = [],
+    adjustments: FocusAdjustmentRecord[] = [],
   ) {
     this.sessions = group(sessions, (s) => key(s.userId, s.date));
     this.presenceByUser = group(presence, (p) => p.userId);
@@ -106,6 +113,7 @@ export class DayDataSet {
     this.meetings = group(meetings, (m) => key(m.userId, m.date));
     this.away = group(away, (a) => key(a.userId, a.date));
     this.coverageBySession = group(coverage, (c) => c.sessionId);
+    this.adjustments = group(adjustments, (a) => key(a.userId, a.date));
   }
 
   day(userId: string, date: string): PersonDayData {
@@ -127,6 +135,7 @@ export class DayDataSet {
       meetingRecords: this.meetings.get(key(userId, date)) ?? [],
       away: this.away.get(key(userId, date)) ?? [],
       coverage: sessions.flatMap((s) => this.coverageBySession.get(s.id) ?? []),
+      adjustments: this.adjustments.get(key(userId, date)) ?? [],
     };
   }
 
@@ -161,6 +170,8 @@ export class DayDataService implements OnModuleInit {
     @Inject(WORKTIME_READER) private readonly reader: WorktimeReader,
     private readonly meetingService: MeetingsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(FOCUS_ADJUSTMENT_REPOSITORY)
+    private readonly adjustmentsRepo: FocusAdjustmentRepository,
   ) {}
 
   onModuleInit(): void {
@@ -184,11 +195,12 @@ export class DayDataService implements OnModuleInit {
     if (opts.heal) await this.meetingService.heal(userIds, now);
     // Read before any sample is (see bucketHours).
     const versions = new Map(userIds.map((id) => [id, this.sampleVersionOf(id)]));
-    const [sessions, breaks, meetings, away] = await Promise.all([
+    const [sessions, breaks, meetings, away, adjustments] = await Promise.all([
       this.sessions.listForUsersBetween(userIds, fromDate, toDate),
       this.breaks.listForUsersBetween(userIds, fromDate, toDate),
       this.meetings.listForUsersBetween(userIds, fromDate, toDate),
       this.awayRepo.listForUsers(userIds, fromDate, toDate),
+      this.adjustmentsRepo.listForUsersBetween(userIds, fromDate, toDate),
     ]);
     let presence: PresenceRow[] = [];
     let coverage: CoverageRow[] = [];
@@ -204,7 +216,7 @@ export class DayDataService implements OnModuleInit {
         replayed.length ? this.coverageOf(replayed, versions, now) : Promise.resolve([]),
       ]);
     }
-    return new DayDataSet(sessions, presence, breaks, meetings, now, away, coverage);
+    return new DayDataSet(sessions, presence, breaks, meetings, now, away, coverage, adjustments);
   }
 
   /**

@@ -4,7 +4,7 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { OrganisationChangedEvent } from '@shared/events/organisation-changed.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Permission } from '@shared/rbac/permissions.enum';
-import { Role } from '@shared/rbac/roles.enum';
+import { Role, seesEveryOrg } from '@shared/rbac/roles.enum';
 import { AuthUserReader } from '../domain/auth-user-reader.port';
 
 const ORG_TTL_MS = 30_000;
@@ -43,7 +43,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
 
     const role = row.role.name as Role;
     // 4.0: someone left in an organisation that was deleted acts in none (404).
-    const orgDeleted = role !== Role.SUPER_ADMIN && !!row.companyId && !!row.company?.deletedAt;
+    const orgDeleted = !seesEveryOrg(role) && !!row.companyId && !!row.company?.deletedAt;
     const user: AuthenticatedUser = {
       id: row.id,
       email: row.email,
@@ -52,7 +52,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
       department: row.department,
       companyId: row.companyId,
       status: row.status,
-      orgId: role === Role.SUPER_ADMIN || orgDeleted ? null : row.companyId,
+      orgId: seesEveryOrg(role) || orgDeleted ? null : row.companyId,
       ...(orgDeleted ? { orgDeleted: true } : {}),
       departmentId: row.departmentId,
       managedDepartmentIds:
@@ -67,7 +67,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
           : undefined,
     };
 
-    if (role === Role.SUPER_ADMIN) {
+    if (seesEveryOrg(role)) {
       const header = orgHeader?.trim();
       if (header && header !== 'all') {
         if (UUID.test(header) && (await this.orgExists(header))) user.orgId = header;

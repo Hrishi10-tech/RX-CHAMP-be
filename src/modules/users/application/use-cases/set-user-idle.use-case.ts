@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { OrgConfigChangedEvent } from '@shared/events/org-config-changed.event';
-import { ValidationError } from '@shared/exceptions/app.exception';
+import { ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { requireOrg } from '@shared/tenancy';
+import { Role } from '@shared/rbac/roles.enum';
+import { isSuperManager, requireOrg } from '@shared/tenancy';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
 import { UserAccessService } from '../../domain/services/user-access.service';
 import { UserMapper } from '../mappers/user.mapper';
@@ -31,7 +32,14 @@ export class SetUserIdleUseCase {
     enabled: boolean | null,
     minutes: number | null,
   ): Promise<PublicUser> {
+    // 3.3: input tracking is the organisation admin's; the Super Manager never changes it.
+    if (isSuperManager(me)) {
+      throw new ForbiddenError('Only the organisation admin changes input tracking.', 'ADMIN_ONLY');
+    }
     const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
+    if (target.role === Role.SUPER_MANAGER) {
+      throw new ValidationError('A Super Manager has no agent to track.', 'NOT_TRACKED');
+    }
     if (
       minutes !== null &&
       (!Number.isInteger(minutes) || minutes < MINUTES.min || minutes > MINUTES.max)

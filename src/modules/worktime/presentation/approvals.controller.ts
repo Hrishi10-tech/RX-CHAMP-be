@@ -24,6 +24,7 @@ import {
   APPROVAL_PATH_TYPES,
   ApprovalPathType,
   ApprovalsListQueryDto,
+  ApprovalsSummaryQueryDto,
   ApproveItemDto,
   BulkApproveItemsDto,
   MyApprovalsQueryDto,
@@ -51,7 +52,7 @@ export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       'Break and meeting approvals in one list (default: pending, mine). Pending sorted by ' +
@@ -62,12 +63,12 @@ export class ApprovalsController {
   }
 
   @Get('summary')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Counts for the badge: pending, due soon, overdue, escalated, decided today',
   })
-  async summary(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.approvals.summary(me, new Date()));
+  async summary(@CurrentUser() me: AuthenticatedUser, @Query() q: ApprovalsSummaryQueryDto) {
+    return envelope(await this.approvals.summary(me, new Date(), q.scope ?? 'mine', q.companyId));
   }
 
   @Get('me')
@@ -80,7 +81,7 @@ export class ApprovalsController {
 
   @Post('bulk-approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: 'Approve up to 200 items; anything not yours or not pending is skipped',
   })
@@ -90,7 +91,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/approve')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Approve one item (optional note)' })
   async approve(
     @CurrentUser() me: AuthenticatedUser,
@@ -103,7 +104,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/reject')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Reject one item (a note of 3+ characters is required)' })
   async reject(
     @CurrentUser() me: AuthenticatedUser,
@@ -116,7 +117,7 @@ export class ApprovalsController {
 
   @Post(':type/:id/reopen')
   @HttpCode(200)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Put a decided item back to pending (the decider or a Super Admin)' })
   async reopen(
     @CurrentUser() me: AuthenticatedUser,

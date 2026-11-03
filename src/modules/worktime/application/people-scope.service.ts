@@ -8,8 +8,7 @@ import {
   isAdminLike,
   managedDeptIds,
   requireOrg,
-  Section,
-} from '@shared/tenancy';
+  Section, seesWholeOrg } from '@shared/tenancy';
 import {
   PeopleFilter,
   PersonRow,
@@ -51,7 +50,7 @@ export class PeopleScopeService {
   constructor(@Inject(WORKTIME_READER) private readonly reader: WorktimeReader) {}
 
   assertManagerOrAdmin(me: AuthenticatedUser): void {
-    if (!isAdminLike(me) && me.role !== Role.MANAGER) {
+    if (!seesWholeOrg(me) && me.role !== Role.MANAGER) {
       throw new ForbiddenError('Only managers and admins can see this.');
     }
     requireOrg(me);
@@ -60,7 +59,7 @@ export class PeopleScopeService {
   /** The reader filter for everyone the caller may see. */
   filterFor(me: AuthenticatedUser): PeopleFilter | null {
     const companyId = requireOrg(me);
-    if (isAdminLike(me)) return { companyId, excludeRoles: ['SUPER_ADMIN'] };
+    if (seesWholeOrg(me)) return { companyId, excludeRoles: ['SUPER_ADMIN'] };
     const depts = managedDeptIds(me);
     if (!depts.length) return null;
     return { companyId, roles: ['USER'], departmentIds: depts };

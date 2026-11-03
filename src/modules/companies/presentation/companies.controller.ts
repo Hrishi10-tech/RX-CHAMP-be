@@ -14,7 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { RolesGuard } from '@shared/rbac/roles.guard';
 import { Roles } from '@shared/rbac/roles.decorator';
-import { Role } from '@shared/rbac/roles.enum';
+import { Role, seesEveryOrg } from '@shared/rbac/roles.enum';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
@@ -58,13 +58,13 @@ export class CompaniesController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: '(3.x alias) Organisations with manager and people counts (Admin, Manager: their own)',
   })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ListCompaniesQueryDto) {
     const onlyIds =
-      me.role === Role.SUPER_ADMIN ? (orgOf(me) ? [orgOf(me)!] : undefined) : [requireOrg(me)];
+      seesEveryOrg(me.role) ? (orgOf(me) ? [orgOf(me)!] : undefined) : [requireOrg(me)];
     const { companies, total, page, limit } = await this.listCompanies.execute(query, onlyIds);
     const totalPages = Math.ceil(total / limit);
     return envelope(companies, { meta: { total, page, limit, totalPages } });
@@ -104,7 +104,7 @@ export class CompaniesController {
   }
 
   @Get(':companyId/managers/:managerId/users')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: '(removed in 4.0) answers 410 GONE' })
   managerUsers(): never {
     throw new GoneError(

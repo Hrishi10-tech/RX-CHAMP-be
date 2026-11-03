@@ -6,7 +6,7 @@ import {
   ValidationError,
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { isAdminLike, RequestClock } from '@shared/tenancy';
+import { isAdminLike, RequestClock, seesWholeOrg } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import {
@@ -64,8 +64,12 @@ export class BreakApprovalsUseCase {
   }
 
   /** The approver part of the filter: what counts as "mine" (or everything). */
-  private scopeFilter(me: AuthenticatedUser, scope: 'mine' | 'all' = 'mine'): ApprovalFilter {
-    return approvalFilterFor(me, scope);
+  private scopeFilter(
+    me: AuthenticatedUser,
+    scope: 'mine' | 'all' = 'mine',
+    companyId?: string,
+  ): ApprovalFilter {
+    return approvalFilterFor(me, scope, companyId);
   }
 
   async list(
@@ -75,7 +79,7 @@ export class BreakApprovalsUseCase {
     this.assertApprover(me);
     const page = q.page ?? 1;
     const limit = q.limit ?? 50;
-    const filter: ApprovalFilter = { ...this.scopeFilter(me, q.scope) };
+    const filter: ApprovalFilter = { ...this.scopeFilter(me, q.scope, q.companyId) };
 
     if (q.overdue) {
       filter.status = ['PENDING'];
@@ -93,10 +97,14 @@ export class BreakApprovalsUseCase {
     return { items: await this.toItems(me, rows), meta: buildMeta(total, page, limit) };
   }
 
-  async summary(me: AuthenticatedUser, date?: string): Promise<ApprovalsSummaryView> {
+  async summary(
+    me: AuthenticatedUser,
+    date?: string,
+    companyId?: string,
+  ): Promise<ApprovalsSummaryView> {
     this.assertApprover(me);
     const day = date ?? this.today();
-    const base = this.scopeFilter(me);
+    const base = this.scopeFilter(me, 'mine', companyId);
     const [pendingToday, overdue, approvedToday, rejectedToday] = await Promise.all([
       this.records.countApprovals({ ...base, status: ['PENDING'], date: day }),
       this.records.countApprovals({ ...base, status: ['PENDING'], beforeDate: day }),
@@ -159,7 +167,7 @@ export class BreakApprovalsUseCase {
     if (!DECIDED.includes(record.approvalStatus)) {
       throw new ConflictError('Only an approved or rejected break can be reopened.', 'NOT_DECIDED');
     }
-    if (!isAdminLike(me) && record.decidedById !== me.id) {
+    if (!seesWholeOrg(me) && record.decidedById !== me.id) {
       throw new ForbiddenError('Only the person who decided it, or the admin, can reopen it.');
     }
     const updated = await this.records.decide(id, DECIDED, {
@@ -250,5 +258,13 @@ export class BreakApprovalsUseCase {
 
 export function personView(p: ShiftPerson | undefined, fallbackId: string): ApprovalPersonView {
   if (!p) return { id: fallbackId, name: 'Former user', email: '', role: 'USER', department: null };
-  return { id: p.id, name: personName(p), email: p.email, role: p.role, department: p.department };
+  return {
+    id: p.id,
+    name: personName(p),
+    email: p.email,
+    role: p.role,
+    department: p.department,
+    companyId: p.companyId,
+    companyName: p.companyName ?? null,
+  };
 }

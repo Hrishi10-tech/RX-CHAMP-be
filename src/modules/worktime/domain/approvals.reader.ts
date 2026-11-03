@@ -18,6 +18,12 @@ export type ApprovalScope =
   | { kind: 'ORG'; companyId: string; excludeUserId: string }
   /** An Admin's "mine": waiting for the Admin, or escalated, in the organisation. */
   | { kind: 'ORG_ADMIN_MINE'; companyId: string; excludeUserId: string }
+  /**
+   * 3.3 "All organisations" (Super Manager, Super Admin): items of people in every
+   * live organisation, or only `companyId`'s, never the caller's own. `adminMine`
+   * narrows it to what an Admin's "mine" would show (a Super Admin's mine).
+   */
+  | { kind: 'ANY_ORG'; companyId?: string; adminMine?: boolean; excludeUserId: string }
   /** A Manager's: Staff in these departments of the organisation. */
   | { kind: 'DEPTS'; companyId: string; departmentIds: string[]; excludeUserId: string }
   /** The person's own items (GET /approvals/me, agent History). */

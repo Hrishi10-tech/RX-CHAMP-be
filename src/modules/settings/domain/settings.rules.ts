@@ -27,6 +27,11 @@ export interface AppSettings {
   autoCloseAfterShiftEndMin: number;
   /** 4.0: paid minutes on top of the scheduled breaks for overruns and quick breaks. */
   breakBufferMin: number;
+  /**
+   * 3.3: the Super Manager may add minutes to or take minutes off a person's focus
+   * time by hand (meant for a rollout). Off: no adjustment can be added or undone.
+   */
+  focusAdjustmentsEnabled: boolean;
 }
 
 export type SettingKey = keyof AppSettings;
@@ -49,9 +54,13 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = Object.freeze({
   quietHoursFlag: 4,
   autoCloseAfterShiftEndMin: 240,
   breakBufferMin: 10,
+  focusAdjustmentsEnabled: true,
 });
 
-type IntKey = Exclude<SettingKey, 'blockManagerEndDayWhenOverdue'>;
+/** The on/off settings; every other one is a whole number. */
+const BOOLEAN_KEYS = ['blockManagerEndDayWhenOverdue', 'focusAdjustmentsEnabled'] as const;
+type BooleanKey = (typeof BOOLEAN_KEYS)[number];
+type IntKey = Exclude<SettingKey, BooleanKey>;
 
 /** Inclusive bounds of every whole-number setting. */
 export const SETTING_BOUNDS: Readonly<Record<IntKey, { min: number; max: number }>> = Object.freeze(
@@ -77,6 +86,7 @@ const LABEL: Record<SettingKey, string> = {
   quietHoursFlag: 'Quiet hours before a look',
   autoCloseAfterShiftEndMin: 'Auto-close after shift end (minutes)',
   breakBufferMin: 'Paid break buffer (minutes)',
+  focusAdjustmentsEnabled: 'Manual focus adjustments by the Super Manager',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as SettingKey[];
@@ -86,7 +96,7 @@ export type PatchResult =
   | { ok: false; field: SettingKey; message: string };
 
 function isIntKey(key: SettingKey): key is IntKey {
-  return key !== 'blockManagerEndDayWhenOverdue';
+  return !(BOOLEAN_KEYS as readonly string[]).includes(key);
 }
 
 /** Problem with one value, or null when it is valid. */

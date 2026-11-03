@@ -7,7 +7,7 @@ import {
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { isAdminLike, requireOrg } from '@shared/tenancy';
+import { isAdminLike, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import { validateShiftDefinition } from '../../domain/break-schedule';
 import { SHIFT_PEOPLE_READER, ShiftPeopleReader } from '../../domain/shift-people.reader';
@@ -49,7 +49,7 @@ export class ManageShiftsUseCase {
   /** The caller's organisation; Staff may not read shifts here, only Admins write. */
   private orgOf(me: AuthenticatedUser, write = false): string {
     const org = requireOrg(me);
-    if (!isAdminLike(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
+    if (!seesWholeOrg(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
     if (write && !isAdminLike(me)) {
       throw new ForbiddenError('Only the organisation admin can change shifts.');
     }

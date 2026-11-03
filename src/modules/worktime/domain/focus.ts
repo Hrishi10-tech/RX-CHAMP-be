@@ -18,8 +18,9 @@ import { Interval, intersect, joinGaps, lengthMs, normalize, subtract, toSec } f
  *   away<STATUS>Sec  = |away events of that status ∩ W − breaks|
  *   approvedPlusSec  = Σ overrunSec of TAKEN records with overrunAsked and APPROVED (3.x)
  *   rejectedMinusSec = Σ |meeting ∩ W| of REJECTED meetings + Σ durationMin×60 of REJECTED skips
+ *   adjustedSec      = Σ deltaSec of the day's live manual adjustments (3.3, Super Manager)
  *   focusSec         = max(0, spanSec − breakSec − awayPending − awayRejected − awayUnexplained
- *                              + approvedPlusSec − rejectedMinusSec)
+ *                              + approvedPlusSec − rejectedMinusSec + adjustedSec)
  *   pendingPlusSec   = awayPending + the PENDING overrun asks (3.x)     ("+N min if approved")
  *
  * Offline evidence (4.0): a REPLAY session (opened or reopened by an action the
@@ -109,6 +110,8 @@ export interface FocusInput {
   bufferMin?: number;
   /** 4.0: what the agent's activity samples cover of the REPLAY sessions. */
   coverage?: FocusCoverage[];
+  /** Signed seconds of the day's live manual adjustments (3.3); default 0. */
+  adjustedSec?: number;
   now: Date;
 }
 
@@ -140,6 +143,8 @@ export interface FocusBreakdown {
   unverifiedSec: number;
   /** 4.0: payroll time, focusSec + paidBreakSec. */
   paidSec: number;
+  /** Signed seconds added by hand (3.3); 0 for almost every day. Already inside focusSec. */
+  adjustedSec: number;
 }
 
 export const EMPTY_FOCUS: Readonly<FocusBreakdown> = Object.freeze({
@@ -166,6 +171,7 @@ export const EMPTY_FOCUS: Readonly<FocusBreakdown> = Object.freeze({
   awayUnexplainedSec: 0,
   unverifiedSec: 0,
   paidSec: 0,
+  adjustedSec: 0,
 });
 
 const SCHEDULED = new Set(['MORNING', 'LUNCH', 'EVENING']);
@@ -315,9 +321,11 @@ export function computeFocus(input: FocusInput): FocusBreakdown {
   const onBreak = input.presence.some(
     (p) => p.endedAt === null && (p.type === 'BREAK' || p.type === 'LUNCH'),
   );
+  const adjustedSec = Math.round(input.adjustedSec ?? 0);
   const focusSec = Math.max(
     0,
-    spanSec -
+    adjustedSec +
+      spanSec -
       breakSec -
       awayPendingSec -
       awayRejectedSec -
@@ -351,6 +359,7 @@ export function computeFocus(input: FocusInput): FocusBreakdown {
     awayUnexplainedSec,
     unverifiedSec,
     paidSec: focusSec + paidBreakSec,
+    adjustedSec,
   };
 }
 

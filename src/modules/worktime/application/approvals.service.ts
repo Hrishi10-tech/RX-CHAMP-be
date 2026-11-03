@@ -9,7 +9,7 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { WorkdayChangedEvent } from '@shared/events/workday-changed.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { isAdminLike, requireOrg } from '@shared/tenancy';
+import { allOrgsInView, orgOf, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { monthOf } from '@shared/database/month-lock';
@@ -76,8 +76,27 @@ import {
 const DECIDED: ('APPROVED' | 'REJECTED')[] = ['APPROVED', 'REJECTED'];
 
 function personLite(p: ShiftPerson | undefined, fallbackId: string): ApprovalPersonLite {
-  if (!p) return { id: fallbackId, name: 'Former user', email: '', role: 'USER', department: null };
-  return { id: p.id, name: personName(p), email: p.email, role: p.role, department: p.department };
+  if (!p) {
+    return {
+      id: fallbackId,
+      name: 'Former user',
+      email: '',
+      role: 'USER',
+      department: null,
+      companyId: null,
+      companyName: null,
+    };
+  }
+  return {
+    id: p.id,
+    name: personName(p),
+    email: p.email,
+    role: p.role,
+    department: p.department,
+    // 3.3: every person view names the organisation (chips on combined lists).
+    companyId: p.companyId,
+    companyName: p.companyName ?? null,
+  };
 }
 
 /** month_locks key of an item, as lockedMonths answers it. */
@@ -115,10 +134,22 @@ export class ApprovalsService {
   /**
    * A Manager: Staff in their departments (mine and all alike). An Admin or Super
    * Admin: mine = waiting for the Admin or escalated; all = the organisation.
+   * 3.3: a Super Manager or Super Admin on "All organisations": every live
+   * organisation, or `companyId`'s. Inside one organisation, a `companyId` naming
+   * another one is unknown (404).
    */
-  scopeFor(me: AuthenticatedUser, scope: 'mine' | 'all' = 'mine'): ApprovalScope {
-    requireOrg(me);
-    const out = approverScopeOf(me, scope);
+  scopeFor(
+    me: AuthenticatedUser,
+    scope: 'mine' | 'all' = 'mine',
+    companyId?: string,
+  ): ApprovalScope {
+    if (!allOrgsInView(me)) {
+      requireOrg(me);
+      if (companyId && companyId !== orgOf(me)) {
+        throw new NotFoundError('That organisation does not exist.', 'ORG_NOT_FOUND');
+      }
+    }
+    const out = approverScopeOf(me, scope, companyId);
     if (!out) throw new ForbiddenError('Only managers and admins decide approvals.');
     return out;
   }
@@ -143,7 +174,7 @@ export class ApprovalsService {
           ? ['APPROVED', 'REJECTED']
           : [status];
     const query: ApprovalQuery = {
-      scope: this.scopeFor(me, q.scope),
+      scope: this.scopeFor(me, q.scope, q.companyId),
       statuses,
       type: q.type,
       category: q.category,
@@ -157,10 +188,17 @@ export class ApprovalsService {
     return { items: await this.views(me, refs, now), meta: buildMeta(total, page, limit) };
   }
 
-  async summary(me: AuthenticatedUser, now: Date): Promise<ApprovalsSummaryView31> {
+  async summary(
+    me: AuthenticatedUser,
+    now: Date,
+    scopeName: 'mine' | 'all' = 'mine',
+    companyId?: string,
+  ): Promise<ApprovalsSummaryView31> {
     this.assertApprover(me);
     await this.meetingService.heal(null, now);
-    const scope = this.scopeFor(me);
+    const scope = this.scopeFor(me, scopeName, companyId);
+    // The SLA shown: the organisation's (combined: the one asked, else the defaults).
+    const settingsOrg = allOrgsInView(me) ? (companyId ?? null) : requireOrg(me);
     const tz = appTimezone();
     const today = dateKeyInZone(now, tz);
     const dayStart = startOfDayInZone(today, tz);
@@ -177,7 +215,7 @@ export class ApprovalsService {
         this.reader.count({ ...pending, escalatedOnly: true }),
         this.reader.countDecidedBetween(scope, 'APPROVED', dayStart, dayEnd),
         this.reader.countDecidedBetween(scope, 'REJECTED', dayStart, dayEnd),
-        this.settings.get(requireOrg(me)),
+        this.settings.get(settingsOrg),
       ]);
     return {
       pending: all,
@@ -298,7 +336,7 @@ export class ApprovalsService {
         'NOT_DECIDED',
       );
     }
-    if (!isAdminLike(me) && m.decidedById !== me.id) {
+    if (!seesWholeOrg(me) && m.decidedById !== me.id) {
       throw new ForbiddenError('Only the person who decided it, or the admin, can reopen it.');
     }
     const updated = await this.meetings.decide(id, DECIDED, {
@@ -404,7 +442,7 @@ export class ApprovalsService {
     if (found.status !== 'APPROVED' && found.status !== 'REJECTED') {
       throw new ConflictError('Only an approved or rejected item can be reopened.', 'NOT_DECIDED');
     }
-    if (!isAdminLike(me) && found.decidedById !== me.id) {
+    if (!seesWholeOrg(me) && found.decidedById !== me.id) {
       throw new ForbiddenError('Only the person who decided it, or the admin, can reopen it.');
     }
     const sla = (await this.settings.forUser(found.userId)).approvalSlaHours;

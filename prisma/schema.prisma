@@ -15,6 +15,8 @@ enum RoleName {
   MANAGER
   USER
   ADMIN
+  // 3.3: one person who oversees every organisation (read, approve, adjust focus).
+  SUPER_MANAGER
 }
 
 enum UserStatus {
@@ -269,6 +271,45 @@ model MeetingRecord {
 
 /// Organisation settings (3.1), one JSON value per key. Key `org` holds the
 /// Super Admin settings table (SPEC 1.10).
+/// A manual change to one person's focus time for one day (3.3): the Super
+/// Manager adds or takes off minutes, with a reason, while a rollout is bedding in.
+/// Append-only: a mistake is voided, never edited, so the trail stays complete.
+model FocusAdjustment {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  /// Business day the adjustment belongs to (YYYY-MM-DD).
+  date        String
+  /// Signed seconds added to (or taken off) the day's focus time.
+  deltaSec    Int       @map("delta_sec")
+  reason      String
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  voidedAt    DateTime? @map("voided_at")
+  voidedById  String?   @map("voided_by_id") @db.Uuid
+
+  @@index([userId, date])
+  @@index([date])
+  @@index([createdAt])
+  @@map("focus_adjustments")
+}
+
+/// Per-person agent diagnostics (3.3): when any agent call last arrived, which
+/// agent it was (its User-Agent), and the last screenshot upload the server
+/// refused. One row per person, rewritten in place; read by GET /agent-health.
+model AgentContact {
+  userId            String    @id @map("user_id") @db.Uuid
+  lastContactAt     DateTime  @map("last_contact_at")
+  userAgent         String?   @map("user_agent")
+  lastRefusalAt     DateTime? @map("last_refusal_at")
+  lastRefusalStatus Int?      @map("last_refusal_status")
+  lastRefusalCode   String?   @map("last_refusal_code")
+  lastRefusalReason String?   @map("last_refusal_reason")
+  lastRefusalBytes  Int?      @map("last_refusal_bytes")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("agent_contacts")
+}
+
 model AppSetting {
   key         String   @id
   value       Json

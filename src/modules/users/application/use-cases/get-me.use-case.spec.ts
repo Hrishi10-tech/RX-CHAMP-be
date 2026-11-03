@@ -6,6 +6,7 @@ import {
   manager,
   staff,
   superAdmin,
+  superManager,
 } from '@shared/testing/actors.testing-spec';
 import { GetMeUseCase, permissionsOf } from './get-me.use-case';
 
@@ -54,6 +55,42 @@ describe('GET /me permissions', () => {
       canSeeScreenshots: false,
       canSeeActivity: false,
     });
+  });
+
+  it('Super Manager (3.3) in an organisation: sees and decides, administers nothing', () => {
+    expect(permissionsOf(superManager(ORG_A))).toMatchObject({
+      canManageOrganisations: false,
+      canManageOrg: false,
+      canManageDepartments: false,
+      canManageShifts: false,
+      canManagePeople: true,
+      canSeeTeam: true,
+      canSeeScreenshots: true,
+      canSeeTimeline: true,
+      canSeeActivity: true,
+      canApprove: true,
+      canSeeReports: true,
+      canUseMessages: true,
+      needsOrganisation: false,
+      isSuperManager: true,
+      canAdjustFocus: true,
+      canSeeAgentHealth: true,
+    });
+  });
+
+  it('Super Manager on All organisations: must pick one for organisation pages', () => {
+    expect(permissionsOf(superManager(null))).toMatchObject({
+      canManagePeople: false,
+      canSeeTeam: false,
+      canApprove: false,
+      needsOrganisation: true,
+      isSuperManager: true,
+      canUsePortal: true,
+    });
+    for (const me of [superAdmin(ORG_A), admin(ORG_A), manager([DEPT_A1])]) {
+      expect(permissionsOf(me).isSuperManager).toBe(false);
+      expect(permissionsOf(me).canAdjustFocus).toBe(false);
+    }
   });
 
   it('Staff: the agent only', () => {

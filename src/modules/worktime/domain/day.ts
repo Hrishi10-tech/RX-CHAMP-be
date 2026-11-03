@@ -5,6 +5,7 @@ import {
 } from '@modules/shifts/domain/break-record.repository';
 import { AwayRow } from './away.repository';
 import { computeFocus, FocusBreakdown } from './focus';
+import { adjustedSecOf, FocusAdjustmentRecord } from './focus-adjustment';
 import { Interval, intersect, lengthMs, normalize, span, toSec } from './intervals';
 import { MeetingRecordRow, MIN_LIVE_MEETING_SEC } from './meeting-record.repository';
 import { WorkSessionRecord } from './work-session.repository';
@@ -26,6 +27,8 @@ export interface PersonDayData {
   away?: AwayRow[];
   /** 4.0: what the agent's activity samples cover of this day's REPLAY sessions. */
   coverage?: CoverageRow[];
+  /** 3.3: manual adjustments dated `date`, live and voided (only live ones count). */
+  adjustments?: FocusAdjustmentRecord[];
 }
 
 /**
@@ -63,6 +66,7 @@ export function focusOfDay(d: PersonDayData, now: Date, bufferMin = 0): FocusBre
       startedAt: m.startedAt,
       endedAt: m.endedAt,
     })),
+    adjustedSec: adjustedSecOf(d.adjustments ?? []),
     now,
   });
 }

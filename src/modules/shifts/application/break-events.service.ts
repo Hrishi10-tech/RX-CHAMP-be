@@ -83,10 +83,36 @@ export class BreakEvents {
           record.decisionNote,
           new Date(),
           outcomeOf(record),
+          decisionEffect(record),
         ),
       );
     } catch (err) {
       this.logger.warn(`decision event for ${record.id} failed: ${(err as Error).message}`);
     }
   }
+}
+
+/**
+ * 3.3: what a decision did to focus time, in the terms the focus formula uses
+ * (worktime/domain/focus.ts): an approved overrun ask adds its minutes back; a
+ * rejected skip takes the scheduled length off; an approved skip keeps the worked
+ * minutes counted (nothing to add, which is what the person needs to hear);
+ * anything else changes nothing.
+ */
+export function decisionEffect(
+  r: Pick<
+    BreakRecordRow,
+    'outcome' | 'approvalStatus' | 'overrunAsked' | 'overrunSec' | 'durationMin'
+  >,
+): { mode: 'PLUS' | 'MINUS' | 'KEPT' | 'NONE'; minutes: number } {
+  const approved = r.approvalStatus === 'APPROVED';
+  if (outcomeOf(r) !== 'TAKEN') {
+    const minutes = Math.max(0, Math.round(r.durationMin ?? 0));
+    return approved ? { mode: 'KEPT', minutes } : { mode: 'MINUS', minutes };
+  }
+  if (r.overrunAsked) {
+    const minutes = Math.max(1, Math.round(Math.max(0, r.overrunSec ?? 0) / 60));
+    return approved ? { mode: 'PLUS', minutes } : { mode: 'NONE', minutes };
+  }
+  return { mode: 'NONE', minutes: 0 };
 }

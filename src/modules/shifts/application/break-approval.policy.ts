@@ -1,6 +1,14 @@
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { canSeePerson, isAdminLike, managedDeptIds, orgOf, PersonFacts } from '@shared/tenancy';
+import {
+  actingIn,
+  allOrgsInView,
+  canSeePerson,
+  managedDeptIds,
+  orgOf,
+  PersonFacts,
+  seesWholeOrg,
+} from '@shared/tenancy';
 import { Routing } from '../domain/break-record.repository';
 import { ShiftPerson } from '../domain/shift-people.reader';
 import { BreakApprovalStatus } from '../domain/shift.types';
@@ -13,7 +21,19 @@ export interface RouteDecision extends Routing {
 export type Approver = AuthenticatedUser;
 
 /** The subject of an approval item, as far as routing needs it. */
-export type ApprovalSubject = Pick<ShiftPerson, 'id' | 'role' | 'companyId' | 'departmentId'>;
+export type ApprovalSubject = Pick<ShiftPerson, 'id' | 'role' | 'companyId' | 'departmentId'> &
+  Partial<Pick<ShiftPerson, 'companyDeleted'>>;
+
+/**
+ * 3.3: a Super Manager or Super Admin on "All organisations" is judged as if acting in
+ * the subject's organisation (the request names none), so every 4.0 rule applies
+ * there unchanged. A subject with no organisation, or a deleted one: nobody (null).
+ */
+function actorFor(actor: Approver, subject: ApprovalSubject): Approver | null {
+  if (!allOrgsInView(actor)) return actor;
+  if (!subject.companyId || subject.companyDeleted) return null;
+  return actingIn(actor, subject.companyId);
+}
 
 /**
  * 4.0 approval routing (docs/4.0/SPEC.md 1.3), for every approval item (break,
@@ -35,7 +55,11 @@ export class BreakApprovalPolicy {
     subject: Pick<ShiftPerson, 'role' | 'departmentId'>,
     _unused?: unknown,
   ): RouteDecision {
-    if (subject.role === 'SUPER_ADMIN' || subject.role === 'ADMIN') {
+    if (
+      subject.role === 'SUPER_ADMIN' ||
+      subject.role === 'SUPER_MANAGER' ||
+      subject.role === 'ADMIN'
+    ) {
       return { status: 'NOT_REQUIRED', approverRole: null, approverId: null };
     }
     if (subject.role === 'USER' && subject.departmentId) {
@@ -57,6 +81,9 @@ export class BreakApprovalPolicy {
   ): boolean {
     if (record.userId === actor.id) return false;
     if (!subject) return false;
+    const acting = actorFor(actor, subject);
+    if (!acting) return false;
+    actor = acting;
     const facts: PersonFacts = {
       id: subject.id,
       role: subject.role,
@@ -64,7 +91,7 @@ export class BreakApprovalPolicy {
       departmentId: subject.departmentId,
     };
     if (!canSeePerson(actor, facts)) return false;
-    if (isAdminLike(actor)) return subject.role === 'USER' || subject.role === 'MANAGER';
+    if (seesWholeOrg(actor)) return subject.role === 'USER' || subject.role === 'MANAGER';
     if (actor.role === Role.MANAGER) {
       return (
         subject.role === 'USER' &&
@@ -83,7 +110,9 @@ export class BreakApprovalPolicy {
   ): boolean {
     if (record.userId === actor.id) return true;
     if (!subject) return false;
-    return canSeePerson(actor, {
+    const acting = actorFor(actor, subject);
+    if (!acting) return false;
+    return canSeePerson(acting, {
       id: subject.id,
       role: subject.role,
       companyId: subject.companyId,

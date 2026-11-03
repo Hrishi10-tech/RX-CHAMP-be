@@ -17,6 +17,7 @@ describe('settings rules', () => {
       quietHoursFlag: 4,
       autoCloseAfterShiftEndMin: 240,
       breakBufferMin: 10,
+      focusAdjustmentsEnabled: true,
     });
     expect(SETTING_BOUNDS.breakBufferMin).toEqual({ min: 0, max: 60 });
   });
@@ -50,6 +51,8 @@ describe('settings rules', () => {
     ['breakBufferMin', '10'],
     ['blockManagerEndDayWhenOverdue', 'yes'],
     ['blockManagerEndDayWhenOverdue', 1],
+    ['focusAdjustmentsEnabled', 'no'],
+    ['focusAdjustmentsEnabled', 0],
   ])('refuses %s = %p with the field named', (field, value) => {
     const r = applySettingsPatch(DEFAULT_SETTINGS, { [field]: value });
     expect(r).toMatchObject({ ok: false, field });
@@ -97,6 +100,19 @@ describe('settings rules', () => {
       field: 'breakBufferMin',
       message: 'Paid break buffer (minutes) must be a whole number from 0 to 60.',
     });
+  });
+
+  it('switches manual focus adjustments (3.3) on and off, on by default', () => {
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { focusAdjustmentsEnabled: false })).toEqual({
+      ok: true,
+      value: { ...DEFAULT_SETTINGS, focusAdjustmentsEnabled: false },
+      changed: ['focusAdjustmentsEnabled'],
+    });
+    expect(settingsFromStored({ approvalSlaHours: 24 }).focusAdjustmentsEnabled).toBe(true);
+    const stored = (raw: Record<string, unknown>) =>
+      settingsFromStored(raw).focusAdjustmentsEnabled;
+    expect(stored({ focusAdjustmentsEnabled: false })).toBe(false);
+    expect(stored({ focusAdjustmentsEnabled: 'off' })).toBe(true);
   });
 
   it('ignores unknown keys and undefined values', () => {

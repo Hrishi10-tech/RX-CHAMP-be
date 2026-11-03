@@ -301,7 +301,8 @@ export class PrismaOrganisationStore implements OrganisationStore {
   private unassignedWhere(): Prisma.UserWhereInput {
     return {
       deletedAt: null,
-      role: { name: { not: 'SUPER_ADMIN' } },
+      // The Super Manager (3.3) belongs to no organisation by design.
+      role: { name: { notIn: ['SUPER_ADMIN', 'SUPER_MANAGER'] } },
       OR: [{ companyId: null }, { company: { deletedAt: { not: null } } }],
     };
   }

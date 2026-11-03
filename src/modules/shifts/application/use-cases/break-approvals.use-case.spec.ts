@@ -105,14 +105,42 @@ describe('BreakApprovalsUseCase', () => {
     await expect(useCase.list(me('staff', Role.USER), {})).rejects.toMatchObject({ status: 403 });
   });
 
-  it('a Super Admin needs an organisation selected (400 ORG_REQUIRED)', async () => {
-    await expect(useCase.list(me('sa', Role.SUPER_ADMIN, { orgId: null }), {})).rejects.toMatchObject({
-      status: 400,
-      code: 'ORG_REQUIRED',
+  it('3.3: a Super Admin or Super Manager on All organisations lists every live organisation', async () => {
+    await useCase.list(me('sa', Role.SUPER_ADMIN, { orgId: null }), { scope: 'mine' });
+    expect(records.listApprovals.mock.calls[0][0]).toMatchObject({
+      subjects: { liveOrgsOnly: true },
+      adminPool: true,
+      excludeUserId: 'sa',
     });
-    await expect(useCase.summary(me('sa', Role.SUPER_ADMIN, { orgId: null }))).rejects.toMatchObject({
-      code: 'ORG_REQUIRED',
+    expect(records.listApprovals.mock.calls[0][0].subjects).not.toHaveProperty('companyId');
+    const sm = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    await useCase.list(sm, { scope: 'mine', companyId: 'org-b' });
+    expect(records.listApprovals.mock.calls[1][0]).toMatchObject({
+      subjects: { companyId: 'org-b', liveOrgsOnly: true },
+      adminPool: false,
+      excludeUserId: 'sm',
     });
+    await useCase.summary(sm, '2026-10-13');
+    expect(records.countApprovals.mock.calls.at(-1)[0].subjects).toEqual({ liveOrgsOnly: true });
+  });
+
+  it('3.3: an unknown X-Org-Id is 404; inside one organisation another companyId is 404', async () => {
+    await expect(
+      useCase.list(me('sa', Role.SUPER_ADMIN, { orgId: null, orgHeaderInvalid: true }), {}),
+    ).rejects.toMatchObject({ status: 404, code: 'ORG_NOT_FOUND' });
+    await expect(useCase.list(me('admin', Role.ADMIN), { companyId: 'org-b' })).rejects.toMatchObject({
+      status: 404,
+      code: 'ORG_NOT_FOUND',
+    });
+  });
+
+  it('3.3: the Super Manager on All organisations decides an item of any organisation, judged in its own', async () => {
+    const sm = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    records.findById.mockResolvedValue(rec({ userId: 'staff-b' }));
+    records.decide.mockResolvedValue(rec({ userId: 'staff-b', approvalStatus: 'APPROVED', decidedById: 'sm' }));
+    await expect(useCase.approve(sm, 'r-1')).resolves.toMatchObject({ approvalStatus: 'APPROVED' });
+    // An Admin of org-a still cannot see org-b's item.
+    await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({ status: 404 });
   });
 
   it('scopes a Manager to Staff in their departments, whatever the scope', async () => {

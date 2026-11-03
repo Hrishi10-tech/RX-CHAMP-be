@@ -317,12 +317,28 @@ describe('ApprovalsService deciding meetings', () => {
     expect(meetings.decide).not.toHaveBeenCalled();
   });
 
-  it('a Super Admin without an organisation selected is asked to choose one (400 ORG_REQUIRED)', async () => {
-    const { svc } = setup();
-    await expect(svc.approve(me('sa', Role.SUPER_ADMIN, { orgId: null }), 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
-      status: 400,
-      code: 'ORG_REQUIRED',
-    });
+  it('3.3: on All organisations the Super Admin and Super Manager decide any organisation, judged in its own', async () => {
+    const { svc, meetings } = setup();
+    meetings.findById.mockResolvedValue(meeting({ userId: 'staffB' }));
+    const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    for (const who of [me('sa', Role.SUPER_ADMIN, { orgId: null }), SM_ALL]) {
+      await expect(svc.approve(who, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({
+        status: 'APPROVED',
+      });
+    }
+    expect(meetings.decide).toHaveBeenCalledTimes(2);
+    // A subject in no organisation (or a deleted one) is unknown, even here.
+    meetings.findById.mockResolvedValue(meeting({ userId: 'sa' }));
+    await expect(svc.approve(SM_ALL, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('3.3: the Super Manager reopens a decision that is not hers, on All organisations too', async () => {
+    const { svc, meetings } = setup();
+    meetings.findById.mockResolvedValue(
+      meeting({ userId: 'staffB', approvalStatus: 'APPROVED', decidedById: 'admin', decidedAt: NOW }),
+    );
+    const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    await expect(svc.reopen(SM_ALL, 'meeting', 'm1', NOW)).resolves.toMatchObject({ status: 'PENDING' });
   });
 
   it('a live meeting is healed first and cannot be decided while it runs', async () => {
@@ -630,10 +646,70 @@ describe('ApprovalsService views and lists', () => {
     await svc.list(ADMIN, { status: 'DECIDED', type: 'AWAY' }, NOW);
     expect(reader.list.mock.calls[3][0]).toMatchObject({ statuses: ['APPROVED', 'REJECTED'], type: 'AWAY' });
     await expect(svc.list(me('staff', Role.USER), {}, NOW)).rejects.toMatchObject({ status: 403 });
-    await expect(svc.list(me('sa', Role.SUPER_ADMIN, { orgId: null }), {}, NOW)).rejects.toMatchObject({
-      status: 400,
-      code: 'ORG_REQUIRED',
+    await expect(
+      svc.list(me('sa', Role.SUPER_ADMIN, { orgId: null, orgHeaderInvalid: true }), {}, NOW),
+    ).rejects.toMatchObject({ status: 404, code: 'ORG_NOT_FOUND' });
+    // Inside one organisation a companyId naming another one is unknown.
+    await expect(svc.list(ADMIN, { companyId: 'co-2' }, NOW)).rejects.toMatchObject({
+      status: 404,
+      code: 'ORG_NOT_FOUND',
     });
+  });
+
+  it('3.3: All organisations lists every live organisation (ANY_ORG), optionally one', async () => {
+    const { svc, reader } = setup();
+    const SA_ALL = me('sa', Role.SUPER_ADMIN, { orgId: null });
+    const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    await svc.list(SA_ALL, {}, NOW);
+    expect(reader.list.mock.calls[0][0].scope).toEqual({
+      kind: 'ANY_ORG',
+      adminMine: true,
+      excludeUserId: 'sa',
+    });
+    await svc.list(SA_ALL, { scope: 'all', companyId: 'co-2' }, NOW);
+    expect(reader.list.mock.calls[1][0].scope).toEqual({
+      kind: 'ANY_ORG',
+      companyId: 'co-2',
+      adminMine: false,
+      excludeUserId: 'sa',
+    });
+    // The Super Manager is never the Admin pool: everything, whatever the scope.
+    await svc.list(SM_ALL, { scope: 'mine' }, NOW);
+    expect(reader.list.mock.calls[2][0].scope).toEqual({
+      kind: 'ANY_ORG',
+      adminMine: false,
+      excludeUserId: 'sm',
+    });
+    // With an organisation picked she sees that organisation, as in 4.0.
+    await svc.list(me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: ORG }), {}, NOW);
+    expect(reader.list.mock.calls[3][0].scope).toEqual({ kind: 'ORG', companyId: ORG, excludeUserId: 'sm' });
+  });
+
+  it('3.3: combined views tag every item with its organisation and decide it in that organisation', async () => {
+    const { svc, breaks, meetings } = setup();
+    breaks.listByIds.mockResolvedValue([
+      skip({ id: 'b-staff' }),
+      skip({ id: 'b-b', userId: 'staffB' }),
+      skip({ id: 'b-sa', userId: 'sa' }),
+    ]);
+    meetings.listByIds.mockResolvedValue([]);
+    const refs = ['b-staff', 'b-b', 'b-sa'].map((id) => ({ type: 'BREAK' as const, id }));
+    const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    const items = await svc.views(SM_ALL, refs, NOW);
+    expect(items.map((i) => [i.id, i.user.companyId, i.canDecide])).toEqual([
+      ['b-staff', ORG, true],
+      ['b-b', 'co-2', true],
+    ]);
+  });
+
+  it('3.3: the summary on All organisations uses the asked organisation SLA, else the defaults', async () => {
+    const { svc, reader, settings } = setup();
+    const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
+    await svc.summary(SM_ALL, NOW);
+    expect(settings.get).toHaveBeenLastCalledWith(null);
+    expect(reader.count.mock.calls[0][0].scope).toMatchObject({ kind: 'ANY_ORG' });
+    await svc.summary(SM_ALL, NOW, 'all', 'co-2');
+    expect(settings.get).toHaveBeenLastCalledWith('co-2');
   });
 
   it("the summary counts pending, due soon, overdue, escalated and today's decisions with the organisation's SLA", async () => {

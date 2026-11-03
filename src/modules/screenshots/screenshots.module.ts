@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AgentHealthModule } from '@modules/agent-health/agent-health.module';
 import { SCREENSHOT_REPOSITORY } from './domain/screenshot.repository';
 import { SCREENSHOT_ACCESS_READER } from './domain/screenshot-access.reader';
 import { DAY_END_READER } from './domain/day-end.reader';
@@ -18,6 +19,8 @@ import { ScreenshotsController } from './presentation/screenshots.controller';
 import { ScreenshotsGateway } from './presentation/screenshots.gateway';
 
 @Module({
+  // AgentContactService: refused uploads are recorded against the person (3.3).
+  imports: [AgentHealthModule],
   controllers: [ScreenshotsController],
   providers: [
     { provide: SCREENSHOT_REPOSITORY, useClass: PrismaScreenshotRepository },

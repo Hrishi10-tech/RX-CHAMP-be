@@ -513,7 +513,8 @@ export class MyBreaksUseCase {
     const shift = open.shiftId ? await this.shifts.findById(open.shiftId) : null;
     const graceSec = (shift?.overrunGraceMin ?? DEFAULT_OVERRUN_GRACE_MIN) * 60;
     const minChars = shift?.reasonMinChars ?? DEFAULT_REASON_MIN_CHARS;
-    const reviewed = me.role !== Role.SUPER_ADMIN && me.role !== Role.ADMIN;
+    const reviewed =
+      me.role !== Role.SUPER_ADMIN && me.role !== Role.SUPER_MANAGER && me.role !== Role.ADMIN;
     const overGrace = overrunSec > graceSec;
     const asks = overGrace && (dto.askToCount ?? !!reason);
 
@@ -571,7 +572,9 @@ export class MyBreaksUseCase {
 
 /** Whether anyone reviews this person's off-schedule breaks (4.0: not Admins or Super Admins). */
 function hasReviewer(person: Pick<ShiftPerson, 'role'>): boolean {
-  return person.role !== 'SUPER_ADMIN' && person.role !== 'ADMIN';
+  return (
+    person.role !== 'SUPER_ADMIN' && person.role !== 'SUPER_MANAGER' && person.role !== 'ADMIN'
+  );
 }
 
 /** The running break in the compact form the agent's timer uses (4.0). */

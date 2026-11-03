@@ -99,7 +99,8 @@ export class SocketAccessService implements OnModuleInit {
       });
       if (!row) return [];
       switch (row.role.name) {
-        case 'SUPER_ADMIN': {
+        case 'SUPER_ADMIN':
+        case 'SUPER_MANAGER': {
           if (!orgHint || !UUID.test(orgHint)) return [];
           const org = await this.prisma.company.findFirst({
             where: { id: orgHint, deletedAt: null },
@@ -155,7 +156,8 @@ export class SocketAccessService implements OnModuleInit {
       })
       .catch(() => null);
     if (!row) return null;
-    if (row.role.name !== 'SUPER_ADMIN') return row.companyId ?? null;
+    if (row.role.name !== 'SUPER_ADMIN' && row.role.name !== 'SUPER_MANAGER')
+      return row.companyId ?? null;
     if (!orgHint || !UUID.test(orgHint)) return null;
     const org = await this.prisma.company
       .findFirst({ where: { id: orgHint, deletedAt: null }, select: { id: true } })

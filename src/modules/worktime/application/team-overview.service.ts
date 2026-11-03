@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ForbiddenError, NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { grantsOf, hasAnyGrant, isAdminLike, requireOrg } from '@shared/tenancy';
+import { grantsOf, hasAnyGrant, isAdminLike, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, hourInZone } from '@shared/utils/timezone';
 import { CalendarService } from '@modules/calendar/application/calendar.service';
 import { isWorkingDay } from '@modules/calendar/domain/calendar.rules';
@@ -64,6 +64,23 @@ export interface TeamView {
     ended: number;
   };
   people: TeamPersonView[];
+}
+
+/** 3.3: one organisation's today, as the Super Manager's Overview shows it. */
+export interface OrgTodayNumbers {
+  people: number;
+  started: number;
+  working: number;
+  onBreak: number;
+  inMeeting: number;
+  away: number;
+  notStarted: number;
+  ended: number;
+  lateStarts: number;
+  focusSec: number;
+  targetSec: number;
+  /** Active people whose agent was never activated. */
+  noAgent: number;
 }
 
 interface Live {
@@ -197,7 +214,7 @@ export class TeamOverviewService {
     q: { view?: 'active' | 'all'; departmentId?: string; q?: string },
     now: Date,
   ): Promise<TeamView> {
-    if (!isAdminLike(me) && !hasAnyGrant(me)) {
+    if (!seesWholeOrg(me) && !hasAnyGrant(me)) {
       throw new ForbiddenError('Ask your admin for access to Team.', 'GRANT_REQUIRED');
     }
     const companyId = requireOrg(me);
@@ -207,7 +224,7 @@ export class TeamOverviewService {
       const own = await this.reader.departmentsOf(companyId);
       if (
         !own.some((d) => d.id === q.departmentId) ||
-        (!isAdminLike(me) && !(me.managedDepartmentIds ?? []).includes(q.departmentId))
+        (!seesWholeOrg(me) && !(me.managedDepartmentIds ?? []).includes(q.departmentId))
       ) {
         throw new NotFoundError('Unknown department');
       }
@@ -275,8 +292,35 @@ export class TeamOverviewService {
     };
   }
 
+  /**
+   * 3.3: today's numbers of the organisation the caller acts in (the Super
+   * Manager's Overview runs it once per organisation, acting in each).
+   */
+  async orgToday(me: AuthenticatedUser, now: Date): Promise<OrgTodayNumbers> {
+    if (!seesWholeOrg(me)) throw new ForbiddenError('Only admins can see this.');
+    requireOrg(me);
+    return this.cached(`orgToday|${this.scopeKey(me)}`, async () => {
+      const { lives } = await this.live(me, now);
+      const active = lives.filter((l) => l.person.active);
+      return {
+        people: active.length,
+        started: active.filter((l) => l.day.data.sessions.length > 0).length,
+        working: active.filter((l) => l.status === 'WORKING').length,
+        onBreak: active.filter((l) => l.status === 'BREAK').length,
+        inMeeting: active.filter((l) => l.status === 'MEETING').length,
+        away: active.filter((l) => l.status === 'AWAY').length,
+        notStarted: active.filter((l) => l.status === 'NOT_STARTED').length,
+        ended: active.filter((l) => l.status === 'ENDED').length,
+        lateStarts: active.filter((l) => l.day.summary.lateStart).length,
+        focusSec: sum(active, (l) => l.day.summary.focusSec),
+        targetSec: sum(active, (l) => l.day.summary.targetSec),
+        noAgent: active.filter((l) => !l.facts?.agentActivatedAt).length,
+      };
+    });
+  }
+
   async overview(me: AuthenticatedUser, now: Date) {
-    if (!isAdminLike(me) && me.role !== Role.MANAGER) {
+    if (!seesWholeOrg(me) && me.role !== Role.MANAGER) {
       throw new ForbiddenError('Only managers and admins can see this.');
     }
     const companyId = requireOrg(me);
@@ -304,7 +348,7 @@ export class TeamOverviewService {
           : Promise.resolve({ count: 0, oldestDueAt: null }),
       ]);
     const active = lives.filter((l) => l.person.active);
-    const visibleDepts = isAdminLike(me)
+    const visibleDepts = seesWholeOrg(me)
       ? departments
       : departments.filter((d) => (me.managedDepartmentIds ?? []).includes(d.id));
 
@@ -382,7 +426,7 @@ export class TeamOverviewService {
     const add = (kind: string, ls: Live[]) => {
       if (ls.length) attention.push({ kind, count: ls.length, people: lite(ls) });
     };
-    if (isAdminLike(me)) {
+    if (seesWholeOrg(me)) {
       if (adminCount === 0) attention.push({ kind: 'NO_ADMIN', count: 1, people: [] });
       add(
         'NO_DEPARTMENT',

@@ -26,7 +26,15 @@ const SELECT = {
   role: { select: { name: true } },
 } as const;
 
-type Row = Prisma.UserGetPayload<{ select: typeof SELECT }>;
+/** 3.3: with the organisation's name (combined views show it on every row). */
+const SELECT_WITH_ORG = {
+  ...SELECT,
+  company: { select: { name: true, deletedAt: true } },
+} as const;
+
+type Row = Prisma.UserGetPayload<{ select: typeof SELECT }> & {
+  company?: { name: string; deletedAt: Date | null } | null;
+};
 
 /** A user row as a ShiftPerson (exported for tests). */
 export function toPerson(r: Row): ShiftPerson {
@@ -40,6 +48,9 @@ export function toPerson(r: Row): ShiftPerson {
     designation: r.designation,
     companyId: r.companyId,
     departmentId: r.departmentId,
+    ...(r.company !== undefined
+      ? { companyName: r.company?.name ?? null, companyDeleted: !!r.company?.deletedAt }
+      : {}),
     managerId: r.managerId,
     // A soft-deleted person can never approve anything, whatever their status says.
     active: r.status === 'ACTIVE' && r.deletedAt === null,
@@ -72,7 +83,7 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
     if (!isUuid(id)) return null;
     const row = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
-      select: SELECT,
+      select: SELECT_WITH_ORG,
     });
     return row ? toPerson(row) : null;
   }
@@ -80,7 +91,7 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
   async findMany(q: PeopleQuery): Promise<ShiftPerson[]> {
     const rows = await this.prisma.user.findMany({
       where: this.where(q),
-      select: SELECT,
+      select: SELECT_WITH_ORG,
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { id: 'asc' }],
       skip: q.skip,
       take: q.take,
@@ -95,7 +106,10 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
   async findAnyByIds(ids: string[]): Promise<ShiftPerson[]> {
     const wanted = [...new Set(ids)].filter(isUuid);
     if (!wanted.length) return [];
-    const rows = await this.prisma.user.findMany({ where: { id: { in: wanted } }, select: SELECT });
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: wanted } },
+      select: SELECT_WITH_ORG,
+    });
     return rows.map(toPerson);
   }
 

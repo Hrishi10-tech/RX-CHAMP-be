@@ -10,6 +10,7 @@ import {
   manager,
   staff,
   superAdmin,
+  superManager,
 } from '@shared/testing/actors.testing-spec';
 import { cast, fakeDepartments, fakeUsers, person } from '../../testing/people.testing-spec';
 import { UpdateUserUseCase } from './update-user.use-case';
@@ -194,5 +195,76 @@ describe('UpdateUserUseCase: departments, roles, grants', () => {
     ).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe('UpdateUserUseCase: the Super Manager and Super Manager accounts (3.3)', () => {
+  // Another Super Manager's account (not the caller's own).
+  const SM_ACCOUNT = '10000000-0000-0000-0000-000000000003';
+  const smAccount = () =>
+    person({
+      id: SM_ACCOUNT,
+      role: Role.SUPER_MANAGER,
+      companyId: null,
+      departmentId: null,
+    });
+
+  it('the Super Manager edits Staff, including their department', async () => {
+    const { useCase } = setup();
+    await expect(
+      useCase.execute(superManager(ORG_A), IDS.staffA1, { departmentId: DEPT_A2 }),
+    ).resolves.toMatchObject({ departmentId: DEPT_A2 });
+  });
+
+  it('the Super Manager cannot promote Staff (403 ROLE_NOT_ALLOWED)', async () => {
+    const { useCase } = setup();
+    await expect(
+      useCase.execute(superManager(ORG_A), IDS.staffA1, {
+        role: Role.MANAGER,
+        departmentIds: [DEPT_A1],
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'ROLE_NOT_ALLOWED' });
+  });
+
+  it('Managers and Admins are read-only to the Super Manager (403 with the reason)', async () => {
+    const { useCase } = setup();
+    for (const id of [IDS.managerA1, IDS.adminA]) {
+      await expect(
+        useCase.execute(superManager(ORG_A), id, { firstName: 'X' }),
+      ).rejects.toMatchObject({ status: 403, message: expect.stringMatching(/Staff only/) });
+    }
+  });
+
+  it('only a Super Admin makes someone a Super Manager; an Admin is refused (403)', async () => {
+    const { useCase } = setup();
+    await expect(
+      useCase.execute(admin(ORG_A), IDS.staffA1, { role: Role.SUPER_MANAGER }),
+    ).rejects.toMatchObject({ status: 403, code: 'ROLE_NOT_ALLOWED' });
+  });
+
+  it('a Super Admin edits a Super Manager account without an organisation selected', async () => {
+    const { useCase } = setup([smAccount()]);
+    await expect(
+      useCase.execute(superAdmin(null), SM_ACCOUNT, { firstName: 'Asha' }),
+    ).resolves.toMatchObject({ firstName: 'Asha', role: Role.SUPER_MANAGER, companyId: null });
+  });
+
+  it("a Super Manager's role never changes here (403 SUPER_MANAGER_ROLE_FIXED)", async () => {
+    const { useCase } = setup([smAccount()]);
+    await expect(
+      useCase.execute(superAdmin(ORG_A), SM_ACCOUNT, {
+        role: Role.USER,
+        departmentId: DEPT_A1,
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'SUPER_MANAGER_ROLE_FIXED' });
+  });
+
+  it('nobody but a Super Admin can edit a Super Manager account (404)', async () => {
+    const { useCase } = setup([smAccount()]);
+    for (const me of [admin(ORG_A), superManager(ORG_A)]) {
+      await expect(useCase.execute(me, SM_ACCOUNT, { firstName: 'X' })).rejects.toMatchObject({
+        status: 404,
+      });
+    }
   });
 });

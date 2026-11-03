@@ -62,6 +62,8 @@ export interface ListUsersFilter extends SearchPageFilter {
   department?: string | null;
   managerId?: string;
   companyId?: string;
+  /** 3.3: anyone in a live organisation ("All organisations"); ignored with companyId. */
+  anyOrg?: boolean;
   /** 4.0: only people in these departments. */
   departmentIds?: string[];
   /** 4.0: only these roles (role, when given, narrows further). */
@@ -79,7 +81,7 @@ export interface ListUsersFilter extends SearchPageFilter {
 
 export type ListUsersScope = Pick<
   ListUsersFilter,
-  'ids' | 'managerId' | 'companyId' | 'departmentIds' | 'roles' | 'excludeRoles'
+  'ids' | 'managerId' | 'companyId' | 'anyOrg' | 'departmentIds' | 'roles' | 'excludeRoles'
 >;
 
 export interface UserRepository {

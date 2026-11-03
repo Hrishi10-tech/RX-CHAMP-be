@@ -18,7 +18,7 @@ export class ProductivityController {
   constructor(private readonly getProductivity: GetProductivityUseCase) {}
 
   @Get(':userId')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary:
       "A user's heuristic productivity score for a day (a manager for self and reports, " +

@@ -99,14 +99,14 @@ export class PresenceController {
   // ---- Manager endpoints ---------------------------------------------------
 
   @Get('team/live')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Live status of every report (manager)' })
   async teamLive(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.getTeamLive.execute(me));
   }
 
   @Get('team/summary')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: 'Day-wise break/lunch/meeting totals per report (manager)' })
   async teamSummary(@CurrentUser() me: AuthenticatedUser, @Query() query: PresenceSummaryQueryDto) {
     const { date, rows } = await this.getTeamSummary.execute(me, query.date);
@@ -114,7 +114,7 @@ export class PresenceController {
   }
 
   @Get('team/:userId/current')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: "One report's current status + elapsed time (manager, or any user for a Super Admin)",
   })
@@ -123,7 +123,7 @@ export class PresenceController {
   }
 
   @Get('team/:userId/history')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({
     summary: "One report's day-wise totals over the last N days (worked-hours trend)",
   })
@@ -136,7 +136,7 @@ export class PresenceController {
   }
 
   @Get('team/:userId/timeline')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
   @ApiOperation({ summary: "One report's day split into hourly work/break/lunch/meeting buckets" })
   async userTimeline(
     @CurrentUser() me: AuthenticatedUser,

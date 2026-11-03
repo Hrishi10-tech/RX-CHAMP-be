@@ -88,6 +88,7 @@ function report(name: string, email: string, days: PersonDaySummary[]): PersonMo
       awayPendingSec: 10 * 60,
       paidSec: 14 * H,
       unverifiedSec: 30 * 60,
+      adjustedSec: -20 * 60,
     },
     days,
     heatmap: [],
@@ -116,8 +117,16 @@ describe('payrollWorkbook', () => {
         lateStart: { minutes: 0 },
         paidSec: 9 * H,
         unverifiedSec: 15 * 60,
+        adjustedSec: 30 * 60,
       }),
-      daySummary({ date: '2026-09-02', weekday: 3, dayClass: 'HALF', focusSec: 4 * H, skipped: 1 }),
+      daySummary({
+        date: '2026-09-02',
+        weekday: 3,
+        dayClass: 'HALF',
+        focusSec: 4 * H,
+        skipped: 1,
+        adjustedSec: -50 * 60,
+      }),
     ]),
     report('Ravi Shankar', 'ravi@example.test', [
       daySummary({ date: '2026-09-01', dayClass: 'ABSENT' }),
@@ -168,6 +177,8 @@ describe('payrollWorkbook', () => {
       'Away approved min',
       'Away pending min',
       'Offline, no activity data',
+      // 3.3
+      'Adjusted min (manual)',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -189,6 +200,8 @@ describe('payrollWorkbook', () => {
     expect(asha.getCell(25).value).toBe(20);
     expect(asha.getCell(26).value).toBe(10);
     expect(asha.getCell(27).value).toBe(0.5);
+    // 3.3: minutes added by hand over the month, signed (already inside the focus hours).
+    expect(asha.getCell(28).value).toBe(-20);
     expect(typeof asha.getCell(5).value).toBe('number');
     expect(asha.getCell(10).numFmt).toBe('0.00');
     expect(ws.getColumn(1).width).toBeGreaterThan(20);
@@ -207,6 +220,7 @@ describe('payrollWorkbook', () => {
       'Away approved min',
       'Away pending min',
       'Offline, no activity data',
+      'Adjusted min (manual)',
     ]);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const first = ws.getRow(2);
@@ -231,6 +245,10 @@ describe('payrollWorkbook', () => {
     expect(first.getCell(26).value).toBe(20);
     expect(first.getCell(27).value).toBe(10);
     expect(first.getCell(28).value).toBe(0.25);
+    // 3.3: signed minutes added by hand that day; none is 0.
+    expect(first.getCell(29).value).toBe(30);
+    expect(ws.getRow(3).getCell(29).value).toBe(-50);
+    expect(ws.getRow(4).getCell(29).value).toBe(0);
     const holiday = ws.getRow(5);
     expect(holiday.getCell(5).value).toBe('OFF');
     expect(holiday.getCell(22).value).toBe('Onam');
@@ -274,6 +292,7 @@ describe('timesheetWorkbook (4.0)', () => {
         awayPendingSec: 0,
         unverifiedSec: 45 * 60,
         paidSec: 9 * H,
+        adjustedSec: 15 * 60,
         status: 'FULL',
       },
       {
@@ -295,6 +314,7 @@ describe('timesheetWorkbook (4.0)', () => {
         awayPendingSec: 0,
         unverifiedSec: 0,
         paidSec: 0,
+        adjustedSec: 0,
         status: 'OFF',
       },
     ],
@@ -314,6 +334,7 @@ describe('timesheetWorkbook (4.0)', () => {
       awayPendingSec: 0,
       unverifiedSec: 45 * 60,
       paidSec: 9 * H,
+      adjustedSec: 15 * 60,
     },
   };
 
@@ -340,6 +361,7 @@ describe('timesheetWorkbook (4.0)', () => {
       'Away pending min',
       'Offline, no activity data',
       'Day',
+      'Adjusted min (manual)',
     ]);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     expect((ws.getRow(2).values as unknown[]).slice(1)).toEqual([
@@ -360,6 +382,7 @@ describe('timesheetWorkbook (4.0)', () => {
       0,
       0.75,
       'FULL',
+      15,
     ]);
     expect(ws.getRow(3).getCell(3).value).toBe('No');
     expect(ws.getRow(3).getCell(4).value).toBe('Holiday');
@@ -369,6 +392,7 @@ describe('timesheetWorkbook (4.0)', () => {
     expect(total.getCell(8).value).toBe(9);
     expect(total.getCell(16).value).toBe(0.75);
     expect(total.getCell(17).value).toBe('1 full, 0 half, 0 absent');
+    expect(total.getCell(18).value).toBe(15);
     expect(total.font?.bold).toBe(true);
   });
 

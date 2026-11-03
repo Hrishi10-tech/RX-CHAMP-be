@@ -39,6 +39,7 @@ const PERMISSIONS = [
 const ROLE_PERMISSIONS: Record<RoleName, string[]> = {
   SUPER_ADMIN: PERMISSIONS,
   ADMIN: PERMISSIONS,
+  SUPER_MANAGER: PERMISSIONS.filter((p) => p !== 'MANAGE_COMPANY' && p !== 'MANAGE_SHIFT'),
   MANAGER: PERMISSIONS.filter((p) => p !== 'MANAGE_COMPANY' && p !== 'MANAGE_SHIFT'),
   USER: [],
 };

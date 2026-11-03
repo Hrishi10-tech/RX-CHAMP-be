@@ -71,6 +71,15 @@ export class TeamTodayQueryDto extends DayQueryDto {
   @IsOptional()
   @IsId()
   departmentId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '3.3: Super Manager or Super Admin on "All organisations": one organisation ' +
+      '(managerId and departmentId need one)',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 /** GET /workday/me/history?month=YYYY-MM (4.0). */

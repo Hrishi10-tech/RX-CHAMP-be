@@ -59,7 +59,21 @@ function inOrg(companyId: string): Prisma.Sql {
   return Prisma.sql`EXISTS (SELECT 1 FROM users su WHERE su.id = a.user_id AND su.company_id = ${companyId}::uuid)`;
 }
 
-function scopeSql(scope: ApprovalScope): Prisma.Sql {
+/**
+ * An Admin's "mine": waiting for the Admin, escalated, or waiting for a department
+ * that has no active manager right now (nobody else could decide it).
+ */
+const ADMIN_POOL = Prisma.sql`(a.approver_role IN ('ADMIN', 'SUPER_ADMIN') OR a.escalated_at IS NOT NULL
+          OR (a.approver_role = 'MANAGER' AND NOT EXISTS (
+            SELECT 1 FROM users su
+              JOIN manager_departments md ON md.department_id = su.department_id
+              JOIN users mu ON mu.id = md.manager_id AND mu.deleted_at IS NULL AND mu.status = 'ACTIVE'
+              JOIN roles mr ON mr.id = mu.role_id AND mr.name = 'MANAGER'
+              JOIN departments d ON d.id = md.department_id AND d.deleted_at IS NULL
+             WHERE su.id = a.user_id AND mu.id <> a.user_id)))`;
+
+/** The WHERE fragment of a scope (exported for tests). */
+export function scopeSql(scope: ApprovalScope): Prisma.Sql {
   switch (scope.kind) {
     case 'ALL':
       return Prisma.sql`TRUE`;
@@ -68,17 +82,20 @@ function scopeSql(scope: ApprovalScope): Prisma.Sql {
     case 'ORG':
       return Prisma.sql`${inOrg(scope.companyId)} AND a.user_id <> ${scope.excludeUserId}::uuid`;
     case 'ORG_ADMIN_MINE':
-      // Waiting for the Admin, escalated, or waiting for a department that has no
-      // active manager right now (nobody else could decide it).
       return Prisma.sql`${inOrg(scope.companyId)} AND a.user_id <> ${scope.excludeUserId}::uuid
-        AND (a.approver_role IN ('ADMIN', 'SUPER_ADMIN') OR a.escalated_at IS NOT NULL
-          OR (a.approver_role = 'MANAGER' AND NOT EXISTS (
-            SELECT 1 FROM users su
-              JOIN manager_departments md ON md.department_id = su.department_id
-              JOIN users mu ON mu.id = md.manager_id AND mu.deleted_at IS NULL AND mu.status = 'ACTIVE'
-              JOIN roles mr ON mr.id = mu.role_id AND mr.name = 'MANAGER'
-              JOIN departments d ON d.id = md.department_id AND d.deleted_at IS NULL
-             WHERE su.id = a.user_id AND mu.id <> a.user_id)))`;
+        AND ${ADMIN_POOL}`;
+    case 'ANY_ORG': {
+      // 3.3 "All organisations": the subject is in a live organisation (or the one asked).
+      const one = scope.companyId
+        ? Prisma.sql` AND su.company_id = ${scope.companyId}::uuid`
+        : Prisma.empty;
+      const pool = scope.adminMine ? Prisma.sql` AND ${ADMIN_POOL}` : Prisma.empty;
+      return Prisma.sql`EXISTS (
+          SELECT 1 FROM users su
+            JOIN companies sc ON sc.id = su.company_id AND sc.deleted_at IS NULL
+           WHERE su.id = a.user_id${one})
+        AND a.user_id <> ${scope.excludeUserId}::uuid${pool}`;
+    }
     case 'DEPTS':
       if (!scope.departmentIds.length) return Prisma.sql`FALSE`;
       return Prisma.sql`EXISTS (

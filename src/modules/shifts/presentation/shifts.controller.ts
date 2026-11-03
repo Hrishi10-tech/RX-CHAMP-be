@@ -31,7 +31,7 @@ import { ParseIdPipe } from '@shared/validation/is-id';
 @ApiTags('shifts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+@Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
 @Controller('shifts')
 export class ShiftsController {
   constructor(private readonly manage: ManageShiftsUseCase) {}
@@ -103,7 +103,7 @@ export class ShiftsController {
 @ApiTags('shifts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+@Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
 @Controller('shift-assignments')
 export class ShiftAssignmentsController {
   constructor(private readonly assignments: ShiftAssignmentsUseCase) {}
@@ -115,8 +115,11 @@ export class ShiftAssignmentsController {
   }
 
   @Put('departments')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: "Set a department's shift from a day onward (Admin, Super Admin)" })
+  // 3.3: the Super Manager assigns shifts (never creates or edits them).
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN)
+  @ApiOperation({
+    summary: "Set a department's shift from a day onward (Admin, Super Admin, Super Manager)",
+  })
   async assignDepartment(@CurrentUser() me: AuthenticatedUser, @Body() body: AssignDepartmentDto) {
     return envelope(await this.assignments.assignDepartment(me, body));
   }
@@ -132,7 +135,7 @@ export class ShiftAssignmentsController {
   }
 
   @Put('people')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN)
   @ApiOperation({
     summary:
       "Override people's shift for a period, or send them back to their department's (Admin, Super Admin)",

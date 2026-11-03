@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { isAdminLike } from '@shared/tenancy';
+import { seesWholeOrg } from '@shared/tenancy';
 import { UserMapper } from '../mappers/user.mapper';
 import { UserAccessService } from '../../domain/services/user-access.service';
 import {
@@ -39,8 +39,10 @@ function endOfDay(date?: string): Date | undefined {
 
 /**
  * GET /users (docs/4.0/SPEC.md 5.3).
- *  - Admin, Super Admin (organisation selected): everyone in the organisation with
+ *  - Admin, Super Admin, Super Manager (organisation selected): everyone in the organisation with
  *    department, managed departments, grants, input-tracking override and agent state.
+ *  - Super Admin, Super Manager with "All organisations" (3.3): everyone in every live
+ *    organisation, each row with companyId and companyName.
  *  - Manager: the Staff of their departments, name, email, designation and department only.
  *  - Staff: themselves, the same few fields.
  * The caller's scope is applied last, so no filter can reach outside it.
@@ -83,7 +85,7 @@ export class ListUsersUseCase {
       this.users.count(base),
     ]);
 
-    if (!isAdminLike(me)) {
+    if (!seesWholeOrg(me)) {
       return { users: list.map((u) => UserMapper.toBrief(u)), total, page, limit };
     }
 

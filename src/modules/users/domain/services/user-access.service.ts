@@ -1,15 +1,16 @@
-import { Role, assignableRoles } from '@shared/rbac/roles.enum';
+import { Role, assignableRoles, seesEveryOrg } from '@shared/rbac/roles.enum';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { ForbiddenError } from '@shared/exceptions/app.exception';
 import {
   assertCanEdit,
   canEditPerson,
   canSeePerson,
-  isAdminLike,
   managedDeptIds,
+  orgInView,
   orgOf,
   PersonFacts,
   requireOrg,
+  seesWholeOrg,
 } from '@shared/tenancy';
 import { ListUsersScope } from '../repositories/user.repository';
 import { User } from '../entities/user.entity';
@@ -33,32 +34,57 @@ export class UserAccessService {
   }
 
   /**
-   * The list filter for everyone the caller may see. A Super Admin must have
-   * chosen an organisation (400 ORG_REQUIRED); anyone else without one sees
-   * themselves only.
+   * The list filter for everyone the caller may see. A Super Admin or the Super
+   * Manager with no organisation picked ("All organisations", 3.3) sees everyone
+   * in every live organisation except Super Admins; anyone else without an
+   * organisation sees themselves only.
    */
   listScopeFor(actor: ActorContext): ListUsersScope {
-    if (actor.role === Role.SUPER_ADMIN) requireOrg(actor);
+    if (seesEveryOrg(actor.role) && !orgInView(actor)) {
+      return { anyOrg: true, excludeRoles: [Role.SUPER_ADMIN] };
+    }
     const companyId = orgOf(actor);
     if (!companyId) return { ids: [actor.id] };
-    if (isAdminLike(actor)) return { companyId, excludeRoles: [Role.SUPER_ADMIN] };
+    if (seesWholeOrg(actor)) return { companyId, excludeRoles: [Role.SUPER_ADMIN] };
     if (actor.role === Role.MANAGER) {
       return { companyId, roles: [Role.USER], departmentIds: managedDeptIds(actor) };
     }
     return { ids: [actor.id] };
   }
 
-  /** Admin, or a Super Admin inside an organisation (400 ORG_REQUIRED without one). */
+  /**
+   * Admin, or a Super Admin or the Super Manager inside an organisation (400
+   * ORG_REQUIRED without one). The Super Manager adds Staff only (canAssignRole).
+   */
   assertCanCreate(actor: ActorContext): string {
-    if (!isAdminLike(actor)) {
+    if (!seesWholeOrg(actor)) {
       throw new ForbiddenError('Only the organisation admin can add people.');
     }
     return requireOrg(actor);
   }
 
   /** Whether `actor` may give a new or existing account the role `role`. */
-  canAssignRole(actor: ActorContext, role: Role): boolean {
-    return assignableRoles(actor.role).includes(role);
+  canAssignRole(actor: ActorContext, role: Role | string): boolean {
+    return assignableRoles(actor.role).includes(role as Role);
+  }
+
+  /**
+   * 403 ROLE_NOT_ALLOWED when `actor` may not give `role` (assignableRoles): the
+   * Super Manager gives Staff only, and only a Super Admin makes a Super Manager.
+   * Unknown role names, Admin and Super Admin are left to the placement rules
+   * (400 ROLE_NOT_ALLOWED: an Admin comes from Organisations).
+   */
+  assertCanAssignRole(actor: ActorContext, role: Role | string): void {
+    if (role !== Role.SUPER_MANAGER && role !== Role.MANAGER && role !== Role.USER) return;
+    if (this.canAssignRole(actor, role)) return;
+    throw new ForbiddenError(
+      actor.role === Role.SUPER_MANAGER
+        ? 'The Super Manager adds and edits Staff only.'
+        : role === Role.SUPER_MANAGER
+          ? 'Only a Super Admin can make someone a Super Manager.'
+          : 'You cannot give that role.',
+      'ROLE_NOT_ALLOWED',
+    ).withDetails({ field: 'role' });
   }
 
   canView(actor: ActorContext, target: User): boolean {

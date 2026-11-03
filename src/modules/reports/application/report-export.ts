@@ -12,6 +12,10 @@ const hours = (sec: number) => Math.round((sec / 3600) * 100) / 100;
 /** 4.0: time in sessions opened by an offline replay that the agent's activity does not cover (hours). */
 const UNVERIFIED_HEADER = 'Offline, no activity data';
 const minutes = (sec: number) => Math.round(sec / 60);
+/** Whole minutes with their sign (a negative number stays negative). */
+const signedMinutes = (sec: number) => (sec < 0 ? -Math.round(-sec / 60) : Math.round(sec / 60));
+/** 3.3: minutes added by hand (negative: taken off), already inside the focus hours. */
+const ADJUSTED_HEADER = 'Adjusted min (manual)';
 const WEEKDAY = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 interface Col {
@@ -49,6 +53,8 @@ const PAYROLL: Col[] = [
   { header: 'Away approved min', key: 'awayApprovedMin', width: 17 },
   { header: 'Away pending min', key: 'awayPendingMin', width: 16 },
   { header: UNVERIFIED_HEADER, key: 'unverifiedHours', width: 24, hours: true },
+  // 3.3, after every earlier column so sheets read by position keep working.
+  { header: ADJUSTED_HEADER, key: 'adjustedMin', width: 20 },
 ];
 
 const DAYS: Col[] = [
@@ -80,6 +86,7 @@ const DAYS: Col[] = [
   { header: 'Away approved min', key: 'awayApprovedMin', width: 17 },
   { header: 'Away pending min', key: 'awayPendingMin', width: 16 },
   { header: UNVERIFIED_HEADER, key: 'unverifiedHours', width: 24, hours: true },
+  { header: ADJUSTED_HEADER, key: 'adjustedMin', width: 20 },
 ];
 
 function sheet(wb: Workbook, name: string, cols: Col[]): Worksheet {
@@ -120,6 +127,7 @@ function dayRow(p: PersonMonthReport, d: PersonDaySummary, tz: string) {
     awayApprovedMin: minutes(d.awayApprovedSec ?? 0),
     awayPendingMin: minutes(d.awayPendingSec ?? 0),
     unverifiedHours: hours(d.unverifiedSec ?? 0),
+    adjustedMin: signedMinutes(d.adjustedSec ?? 0),
   };
 }
 
@@ -160,6 +168,7 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       awayApprovedMin: minutes(t.awayApprovedSec ?? 0),
       awayPendingMin: minutes(t.awayPendingSec ?? 0),
       unverifiedHours: hours(t.unverifiedSec ?? 0),
+      adjustedMin: signedMinutes(t.adjustedSec ?? 0),
     });
     for (const d of p.days) days.addRow(dayRow(p, d, tz));
   }
@@ -201,6 +210,8 @@ export interface TimesheetRow {
   unverifiedSec: number;
   /** Payroll time: focusSec + paidBreakSec. */
   paidSec: number;
+  /** 3.3: signed seconds added to focus by hand (already inside focusSec). */
+  adjustedSec: number;
   status: string;
 }
 
@@ -230,6 +241,7 @@ export interface Timesheet {
     awayPendingSec: number;
     unverifiedSec: number;
     paidSec: number;
+    adjustedSec: number;
   };
 }
 
@@ -251,6 +263,7 @@ const TIMESHEET: Col[] = [
   { header: 'Away pending min', key: 'awayPendingMin', width: 16 },
   { header: UNVERIFIED_HEADER, key: 'unverifiedHours', width: 24, hours: true },
   { header: 'Day', key: 'status', width: 12 },
+  { header: ADJUSTED_HEADER, key: 'adjustedMin', width: 20 },
 ];
 
 /** The timesheet as a one-sheet workbook ("Timesheet"), totals in the last row. */
@@ -278,6 +291,7 @@ export async function timesheetWorkbook(t: Timesheet): Promise<Buffer> {
       awayPendingMin: minutes(r.awayPendingSec),
       unverifiedHours: hours(r.unverifiedSec),
       status: r.status,
+      adjustedMin: signedMinutes(r.adjustedSec ?? 0),
     });
   }
   const total = ws.addRow({
@@ -292,6 +306,7 @@ export async function timesheetWorkbook(t: Timesheet): Promise<Buffer> {
     awayApprovedMin: minutes(t.totals.awayApprovedSec),
     awayPendingMin: minutes(t.totals.awayPendingSec),
     unverifiedHours: hours(t.totals.unverifiedSec),
+    adjustedMin: signedMinutes(t.totals.adjustedSec ?? 0),
     status: `${t.totals.full} full, ${t.totals.half} half, ${t.totals.absent} absent`,
   });
   total.font = { bold: true };

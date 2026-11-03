@@ -16,6 +16,22 @@ export function shortDate(dateKey: string): string {
   return m >= 1 && m <= 12 ? `${d} ${MONTHS[m - 1]}` : dateKey;
 }
 
+/** 3.3: the decision's effect on focus time, said plainly (staff read "approved" as "+15 min"). */
+export function effectSentence(effect: BreakDecidedEvent['effect']): string | null {
+  if (!effect) return null;
+  const m = `${effect.minutes} min`;
+  switch (effect.mode) {
+    case 'PLUS':
+      return `${m} added back to your focus time.`;
+    case 'MINUS':
+      return `${m} taken off your focus time for that day.`;
+    case 'KEPT':
+      return `The ${m} you worked through the break stay counted as focus time, so the total does not change.`;
+    default:
+      return 'No change to your focus time.';
+  }
+}
+
 function breakName(kind: RecordKind | null): string {
   return kind ? RECORD_LABEL[kind].toLowerCase() : 'an unscheduled break';
 }
@@ -84,7 +100,9 @@ export class BreakEventsSubscriber implements OnModuleInit {
     const what =
       e.outcome && e.outcome !== 'TAKEN' ? `skipped ${breakName(e.kind)}` : breakName(e.kind);
     const title = `Your ${what} on ${shortDate(e.date)} was ${verdict}`;
-    const body = e.note ? `${e.deciderName}: ${e.note}` : `By ${e.deciderName}.`;
+    const effect = effectSentence(e.effect);
+    const by = e.note ? `${e.deciderName}: ${e.note}` : `By ${e.deciderName}.`;
+    const body = effect ? `${effect} ${by}` : by;
     await this.push(e.subjectId, 'BREAK_DECIDED', title, body, e.deciderId);
   }
 

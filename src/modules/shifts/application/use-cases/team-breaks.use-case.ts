@@ -3,7 +3,14 @@ import { ForbiddenError, NotFoundError } from '@shared/exceptions/app.exception'
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { PrismaService } from '@shared/database/prisma.service';
-import { isAdminLike, managedDeptIds, requireOrg } from '@shared/tenancy';
+import {
+  managedDeptIds,
+  OrgRef,
+  requireOrg,
+  seesWholeOrg,
+  sumTotals,
+  withOrg,
+} from '@shared/tenancy';
 import { dateKeyInZone } from '@shared/utils/timezone';
 import {
   BREAK_RECORD_REPOSITORY,
@@ -55,13 +62,13 @@ export class TeamBreaksUseCase {
    */
   private async teamOf(me: AuthenticatedUser, q: TeamBreaksQueryDto): Promise<ShiftPerson[]> {
     const org = requireOrg(me);
-    if (!isAdminLike(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
-    const query: PeopleQuery = isAdminLike(me)
+    if (!seesWholeOrg(me) && me.role !== Role.MANAGER) throw new ForbiddenError('Not allowed');
+    const query: PeopleQuery = seesWholeOrg(me)
       ? { companyId: org }
       : { companyId: org, roles: ['USER'], departmentIds: managedDeptIds(me) };
 
     if (q.departmentId) {
-      const visible = isAdminLike(me)
+      const visible = seesWholeOrg(me)
         ? (await this.prisma.department.count({
             where: { id: q.departmentId, companyId: org, deletedAt: null },
           })) > 0
@@ -72,7 +79,7 @@ export class TeamBreaksUseCase {
 
     if (q.managerId) {
       // A manager's "team" is the Staff of their departments (4.0).
-      const manager = isAdminLike(me) ? await this.people.findById(q.managerId) : null;
+      const manager = seesWholeOrg(me) ? await this.people.findById(q.managerId) : null;
       if (!manager || manager.companyId !== org || manager.role !== 'MANAGER') {
         throw new NotFoundError('Unknown manager');
       }
@@ -184,4 +191,35 @@ export class TeamBreaksUseCase {
     if (phase === 'CLOSED') return 'MISSED';
     return 'OPEN';
   }
+}
+
+/**
+ * 3.3 "All organisations": one Team breaks answer per organisation (each computed
+ * acting in it, with its own shifts and calendar), concatenated grouped by
+ * organisation, every row tagged with it, totals added up.
+ */
+export function combineTeamBreaks(
+  results: { org: OrgRef; value: TeamBreaksView }[],
+  date: string,
+): TeamBreaksView {
+  const empty: TeamBreaksView['totals'] = {
+    people: 0,
+    taken: 0,
+    late: 0,
+    early: 0,
+    missed: 0,
+    overrun: 0,
+    pending: 0,
+    skipped: 0,
+  };
+  return {
+    date: results[0]?.value.date ?? date,
+    rows: results.flatMap(({ org, value }) =>
+      value.rows.map((row) => ({ ...row, user: withOrg(row.user, org) })),
+    ),
+    totals: sumTotals(
+      results.map((r) => r.value.totals),
+      empty,
+    ),
+  };
 }

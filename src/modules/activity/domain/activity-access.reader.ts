@@ -14,7 +14,7 @@ export type ActivityTeamMember = TeamMemberRef;
 export type ActivitySelf = TeamMemberWithManager & {
   screenshotsEnabled: boolean;
   /** Staff get their own pushes without activity figures (SPEC 1.8). */
-  role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'USER';
+  role: 'SUPER_ADMIN' | 'SUPER_MANAGER' | 'ADMIN' | 'MANAGER' | 'USER';
 };
 
 /**

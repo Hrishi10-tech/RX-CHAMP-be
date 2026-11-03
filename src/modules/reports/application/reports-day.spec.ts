@@ -37,7 +37,7 @@ function user(role: Role, grants?: { screenshots: boolean; timeline: boolean; ac
   } as unknown as AuthenticatedUser;
 }
 
-function setup() {
+function setup(adjustments: unknown[] = []) {
   const day = {
     userId: 'a',
     date: '2026-10-14',
@@ -56,6 +56,7 @@ function setup() {
     breakRecords: [],
     meetingRecords: [],
     away: [],
+    adjustments,
   };
   const dayData = {
     load: jest.fn().mockResolvedValue({ day: () => day }),
@@ -77,6 +78,9 @@ function setup() {
   const approvalsReader = { pendingByUserDate: jest.fn().mockResolvedValue([]) };
   const approvals = { itemsFor: jest.fn().mockResolvedValue([]) };
   const meetings = { names: jest.fn().mockResolvedValue(new Map()) };
+  const adjustmentViews = {
+    views: jest.fn(async (rows: { id: string }[]) => rows.map((r) => ({ id: r.id }))),
+  };
   const svc = new ReportsService(
     {} as never,
     {} as never,
@@ -89,8 +93,9 @@ function setup() {
     {} as never,
     plans as never,
     {} as never,
+    adjustmentViews as never,
   );
-  return { svc };
+  return { svc, adjustmentViews };
 }
 
 describe('GET /reports/person/:id/day timeline (re-audit L4)', () => {
@@ -121,5 +126,33 @@ describe('GET /reports/person/:id/day timeline (re-audit L4)', () => {
     expect(r.summary.focusSec).toBeGreaterThan(0);
     expect(r.breaks).toEqual([]);
     expect(r.meetings).toEqual([]);
+  });
+});
+
+describe('GET /reports/person/:id/day manual adjustments (3.3)', () => {
+  const adj = (id: string, deltaSec: number, voided = false) => ({
+    id,
+    userId: 'a',
+    date: '2026-10-14',
+    deltaSec,
+    reason: 'Agent missed Start Day',
+    createdById: 'sm',
+    createdAt: NOW,
+    voidedAt: voided ? NOW : null,
+    voidedById: voided ? 'sm' : null,
+  });
+
+  it('the live adjustments enter focus and paid time; every one is listed, voided included', async () => {
+    const plain = await setup().svc.personDay(user(Role.ADMIN), 'a', '2026-10-14', NOW);
+    expect(plain.adjustments).toEqual([]);
+    expect(plain.summary.adjustedSec).toBe(0);
+
+    const { svc, adjustmentViews } = setup([adj('x1', 30 * 60), adj('x2', 3600, true)]);
+    const r = await svc.personDay(user(Role.ADMIN), 'a', '2026-10-14', NOW);
+    expect(r.summary.adjustedSec).toBe(30 * 60);
+    expect(r.summary.focusSec).toBe(plain.summary.focusSec + 30 * 60);
+    expect(r.summary.paidSec).toBe(plain.summary.paidSec + 30 * 60);
+    expect(adjustmentViews.views).toHaveBeenCalledTimes(1);
+    expect(r.adjustments!.map((a) => a.id)).toEqual(['x1', 'x2']);
   });
 });

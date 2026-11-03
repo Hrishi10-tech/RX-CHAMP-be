@@ -31,6 +31,8 @@ export interface ListScreenshotsFilter {
 
 export interface ScreenshotRepository {
   create(data: CreateScreenshotData): Promise<ScreenshotRecord>;
+  /** OCR text found after the upload was answered (3.3); a vanished row is ignored. */
+  setOcrText(id: string, text: string | null): Promise<void>;
   listForUser(userId: string, filter: ListScreenshotsFilter): Promise<ScreenshotRecord[]>;
   countForUser(userId: string, filter: ListScreenshotsFilter): Promise<number>;
   archive(userId: string, ids: string[]): Promise<number>;

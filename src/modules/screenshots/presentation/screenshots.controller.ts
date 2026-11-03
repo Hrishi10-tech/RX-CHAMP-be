@@ -25,13 +25,21 @@ import {
   ListScreenshotsQueryDto,
   UploadScreenshotDto,
 } from '../application/dto';
-import { UploadScreenshotUseCase } from '../application/use-cases/upload-screenshot.use-case';
+import {
+  MAX_SCREENSHOT_BYTES,
+  UploadScreenshotUseCase,
+} from '../application/use-cases/upload-screenshot.use-case';
+import { AgentContactService } from '@modules/agent-health/application/agent-contact.service';
 import { ListScreenshotsUseCase } from '../application/use-cases/list-screenshots.use-case';
 import { RequestCaptureUseCase } from '../application/use-cases/request-capture.use-case';
 import { ArchiveScreenshotsUseCase } from '../application/use-cases/archive-screenshots.use-case';
 import { ExportScreenshotsUseCase } from '../application/use-cases/export-screenshots.use-case';
 
-const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024; // 8 MB
+/**
+ * multer's hard stop sits above the use case's limit so an oversized upload is
+ * refused by our code (recorded, with the size) rather than cut off mid-stream.
+ */
+const MULTER_HARD_LIMIT = MAX_SCREENSHOT_BYTES + 1024 * 1024;
 
 @ApiTags('screenshots')
 @ApiBearerAuth()
@@ -44,19 +52,28 @@ export class ScreenshotsController {
     private readonly requestCapture: RequestCaptureUseCase,
     private readonly archiveScreenshots: ArchiveScreenshotsUseCase,
     private readonly exportScreenshots: ExportScreenshotsUseCase,
+    private readonly contacts: AgentContactService,
   ) {}
 
   @Post()
   @HttpCode(201)
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Agent uploads a captured screenshot (field "file")' })
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_SCREENSHOT_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MULTER_HARD_LIMIT, files: 1 } }))
   async upload(
     @CurrentUser() me: AuthenticatedUser,
     @UploadedFile() file: Express.Multer.File,
     @Body() body: UploadScreenshotDto,
   ) {
-    if (!file) throw new BadRequestException('Missing "file"');
+    if (!file) {
+      this.contacts.refused(me.id, {
+        status: 400,
+        code: 'NO_FILE',
+        reason: 'The upload had no "file" part.',
+        bytes: null,
+      });
+      throw new BadRequestException('Missing "file"');
+    }
     return envelope(
       await this.uploadScreenshot.execute(me.id, {
         buffer: file.buffer,

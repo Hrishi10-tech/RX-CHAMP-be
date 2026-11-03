@@ -82,6 +82,7 @@ export class UserMapper {
       ...this.placement(user),
       designation: user.designation,
       companyId: user.companyId,
+      companyName: user.companyName,
       shiftId: user.shiftId,
       id: user.id,
       email: user.email,

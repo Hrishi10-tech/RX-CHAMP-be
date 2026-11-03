@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { isAdminLike } from '@shared/tenancy';
+import { seesWholeOrg } from '@shared/tenancy';
 import { UserAccessService } from '../../domain/services/user-access.service';
 import { UserMapper } from '../mappers/user.mapper';
 import { PublicUser, UserBriefItem } from '../user.types';
@@ -31,7 +31,7 @@ export class GetProfileUseCase {
     if (!target || !this.access.canView(me, target)) {
       throw new NotFoundError('Unknown user');
     }
-    if (target.id === me.id || isAdminLike(me)) return UserMapper.toPublic(target);
+    if (target.id === me.id || seesWholeOrg(me)) return UserMapper.toPublic(target);
     return UserMapper.toBrief(target);
   }
 }

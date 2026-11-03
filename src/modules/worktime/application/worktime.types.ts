@@ -31,6 +31,8 @@ export interface FocusView {
   unverifiedSec: number;
   /** Payroll time: focusSec + paidBreakSec. */
   paidSec: number;
+  /** Signed seconds added by hand by the Super Manager (3.3); 0 on an untouched day. */
+  adjustedSec: number;
 }
 
 export type WorkdayState = 'NOT_STARTED' | 'OPEN' | 'ENDED';
@@ -153,6 +155,9 @@ export interface ApprovalPersonLite {
   email: string;
   role: string;
   department: string | null;
+  /** 3.3: the person's organisation (combined lists show it as a chip). */
+  companyId: string | null;
+  companyName: string | null;
 }
 
 /** 4.0: an away stretch as an approval item. */
@@ -241,6 +246,9 @@ export interface TeamTodayRow {
     role: string;
     department: string | null;
     managerId: string | null;
+    /** 3.3: the person's organisation (combined lists show it as a chip). */
+    companyId?: string | null;
+    companyName?: string | null;
   };
   status: TeamRowStatus;
   statusSince: string | null;
@@ -286,4 +294,23 @@ export interface HourlyActivityView {
   hours: HourActivity[];
   activeMin: number;
   quietHours: number;
+}
+
+/** One manual focus adjustment (3.3), as lists and the day report show it. */
+export interface FocusAdjustmentView {
+  id: string;
+  userId: string;
+  userName: string;
+  companyName: string | null;
+  date: string;
+  /** Signed seconds. */
+  deltaSec: number;
+  /** "+30 min" or "−15 min". */
+  label: string;
+  reason: string;
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+  voidedAt: string | null;
+  voidedByName: string | null;
 }

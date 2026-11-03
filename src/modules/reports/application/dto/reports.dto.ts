@@ -31,6 +31,13 @@ const USER_IDS_DOC = {
   type: String,
 };
 
+/** 3.3: the combined-view organisation filter. */
+const COMPANY_ID_DOC = {
+  description:
+    '3.3: Super Manager or Super Admin on "All organisations": only this organisation ' +
+    '(departmentId and managerId need one)',
+};
+
 /** GET /reports/team/day */
 export class TeamDayQueryDto extends PersonDayQueryDto {
   @ApiPropertyOptional(USER_IDS_DOC)
@@ -47,6 +54,11 @@ export class TeamDayQueryDto extends PersonDayQueryDto {
   @IsOptional()
   @IsId()
   departmentId?: string;
+
+  @ApiPropertyOptional(COMPANY_ID_DOC)
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 /** GET /reports/team/month and its export */
@@ -72,6 +84,19 @@ export class TeamMonthQueryDto extends MonthQueryDto {
   @IsOptional()
   @IsId()
   departmentId?: string;
+
+  @ApiPropertyOptional(COMPANY_ID_DOC)
+  @IsOptional()
+  @IsId()
+  companyId?: string;
+}
+
+/** GET /reports/people (3.3: companyId). */
+export class ReportPeopleQueryDto {
+  @ApiPropertyOptional(COMPANY_ID_DOC)
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 /** The `:month` path segment: "YYYY-MM", else 400 VALIDATION_ERROR (details.field "month"). */

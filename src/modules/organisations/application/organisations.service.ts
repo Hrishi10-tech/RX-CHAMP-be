@@ -291,7 +291,8 @@ export class OrganisationsService {
     const org = await this.store.findById(orgId);
     if (!org) throw notFound();
     const person = await this.store.findPerson(userId);
-    if (!person || person.role === Role.SUPER_ADMIN) throw new NotFoundError('Unknown person');
+    if (!person || person.role === Role.SUPER_ADMIN || person.role === Role.SUPER_MANAGER)
+      throw new NotFoundError('Unknown person');
     if (person.companyId === org.id) {
       return { id: person.id, companyId: org.id, role: person.role, changed: false };
     }

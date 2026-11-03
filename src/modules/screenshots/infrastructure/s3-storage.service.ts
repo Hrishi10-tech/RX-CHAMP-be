@@ -24,11 +24,15 @@ export class S3StorageService {
     this.client = new S3Client({ region, credentials: { accessKeyId, secretAccessKey } });
   }
 
-  /** Full object key for a user's screenshot, under the configured prefix. */
-  buildKey(userId: string, takenAt: Date, id: string): string {
+  /**
+   * Full object key for a user's screenshot, under the configured prefix. 3.3: the
+   * real extension (.jpg once re-encoded); readers use the stored key, so older
+   * .png objects keep working.
+   */
+  buildKey(userId: string, takenAt: Date, id: string, extension: 'png' | 'jpg' = 'png'): string {
     const day = takenAt.toISOString().slice(0, 10); // YYYY-MM-DD
     const stamp = takenAt.toISOString().replace(/[:.]/g, '-');
-    return `${this.prefix}screenshots/${userId}/${day}/${stamp}-${id}.png`;
+    return `${this.prefix}screenshots/${userId}/${day}/${stamp}-${id}.${extension}`;
   }
 
   async upload(key: string, body: Buffer, contentType = 'image/png'): Promise<void> {

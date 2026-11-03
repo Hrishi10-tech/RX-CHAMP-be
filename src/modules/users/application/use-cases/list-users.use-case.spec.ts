@@ -2,12 +2,14 @@ import { Role } from '@shared/rbac/roles.enum';
 import {
   DEPT_A1,
   DEPT_A2,
+  IDS,
   ORG_A,
   ORG_B,
   admin,
   manager,
   staff,
   superAdmin,
+  superManager,
 } from '@shared/testing/actors.testing-spec';
 import { person } from '../../testing/people.testing-spec';
 import { ListUsersUseCase } from './list-users.use-case';
@@ -32,13 +34,9 @@ describe('ListUsersUseCase', () => {
       );
     });
 
-    it('Super Admin: the selected organisation; none selected answers 400 ORG_REQUIRED', async () => {
+    it('Super Admin: the selected organisation (none selected: All organisations, below)', async () => {
       await useCase.execute(superAdmin(ORG_B), {});
       expect(users.findAll).toHaveBeenCalledWith(expect.objectContaining({ companyId: ORG_B }));
-      await expect(useCase.execute(superAdmin(null), {})).rejects.toMatchObject({
-        status: 400,
-        code: 'ORG_REQUIRED',
-      });
     });
 
     it('Manager: Staff of their departments only', async () => {
@@ -172,5 +170,53 @@ describe('ListUsersUseCase', () => {
       expect(counted.take).toBeUndefined();
       expect(listed).toMatchObject({ skip: 5, take: 5 });
     });
+  });
+});
+
+describe('ListUsersUseCase: All organisations (3.3)', () => {
+  const users = { findAll: jest.fn(), count: jest.fn() } as any;
+  const presence = { presenceFor: jest.fn() } as any;
+  const useCase = new ListUsersUseCase(users, presence);
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    users.findAll.mockResolvedValue([]);
+    users.count.mockResolvedValue(0);
+    presence.presenceFor.mockResolvedValue(new Map());
+  });
+
+  it.each([
+    ['Super Admin', superAdmin(null)],
+    ['Super Manager', superManager(null)],
+  ])(
+    '%s with none picked: everyone in every live organisation but Super Admins',
+    async (_w, me) => {
+      await useCase.execute(me, {});
+      const filter = users.findAll.mock.calls[0][0];
+      expect(filter).toMatchObject({ anyOrg: true, excludeRoles: [Role.SUPER_ADMIN] });
+      expect(filter.companyId).toBeUndefined();
+    },
+  );
+
+  it('the Super Manager in an organisation: that organisation, the Admin view', async () => {
+    await useCase.execute(superManager(ORG_B), {});
+    expect(users.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId: ORG_B, excludeRoles: [Role.SUPER_ADMIN] }),
+    );
+  });
+
+  it('an invalid X-Org-Id answers 404 ORG_NOT_FOUND', async () => {
+    await expect(
+      useCase.execute({ ...superManager(ORG_A), orgHeaderInvalid: true }, {}),
+    ).rejects.toMatchObject({ status: 404, code: 'ORG_NOT_FOUND' });
+  });
+
+  it('each row carries companyId and companyName', async () => {
+    const p = person({ id: IDS.staffB1, companyId: ORG_B, departmentId: DEPT_A1 });
+    p.assignCompany(ORG_B, 'Beta Ltd');
+    users.findAll.mockResolvedValue([p]);
+    users.count.mockResolvedValue(1);
+    const { users: rows } = await useCase.execute(superManager(null), {});
+    expect(rows[0]).toMatchObject({ companyId: ORG_B, companyName: 'Beta Ltd' });
   });
 });

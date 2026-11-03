@@ -47,17 +47,28 @@ export class UpdateUserUseCase {
     const found = await this.users.findById(targetId);
     if (found && found.id === me.id) return this.selfRename(found, dto);
     const target = this.access.assertCanEdit(me, found);
-    const org = requireOrg(me);
-    const audits: AuditEntry[] = [];
-    const entry = (action: AuditEntry['action'], metadata: Record<string, unknown>): void => {
-      audits.push({ actorId: me.id, action, entity: 'USER', entityId: target.id, metadata });
-    };
-
     const placementAsked =
       dto.role !== undefined ||
       dto.departmentId !== undefined ||
       dto.departmentIds !== undefined ||
       dto.grants !== undefined;
+    // 3.3: a Super Manager account (no organisation) is edited by a Super Admin from
+    // anywhere: names, email, designation. Its role never changes here.
+    if (target.role === Role.SUPER_MANAGER && placementAsked) {
+      throw new ForbiddenError(
+        "A Super Manager's role cannot be changed. Edit their name or email instead.",
+        'SUPER_MANAGER_ROLE_FIXED',
+      );
+    }
+    if (dto.role !== undefined && dto.role !== target.role) {
+      this.access.assertCanAssignRole(me, dto.role);
+    }
+    const org = target.role === Role.SUPER_MANAGER ? null : requireOrg(me);
+    const audits: AuditEntry[] = [];
+    const entry = (action: AuditEntry['action'], metadata: Record<string, unknown>): void => {
+      audits.push({ actorId: me.id, action, entity: 'USER', entityId: target.id, metadata });
+    };
+
     if (target.role === Role.ADMIN && placementAsked) {
       throw new ForbiddenError(
         "The organisation admin's role and departments cannot be changed. Edit their name or email instead.",
@@ -93,7 +104,7 @@ export class UpdateUserUseCase {
       };
       const placement = await resolvePlacement(
         this.departments,
-        org,
+        org ?? requireOrg(me),
         {
           role: dto.role ?? target.role,
           departmentId: dto.departmentId,

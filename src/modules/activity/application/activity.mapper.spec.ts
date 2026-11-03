@@ -235,7 +235,10 @@ describe('ActivityMapper.computeDaily — meetings count as active', () => {
   });
 
   it('treats a meeting still running today as ongoing', () => {
+    // Pinned to midday so the samples ten minutes earlier share "today" whatever
+    // the clock says when the suite runs (it used to fail just after midnight).
     const today = new Date();
+    today.setHours(12, 0, 0, 0);
     const start = new Date(today.getTime() - 10 * 60_000);
     const samples = [0, 1, 2].map(
       (i) => sample(new Date(start.getTime() + i * 60_000), true), // idle-flagged

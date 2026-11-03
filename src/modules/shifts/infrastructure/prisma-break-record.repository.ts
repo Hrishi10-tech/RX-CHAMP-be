@@ -428,7 +428,9 @@ export class PrismaBreakRecordRepository implements BreakRecordRepository {
     }
     if (f.subjects) {
       where.user = {
-        companyId: f.subjects.companyId,
+        // A filter with neither an organisation nor liveOrgsOnly matches nobody.
+        companyId: f.subjects.companyId ?? (f.subjects.liveOrgsOnly ? { not: null } : { in: [] }),
+        ...(f.subjects.liveOrgsOnly ? { company: { deletedAt: null } } : {}),
         ...(f.subjects.departmentIds ? { departmentId: { in: f.subjects.departmentIds } } : {}),
         ...(f.subjects.roles ? { role: { name: { in: f.subjects.roles as RoleName[] } } } : {}),
       };

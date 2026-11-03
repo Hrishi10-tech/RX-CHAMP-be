@@ -18,6 +18,7 @@ import {
  *  - Manager: the Staff of their departments and the organisation's Admin;
  *  - Staff: the managers of their department and the organisation's Admin;
  *  - Super Admin: the Admin of the organisation they have selected (X-Org-Id).
+ *  - Super Manager (3.3): everyone in the organisation they have selected.
  */
 export function contactsWhere(me: AuthenticatedUser): Prisma.UserWhereInput | null {
   const org = orgOf(me);
@@ -27,6 +28,8 @@ export function contactsWhere(me: AuthenticatedUser): Prisma.UserWhereInput | nu
   switch (me.role) {
     case Role.SUPER_ADMIN:
       return admins;
+    case Role.SUPER_MANAGER:
+      return { ...inOrg, role: { name: { not: 'SUPER_ADMIN' } } };
     case Role.ADMIN:
       return {
         OR: [
@@ -75,7 +78,7 @@ export function relationOf(mine: Role, theirs: string): ChatRelation {
   if (mine === Role.MANAGER)
     return theirs === 'USER' ? 'REPORT' : theirs === 'ADMIN' ? 'MANAGER' : 'ORG';
   if (mine === Role.ADMIN) return theirs === 'SUPER_ADMIN' ? 'MANAGER' : 'REPORT';
-  if (mine === Role.SUPER_ADMIN) return 'REPORT';
+  if (mine === Role.SUPER_ADMIN || mine === Role.SUPER_MANAGER) return 'REPORT';
   return 'ORG';
 }
 

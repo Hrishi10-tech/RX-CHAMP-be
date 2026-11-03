@@ -27,6 +27,20 @@ const skip = (over: Partial<FocusBreakRecord> = {}): FocusBreakRecord => ({
 });
 
 describe('computeFocus', () => {
+  it('3.3: adds the manual adjustment to focus and paid time, never below zero', () => {
+    const plain = computeFocus(input());
+    expect(plain.adjustedSec).toBe(0);
+    const plus = computeFocus(input({ adjustedSec: 30 * MIN }));
+    expect(plus).toMatchObject({ focusSec: 9 * 3600 + 30 * MIN, adjustedSec: 30 * MIN });
+    expect(plus.paidSec).toBe(plain.paidSec + 30 * MIN);
+    // The span and breaks are what the app recorded; only focus moves.
+    expect(plus.spanSec).toBe(plain.spanSec);
+    const minus = computeFocus(input({ adjustedSec: -10 * 3600 }));
+    expect(minus).toMatchObject({ focusSec: 0, adjustedSec: -10 * 3600 });
+    // A day with no work at all: the adjustment alone.
+    expect(computeFocus(input({ sessions: [], adjustedSec: 45 * MIN })).focusSec).toBe(45 * MIN);
+  });
+
   it('is Start Day to End Day when nothing else happened', () => {
     const f = computeFocus(input());
     expect(f).toMatchObject({ spanSec: 9 * 3600, breakSec: 0, focusSec: 9 * 3600, running: false });

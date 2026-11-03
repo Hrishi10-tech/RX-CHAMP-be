@@ -24,6 +24,7 @@ import {
   MonthQueryDto,
   ParseMonthPipe,
   PersonDayQueryDto,
+  ReportPeopleQueryDto,
   TeamDayQueryDto,
   TeamMonthQueryDto,
   TimesheetQueryDto,
@@ -37,6 +38,7 @@ import {
 } from '../application/report-export';
 import { ReportRunsService } from '../application/report-runs.service';
 import { ReportsService } from '../application/reports.service';
+import { CombinedReportsService } from '../application/combined-reports.service';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -55,19 +57,21 @@ function sendWorkbook(res: Response, body: Buffer, fileName: string): void {
 @ApiTags('reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.MANAGER)
+@Roles(Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER)
 @Controller('reports')
 export class ReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly locks: MonthLockService,
     private readonly runs: ReportRunsService,
+    private readonly combined: CombinedReportsService,
   ) {}
 
   @Get('people')
   @ApiOperation({ summary: 'The people the caller may report on' })
-  async people(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.reports.people(me, new Date()));
+  async people(@CurrentUser() me: AuthenticatedUser, @Query() q: ReportPeopleQueryDto) {
+    // 3.3: "All organisations" combines every organisation (people carry companyName).
+    return envelope(await this.combined.people(me, new Date(), q.companyId));
   }
 
   @Get('person/:userId/day')
@@ -79,7 +83,8 @@ export class ReportsController {
     @Param('userId', ParseIdPipe) userId: string,
     @Query() q: PersonDayQueryDto,
   ) {
-    return envelope(await this.reports.personDay(me, userId, q.date, new Date()));
+    const as = await this.combined.actingForPerson(me, userId);
+    return envelope(await this.reports.personDay(as, userId, q.date, new Date()));
   }
 
   @Get('person/:userId/month')
@@ -90,8 +95,9 @@ export class ReportsController {
     @Query() q: MonthQueryDto,
   ) {
     const now = new Date();
+    const as = await this.combined.actingForPerson(me, userId);
     return envelope(
-      await this.reports.personMonth(me, userId, this.reports.monthOrCurrent(q.month, now), now),
+      await this.reports.personMonth(as, userId, this.reports.monthOrCurrent(q.month, now), now),
     );
   }
 
@@ -106,7 +112,8 @@ export class ReportsController {
   ): Promise<void> {
     const now = new Date();
     const month = this.reports.monthOrCurrent(q.month, now);
-    const report = await this.reports.personMonth(me, userId, month, now);
+    const as = await this.combined.actingForPerson(me, userId);
+    const report = await this.reports.personMonth(as, userId, month, now);
     const file = await payrollWorkbook([report], appTimezone());
     sendWorkbook(res, file, exportFileName(month, report.person.name));
   }
@@ -122,7 +129,8 @@ export class ReportsController {
     @Param('userId', ParseIdPipe) userId: string,
     @Query() q: TimesheetQueryDto,
   ) {
-    return envelope(await this.reports.timesheet(me, userId, q.from, q.to, new Date()));
+    const as = await this.combined.actingForPerson(me, userId);
+    return envelope(await this.reports.timesheet(as, userId, q.from, q.to, new Date()));
   }
 
   @Get('person/:userId/timesheet.xlsx')
@@ -134,30 +142,28 @@ export class ReportsController {
     @Query() q: TimesheetQueryDto,
     @Res() res: Response,
   ): Promise<void> {
-    const t = await this.reports.timesheet(me, userId, q.from, q.to, new Date());
+    const as = await this.combined.actingForPerson(me, userId);
+    const t = await this.reports.timesheet(as, userId, q.from, q.to, new Date());
     sendWorkbook(res, await timesheetWorkbook(t), timesheetFileName(t.person.name, q.from, q.to));
   }
 
   @Get('team/day')
   @ApiOperation({ summary: 'Everyone in scope (or userIds) for one day' })
   async teamDay(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamDayQueryDto) {
-    return envelope(await this.reports.teamDay(me, q.date, q.userIds, new Date(), q.departmentId));
+    return envelope(await this.combined.teamDay(me, q, new Date()));
   }
 
   @Get('team/month')
   @ApiOperation({ summary: 'Team month: totals and one row per person with each day' })
   async teamMonth(@CurrentUser() me: AuthenticatedUser, @Query() q: TeamMonthQueryDto) {
     const now = new Date();
-    return envelope(
-      await this.reports.teamMonth(
-        me,
-        this.reports.monthOrCurrent(q.month, now),
-        q.managerId,
-        q.userIds,
-        now,
-        q.departmentId,
-      ),
+    const { team } = await this.combined.teamMonthWithPersons(
+      me,
+      this.reports.monthOrCurrent(q.month, now),
+      q,
+      now,
     );
+    return envelope(team);
   }
 
   @Get('team/month/export.xlsx')
@@ -172,14 +178,7 @@ export class ReportsController {
   ): Promise<void> {
     const now = new Date();
     const month = this.reports.monthOrCurrent(q.month, now);
-    const { persons } = await this.reports.teamMonthWithPersons(
-      me,
-      month,
-      q.managerId,
-      q.userIds,
-      now,
-      q.departmentId,
-    );
+    const { persons } = await this.combined.teamMonthWithPersons(me, month, q, now);
     const file = await payrollWorkbook(persons, appTimezone());
     sendWorkbook(res, file, exportFileName(month, 'team'));
   }

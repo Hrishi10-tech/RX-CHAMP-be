@@ -46,7 +46,7 @@ export interface PersonRow {
   firstName: string;
   lastName: string;
   email: string;
-  role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'USER';
+  role: 'SUPER_ADMIN' | 'SUPER_MANAGER' | 'ADMIN' | 'MANAGER' | 'USER';
   department: string | null;
   designation: string | null;
   companyId: string | null;

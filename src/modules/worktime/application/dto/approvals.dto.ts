@@ -67,6 +67,15 @@ export class ApprovalsListQueryDto {
   @IsId()
   userId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      '3.3: Super Manager or Super Admin on "All organisations": only this organisation. ' +
+      'Inside one organisation it must be that organisation (else 404 ORG_NOT_FOUND).',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -82,6 +91,25 @@ export class ApprovalsListQueryDto {
   @Min(1)
   @Max(200)
   limit?: number = 50;
+}
+
+/** GET /approvals/summary (3.3: scope and companyId). */
+export class ApprovalsSummaryQueryDto {
+  @ApiPropertyOptional({
+    enum: ['mine', 'all'],
+    default: 'mine',
+    description: 'As on GET /approvals: Admins and Super Admins mine or all; others ignore it',
+  })
+  @IsOptional()
+  @IsIn(['mine', 'all'])
+  scope?: 'mine' | 'all' = 'mine';
+
+  @ApiPropertyOptional({
+    description: '3.3: Super Manager or Super Admin on "All organisations": one organisation',
+  })
+  @IsOptional()
+  @IsId()
+  companyId?: string;
 }
 
 /** GET /approvals/me */

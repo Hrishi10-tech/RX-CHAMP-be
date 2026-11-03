@@ -27,6 +27,7 @@ import { AgentModule } from '@modules/agent/agent.module';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
 import { SettingsModule } from '@modules/settings/settings.module';
 import { WorktimeModule } from '@modules/worktime/worktime.module';
+import { AgentHealthModule } from '@modules/agent-health/agent-health.module';
 import { ReportsModule } from '@modules/reports/reports.module';
 import { CalendarModule } from '@modules/calendar/calendar.module';
 import { OrganisationsModule } from '@modules/organisations/organisations.module';
@@ -63,6 +64,7 @@ import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
     SettingsModule,
     CalendarModule,
     WorktimeModule,
+    AgentHealthModule,
     ReportsModule,
     OrganisationsModule,
     DepartmentsModule,

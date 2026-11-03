@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { AuditLogService } from '@shared/audit/audit-log.service';
 import { ConflictError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { Role } from '@shared/rbac/roles.enum';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { UserAccessChangedEvent } from '@shared/events/user-access-changed.event';
 import { PASSWORD_HASHER, PasswordHasher } from '@shared/security/password-hasher.port';
@@ -32,9 +33,11 @@ function emailInUse(): ConflictError {
 
 /**
  * Adds people to the caller's organisation (docs/4.0/SPEC.md 5.3): Admin, or a
- * Super Admin with an organisation selected. Managers and Staff cannot (403).
+ * Super Admin or the Super Manager (3.3) with an organisation selected. Managers
+ * and Staff cannot (403).
  *
- *  - role MANAGER or USER (an organisation's Admin comes from Organisations);
+ *  - role MANAGER or USER (an organisation's Admin comes from Organisations); the
+ *    Super Manager adds Staff only (403 ROLE_NOT_ALLOWED);
  *  - Staff need one department (departmentId), Managers one or more (departmentIds),
  *    all of the caller's organisation; grants are for Managers;
  *  - the organisation is always the caller's, never one from the body;
@@ -112,6 +115,15 @@ export class CreateUsersUseCase {
       throw new ValidationError(`Keep the designation to ${DESIGNATION_MAX} characters or fewer.`);
     }
 
+    // 3.3: the Super Manager adds Staff only; a Super Manager account belongs to no
+    // organisation and is added by a Super Admin through POST /super-managers.
+    this.access.assertCanAssignRole(me, role);
+    if (role === Role.SUPER_MANAGER) {
+      throw new ValidationError(
+        'A Super Manager belongs to no organisation. Add one from the platform view (Super Managers).',
+        'USE_SUPER_MANAGERS',
+      ).withDetails({ field: 'role' });
+    }
     const placement = await resolvePlacement(this.departments, org, {
       role,
       departmentId: row.departmentId,
@@ -126,7 +138,10 @@ export class CreateUsersUseCase {
       // of reach: where an address is in use is not the caller's to learn.
       // An Admin is never turned into a Manager or Staff member this way.
       const reusable =
-        !existing.isActive() && !existing.isAdmin() && this.access.ownsTarget(me, existing);
+        !existing.isActive() &&
+        !existing.isAdmin() &&
+        existing.role !== Role.SUPER_MANAGER &&
+        this.access.ownsTarget(me, existing);
       if (!reusable) throw emailInUse();
       return this.reactivate(me, existing, firstName, lastName, designation, password, placement);
     }

@@ -52,6 +52,7 @@ payload/
 *.pdb
 
 # Local-only folders (do not push to GitHub)
-.github/
+.github/*
+!.github/workflows/
 .husky/
 docs/

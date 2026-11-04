@@ -1,0 +1,160 @@
+# Deploys the backend to the Lightsail instance (PM2, /opt/rxchamp).
+#
+# The Lightsail firewall only allows SSH from the office IP, so the deploy job
+# opens port 22 to this runner's IP for the length of the job and restores the
+# original port-22 rule afterwards, whether the deploy passed or failed.
+#
+# Needs, on the "production" environment:
+#   secrets:   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (Lightsail Open/Close/
+#              GetInstancePortStates only), LIGHTSAIL_SSH_KEY, LIGHTSAIL_KNOWN_HOSTS,
+#              LIGHTSAIL_INSTANCE, LIGHTSAIL_HOST, LIGHTSAIL_USER, HEALTHCHECK_URL
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run build
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      INSTANCE: ${{ secrets.LIGHTSAIL_INSTANCE }}
+      HOST: ${{ secrets.LIGHTSAIL_HOST }}
+      SSH_USER: ${{ secrets.LIGHTSAIL_USER }}
+    steps:
+      - name: Check required secrets are set
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          LIGHTSAIL_KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
+          LIGHTSAIL_INSTANCE: ${{ secrets.LIGHTSAIL_INSTANCE }}
+          LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          missing=0
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY LIGHTSAIL_SSH_KEY \
+                      LIGHTSAIL_KNOWN_HOSTS LIGHTSAIL_INSTANCE LIGHTSAIL_HOST \
+                      LIGHTSAIL_USER HEALTHCHECK_URL; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name is missing or empty"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Save current port-22 firewall rule
+        id: fw
+        run: |
+          aws lightsail get-instance-port-states --instance-name "$INSTANCE" \
+            --query 'portStates[?fromPort==`22` && toPort==`22`]' --output json \
+            > "$RUNNER_TEMP/port22-original.json"
+          echo "Port 22 before deploy:"
+          cat "$RUNNER_TEMP/port22-original.json"
+
+      - name: Open port 22 to this runner
+        id: ip
+        run: |
+          IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          aws lightsail open-instance-public-ports --instance-name "$INSTANCE" \
+            --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$IP/32"
+          # The firewall change takes a few seconds to apply.
+          sleep 10
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Deploy on the server
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=30 \
+            "$SSH_USER@$HOST" 'bash -s' <<'EOF'
+          set -euo pipefail
+          cd /opt/rxchamp
+          git pull --ff-only origin main
+          npm ci
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run build
+          pm2 restart all
+          echo "Deployed commit:"
+          git log -1 --oneline
+          EOF
+
+      - name: Health check
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors "$HEALTHCHECK_URL"
+          echo
+
+      - name: Close port 22 and restore the original rule
+        if: always() && steps.fw.outcome == 'success'
+        env:
+          IP: ${{ steps.ip.outputs.ip }}
+        run: |
+          if [ -n "$IP" ]; then
+            aws lightsail close-instance-public-ports --instance-name "$INSTANCE" \
+              --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$IP/32" || true
+          fi
+
+          # Re-apply the saved port-22 rule (office IP), so it survives however
+          # Lightsail merged or replaced the rule when the runner IP was added.
+          jq -c '.[] | {fromPort, toPort, protocol, cidrs, ipv6Cidrs, cidrListAliases}
+                 | with_entries(select(.value != null and .value != []))' \
+            "$RUNNER_TEMP/port22-original.json" |
+          while read -r rule; do
+            aws lightsail open-instance-public-ports --instance-name "$INSTANCE" \
+              --port-info "$rule"
+          done
+
+          echo "Port 22 after deploy:"
+          aws lightsail get-instance-port-states --instance-name "$INSTANCE" \
+            --query 'portStates[?fromPort==`22` && toPort==`22`]' --output json
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

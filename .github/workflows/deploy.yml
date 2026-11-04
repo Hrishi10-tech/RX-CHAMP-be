@@ -1,8 +1,9 @@
 # Deploys the backend to the Lightsail instance (PM2, /opt/rxchamp).
 #
-# The Lightsail firewall only allows SSH from the office IP, so the deploy job
-# opens port 22 to this runner's IP for the length of the job and restores the
-# original port-22 rule afterwards, whether the deploy passed or failed.
+# If the Lightsail firewall limits SSH to certain IPs, the deploy job opens
+# port 22 to this runner's IP for the length of the job and restores the
+# original port-22 rule afterwards, whether the deploy passed or failed. If
+# port 22 is already open to all IPv4 addresses, the firewall is left alone.
 #
 # Needs, on the "production" environment:
 #   secrets:   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (Lightsail Open/Close/
@@ -87,6 +88,14 @@ jobs:
       - name: Open port 22 to this runner
         id: ip
         run: |
+          # Lightsail refuses to add an IP to a rule that already allows
+          # 0.0.0.0/0, and there is nothing to open in that case anyway.
+          if jq -e 'any(.[]; (.cidrs // []) | index("0.0.0.0/0") != null)' \
+               "$RUNNER_TEMP/port22-original.json" > /dev/null; then
+            echo "Port 22 is already open to all IPv4 addresses; firewall left unchanged."
+            exit 0
+          fi
+
           IP=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
           aws lightsail open-instance-public-ports --instance-name "$INSTANCE" \
@@ -132,18 +141,19 @@ jobs:
           echo
 
       - name: Close port 22 and restore the original rule
-        if: always() && steps.fw.outcome == 'success'
+        # Only when the runner's IP was (or may have been) added to the rule.
+        if: always() && steps.ip.outputs.ip != ''
         env:
           IP: ${{ steps.ip.outputs.ip }}
         run: |
-          if [ -n "$IP" ]; then
-            aws lightsail close-instance-public-ports --instance-name "$INSTANCE" \
-              --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$IP/32" || true
-          fi
+          aws lightsail close-instance-public-ports --instance-name "$INSTANCE" \
+            --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$IP/32" || true
 
           # Re-apply the saved port-22 rule (office IP), so it survives however
           # Lightsail merged or replaced the rule when the runner IP was added.
+          # Aliases can't be sent together with 0.0.0.0/0, so they are dropped then.
           jq -c '.[] | {fromPort, toPort, protocol, cidrs, ipv6Cidrs, cidrListAliases}
+                 | if ((.cidrs // []) | index("0.0.0.0/0")) != null then del(.cidrListAliases) else . end
                  | with_entries(select(.value != null and .value != []))' \
             "$RUNNER_TEMP/port22-original.json" |
           while read -r rule; do

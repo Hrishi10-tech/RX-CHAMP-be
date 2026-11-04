@@ -110,14 +110,32 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+
+          # Keep only the "<key type> <key>" pairs from the secret and file them
+          # under a fixed alias, so a host-name mismatch or lines joined when the
+          # secret was pasted can't break the check. The key itself is still verified.
+          printf '%s\n' "$KNOWN_HOSTS" \
+            | grep -oE '(ssh-ed25519|ecdsa-sha2-nistp[0-9]+|ssh-rsa) [A-Za-z0-9+/=]+' \
+            | sed 's/^/lightsail /' > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+          echo "Host keys loaded from LIGHTSAIL_KNOWN_HOSTS:"
+          awk '{ print "  " $2 }' ~/.ssh/known_hosts
+          if ! grep -q . ~/.ssh/known_hosts; then
+            echo "::error::LIGHTSAIL_KNOWN_HOSTS contains no host keys"
+            exit 1
+          fi
 
       - name: Deploy on the server
         run: |
+          # Tolerate stray spaces/newlines or a "user@" prefix in the secrets.
+          HOST=$(printf '%s' "$HOST" | tr -d '[:space:]'); HOST=${HOST#*@}
+          SSH_USER=$(printf '%s' "$SSH_USER" | tr -d '[:space:]')
           ssh -i ~/.ssh/deploy_key \
+            -o HostKeyAlias=lightsail \
             -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=30 \
             "$SSH_USER@$HOST" 'bash -s' <<'EOF'

@@ -260,11 +260,23 @@ export class AgentController {
     // the whole self-contained folder as a ZIP (its single-file exe isn't viable).
     // Otherwise — a single file on disk, or the object in S3 — stream it and append
     // the per-user config trailer.
+    // A per-user Windows download is named after that person
+    // ("RXVision-Praveen-V-S.exe"): the browser now saves it straight from this
+    // response, so the name has to come from here, not from the portal.
+    const person = config && userId ? await this.users.findById(userId) : null;
     const dir = store.directoryPath();
     if (info.isDirectory && dir) {
-      await this.downloadZip(res, dir, config);
+      const base = this.config.get<string>('agent.fileName') ?? DEFAULT_ZIP_FILE_NAME;
+      await this.downloadZip(res, dir, config, personalFileName(base, person?.name));
     } else {
-      await this.downloadExe(res, store, info.sizeBytes, config);
+      const base = this.config.get<string>('agent.fileName') ?? DEFAULT_EXE_FILE_NAME;
+      await this.downloadExe(
+        res,
+        store,
+        info.sizeBytes,
+        config,
+        personalFileName(base, person?.name),
+      );
     }
   }
 
@@ -314,8 +326,8 @@ export class AgentController {
     res: Response,
     dir: string,
     config: AgentEnrollConfig | null,
+    fileName: string,
   ): Promise<void> {
-    const fileName = this.config.get<string>('agent.fileName') ?? DEFAULT_ZIP_FILE_NAME;
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -337,10 +349,10 @@ export class AgentController {
     store: AgentBinaryStore,
     sizeBytes: number,
     config: AgentEnrollConfig | null,
+    fileName: string,
   ): Promise<void> {
     const trailer = config ? this.buildTrailer(config) : Buffer.alloc(0);
 
-    const fileName = this.config.get<string>('agent.fileName') ?? DEFAULT_EXE_FILE_NAME;
     res.set({
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${fileName}"`,
@@ -403,4 +415,19 @@ export class AgentController {
     const magic = Buffer.from(TRAILER_MAGIC, 'ascii');
     return Buffer.concat([configJson, len, magic]);
   }
+}
+
+/**
+ * "RXVision.exe" + "Praveen V S" -> "RXVision-Praveen-V-S.exe" (letters and digits
+ * only, so the Content-Disposition header stays plain ASCII). No usable name: the
+ * base name unchanged.
+ */
+export function personalFileName(base: string, personName: string | null | undefined): string {
+  const slug = (personName ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug) return base;
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? `${base.slice(0, dot)}-${slug}${base.slice(dot)}` : `${base}-${slug}`;
 }

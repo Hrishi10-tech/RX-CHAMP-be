@@ -1,6 +1,6 @@
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { AgentController } from './agent.controller';
+import { AgentController, personalFileName } from './agent.controller';
 
 /**
  * 4.0 (audit L5, docs/4.0/SPEC.md 5.3): a setup code (and a per-user installer)
@@ -162,5 +162,17 @@ describe('POST /agent/download-ticket + GET /agent/download/direct (direct downl
       status: 403,
     });
     jest.restoreAllMocks();
+  });
+});
+
+describe('personalFileName (per-user download name)', () => {
+  it('adds the person to the file name, before the extension', () => {
+    expect(personalFileName('RXVision.exe', 'Praveen V S')).toBe('RXVision-Praveen-V-S.exe');
+    expect(personalFileName('RXVision.zip', ' Asha K. ')).toBe('RXVision-Asha-K.zip');
+  });
+
+  it('keeps the plain name when there is no usable name', () => {
+    expect(personalFileName('RXVision.exe', undefined)).toBe('RXVision.exe');
+    expect(personalFileName('RXVision.exe', '...')).toBe('RXVision.exe');
   });
 });

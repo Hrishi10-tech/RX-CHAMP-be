@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  Allow,
   IsIn,
   Matches,
   ArrayMaxSize,
@@ -91,7 +92,29 @@ export class HistoryQueryDto {
 }
 
 /** GET /team (4.0). */
-export class TeamQueryDto {
+/** Paging for lists built in memory: 1-based page, limit 1..100. Bad values fall back to the defaults. */
+export const PAGE_DEFAULT_LIMIT = 10;
+export const PAGE_MAX_LIMIT = 100;
+
+export class PageQueryDto {
+  // Kept as strings and read by parsePageParams, so `abc` or `-5` falls back to the
+  // default instead of failing the request.
+  @ApiPropertyOptional({ description: 'Page number, from 1', default: 1 })
+  @Allow()
+  page?: string;
+
+  @ApiPropertyOptional({
+    description: `People per page, 1..${PAGE_MAX_LIMIT}`,
+    default: PAGE_DEFAULT_LIMIT,
+  })
+  @Allow()
+  limit?: string;
+}
+
+/** GET /overview: page and limit apply to the departments list only. */
+export class OverviewQueryDto extends PageQueryDto {}
+
+export class TeamQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ enum: ['active', 'all'], default: 'all' })
   @IsOptional()
   @IsIn(['active', 'all'])

@@ -4,6 +4,7 @@ import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { grantsOf, hasAnyGrant, isAdminLike, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, hourInZone } from '@shared/utils/timezone';
+import { pageOf, PaginationMeta, parsePageParams } from '@shared/utils/pagination';
 import { CalendarService } from '@modules/calendar/application/calendar.service';
 import { isWorkingDay } from '@modules/calendar/domain/calendar.rules';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
@@ -18,6 +19,7 @@ import {
   WorktimeReader,
 } from '../domain/worktime.reader';
 import { approverScopeOf } from './approver-scope';
+import { PAGE_DEFAULT_LIMIT, PAGE_MAX_LIMIT } from './dto/workday.dto';
 import { nameOf, PeopleScopeService } from './people-scope.service';
 import { PersonDay, PersonDaysService } from './person-days.service';
 import { asShiftPerson } from './team-today.service';
@@ -63,7 +65,10 @@ export interface TeamView {
     notStarted: number;
     ended: number;
   };
+  /** The requested page only. */
   people: TeamPersonView[];
+  /** Paging of `people`: total = everyone after view, departmentId and q. */
+  meta: PaginationMeta;
 }
 
 /** 3.3: one organisation's today, as the Super Manager's Overview shows it. */
@@ -211,7 +216,13 @@ export class TeamOverviewService {
 
   async team(
     me: AuthenticatedUser,
-    q: { view?: 'active' | 'all'; departmentId?: string; q?: string },
+    q: {
+      view?: 'active' | 'all';
+      departmentId?: string;
+      q?: string;
+      page?: unknown;
+      limit?: unknown;
+    },
     now: Date,
   ): Promise<TeamView> {
     if (!seesWholeOrg(me) && !hasAnyGrant(me)) {
@@ -237,38 +248,50 @@ export class TeamOverviewService {
       return { lives, departments };
     });
     const deptBy = new Map(base.departments.map((d) => [d.id, d]));
-    const all = base.lives.filter((l) => l.person.active);
     const isActive = (l: Live) =>
       l.status === 'WORKING' ||
       l.status === 'BREAK' ||
       l.status === 'MEETING' ||
       l.status === 'AWAY';
-    const counts = {
-      all: all.length,
-      active: all.filter(isActive).length,
-      working: all.filter((l) => l.status === 'WORKING').length,
-      onBreak: all.filter((l) => l.status === 'BREAK').length,
-      inMeeting: all.filter((l) => l.status === 'MEETING').length,
-      away: all.filter((l) => l.status === 'AWAY').length,
-      notStarted: all.filter((l) => l.status === 'NOT_STARTED').length,
-      ended: all.filter((l) => l.status === 'ENDED').length,
-    };
+    // Filter first (department, search across everyone in scope), then page.
     const words = (q.q ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-    const people = all
-      .filter((l) => (q.view === 'active' ? isActive(l) : true))
+    const matching = base.lives
+      .filter((l) => l.person.active)
       .filter((l) => (q.departmentId ? l.person.departmentId === q.departmentId : true))
       .filter((l) => {
         if (!words.length) return true;
         const hay =
           `${nameOf(l.person)} ${l.person.email} ${l.person.designation ?? ''}`.toLowerCase();
         return words.every((w) => hay.includes(w));
-      })
-      .sort(
-        (a, b) =>
-          rank(a.status) - rank(b.status) || nameOf(a.person).localeCompare(nameOf(b.person)),
-      )
-      .map((l) => this.personView(l, deptBy));
-    return { date: dateKeyInZone(now, appTimezone()), counts, people };
+      });
+    // Counts cover everyone the department and search filters match, whatever the
+    // page. Not `view`: the counts are what the All / Active tabs show.
+    const counts = {
+      all: matching.length,
+      active: matching.filter(isActive).length,
+      working: matching.filter((l) => l.status === 'WORKING').length,
+      onBreak: matching.filter((l) => l.status === 'BREAK').length,
+      inMeeting: matching.filter((l) => l.status === 'MEETING').length,
+      away: matching.filter((l) => l.status === 'AWAY').length,
+      notStarted: matching.filter((l) => l.status === 'NOT_STARTED').length,
+      ended: matching.filter((l) => l.status === 'ENDED').length,
+    };
+    // A fixed order (name, then id), not live status: a status changing between two
+    // page requests would otherwise show someone twice or skip them.
+    const listed = matching
+      .filter((l) => (q.view === 'active' ? isActive(l) : true))
+      .sort((a, b) => byNameThenId(nameOf(a.person), a.person.id, nameOf(b.person), b.person.id));
+    const { page, limit } = parsePageParams(q, {
+      defaultLimit: PAGE_DEFAULT_LIMIT,
+      maxLimit: PAGE_MAX_LIMIT,
+    });
+    const { items, meta } = pageOf(listed, page, limit);
+    return {
+      date: dateKeyInZone(now, appTimezone()),
+      counts,
+      people: items.map((l) => this.personView(l, deptBy)),
+      meta,
+    };
   }
 
   private personView(l: Live, deptBy: Map<string, DepartmentRow>): TeamPersonView {
@@ -319,14 +342,25 @@ export class TeamOverviewService {
     });
   }
 
-  async overview(me: AuthenticatedUser, now: Date) {
+  /**
+   * `page` and `limit` apply to the departments list only (`departmentsMeta`).
+   * today, approvals and month stay totals for the whole scope; attention,
+   * nextHolidays and hourly (all 24 hours for the chart) are never paged.
+   */
+  async overview(me: AuthenticatedUser, now: Date, q: { page?: unknown; limit?: unknown } = {}) {
     if (!seesWholeOrg(me) && me.role !== Role.MANAGER) {
       throw new ForbiddenError('Only managers and admins can see this.');
     }
     const companyId = requireOrg(me);
-    return this.cached(`overview|${this.scopeKey(me)}`, () =>
+    const full = await this.cached(`overview|${this.scopeKey(me)}`, () =>
       this.buildOverview(me, companyId, now),
     );
+    const { page, limit } = parsePageParams(q, {
+      defaultLimit: PAGE_DEFAULT_LIMIT,
+      maxLimit: PAGE_MAX_LIMIT,
+    });
+    const { items, meta } = pageOf(full.departments, page, limit);
+    return { ...full, departments: items, departmentsMeta: meta };
   }
 
   private async buildOverview(me: AuthenticatedUser, companyId: string, now: Date) {
@@ -403,21 +437,23 @@ export class TeamOverviewService {
       }
     }
 
-    // Departments grid
-    const deptRows = visibleDepts.map((d) => {
-      const members = active.filter(
-        (l) => l.person.departmentId === d.id && l.person.role === 'USER',
-      );
-      return {
-        id: d.id,
-        name: d.name,
-        icon: d.icon,
-        staff: members.length,
-        working: members.filter((l) => l.status === 'WORKING' || l.status === 'MEETING').length,
-        focusSec: sum(members, (l) => l.day.summary.focusSec),
-        targetSec: sum(members, (l) => l.day.summary.targetSec),
-      };
-    });
+    // Departments grid, in a fixed order (name, then id) so pages never overlap.
+    const deptRows = [...visibleDepts]
+      .sort((a, b) => byNameThenId(a.name, a.id, b.name, b.id))
+      .map((d) => {
+        const members = active.filter(
+          (l) => l.person.departmentId === d.id && l.person.role === 'USER',
+        );
+        return {
+          id: d.id,
+          name: d.name,
+          icon: d.icon,
+          staff: members.length,
+          working: members.filter((l) => l.status === 'WORKING' || l.status === 'MEETING').length,
+          focusSec: sum(members, (l) => l.day.summary.focusSec),
+          targetSec: sum(members, (l) => l.day.summary.targetSec),
+        };
+      });
 
     // Needs attention
     const lite = (ls: Live[]) =>
@@ -520,6 +556,6 @@ function sum<T>(rows: T[], f: (r: T) => number): number {
   return rows.reduce((s, r) => s + f(r), 0);
 }
 
-function rank(s: TeamStatus): number {
-  return { WORKING: 0, MEETING: 1, AWAY: 2, BREAK: 3, ENDED: 4, NOT_STARTED: 5 }[s];
+function byNameThenId(aName: string, aId: string, bName: string, bId: string): number {
+  return aName.localeCompare(bName) || (aId < bId ? -1 : aId > bId ? 1 : 0);
 }

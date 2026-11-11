@@ -30,7 +30,7 @@ import { MyBreaksUseCase } from '@modules/shifts/application/use-cases/my-breaks
 import { BreakDayView } from '@modules/shifts/application/shifts.types';
 import { DEFAULT_REASON_MIN_CHARS } from '@modules/shifts/domain/shift.types';
 import { agentGeneration } from '../domain/agent-generation';
-import { TeamQueryDto, TeamTodayQueryDto } from '../application/dto/workday.dto';
+import { OverviewQueryDto, TeamQueryDto, TeamTodayQueryDto } from '../application/dto/workday.dto';
 import { TeamOverviewService } from '../application/team-overview.service';
 import { CombinedViewsService } from '../application/combined-views.service';
 import { SkipsService } from '../application/skips.service';
@@ -233,7 +233,7 @@ export class OverviewController {
       'The organisation (Admin) or my departments (Manager): today, approvals, this month against ' +
       'target, departments, needs attention, next holidays, working people per hour',
   })
-  async get(@CurrentUser() me: AuthenticatedUser) {
-    return envelope(await this.teamOverview.overview(me, new Date()));
+  async get(@CurrentUser() me: AuthenticatedUser, @Query() q: OverviewQueryDto) {
+    return envelope(await this.teamOverview.overview(me, new Date(), q));
   }
 }

@@ -31,6 +31,8 @@ export interface ListScreenshotsFilter {
 
 export interface ScreenshotRepository {
   create(data: CreateScreenshotData): Promise<ScreenshotRecord>;
+  /** The row already recorded for a stored object, so a repeated "complete" is harmless. */
+  findByStorageKey(storageKey: string): Promise<ScreenshotRecord | null>;
   /** OCR text found after the upload was answered (3.3); a vanished row is ignored. */
   setOcrText(id: string, text: string | null): Promise<void>;
   listForUser(userId: string, filter: ListScreenshotsFilter): Promise<ScreenshotRecord[]>;

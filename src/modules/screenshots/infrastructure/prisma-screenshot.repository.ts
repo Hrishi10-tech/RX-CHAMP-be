@@ -25,6 +25,11 @@ export class PrismaScreenshotRepository implements ScreenshotRepository {
     return this.toRecord(row);
   }
 
+  async findByStorageKey(storageKey: string): Promise<ScreenshotRecord | null> {
+    const row = await this.prisma.screenshot.findFirst({ where: { storageKey } });
+    return row ? this.toRecord(row) : null;
+  }
+
   async setOcrText(id: string, text: string | null): Promise<void> {
     // updateMany: a row archived or deleted meanwhile is simply not there.
     await this.prisma.screenshot.updateMany({ where: { id }, data: { ocrText: text } });

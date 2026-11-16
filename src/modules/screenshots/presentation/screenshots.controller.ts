@@ -1,19 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Post,
-  Query,
-  Res,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -21,25 +8,16 @@ import { envelope } from '@shared/http/envelope';
 import {
   ArchiveScreenshotsDto,
   CaptureRequestDto,
+  CompleteUploadDto,
   ExportScreenshotsQueryDto,
   ListScreenshotsQueryDto,
-  UploadScreenshotDto,
+  RequestUploadUrlDto,
 } from '../application/dto';
-import {
-  MAX_SCREENSHOT_BYTES,
-  UploadScreenshotUseCase,
-} from '../application/use-cases/upload-screenshot.use-case';
-import { AgentContactService } from '@modules/agent-health/application/agent-contact.service';
+import { UploadScreenshotUseCase } from '../application/use-cases/upload-screenshot.use-case';
 import { ListScreenshotsUseCase } from '../application/use-cases/list-screenshots.use-case';
 import { RequestCaptureUseCase } from '../application/use-cases/request-capture.use-case';
 import { ArchiveScreenshotsUseCase } from '../application/use-cases/archive-screenshots.use-case';
 import { ExportScreenshotsUseCase } from '../application/use-cases/export-screenshots.use-case';
-
-/**
- * multer's hard stop sits above the use case's limit so an oversized upload is
- * refused by our code (recorded, with the size) rather than cut off mid-stream.
- */
-const MULTER_HARD_LIMIT = MAX_SCREENSHOT_BYTES + 1024 * 1024;
 
 @ApiTags('screenshots')
 @ApiBearerAuth()
@@ -52,32 +30,34 @@ export class ScreenshotsController {
     private readonly requestCapture: RequestCaptureUseCase,
     private readonly archiveScreenshots: ArchiveScreenshotsUseCase,
     private readonly exportScreenshots: ExportScreenshotsUseCase,
-    private readonly contacts: AgentContactService,
   ) {}
 
-  @Post()
-  @HttpCode(201)
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Agent uploads a captured screenshot (field "file")' })
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MULTER_HARD_LIMIT, files: 1 } }))
-  async upload(
-    @CurrentUser() me: AuthenticatedUser,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: UploadScreenshotDto,
-  ) {
-    if (!file) {
-      this.contacts.refused(me.id, {
-        status: 400,
-        code: 'NO_FILE',
-        reason: 'The upload had no "file" part.',
-        bytes: null,
-      });
-      throw new BadRequestException('Missing "file"');
-    }
+  @Post('upload-url')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Agent asks for a presigned S3 POST for one screenshot. Upload `fields` plus the ' +
+      'file (last, as "file") to `url`, then call POST /screenshots/complete with `key`.',
+  })
+  async uploadUrl(@CurrentUser() me: AuthenticatedUser, @Body() body: RequestUploadUrlDto) {
     return envelope(
-      await this.uploadScreenshot.execute(me.id, {
-        buffer: file.buffer,
-        contentType: file.mimetype,
+      await this.uploadScreenshot.requestUpload(me.id, {
+        contentType: body.contentType ?? 'image/jpeg',
+        kind: body.kind,
+        takenAt: body.takenAt ? new Date(body.takenAt) : undefined,
+      }),
+    );
+  }
+
+  @Post('complete')
+  @HttpCode(201)
+  @ApiOperation({
+    summary: 'Agent says a presigned upload is done; the shot is checked and recorded',
+  })
+  async complete(@CurrentUser() me: AuthenticatedUser, @Body() body: CompleteUploadDto) {
+    return envelope(
+      await this.uploadScreenshot.completeUpload(me.id, {
+        key: body.key,
         kind: body.kind,
         takenAt: body.takenAt ? new Date(body.takenAt) : undefined,
       }),

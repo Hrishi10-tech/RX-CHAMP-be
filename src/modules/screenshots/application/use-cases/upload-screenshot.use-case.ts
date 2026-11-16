@@ -7,6 +7,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { AgentContactService } from '@modules/agent-health/application/agent-contact.service';
@@ -22,13 +23,9 @@ import {
 } from '../../domain/screenshot-policy.reader';
 import { S3StorageService } from '../../infrastructure/s3-storage.service';
 import { OcrService } from '../../infrastructure/ocr.service';
-import {
-  MAX_OCR_BYTES,
-  normaliseScreenshot,
-  sniffImageType,
-} from '../../infrastructure/image-normaliser';
+import { MAX_OCR_BYTES, sniffImageType } from '../../infrastructure/image-normaliser';
 import { ScreenshotMapper } from '../screenshot.mapper';
-import { ScreenshotView, UploadScreenshotInput } from '../screenshot.types';
+import { ScreenshotView } from '../screenshot.types';
 
 export { sniffImageType };
 
@@ -42,22 +39,53 @@ function localDateString(d: Date): string {
 /** A capture stamped this far ahead of the server clock is taken as "now". */
 const MAX_FUTURE_SKEW_MS = 2 * 60_000;
 
-/**
- * Largest upload accepted (3.3; was 8 MB). A two-monitor 4K PNG is 20 MB and was
- * refused with 413 on every attempt, which is how screenshots came to work for
- * some people and not others. The image is re-encoded on arrival, so the limit
- * only bounds what travels, not what is stored. nginx must allow at least this
- * much (`client_max_body_size`, see DEPLOYMENT.md).
- */
-export const MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024;
-
 /** Textract is given this long; a slow OCR must never hold up the agent. */
 export const OCR_TIMEOUT_MS = 20_000;
 
 /**
- * The agent uploads a captured screenshot: normalise it, store it in S3, record
- * it, answer. OCR runs afterwards, in the background. Every refusal is recorded
- * against the person (GET /agent-health shows the last one and why).
+ * Largest direct (presigned) upload. Nothing re-encodes a direct upload, so the
+ * agent sends a JPEG of at most 2560 px wide (about 0.3 to 1 MB); this is room to
+ * spare, enforced by S3 itself through the presigned POST policy.
+ */
+export const MAX_DIRECT_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** How long a presigned upload link stays valid. */
+export const UPLOAD_URL_TTL_SECONDS = 300;
+
+export interface RequestUploadInput {
+  contentType: 'image/jpeg' | 'image/png';
+  kind?: ScreenshotKind;
+  takenAt?: Date;
+}
+
+export interface CompleteUploadInput {
+  key: string;
+  kind?: ScreenshotKind;
+  takenAt?: Date;
+}
+
+/** Where and how the agent uploads one shot: POST `fields` + the file to `url`. */
+export interface UploadTicket {
+  key: string;
+  url: string;
+  fields: Record<string, string>;
+  maxBytes: number;
+  expiresIn: number;
+}
+
+/** The capture time the agent claims, or now when it is missing, invalid or ahead. */
+function takenAtOf(claimed: Date | undefined): Date {
+  const now = new Date();
+  const at = claimed && !Number.isNaN(claimed.getTime()) ? claimed : now;
+  return at.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS ? now : at;
+}
+
+/**
+ * Screenshots reach S3 only through a presigned POST: the agent asks for a link
+ * (requestUpload), uploads the image straight to S3, then reports it done
+ * (completeUpload). The server never carries the image bytes on the way in. OCR
+ * runs afterwards, in the background. Every refusal is recorded against the
+ * person (GET /agent-health shows the last one and why).
  */
 @Injectable()
 export class UploadScreenshotUseCase {
@@ -72,67 +100,116 @@ export class UploadScreenshotUseCase {
     private readonly contacts: AgentContactService,
   ) {}
 
-  async execute(userId: string, input: UploadScreenshotInput): Promise<ScreenshotView> {
+  /**
+   * Step 1: the agent asks where to put a shot. The gates run first, so a refused
+   * shot is never uploaded at all.
+   * The answer is a presigned POST that S3 holds to this key, this content type
+   * and at most MAX_DIRECT_UPLOAD_BYTES, for UPLOAD_URL_TTL_SECONDS.
+   */
+  async requestUpload(userId: string, input: RequestUploadInput): Promise<UploadTicket> {
     try {
-      return await this.accept(userId, input);
+      const takenAt = takenAtOf(input.takenAt);
+      const kind: ScreenshotKind = input.kind ?? 'AUTO';
+      await this.gate(userId, kind, takenAt);
+      const extension = input.contentType === 'image/png' ? 'png' : 'jpg';
+      const key = this.s3.buildKey(userId, takenAt, randomUUID(), extension);
+      const post = await this.s3.presignUpload(
+        key,
+        input.contentType,
+        MAX_DIRECT_UPLOAD_BYTES,
+        UPLOAD_URL_TTL_SECONDS,
+      );
+      return {
+        key,
+        url: post.url,
+        fields: post.fields,
+        maxBytes: MAX_DIRECT_UPLOAD_BYTES,
+        expiresIn: UPLOAD_URL_TTL_SECONDS,
+      };
     } catch (err) {
-      this.recordRefusal(userId, err, input.buffer?.length ?? 0);
+      this.recordRefusal(userId, err, 0);
       throw err;
     }
   }
 
-  private async accept(userId: string, input: UploadScreenshotInput): Promise<ScreenshotView> {
-    const size = input.buffer?.length ?? 0;
-    if (!size) throw new BadRequestException('Empty screenshot');
-    if (size > MAX_SCREENSHOT_BYTES) {
-      // Rounded up, so a file one byte over never reads as "32 MB; the limit is 32 MB".
-      const shown = Math.ceil((size / 1048576) * 100) / 100;
-      throw new PayloadTooLargeException(
-        `Screenshot is ${shown} MB (${size.toLocaleString('en-US')} bytes); the limit is ${MAX_SCREENSHOT_BYTES / 1048576} MB.`,
-      );
-    }
-    // Only real PNG/JPEG images are stored; the declared type is not trusted.
-    if (!sniffImageType(input.buffer)) {
-      throw new BadRequestException('Screenshots must be PNG or JPEG images');
-    }
+  /**
+   * Direct upload, step 2: the agent says the object is in S3. It is checked
+   * (theirs, there, within the limit, a real PNG or JPEG) and recorded. The gates
+   * run again for a shot that was in flight when the switch flipped or the day
+   * ended; anything refused here is deleted from the bucket. Completing the same
+   * key twice returns the first record.
+   */
+  async completeUpload(userId: string, input: CompleteUploadInput): Promise<ScreenshotView> {
+    const { key } = input;
+    let size = 0;
+    let refusal: string | undefined;
+    try {
+      if (!this.s3.isKeyOf(userId, key)) {
+        refusal = 'BAD_KEY';
+        throw new BadRequestException('That upload key is not yours.');
+      }
+      const existing = await this.repo.findByStorageKey(key);
+      if (existing) return ScreenshotMapper.toView(existing, await this.s3.presignGet(key));
 
-    const now = new Date();
-    const claimed = input.takenAt && !Number.isNaN(input.takenAt.getTime()) ? input.takenAt : now;
-    const takenAt = claimed.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS ? now : claimed;
-    const kind: ScreenshotKind = input.kind ?? 'AUTO';
+      const found = await this.s3.sizeOf(key);
+      if (found === null) {
+        refusal = 'NOT_UPLOADED';
+        throw new NotFoundException('Nothing was uploaded under that key.');
+      }
+      size = found;
+      if (size > MAX_DIRECT_UPLOAD_BYTES) {
+        await this.s3.remove(key);
+        throw new PayloadTooLargeException(
+          `Screenshot is ${mb(size)} MB; the limit is ${MAX_DIRECT_UPLOAD_BYTES / 1048576} MB.`,
+        );
+      }
+      if (!sniffImageType(await this.s3.read(key, 16))) {
+        await this.s3.remove(key);
+        throw new BadRequestException('Screenshots must be PNG or JPEG images');
+      }
 
-    // Automatic capture can be switched off per user. The agent is told and stops
-    // on its own, but a shot already in flight when the switch flipped would
-    // otherwise still land — so refuse it here too. A MANUAL capture is a manager
-    // asking for one deliberately and is never gated by this.
+      const takenAt = takenAtOf(input.takenAt);
+      const kind: ScreenshotKind = input.kind ?? 'AUTO';
+      try {
+        await this.gate(userId, kind, takenAt);
+      } catch (err) {
+        await this.s3.remove(key);
+        throw err;
+      }
+
+      const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText: null });
+      if (size <= MAX_OCR_BYTES) {
+        setImmediate(() => {
+          this.s3
+            .read(key)
+            .then((bytes) => this.ocrLater(rec.id, bytes))
+            .catch((err: Error) => this.logger.warn(`OCR of ${rec.id} skipped: ${err.message}`));
+        });
+      }
+      return ScreenshotMapper.toView(rec, await this.s3.presignGet(key));
+    } catch (err) {
+      this.recordRefusal(userId, err, size, refusal);
+      throw err;
+    }
+  }
+
+  /**
+   * Automatic capture can be switched off per user. The agent is told and stops
+   * on its own, but a shot already in flight when the switch flipped would
+   * otherwise still land, so it is refused here too. A MANUAL capture is a
+   * manager asking for one deliberately and is never gated by this.
+   *
+   * Capture also stops dead at "End Day". A shot that arrives after it (one in
+   * flight, or an agent restarted after signing off) is refused rather than
+   * stored, so nothing lands in the day after the user was told it was over.
+   */
+  private async gate(userId: string, kind: ScreenshotKind, takenAt: Date): Promise<void> {
     if (kind === 'AUTO' && !(await this.policy.isAutoEnabled(userId))) {
       throw new ForbiddenException('Automatic screenshots are switched off for this user.');
     }
-
-    // Capture stops dead at "End Day". A shot that arrives after it — one already
-    // in flight, or an agent restarted after signing off — is refused rather than
-    // stored, so nothing lands in the day after the user was told it was over.
     if (await this.dayEnds.hasEnded(userId, localDateString(takenAt))) {
       throw new ConflictException('Your working day has ended; captures have stopped.');
     }
-
-    // One predictable size whatever the screen produced (a bounded JPEG).
-    const image = (await normaliseScreenshot(input.buffer))!;
-    if (image.reencoded) {
-      this.logger.debug(
-        `screenshot of ${userId}: ${mb(size)} MB -> ${mb(image.bytes.length)} MB (${image.width}x${image.height})`,
-      );
-    }
-    const key = this.s3.buildKey(userId, takenAt, randomUUID(), image.extension);
-    await this.s3.upload(key, image.bytes, image.contentType);
-    const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText: null });
-
-    // OCR after the answer: the agent never waits on Textract, and a slow or
-    // failing OCR costs the search index one shot, never the shot itself.
-    this.ocrLater(rec.id, image.bytes);
-
-    const url = await this.s3.presignGet(key);
-    return ScreenshotMapper.toView(rec, url);
   }
 
   /** Best effort, bounded by OCR_TIMEOUT_MS; the result lands when it lands. */
@@ -147,11 +224,12 @@ export class UploadScreenshotUseCase {
     });
   }
 
-  private recordRefusal(userId: string, err: unknown, bytes: number): void {
+  private recordRefusal(userId: string, err: unknown, bytes: number, forced?: string): void {
     if (!(err instanceof HttpException)) return;
     const status = err.getStatus();
     const code =
-      status === 413
+      forced ??
+      (status === 413
         ? 'TOO_LARGE'
         : status === 403
           ? 'AUTO_OFF'
@@ -159,7 +237,7 @@ export class UploadScreenshotUseCase {
             ? 'DAY_ENDED'
             : bytes === 0
               ? 'EMPTY'
-              : 'NOT_AN_IMAGE';
+              : 'NOT_AN_IMAGE');
     this.contacts.refused(userId, { status, code, reason: err.message, bytes });
     this.logger.warn(`screenshot of ${userId} refused (${code}, ${bytes} bytes): ${err.message}`);
   }

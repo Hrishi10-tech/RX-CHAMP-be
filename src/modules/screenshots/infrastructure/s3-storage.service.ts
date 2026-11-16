@@ -1,12 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /**
  * Wraps the S3 bucket for screenshot storage. Credentials live only here on the
- * server (from env) — they are never shipped to the agent. Objects are stored
- * private; callers get short-lived presigned GET URLs to display them.
+ * server (from env) — they are never shipped to the agent. The server never
+ * writes an image itself: the agent uploads through a presigned POST
+ * (presignUpload). Objects are stored private; callers get short-lived presigned
+ * GET URLs to display them.
  */
 @Injectable()
 export class S3StorageService {
@@ -35,11 +43,72 @@ export class S3StorageService {
     return `${this.prefix}screenshots/${userId}/${day}/${stamp}-${id}.${extension}`;
   }
 
-  async upload(key: string, body: Buffer, contentType = 'image/png'): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+  /**
+   * True when `key` is one this service would build for `userId`: under their own
+   * folder, plain characters only. The agent hands the key back after a direct
+   * upload, so it must never be able to claim someone else's object.
+   */
+  isKeyOf(userId: string, key: string): boolean {
+    const own = `${this.prefix}screenshots/${userId}/`;
+    return (
+      key.startsWith(own) && /^\d{4}-\d{2}-\d{2}\/[\w-]+\.(png|jpg)$/.test(key.slice(own.length))
     );
-    this.logger.debug(`uploaded s3://${this.bucket}/${key} (${body.length} bytes)`);
+  }
+
+  /**
+   * A presigned POST the agent uploads one object to directly. S3 itself enforces
+   * the key, the content type and the size range, so the link cannot be used to
+   * store anything else, anywhere else, or anything larger.
+   */
+  presignUpload(
+    key: string,
+    contentType: string,
+    maxBytes: number,
+    expiresInSeconds: number,
+  ): Promise<{ url: string; fields: Record<string, string> }> {
+    return createPresignedPost(this.client, {
+      Bucket: this.bucket,
+      Key: key,
+      Fields: { 'Content-Type': contentType },
+      Conditions: [
+        ['content-length-range', 1, maxBytes],
+        ['eq', '$Content-Type', contentType],
+      ],
+      Expires: expiresInSeconds,
+    });
+  }
+
+  /** Size of a stored object, or null when there is no such object. */
+  async sizeOf(key: string): Promise<number | null> {
+    try {
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return head.ContentLength ?? 0;
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status === 404 || (err as Error).name === 'NotFound') return null;
+      throw err;
+    }
+  }
+
+  /** The object's bytes, or only the first `bytes` of them. */
+  async read(key: string, bytes?: number): Promise<Buffer> {
+    const res = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Range: bytes ? `bytes=0-${bytes - 1}` : undefined,
+      }),
+    );
+    return Buffer.from(await res.Body!.transformToByteArray());
+  }
+
+  /** Best effort: a refused upload should not stay in the bucket. */
+  async remove(key: string): Promise<void> {
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (err) {
+      this.logger.warn(`could not delete s3://${this.bucket}/${key}: ${(err as Error).message}`);
+    }
   }
 
   /** A time-limited URL the browser can load directly. */

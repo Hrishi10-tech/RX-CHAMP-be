@@ -18,6 +18,9 @@ Not included, on purpose:
   .env           live passwords and keys. Use .env.example as the template.
 
 Also in this folder:
-  timechamp-agent-winui, timechamp-agent-installer
-                 the source of the old 2.x Windows agent and its installer, kept for
-                 reference only. The 3.1 agent is in agent/ at the top of the zip.
+  timechamp-agent-winui
+                 the RX Vision desktop agent, 4.0.1 (Avalonia, .NET 8): Windows and
+                 macOS (Apple Silicon + Intel). The 4.0.0 release source plus the
+                 presigned S3 screenshot upload and the 3.3 focus-adjustment line.
+                 Build: build/build-windows.sh --real, build/build-mac.sh.
+                 (The old 2.x WinUI agent that lived here is in git history.)

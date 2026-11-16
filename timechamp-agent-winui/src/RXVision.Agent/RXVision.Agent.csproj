@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The RX Vision desktop app: tray or menu-bar icon, floating button, dashboard,
+       sign-in, notice, toasts. One Avalonia codebase for Windows and macOS; all the
+       agent's logic lives in RXVision.Agent.Core, the OS seams in the platform
+       projects (picked at runtime in PlatformFactory). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>RXVision</AssemblyName>
+    <RootNamespace>RXVision.Agent</RootNamespace>
+    <ApplicationIcon>Assets/rxvision.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Avalonia and the views use reflection-free compiled bindings, but trimming is
+         not verified for this app: publish untrimmed. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.8" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RXVision.Agent.Core/RXVision.Agent.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The OS implementations. `-p:RxvNoPlatforms=true` builds the UI without them
+       (DevPlatform only), for working on screens while those projects are mid-change. -->
+  <ItemGroup Condition="'$(RxvNoPlatforms)' != 'true'">
+    <ProjectReference Include="../RXVision.Agent.Platform.Windows/RXVision.Agent.Platform.Windows.csproj" />
+    <ProjectReference Include="../RXVision.Agent.Platform.Mac/RXVision.Agent.Platform.Mac.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(RxvNoPlatforms)' == 'true'">
+    <DefineConstants>$(DefineConstants);RXV_NO_PLATFORMS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded for the views (avares://RXVision/Assets/...). -->
+    <AvaloniaResource Include="Assets/agent-badge.png;Assets/rxvision.ico;Assets/rxvision-256.png;Assets/tray.ico;Assets/tray.png;Assets/tray-template.png" />
+    <!-- Beside the app for the platform code and installers: the chime is played
+         from Assets/chime.wav in the app folder; the icons are for packaging. -->
+    <Content Include="Assets/chime.wav;Assets/rxvision.ico;Assets/rxvision-256.png;Assets/tray-template.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RXVision.Agent.UI.Tests" />
+  </ItemGroup>
+
+</Project>

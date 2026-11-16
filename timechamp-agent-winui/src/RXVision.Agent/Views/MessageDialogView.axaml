@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             xmlns:conv="using:RXVision.Agent.Converters"
+             x:Class="RXVision.Agent.Views.MessageDialogView"
+             x:DataType="dlg:MessageDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,20" Spacing="12">
+      <TextBlock Classes="h2" Text="{Binding Title}" />
+      <WrapPanel IsVisible="{Binding HasTag}">
+        <Border Classes="pill" Background="{Binding TagTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}" Margin="0,0,8,0">
+          <TextBlock Text="{Binding TagText}" Foreground="{Binding TagTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+        </Border>
+        <TextBlock Classes="muted" Text="{Binding TagDetail}" VerticalAlignment="Center" />
+      </WrapPanel>
+      <TextBlock Classes="body" Text="{Binding Message}" />
+      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <Panel>
+        <UniformGrid Rows="1" Margin="-4,0" IsVisible="{Binding HasNoAlt}">
+          <Button Name="Primary"
+                  Classes="primary"
+                  Classes.danger="{Binding IsDanger}"
+                  Content="{Binding PrimaryText}"
+                  Command="{Binding SubmitCommand}"
+                  IsDefault="{Binding HasNoAlt}" />
+          <Button Classes="secondary"
+                  Content="{Binding CancelText}"
+                  Command="{Binding CancelCommand}"
+                  IsCancel="True"
+                  IsVisible="{Binding HasCancel}" />
+        </UniformGrid>
+        <!-- Start break · Skip break · Cancel -->
+        <Grid ColumnDefinitions="1.2*,8,*,8,Auto" IsVisible="{Binding HasAlt}">
+          <Button Name="AltPrimary" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
+                  Command="{Binding SubmitCommand}" IsDefault="{Binding HasAlt}" />
+          <Button Grid.Column="2" Classes="skip" HorizontalAlignment="Stretch" Content="{Binding AltText}"
+                  Command="{Binding AlternativeCommand}" />
+          <Button Grid.Column="4" Classes="plain" Content="{Binding CancelText}" Command="{Binding CancelCommand}"
+                  IsVisible="{Binding HasCancel}" />
+        </Grid>
+      </Panel>
+    </Border>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything the agent does that is not drawing pixels or calling the OS:
+       the API client, sign-in and session, scheduled breaks, activity with its
+       offline backlog, screenshots, sockets, updates. Shared by the Windows and
+       macOS apps, and fully testable on any OS. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RXVision.Agent.Core</RootNamespace>
+    <AssemblyName>RXVision.Agent.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SocketIOClient" Version="3.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RXVision.Agent.Core.Tests" />
+    <InternalsVisibleTo Include="RXVision.Agent.E2E.Tests" />
+  </ItemGroup>
+
+</Project>

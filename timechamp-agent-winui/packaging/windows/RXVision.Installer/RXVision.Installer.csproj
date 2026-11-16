@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- RX Vision Installer v3: a self-extracting bootstrapper that installs the
+       Avalonia agent side by side and switches to it. AssemblyName is deliberately
+       RXChampAgent, because the S3 object key and the backend config serve the
+       download under that name; the product name shown to the user is "RX Vision
+       Installer". Version comes from Directory.Build.props (3.1.0).
+
+       OutputType/RID/SelfContained/PublishSingleFile are publish-time settings; a
+       plain build (for unit-testing InstallerCore) still produces a net8.0 assembly. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RXVision.Installer</RootNamespace>
+    <AssemblyName>RXChampAgent</AssemblyName>
+    <Product>RX Vision Installer</Product>
+    <AssemblyTitle>RX Vision Installer</AssemblyTitle>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <!-- Do not fail the build on a missing RID graph warning when cross-publishing. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The published Avalonia agent folder, zipped (RXVision.exe at the zip root),
+         embedded into this exe. Created by build/build-windows.sh. Conditional so the
+         project still compiles before the payload has been produced. -->
+    <EmbeddedResource Include="payload\app.zip" LogicalName="app.zip" Condition="Exists('payload\app.zip')" />
+  </ItemGroup>
+
+</Project>

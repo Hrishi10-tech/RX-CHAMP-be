@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+        x:Class="RXVision.Agent.Views.DialogWindow"
+        x:DataType="dlg:DialogViewModel"
+        Title="RX Vision"
+        Icon="avares://RXVision/Assets/rxvision.ico"
+        Width="{Binding Width}" SizeToContent="Height"
+        CanResize="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFFFFF">
+  <ContentControl Content="{Binding}" />
+</Window>

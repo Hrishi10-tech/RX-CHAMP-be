@@ -1,0 +1,120 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RXVision.Agent.ViewModels"
+        x:Class="RXVision.Agent.Views.AwayWindow"
+        x:DataType="vm:AwayViewModel"
+        Title="RX Vision · Away"
+        Icon="avares://RXVision/Assets/rxvision.ico"
+        Width="470" SizeToContent="Height"
+        CanResize="False"
+        Topmost="True"
+        ShowActivated="False"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFFFFF">
+  <!-- The away pop-up (SPEC 2.5, 8.4). -->
+  <StackPanel>
+
+    <!-- Asking: what were you doing? -->
+    <StackPanel IsVisible="{Binding IsAsking}">
+      <StackPanel Margin="24,22,24,18" Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="11">
+          <Border Width="38" Height="38" CornerRadius="12" Background="{StaticResource Brush.AmberIcon}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Away}" Width="20" Height="20" Foreground="{StaticResource Brush.AmberStrong}" />
+          </Border>
+          <StackPanel VerticalAlignment="Center" Spacing="1">
+            <TextBlock Name="AwayHeading" Classes="h2" Text="{Binding Heading}" />
+            <TextBlock Classes="small" Text="No keyboard or mouse for a while. What were you doing?" />
+          </StackPanel>
+        </StackPanel>
+
+        <ItemsControl ItemsSource="{Binding Reasons}" AutomationProperties.Name="Reasons">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:AwayReasonViewModel">
+              <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}"
+                      Margin="0,0,8,8" AutomationProperties.Name="{Binding Label}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Spacing="6" IsVisible="{Binding AsksComment}">
+          <TextBlock Classes="label" Text="{Binding CommentLabel}" />
+          <TextBox Name="CommentBox" Classes="field" Text="{Binding Comment}" Watermark="{Binding CommentPlaceholder}" MaxLength="200"
+                   AutomationProperties.Name="{Binding CommentLabel}" />
+        </StackPanel>
+
+        <StackPanel Spacing="10" IsVisible="{Binding AsksMeeting}">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Who was in it?" />
+            <TextBox Classes="field" Text="{Binding ParticipantsText}" Watermark="Names, separated by commas" MaxLength="2000"
+                     AutomationProperties.Name="Who was in it" />
+          </StackPanel>
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="What was it about?" />
+            <TextBox Classes="field" Text="{Binding Summary}" Watermark="One line, for example: stand-up with the QA team" MaxLength="200"
+                     AutomationProperties.Name="What was it about" />
+          </StackPanel>
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Who will mail the minutes?" />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox Classes="field" Text="{Binding MomSender}" Watermark="A name" MaxLength="80" AutomationProperties.Name="Who will mail the minutes" />
+              <Button Grid.Column="1" Classes="chip" Margin="8,0,0,0" Content="{Binding SelfChip}" Command="{Binding MomIsMeCommand}"
+                      IsVisible="{Binding HasSelfName}" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+
+        <TextBlock Classes="small" Text="{Binding SelectedNote}" TextWrapping="Wrap"
+                   IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <Border Classes="problem" IsVisible="{Binding HasError}">
+          <TextBlock Text="{Binding Error}" />
+        </Border>
+      </StackPanel>
+      <Border Classes="dialogfooter">
+        <UniformGrid Rows="1" Margin="-4,0">
+          <Button Classes="primary" Content="{Binding SubmitText}" Command="{Binding SubmitCommand}" IsDefault="True" AutomationProperties.Name="Submit" />
+        </UniformGrid>
+      </Border>
+    </StackPanel>
+
+    <!-- On a break (Took a break) -->
+    <StackPanel IsVisible="{Binding IsOnBreak}">
+      <StackPanel Margin="24,22,24,18" Spacing="10">
+        <TextBlock Classes="eyebrow" Text="ON A BREAK" Foreground="{StaticResource Brush.AmberStrong}" FontSize="11.5" FontWeight="Bold" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Classes="num" Text="{Binding BreakTimer}" FontSize="46" FontWeight="Bold" Foreground="{StaticResource Brush.AmberStrong}" />
+          <TextBlock Text="so far" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Brush.AmberStrong}" VerticalAlignment="Bottom" Margin="0,0,0,10" />
+        </StackPanel>
+        <TextBlock Classes="body" Text="{Binding BreakSince}" />
+        <TextBlock Classes="small" TextWrapping="Wrap"
+                   Text="A quick break from when you went away. Your focus time is paused until you end it." />
+        <Border Classes="problem" IsVisible="{Binding HasError}">
+          <TextBlock Text="{Binding Error}" />
+        </Border>
+      </StackPanel>
+      <Border Classes="dialogfooter">
+        <UniformGrid Rows="1" Margin="-4,0">
+          <Button Classes="primary" Content="End break" Command="{Binding EndBreakCommand}" AutomationProperties.Name="End break" />
+        </UniformGrid>
+      </Border>
+    </StackPanel>
+
+    <!-- End break: asked first -->
+    <StackPanel IsVisible="{Binding IsConfirmingEnd}">
+      <StackPanel Margin="24,22,24,18" Spacing="10">
+        <TextBlock Classes="h2" Text="{Binding EndQuestion}" />
+        <TextBlock Classes="body" Text="{Binding EndDetail}" />
+      </StackPanel>
+      <Border Classes="dialogfooter">
+        <UniformGrid Rows="1" Margin="-4,0">
+          <Button Classes="primary" Content="End break" Command="{Binding ConfirmEndCommand}" IsDefault="True" AutomationProperties.Name="Confirm end break" />
+          <Button Classes="secondary" Content="Stay on break" Command="{Binding StayOnBreakCommand}" IsCancel="True" />
+        </UniformGrid>
+      </Border>
+    </StackPanel>
+  </StackPanel>
+</Window>

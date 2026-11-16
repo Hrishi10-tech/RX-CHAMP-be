@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The 4.0 agent end to end against a real, local RX Vision API: the agent's own
+       HTTP client, journal, sender, day model and view models, no FakeServer.
+       Opt-in: every test passes without doing anything unless RXV_E2E_API is set
+       (see E2EEnv.cs), so the normal runs stay offline. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/RXVision.Agent/RXVision.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

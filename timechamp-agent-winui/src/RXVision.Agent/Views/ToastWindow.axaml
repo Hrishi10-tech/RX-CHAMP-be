@@ -1,0 +1,122 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RXVision.Agent.ViewModels"
+        x:Class="RXVision.Agent.Views.ToastWindow"
+        x:DataType="vm:ToastViewModel"
+        Title="RX Vision"
+        SystemDecorations="None"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        CanResize="False"
+        WindowStartupLocation="Manual"
+        Width="344" SizeToContent="Height">
+
+  <Window.Styles>
+    <Style Selector="Border#Card">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateX(22px)" />
+    </Style>
+    <Style Selector="Border#Card.shown">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="translateX(0px)" />
+    </Style>
+    <Style Selector="Border#Card.animate">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.headicon">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="#EEF0FD" />
+    </Style>
+    <Style Selector="Border.headicon PathIcon">
+      <Setter Property="Width" Value="13" />
+      <Setter Property="Height" Value="13" />
+      <Setter Property="Foreground" Value="#4F46E5" />
+    </Style>
+    <Style Selector="Border.headicon.due"><Setter Property="Background" Value="#FEF3E0" /></Style>
+    <Style Selector="Border.headicon.due PathIcon"><Setter Property="Foreground" Value="#B45309" /></Style>
+    <Style Selector="Border.headicon.bad"><Setter Property="Background" Value="#FDECEC" /></Style>
+    <Style Selector="Border.headicon.bad PathIcon"><Setter Property="Foreground" Value="#B42318" /></Style>
+  </Window.Styles>
+
+  <Border Name="Card"
+          Margin="12"
+          Background="#FFFFFF"
+          CornerRadius="14"
+          BorderBrush="#E3E6EF"
+          BorderThickness="1"
+          BoxShadow="0 10 28 0 #2E141828"
+          Padding="14,12,14,14"
+          Cursor="Hand">
+    <Panel>
+    <!-- A cue: one quiet line for a few seconds, no buttons -->
+    <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsCue}">
+      <Border Width="32" Height="32" CornerRadius="16" Background="#E8F7EE" VerticalAlignment="Center">
+        <PathIcon Classes="i" Data="{StaticResource Icon.Spark}" Width="17" Height="17" Foreground="#166534" />
+      </Border>
+      <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" Foreground="#1E2233" VerticalAlignment="Center"
+                 TextWrapping="Wrap" MaxWidth="250" />
+    </StackPanel>
+    <StackPanel Spacing="10" IsVisible="{Binding IsCard}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Classes="headicon" Classes.due="{Binding IsBreakDue}" Classes.bad="{Binding IsRejected}" VerticalAlignment="Center">
+          <Panel>
+            <PathIcon Classes="i" Data="{StaticResource Icon.Chat}" IsVisible="{Binding IsMessage}" />
+            <PathIcon Classes="i" Data="{StaticResource Icon.Bell}" IsVisible="{Binding IsBreakDue}" />
+            <PathIcon Classes="i" Data="{StaticResource Icon.Info}" IsVisible="{Binding IsDecision}" />
+            <PathIcon Classes="i" Data="{StaticResource Icon.Play}" IsVisible="{Binding IsDay}" />
+          </Panel>
+        </Border>
+        <TextBlock Grid.Column="1" Margin="9,0,8,0" Text="{Binding Heading}" FontSize="14" FontWeight="SemiBold"
+                   Foreground="#111827" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <Button Grid.Column="2" Classes="ghost" Command="{Binding DismissCommand}" ToolTip.Tip="Dismiss"
+                AutomationProperties.Name="Dismiss">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="12" Height="12" />
+        </Button>
+      </Grid>
+
+      <Grid ColumnDefinitions="Auto,*">
+        <Panel Width="36" Height="36" VerticalAlignment="Top">
+          <Border CornerRadius="18" Background="#E8EAFB" IsVisible="{Binding IsMessage}">
+            <TextBlock Text="{Binding Initials}" FontSize="13" FontWeight="SemiBold" Foreground="#4F46E5"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <Border CornerRadius="18" Background="#FBEACF" IsVisible="{Binding IsBreakDue}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="18" Height="18" Foreground="#B45309" />
+          </Border>
+          <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsDecision}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Person}" Width="18" Height="18" Foreground="#4F46E5" />
+          </Border>
+          <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsDay}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="18" Height="18" Foreground="#4F46E5" />
+          </Border>
+        </Panel>
+        <StackPanel Grid.Column="1" Margin="11,0,0,0" Spacing="3">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" Foreground="#111827"
+                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="{Binding Stamp}" FontSize="11" Foreground="#6B7280" Margin="8,1,0,0" VerticalAlignment="Top" />
+          </Grid>
+          <TextBlock Text="{Binding Body}" FontSize="12.5" LineHeight="17" Foreground="#4B5563"
+                     TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Grid>
+
+      <UniformGrid Rows="1" Margin="-3,0">
+        <Button Classes.soft="{Binding !HasStrongPrimary}" Classes.primary="{Binding HasStrongPrimary}" Margin="3,0" MinHeight="34" CornerRadius="8"
+                HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding PrimaryCommand}" />
+        <Button Classes="secondary" Margin="3,0" HorizontalAlignment="Stretch" MinHeight="34" CornerRadius="8"
+                Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}" IsVisible="{Binding HasSecondary}" />
+      </UniformGrid>
+    </StackPanel>
+    </Panel>
+  </Border>
+</Window>

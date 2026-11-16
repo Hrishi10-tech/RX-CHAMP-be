@@ -1,0 +1,85 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C3A4DE82-62DB-4535-BC1C-CB562C0C4C07}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Core", "src\RXVision.Agent.Core\RXVision.Agent.Core.csproj", "{9293AE3F-51DF-4A68-85F5-33467A255F04}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E1B85E12-A3CB-435E-BE83-409190CB7DAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Core.Tests", "tests\RXVision.Agent.Core.Tests\RXVision.Agent.Core.Tests.csproj", "{295E6F22-398C-4D73-BF9B-DD6FD32D81EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Platform.Windows", "src\RXVision.Agent.Platform.Windows\RXVision.Agent.Platform.Windows.csproj", "{F4E43AD0-4DCD-4602-B012-696380326EFA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Platform.Mac", "src\RXVision.Agent.Platform.Mac\RXVision.Agent.Platform.Mac.csproj", "{EA1F88AE-652E-40B6-84C6-2B6526A4C044}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent", "src\RXVision.Agent\RXVision.Agent.csproj", "{B21B6F9E-F952-452C-994B-E6B6A9641DF4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.UI.Tests", "tests\RXVision.Agent.UI.Tests\RXVision.Agent.UI.Tests.csproj", "{2F913571-3EEC-4D32-99EC-1CFEB31D443B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Platform.Windows.Tests", "tests\RXVision.Agent.Platform.Windows.Tests\RXVision.Agent.Platform.Windows.Tests.csproj", "{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.Platform.Mac.Tests", "tests\RXVision.Agent.Platform.Mac.Tests\RXVision.Agent.Platform.Mac.Tests.csproj", "{B48F3F02-E04B-4021-A02A-624A24B59F64}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RXVision.Agent.E2E.Tests", "tests\RXVision.Agent.E2E.Tests\RXVision.Agent.E2E.Tests.csproj", "{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9293AE3F-51DF-4A68-85F5-33467A255F04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9293AE3F-51DF-4A68-85F5-33467A255F04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9293AE3F-51DF-4A68-85F5-33467A255F04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9293AE3F-51DF-4A68-85F5-33467A255F04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{295E6F22-398C-4D73-BF9B-DD6FD32D81EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{295E6F22-398C-4D73-BF9B-DD6FD32D81EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{295E6F22-398C-4D73-BF9B-DD6FD32D81EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{295E6F22-398C-4D73-BF9B-DD6FD32D81EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4E43AD0-4DCD-4602-B012-696380326EFA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4E43AD0-4DCD-4602-B012-696380326EFA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4E43AD0-4DCD-4602-B012-696380326EFA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4E43AD0-4DCD-4602-B012-696380326EFA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA1F88AE-652E-40B6-84C6-2B6526A4C044}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA1F88AE-652E-40B6-84C6-2B6526A4C044}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA1F88AE-652E-40B6-84C6-2B6526A4C044}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA1F88AE-652E-40B6-84C6-2B6526A4C044}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B21B6F9E-F952-452C-994B-E6B6A9641DF4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B21B6F9E-F952-452C-994B-E6B6A9641DF4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B21B6F9E-F952-452C-994B-E6B6A9641DF4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B21B6F9E-F952-452C-994B-E6B6A9641DF4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2F913571-3EEC-4D32-99EC-1CFEB31D443B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F913571-3EEC-4D32-99EC-1CFEB31D443B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F913571-3EEC-4D32-99EC-1CFEB31D443B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F913571-3EEC-4D32-99EC-1CFEB31D443B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B48F3F02-E04B-4021-A02A-624A24B59F64}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B48F3F02-E04B-4021-A02A-624A24B59F64}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B48F3F02-E04B-4021-A02A-624A24B59F64}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B48F3F02-E04B-4021-A02A-624A24B59F64}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{9293AE3F-51DF-4A68-85F5-33467A255F04} = {C3A4DE82-62DB-4535-BC1C-CB562C0C4C07}
+		{295E6F22-398C-4D73-BF9B-DD6FD32D81EA} = {E1B85E12-A3CB-435E-BE83-409190CB7DAB}
+		{F4E43AD0-4DCD-4602-B012-696380326EFA} = {C3A4DE82-62DB-4535-BC1C-CB562C0C4C07}
+		{EA1F88AE-652E-40B6-84C6-2B6526A4C044} = {C3A4DE82-62DB-4535-BC1C-CB562C0C4C07}
+		{B21B6F9E-F952-452C-994B-E6B6A9641DF4} = {C3A4DE82-62DB-4535-BC1C-CB562C0C4C07}
+		{2F913571-3EEC-4D32-99EC-1CFEB31D443B} = {E1B85E12-A3CB-435E-BE83-409190CB7DAB}
+		{BFB5D64A-EE82-4509-80FB-FB9D5D26B2DF} = {E1B85E12-A3CB-435E-BE83-409190CB7DAB}
+		{B48F3F02-E04B-4021-A02A-624A24B59F64} = {E1B85E12-A3CB-435E-BE83-409190CB7DAB}
+		{3B164DFD-D2B1-454E-A9F0-87DBD1D94D63} = {E1B85E12-A3CB-435E-BE83-409190CB7DAB}
+	EndGlobalSection
+EndGlobal

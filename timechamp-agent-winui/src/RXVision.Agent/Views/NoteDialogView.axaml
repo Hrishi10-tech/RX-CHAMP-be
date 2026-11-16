@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.NoteDialogView"
+             x:DataType="dlg:NoteDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,18" Spacing="12">
+      <TextBlock Classes="h2" Text="{Binding Title}" />
+      <TextBlock Classes="body" Text="{Binding Message}" />
+      <StackPanel Spacing="6" Margin="0,2,0,0">
+        <TextBlock Classes="label" Text="{Binding Label}" />
+        <TextBox Name="NoteBox"
+                 Classes="field"
+                 Text="{Binding Text}"
+                 Watermark="{Binding Placeholder}"
+                 MaxLength="{Binding MaxLength}"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="False"
+                 Height="64"
+                 VerticalContentAlignment="Top" />
+      </StackPanel>
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <UniformGrid Rows="1" Margin="-4,0">
+        <Button Classes="primary"
+                Content="{Binding PrimaryText}"
+                Command="{Binding SubmitCommand}"
+                IsDefault="True" />
+        <Button Classes="secondary"
+                Content="{Binding SkipText}"
+                Command="{Binding SkipCommand}"
+                IsVisible="{Binding HasSkip}" />
+        <Button Classes="secondary"
+                Content="{Binding CancelText}"
+                Command="{Binding CancelCommand}"
+                IsCancel="True" />
+      </UniformGrid>
+    </Border>
+  </StackPanel>
+</UserControl>

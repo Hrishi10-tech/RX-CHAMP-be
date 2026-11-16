@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.ProgressDialogView"
+             x:DataType="dlg:ProgressDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,20" Spacing="12">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <PathIcon Classes="spinner" Width="20" Height="20" VerticalAlignment="Center" />
+        <TextBlock Classes="h2" Text="{Binding Heading}" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Classes="body" Text="{Binding Message}" />
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <UniformGrid Rows="1" Margin="-4,0">
+        <Button Classes="secondary" Content="{Binding CancelText}" Command="{Binding CancelCommand}" IsCancel="True" />
+      </UniformGrid>
+    </Border>
+  </StackPanel>
+</UserControl>

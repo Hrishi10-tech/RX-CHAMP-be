@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows implementations of the platform seam (IPlatform): idle, lock,
+       sleep, foreground window and browser URL, screen capture, DPAPI secrets,
+       start-at-login, chime, full-screen detection, self-update, and migration
+       from the 2.x agent. Plain net8.0 so it builds on any OS; every OS call is
+       guarded with [SupportedOSPlatform("windows")] and only runs on Windows. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RXVision.Agent.Platform.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RXVision.Agent.Core/RXVision.Agent.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GDI+ capture + JPEG encode. Windows-only at runtime (guarded); references
+         resolve on any OS so this project still builds on Linux/macOS. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <!-- Managed COM interop for UI Automation (the browser address bar). -->
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RXVision.Agent.Platform.Windows.Tests" />
+  </ItemGroup>
+
+</Project>

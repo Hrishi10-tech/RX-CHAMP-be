@@ -1,0 +1,156 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.MeetingDialogView"
+             x:DataType="dlg:MeetingDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,18" Spacing="13">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Border Width="32" Height="32" CornerRadius="10" Background="{StaticResource Brush.VioletIcon}">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="18" Height="18" Foreground="#7C3AED" />
+        </Border>
+        <TextBlock Classes="h2" Text="{Binding Title}" VerticalAlignment="Center" />
+      </StackPanel>
+
+      <!-- When: now, or earlier today -->
+      <Border Classes="tabs">
+        <Grid ColumnDefinitions="*,4,*">
+          <Button Classes="tab" Classes.on="{Binding IsNow}" Content="Starting now" Command="{Binding ShowNowCommand}" />
+          <Button Grid.Column="2" Classes="tab" Classes.on="{Binding IsPast}" Content="Already happened" Command="{Binding ShowPastCommand}" />
+        </Grid>
+      </Border>
+
+      <StackPanel Spacing="10" IsVisible="{Binding IsPast}">
+        <Grid ColumnDefinitions="116,14,*" IsVisible="{Binding HasStartOptions}">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Started at" />
+            <ComboBox ItemsSource="{Binding StartOptions}" SelectedItem="{Binding StartAt}" HorizontalAlignment="Stretch"
+                      MaxDropDownHeight="240" AutomationProperties.Name="Started at">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="dlg:TimeOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="6">
+            <TextBlock Classes="label" Text="How long, in minutes" />
+            <ItemsControl ItemsSource="{Binding Durations}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="dlg:DurationChipViewModel">
+                  <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,6,0" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <!-- Any other length, 5 to 480 minutes -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBox Classes="field" Text="{Binding MinutesText}" Width="64" MinHeight="32" Height="32" Padding="8,4"
+                       MaxLength="3" AutomationProperties.Name="How long, in minutes" />
+              <TextBlock Classes="muted" Text="minutes" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+        <Border Classes="range" IsVisible="{Binding RangeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="15" Height="15" Foreground="#6D28D9" />
+            <TextBlock Text="{Binding RangeText}" FontWeight="SemiBold" />
+          </StackPanel>
+        </Border>
+        <TextBlock Classes="body" FontSize="13" Text="{Binding NoStartOptionsText}" IsVisible="{Binding HasNoStartOptions}" />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="What is it about?" />
+        <TextBox Name="AgendaBox"
+                 Classes="field"
+                 Text="{Binding Agenda}"
+                 Watermark="For example: sprint planning for the invoice release"
+                 MaxLength="{Binding AgendaMax}"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="False"
+                 Height="62"
+                 VerticalContentAlignment="Top" />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="{Binding PeopleLabel}" />
+        <Border Classes="peoplebox">
+          <WrapPanel>
+            <ItemsControl ItemsSource="{Binding Chosen}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="dlg:ParticipantChipViewModel">
+                  <Border Classes="person">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Border Classes="personinitials" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Initials}" />
+                      </Border>
+                      <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="160" TextTrimming="CharacterEllipsis" />
+                      <Button Classes="ghost" Padding="4" Command="{Binding RemoveCommand}" ToolTip.Tip="{Binding RemoveLabel}"
+                              AutomationProperties.Name="{Binding RemoveLabel}" VerticalAlignment="Center">
+                        <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="9" Height="9" />
+                      </Button>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBox Classes="bare" MinWidth="190" Text="{Binding PersonQuery}" Watermark="{Binding PeopleHint}"
+                     IsEnabled="{Binding CanAddPeople}" MaxLength="80" AutomationProperties.Name="Add people or type a name">
+              <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding AddTypedCommand}" />
+              </TextBox.KeyBindings>
+            </TextBox>
+          </WrapPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding Suggestions}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="dlg:ParticipantSuggestionViewModel">
+              <Button Classes="chip suggest" Content="{Binding Label}" Command="{Binding AddCommand}" Margin="0,0,6,6" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="small" Text="{Binding SearchProblem}" IsVisible="{Binding SearchProblem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="Who will mail the minutes?" />
+        <Grid ColumnDefinitions="*,8,Auto">
+          <TextBox Name="MomBox" Classes="field" Text="{Binding MomSender}" Watermark="Name of the person sending the minutes"
+                   MaxLength="{Binding MomMax}" AutomationProperties.Name="Who will mail the minutes" />
+          <Button Grid.Column="2" Classes="chip" Content="{Binding SelfChip}" Command="{Binding MomIsMeCommand}"
+                  IsVisible="{Binding HasSelfName}" VerticalAlignment="Center" />
+        </Grid>
+      </StackPanel>
+
+      <TextBlock Classes="body" FontSize="13" Text="{Binding Note}" />
+      <Border Classes="problem" IsVisible="{Binding HasError}">
+        <TextBlock Text="{Binding Error}" />
+      </Border>
+      <TextBlock Classes="small" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" TextWrapping="Wrap" />
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <Grid ColumnDefinitions="1.3*,8,*">
+        <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
+        <Button Grid.Column="2" Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

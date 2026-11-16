@@ -1,0 +1,126 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RXVision.Agent.ViewModels"
+        x:Class="RXVision.Agent.Views.SignInWindow"
+        x:DataType="vm:SignInViewModel"
+        Title="Sign in to RX Vision"
+        Icon="avares://RXVision/Assets/rxvision.ico"
+        Width="460" SizeToContent="Height" MinHeight="420"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Brush.WindowBg}">
+  <Border Classes="card" Margin="20" Padding="28,26,28,22" CornerRadius="20">
+    <StackPanel Spacing="14">
+
+      <!-- Brand -->
+      <StackPanel Spacing="10" HorizontalAlignment="Center">
+        <Border Width="60" Height="60" CornerRadius="30" ClipToBounds="True" HorizontalAlignment="Center" Background="#04070E">
+          <Image Source="avares://RXVision/Assets/agent-badge.png" Stretch="UniformToFill" />
+        </Border>
+        <TextBlock Classes="h1" Text="RX Vision" HorizontalAlignment="Center" />
+        <TextBlock Classes="muted" FontSize="13" Text="{Binding Subtitle}" TextAlignment="Center" TextWrapping="Wrap"
+                   IsVisible="{Binding ShowForm}" />
+      </StackPanel>
+
+      <!-- Why you are here again -->
+      <Border Classes="banner warn" IsVisible="{Binding HasSessionLost}">
+        <Grid ColumnDefinitions="Auto,*">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Info}" Width="18" Height="18" Foreground="{StaticResource Brush.AmberStrong}" VerticalAlignment="Top" />
+          <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding SessionLostReason}" FontSize="13" TextWrapping="Wrap"
+                     Foreground="{StaticResource Brush.AmberInk}" />
+        </Grid>
+      </Border>
+
+      <!-- Reconnecting -->
+      <StackPanel Spacing="12" IsVisible="{Binding ShowConnecting}" Margin="0,4,0,4">
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+          <PathIcon Classes="spinner" Width="18" Height="18" />
+          <TextBlock Text="Reconnecting to RX Vision..." FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Classes="body" TextAlignment="Center"
+                   Text="You're still signed in. RX Vision can't reach the server right now and keeps trying in the background. Check your internet connection." />
+        <Button Classes="link" HorizontalAlignment="Center" Command="{Binding ShowSignInFormCommand}">
+          <TextBlock Text="Sign in with a different account" />
+        </Button>
+      </StackPanel>
+
+      <!-- Email and password -->
+      <StackPanel Spacing="12" IsVisible="{Binding ShowForm}">
+        <StackPanel Spacing="12" IsVisible="{Binding UseEmail}">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Work email" />
+            <TextBox Name="EmailBox" Classes="field" Text="{Binding Email}" Watermark="name@company.com"
+                     AutomationProperties.Name="Work email" />
+          </StackPanel>
+          <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Password" />
+            <TextBox Name="PasswordBox" Classes="field" Text="{Binding Password}" PasswordChar="•" RevealPassword="False"
+                     AutomationProperties.Name="Password" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Setup code -->
+        <StackPanel Spacing="6" IsVisible="{Binding UseCode}">
+          <TextBlock Classes="label" Text="Setup code" />
+          <TextBox Name="CodeBox" Classes="field" Text="{Binding SetupCode}" Watermark="RXV1..." TextWrapping="Wrap"
+                   AcceptsReturn="False" Height="88" VerticalContentAlignment="Top" FontSize="12.5"
+                   AutomationProperties.Name="Setup code" />
+          <TextBlock Classes="small" Text="Your manager can create one in the portal, under your profile." TextWrapping="Wrap" />
+        </StackPanel>
+
+        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+
+        <Button Classes="primary" HorizontalAlignment="Stretch" MinHeight="42" IsDefault="True"
+                Command="{Binding SignInCommand}" IsVisible="{Binding UseEmail}">
+          <Panel>
+            <TextBlock Text="Sign in" IsVisible="{Binding !IsBusy}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsBusy}">
+              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="#FFFFFF" />
+              <TextBlock Text="Signing in..." />
+            </StackPanel>
+          </Panel>
+        </Button>
+        <Button Classes="primary" HorizontalAlignment="Stretch" MinHeight="42" IsDefault="True"
+                Command="{Binding ConnectCommand}" IsVisible="{Binding UseCode}">
+          <Panel>
+            <TextBlock Text="Connect" IsVisible="{Binding !IsBusy}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsBusy}">
+              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="#FFFFFF" />
+              <TextBlock Text="Connecting..." />
+            </StackPanel>
+          </Panel>
+        </Button>
+
+        <Grid ColumnDefinitions="*,Auto">
+          <Button Classes="link" Command="{Binding ToggleModeCommand}" HorizontalAlignment="Left">
+            <Panel>
+              <TextBlock Text="Use a setup code" IsVisible="{Binding UseEmail}" />
+              <TextBlock Text="Use email and password" IsVisible="{Binding UseCode}" />
+            </Panel>
+          </Button>
+          <Button Grid.Column="1" Classes="link" Command="{Binding ToggleAdvancedCommand}" IsVisible="{Binding UseEmail}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="Advanced" />
+              <PathIcon Classes="i" Data="{StaticResource Icon.ChevronDown}" Width="12" Height="12" />
+            </StackPanel>
+          </Button>
+        </Grid>
+
+        <StackPanel Spacing="6" IsVisible="{Binding ShowAdvanced}">
+          <StackPanel IsVisible="{Binding UseEmail}" Spacing="6">
+            <TextBlock Classes="label" Text="Server" />
+            <TextBox Classes="field" Text="{Binding Server}" FontSize="13" AutomationProperties.Name="Server" />
+            <TextBlock Classes="small" Text="Leave this as it is unless your company gave you another address." TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+
+      <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,4,0,0" />
+      <StackPanel Spacing="3">
+        <TextBlock Classes="small" TextAlignment="Center" TextWrapping="Wrap"
+                   Text="Your company uses RX Vision to record attendance and work activity." />
+        <TextBlock Classes="small" FontSize="10.5" TextAlignment="Center" Text="{Binding VersionText}" Foreground="{StaticResource Brush.Subtle}" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

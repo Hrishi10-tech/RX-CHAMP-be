@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Linux-runnable tests for the macOS platform layer: everything that does not
+       call a macOS framework - URL/host parsing, owner-name mapping, LaunchAgent
+       plist generation, the update script text, and the mach sleep math. The
+       P/Invoke itself is exercised only on a real Mac (see the packaging README).
+       Deliberately NOT added to RXVision.Agent.sln; run it by path:
+         dotnet test tests/RXVision.Agent.Platform.Mac.Tests -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/RXVision.Agent.Platform.Mac/RXVision.Agent.Platform.Mac.csproj" />
+  </ItemGroup>
+
+</Project>

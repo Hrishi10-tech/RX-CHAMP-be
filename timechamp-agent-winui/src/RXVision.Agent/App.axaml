@@ -1,0 +1,53 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             xmlns:views="using:RXVision.Agent.Views"
+             x:Class="RXVision.Agent.App"
+             Name="RX Vision"
+             RequestedThemeVariant="Light">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://RXVision/Styles/Theme.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#4F46E5" ErrorText="#B42318" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://RXVision/Styles/Controls.axaml" />
+  </Application.Styles>
+
+  <Application.DataTemplates>
+    <DataTemplate DataType="dlg:MessageDialogViewModel">
+      <views:MessageDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:ReasonDialogViewModel">
+      <views:ReasonDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:NoteDialogViewModel">
+      <views:NoteDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:EndDayDialogViewModel">
+      <views:EndDayDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:MeetingDialogViewModel">
+      <views:MeetingDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:QuickBreakDialogViewModel">
+      <views:QuickBreakDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:KeyDialogViewModel">
+      <views:KeyDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:ProgressDialogViewModel">
+      <views:ProgressDialogView />
+    </DataTemplate>
+  </Application.DataTemplates>
+
+</Application>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for a future Developer ID signature of this .NET +
+  Avalonia + SkiaSharp app. Used only on the signed/notarized path in
+  build/build-mac.sh (MAC_SIGN_P12 set); the default ad-hoc build does not apply
+  entitlements. Each entry is here for a concrete reason:
+
+   - com.apple.security.cs.allow-jit
+       The .NET runtime JIT-compiles IL at run time.
+   - com.apple.security.cs.allow-unsigned-executable-memory
+       The CoreCLR maps writable+executable memory for the JIT and for
+       ready-to-run fixups; without this the hardened runtime kills the process.
+   - com.apple.security.cs.disable-library-validation
+       The app loads native libraries that are not signed by the same Team ID
+       (libSkiaSharp.dylib, libHarfBuzzSharp.dylib, libAvaloniaNative.dylib and
+       the other .NET/Avalonia native assets). Library validation would otherwise
+       refuse them.
+   - com.apple.security.cs.allow-dyld-environment-variables
+       The apphost/runtime may rely on DYLD_* during launch; harmless and avoids
+       edge-case launch failures under the hardened runtime. (Microsoft's .NET
+       notarization guide asks an apphost to keep at least these four.)
+   - com.apple.security.automation.apple-events
+       The foreground probe reads the browser address bar with osascript. Under
+       the hardened runtime, macOS attributes those Apple Events to this app and
+       refuses them (error -1743, no prompt) unless it carries this entitlement;
+       the prompt text is NSAppleEventsUsageDescription in Info.plist.
+
+  NOT sandboxed: the agent needs Screen Recording and to read the foreground
+  window across apps, which the App Sandbox forbids. Distribution is Developer ID
+  (direct download), not the Mac App Store, so no com.apple.security.app-sandbox.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

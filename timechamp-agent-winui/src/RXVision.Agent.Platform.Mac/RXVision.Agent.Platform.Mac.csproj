@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- macOS implementations of the platform seam (IPlatform): idle, lock, sleep,
+       front app and window title, browser URL, screen capture, Keychain secrets,
+       LaunchAgent start-at-login, permissions (Screen Recording), chime,
+       self-update. Plain net8.0 so it builds on any OS; OS calls only run on macOS
+       and are marked [SupportedOSPlatform("macos")]. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RXVision.Agent.Platform.Mac</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RXVision.Agent.Core/RXVision.Agent.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Image decode/scale/encode for screen capture. Pinned to the version
+         Avalonia 11.2.x resolves, so the app and this library share one native
+         libSkiaSharp.dylib at publish time (no second copy, no version skew). -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RXVision.Agent.Platform.Mac.Tests" />
+  </ItemGroup>
+
+</Project>

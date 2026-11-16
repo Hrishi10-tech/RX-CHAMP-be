@@ -1,0 +1,18 @@
+<Project>
+  <!-- Shared by every project in the agent solution. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <!-- One version for the whole agent: the app, the installer and what the
+         server is told. Bump it here; src/RXVision.Agent/app.manifest repeats it
+         for Windows (a test fails while the two differ). -->
+    <Version>4.0.1</Version>
+    <Company>RX Vision</Company>
+    <Product>RX Vision Agent</Product>
+    <Copyright>RX Vision</Copyright>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

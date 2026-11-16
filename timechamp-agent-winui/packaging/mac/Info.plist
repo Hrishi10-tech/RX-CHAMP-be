@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist template for "RX Vision.app". build/build-mac.sh copies this into
+  Contents/Info.plist and replaces __VERSION__ with the version from
+  Directory.Build.props. Every other value is final, so this file parses as-is
+  with python plistlib (the build validates it).
+
+  LSUIElement=true makes it a menu-bar agent with no Dock icon. The usage strings
+  are shown by macOS when it asks for Automation (browser address bar) and, on
+  newer macOS, Screen Recording.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>RX Vision</string>
+    <key>CFBundleDisplayName</key>
+    <string>RX Vision</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.rxvision.agent</string>
+    <key>CFBundleExecutable</key>
+    <string>RXVision</string>
+    <key>CFBundleIconFile</key>
+    <string>RXVision</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.business</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>RX Vision reads the address shown in your browser so your activity report can note which website was in use. Only the site name is recorded, never the full address.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>RX Vision captures periodic screenshots of your screen as part of your organisation's activity monitoring.</string>
+</dict>
+</plist>

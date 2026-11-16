@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RXVision.Agent.ViewModels"
+        xmlns:conv="using:RXVision.Agent.Converters"
+        x:Class="RXVision.Agent.Views.NoticeWindow"
+        x:DataType="vm:NoticeViewModel"
+        Title="RX Vision: before you start"
+        Icon="avares://RXVision/Assets/rxvision.ico"
+        Width="560" SizeToContent="Height" MaxHeight="690"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Brush.WindowBg}">
+  <Border Classes="card" Margin="20" Padding="28,26,28,24" CornerRadius="20">
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+      <StackPanel Orientation="Horizontal" Spacing="14">
+        <Border Width="48" Height="48" CornerRadius="24" Background="{StaticResource Brush.BrandSoft}">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Shield}" Width="26" Height="26" Foreground="{StaticResource Brush.Brand}" />
+        </Border>
+        <StackPanel VerticalAlignment="Center" Spacing="2" MaxWidth="400">
+          <TextBlock Classes="small" Text="BEFORE YOU START" FontWeight="Bold" LetterSpacing="1" Foreground="{StaticResource Brush.Brand}" />
+          <TextBlock Classes="h2" Text="{Binding Heading}" />
+        </StackPanel>
+      </StackPanel>
+
+      <ScrollViewer Grid.Row="1" Margin="0,16,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="14">
+      <TextBlock Classes="body" Text="{Binding Intro}" />
+
+      <ItemsControl ItemsSource="{Binding Items}" Margin="0,2,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:NoticeItem">
+            <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,10">
+              <Border Width="34" Height="34" CornerRadius="10" Background="#F1F3F9" VerticalAlignment="Top">
+                <PathIcon Classes="i" Width="18" Height="18" Foreground="{StaticResource Brush.InkSoft}"
+                          Data="{Binding Icon, Converter={x:Static conv:IconConverter.Instance}}" />
+              </Border>
+              <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2">
+                <TextBlock Classes="title" FontSize="13.5" Text="{Binding Title}" />
+                <TextBlock Classes="muted" FontSize="12.5" Text="{Binding Text}" TextWrapping="Wrap" LineHeight="18" />
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Background="#F7F8FC" CornerRadius="12" Padding="14,11">
+        <TextBlock Classes="muted" FontSize="12.5" Text="{Binding Footer}" TextWrapping="Wrap" LineHeight="18" />
+      </Border>
+      </StackPanel>
+      </ScrollViewer>
+
+      <TextBlock Grid.Row="2" Classes="error" Margin="0,10,0,0" Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+      <Button Grid.Row="3" Margin="0,16,0,0" Name="Acknowledge" Classes="primary" HorizontalAlignment="Stretch" MinHeight="44" FontSize="14.5"
+              IsDefault="True" Command="{Binding AcknowledgeCommand}">
+        <Panel>
+          <TextBlock Text="I understand" IsVisible="{Binding !IsBusy}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsBusy}">
+            <PathIcon Classes="spinner" Width="15" Height="15" Foreground="#FFFFFF" />
+            <TextBlock Text="Starting..." />
+          </StackPanel>
+        </Panel>
+      </Button>
+    </Grid>
+  </Border>
+</Window>

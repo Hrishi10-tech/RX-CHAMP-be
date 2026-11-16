@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.EndDayDialogView"
+             x:DataType="dlg:EndDayDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,18" Spacing="12">
+      <TextBlock Classes="h2" Text="{Binding Title}" />
+      <TextBlock Classes="body" Text="{Binding Message}" />
+      <ScrollViewer Name="CommentList" MaxHeight="{Binding ListMaxHeight}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding Items}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="dlg:SkipCommentItemViewModel">
+              <!-- Compact, so three fit the dashboard at its default size without scrolling:
+                   the help line sits beside the name, the chips are small, the box is one line
+                   that grows to three. -->
+              <Border Classes="commentcard compact" Classes.ok="{Binding CountOk}" Margin="0,0,0,8"
+                      AutomationProperties.Name="{Binding Name}">
+                <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Panel Width="16" Height="16" VerticalAlignment="Center">
+                        <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="16" Height="16" Foreground="{StaticResource Brush.Amber}" IsVisible="{Binding !IsLunch}" />
+                        <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="16" Height="16" Foreground="{StaticResource Brush.Teal}" IsVisible="{Binding IsLunch}" />
+                      </Panel>
+                      <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      <TextBlock Classes="muted" FontSize="13" Text="·" VerticalAlignment="Center" />
+                      <TextBlock Classes="muted" FontSize="13" Text="{Binding When}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Classes="count" Classes.ok="{Binding CountOk}" Text="{Binding Help}"
+                               TextWrapping="Wrap" TextAlignment="Right" MaxWidth="230" Margin="12,0,0,0" VerticalAlignment="Center" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Chips}" AutomationProperties.Name="Quick reasons">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="dlg:ChipViewModel">
+                        <Button Classes="chip small" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,6,0" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBox Classes="field"
+                           Text="{Binding Text}"
+                           Watermark="Why was this break skipped?"
+                           MaxLength="{Binding MaxLength}"
+                           TextWrapping="Wrap"
+                           AcceptsReturn="False"
+                           MinHeight="38"
+                           MaxHeight="76"
+                           VerticalContentAlignment="Top"
+                           AutomationProperties.Name="{Binding BoxLabel}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+      <TextBlock Classes="body" FontSize="13" Text="{Binding Note}" />
+      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <Grid ColumnDefinitions="1.3*,8,*">
+        <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
+        <Button Grid.Column="2" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}"
+                Command="{Binding CancelCommand}" IsCancel="True" />
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

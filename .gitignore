@@ -56,3 +56,6 @@ payload/
 !.github/workflows/
 .husky/
 docs/
+
+# The desktop agent's build scripts (the build/ rule above is for compiled output)
+!timechamp-agent-winui/build/

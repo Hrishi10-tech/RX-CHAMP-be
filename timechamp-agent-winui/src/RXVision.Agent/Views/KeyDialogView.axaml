@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.KeyDialogView"
+             x:DataType="dlg:KeyDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <StackPanel>
+    <StackPanel Margin="24,22,24,20" Spacing="12">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Border Width="32" Height="32" CornerRadius="10" Background="{StaticResource Brush.IndigoIcon}">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Key}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
+        </Border>
+        <TextBlock Classes="h2" Text="{Binding Title}" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Classes="body" Text="{Binding Message}" />
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="Sign-out key" />
+        <TextBox Name="KeyBox" Classes="field" Text="{Binding Key}" Watermark="five words and a number" MaxLength="120"
+                 AutomationProperties.Name="Sign-out key" />
+        <TextBlock Classes="small" Text="{Binding Hint}" TextWrapping="Wrap" />
+      </StackPanel>
+      <Border Classes="problem" IsVisible="{Binding HasError}">
+        <TextBlock Text="{Binding Error}" />
+      </Border>
+    </StackPanel>
+    <Border Classes="dialogfooter">
+      <UniformGrid Rows="1" Margin="-4,0">
+        <Button Classes="primary" Classes.danger="{Binding IsDanger}" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+        <Button Classes="secondary" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+      </UniformGrid>
+    </Border>
+  </StackPanel>
+</UserControl>

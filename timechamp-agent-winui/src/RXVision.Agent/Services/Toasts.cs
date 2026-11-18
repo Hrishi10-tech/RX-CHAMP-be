@@ -115,6 +115,42 @@ public static class Toasts
             OnOpen = open,
         };
 
+    /// <summary>
+    /// 4.1 shared computer: "Are you extending your shift?" Shown for a minute (asked again
+    /// 5 minutes before the end); with no answer by the deadline the person is signed out.
+    /// </summary>
+    public static ToastViewModel ShiftQuestion(IAgent agent, ShiftQuestion q, Action yes, Action no, Action open) =>
+        new(ToastKind.Day, "shift:end")
+        {
+            Lifetime = TimeSpan.FromMinutes(1),
+            KeepOnOpen = true,
+            Heading = q.Last ? "Your shift is ending" : "Your shift ends soon",
+            Title = $"Your shift ends at {agent.BusinessTime(q.ShiftEnd)}. Are you extending your shift?",
+            Stamp = agent.BusinessTime(agent.Now),
+            Body = $"If not, you'll be signed out at {agent.BusinessTime(q.Deadline)} so the next person can sign in.",
+            PrimaryText = "Yes",
+            SecondaryText = "No",
+            OnPrimary = yes,
+            OnSecondary = no,
+            OnOpen = open,
+        };
+
+    /// <summary>The answer to the shift-end question, said back in one line.</summary>
+    public static string ShiftAnswer(IAgent agent, bool continuing, DateTimeOffset deadline) =>
+        continuing
+            ? "Shift extended: your time keeps counting. Press End Day when you finish."
+            : $"You'll be signed out at {agent.BusinessTime(deadline)}.";
+
+    /// <summary>Signed out at the shift end (or after End Day) on a shared computer.</summary>
+    public static ToastViewModel SignedOutForNextShift() =>
+        new(ToastKind.Info, "shift:signed-out")
+        {
+            Heading = "RX Vision",
+            Title = "Signed out for the next shift",
+            Body = "Your day was saved. The next person can sign in now.",
+            Lifetime = TimeSpan.FromSeconds(15),
+        };
+
     /// <summary>One quiet line for 5 seconds; dropped if it can't show within 10.</summary>
     public static ToastViewModel Cue(string line) =>
         new(ToastKind.Cue, "cue")

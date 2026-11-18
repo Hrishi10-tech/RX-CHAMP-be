@@ -112,6 +112,8 @@ public sealed class AppController : IDisposable
         _agent.UpdateAvailable += _ => Refresh();
         _agent.ExitRequested += OnExitRequested;
         _agent.SignedOutUnexpectedly += OnSignedOutUnexpectedly;
+        _agent.ShiftEndQuestion += OnShiftEndQuestion;
+        _agent.SignedOutForNextShift += OnSignedOutForNextShift;
 
         if (_startup.Instance is { } instance)
         {
@@ -228,7 +230,8 @@ public sealed class AppController : IDisposable
                     if (_openDashboardOnSession) ShowDashboard();
                     _openDashboardOnSession = false;
                 }
-                if (state != AgentState.NotStarted) _toasts.Withdraw(ToastKind.Day);
+                // The Start Day nudge only: the shift-end question stays until it is answered.
+                if (state != AgentState.NotStarted) _toasts.Withdraw("day:start");
                 if (state != AgentState.Running) _toasts.Withdraw(ToastKind.AutoSkip);
                 Refresh();
                 break;
@@ -371,7 +374,7 @@ public sealed class AppController : IDisposable
         // Its job is done once the dashboard is open.
         _toasts.Withdraw(ToastKind.BreakDue);
         _toasts.Withdraw(ToastKind.Message);
-        _toasts.Withdraw(ToastKind.Day);
+        _toasts.Withdraw("day:start");
         _dashboardVm.Refresh();
         _ = SafeAsync(_dashboardVm.Chat.ActivateAsync);
         _ = RefreshDataAsync();
@@ -556,6 +559,31 @@ public sealed class AppController : IDisposable
     {
         if (_agent.State != AgentState.NotStarted) return;
         _toasts.Show(Toasts.Nudge(_agent, nudge, start: () => RunFromMenu(_actions.StartDayAsync), open: ShowDashboard));
+    }
+
+    /// <summary>4.1 shared computer: "Are you taking the next shift?" (a sticky card until answered).</summary>
+    private void OnShiftEndQuestion(ShiftQuestion q)
+    {
+        if (_agent.State != AgentState.Running) return;
+        _toasts.Show(Toasts.ShiftQuestion(_agent, q,
+            yes: () =>
+            {
+                _toasts.Show(Toasts.Cue(Toasts.ShiftAnswer(_agent, true, q.Deadline)));
+                _ = _agent.ContinueShiftAsync();
+            },
+            no: () =>
+            {
+                _agent.DeclineShift();
+                _toasts.Show(Toasts.Cue(Toasts.ShiftAnswer(_agent, false, q.Deadline)));
+            },
+            open: ShowDashboard));
+    }
+
+    /// <summary>4.1 shared computer: signed out for the next person; the sign-in screen is up.</summary>
+    private void OnSignedOutForNextShift()
+    {
+        _toasts.Show(Toasts.SignedOutForNextShift());
+        Refresh();
     }
 
     /// <summary>An action sent later was refused by RX Vision: said once (SPEC 6).</summary>

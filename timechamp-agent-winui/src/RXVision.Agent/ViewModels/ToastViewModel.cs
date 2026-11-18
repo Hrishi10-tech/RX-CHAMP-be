@@ -34,6 +34,8 @@ public sealed partial class ToastViewModel : ObservableObject
     public DateTimeOffset QueuedAt { get; internal set; }
     /// <summary>Stays up until dismissed or withdrawn (the ring).</summary>
     public bool Sticky { get; init; }
+    /// <summary>Clicking the card opens RX Vision but leaves the card up (a question that needs a button).</summary>
+    public bool KeepOnOpen { get; init; }
     public TimeSpan Lifetime { get; init; } = TimeSpan.FromSeconds(9);
     /// <summary>Dropped if it could not be shown within this long (a cue is only worth it at once).</summary>
     public TimeSpan? MaxWait { get; init; }
@@ -78,7 +80,7 @@ public sealed partial class ToastViewModel : ObservableObject
     [RelayCommand]
     private void Open()
     {
-        OnDismiss?.Invoke();
+        if (!KeepOnOpen) OnDismiss?.Invoke();
         OnOpen?.Invoke();
     }
 

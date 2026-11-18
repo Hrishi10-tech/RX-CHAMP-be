@@ -540,6 +540,13 @@ public sealed class WorkdayConfig
     public IdleConfig Idle { get; set; } = new();
     public List<int> QuickBreakMinutes { get; set; } = new() { 5, 10, 15 };
     public int BreakBufferMin { get; set; } = 10;
+    // ---- 4.1 shared computer (absent from a 4.0 server: off) ----
+    /// <summary>The person's department shares one computer between shifts.</summary>
+    public bool SharedComputer { get; set; }
+    /// <summary>Today's shift end, or null with no shift or on a day off.</summary>
+    public DateTimeOffset? ShiftEndAt { get; set; }
+    /// <summary>The open day was carried on into the next shift (no more questions today).</summary>
+    public bool Extended { get; set; }
 }
 
 /// <summary>The effective input-tracking (away) setting for this person (4.0, SPEC 2.5).</summary>

@@ -719,6 +719,20 @@ public sealed class ApiClient : IDisposable
     public Task<ApiResult<JsonElement>> SignOutWithKeyAsync(string key, CancellationToken ct = default) =>
         SendJsonAsync<JsonElement>(HttpMethod.Post, "agent/sign-out", new SignOutKeyRequest { Key = NormaliseKey(key) }, ct);
 
+    // ---- 4.1 shared computer -----------------------------------------------------------
+
+    /// <summary>POST /workday/me/extend: the person is taking the next shift (idempotent).</summary>
+    public Task<ApiResult<JsonElement>> ExtendShiftAsync(CancellationToken ct = default) =>
+        SendJsonAsync<JsonElement>(HttpMethod.Post, "workday/me/extend", new { }, ct);
+
+    /// <summary>POST /activity/shift-end-day: ends the day at the shift end, without End Day's questions.</summary>
+    public Task<ApiResult<JsonElement>> EndDayAtShiftEndAsync(CancellationToken ct = default) =>
+        SendJsonAsync<JsonElement>(HttpMethod.Post, "activity/shift-end-day", new { }, ct);
+
+    /// <summary>POST /agent/auto-sign-out: signs out with no key once the day is over (shared computer).</summary>
+    public Task<ApiResult<JsonElement>> AutoSignOutAsync(CancellationToken ct = default) =>
+        SendJsonAsync<JsonElement>(HttpMethod.Post, "agent/auto-sign-out", new { }, ct);
+
     /// <summary>POST /agent/quit-check {key}: 200 lets an Admin or Super Admin quit; 403 not.</summary>
     public Task<ApiResult<JsonElement>> QuitCheckAsync(string key, CancellationToken ct = default) =>
         SendJsonAsync<JsonElement>(HttpMethod.Post, "agent/quit-check", new SignOutKeyRequest { Key = NormaliseKey(key) }, ct);

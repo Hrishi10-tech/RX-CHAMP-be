@@ -97,6 +97,10 @@ public interface IAgent
     event Action<UpdateOffer>? UpdateAvailable;
     event Action? ExitRequested;
     event Action<string>? SignedOutUnexpectedly;
+    /// <summary>4.1 shared computer: "Are you taking the next shift?" is due.</summary>
+    event Action<ShiftQuestion>? ShiftEndQuestion;
+    /// <summary>4.1 shared computer: signed out at the shift end for the next person.</summary>
+    event Action? SignedOutForNextShift;
 
     Task StartAsync();
     Task<string?> SignInAsync(string email, string password, string? server);
@@ -133,6 +137,10 @@ public interface IAgent
     Task<KeyOutcome> SignOutWithKeyAsync(string key);
     /// <summary>An Admin's or Super Admin's quit, with a key.</summary>
     Task<KeyOutcome> QuitCheckAsync(string key);
+    /// <summary>4.1 shared computer: "Yes, I'm taking the next shift" (the day carries on).</summary>
+    Task<bool> ContinueShiftAsync();
+    /// <summary>4.1 shared computer: "No": signed out at the shift end.</summary>
+    void DeclineShift();
     void AcknowledgeRing();
     void Shutdown();
 }

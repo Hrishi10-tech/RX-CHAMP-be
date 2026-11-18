@@ -324,7 +324,14 @@ public sealed class FakeAgent : IAgent
     public event Action<UpdateOffer>? UpdateAvailable;
     public event Action? ExitRequested;
     public event Action<string>? SignedOutUnexpectedly;
+    public event Action? SignedOutForNextShift;
 #pragma warning restore CS0067
+    public event Action<ShiftQuestion>? ShiftEndQuestion;
+    public void RaiseShiftQuestion(ShiftQuestion q) => ShiftEndQuestion?.Invoke(q);
+    public int ContinuedShifts { get; private set; }
+    public int DeclinedShifts { get; private set; }
+    public Task<bool> ContinueShiftAsync() { ContinuedShifts++; return Task.FromResult(true); }
+    public void DeclineShift() => DeclinedShifts++;
 
     public void RaiseNudge(AgentNudge nudge) => Nudge?.Invoke(nudge);
     public void RaiseAutoSkipped(BreakRecord record) => BreakAutoSkipped?.Invoke(record);

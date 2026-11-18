@@ -365,4 +365,45 @@ public class ApiClientTests
         Assert.Equal(413, result.Status);
         Assert.Equal(0, server.Count("POST screenshots"));
     }
+
+    // ---- 4.1 shared computer -----------------------------------------------------------
+
+    [Fact]
+    public async Task Shared_computer_calls_go_to_their_routes()
+    {
+        var (api, server, _, _) = Make();
+        server.Route("POST workday/me/extend", (_, _) => FakeServer.Ok(new { extended = true }));
+        server.Route("POST activity/shift-end-day", (_, _) => FakeServer.Ok(new { ok = true }));
+        server.Route("POST agent/auto-sign-out", (_, _) => FakeServer.Ok(new { signedOut = true }));
+
+        Assert.True((await api.ExtendShiftAsync()).Ok);
+        Assert.True((await api.EndDayAtShiftEndAsync()).Ok);
+        Assert.True((await api.AutoSignOutAsync()).Ok);
+    }
+
+    [Fact]
+    public async Task An_auto_sign_out_on_a_department_without_a_shared_computer_is_refused()
+    {
+        var (api, server, _, _) = Make();
+        server.Route("POST agent/auto-sign-out", (_, _) => FakeServer.Error(403, "SHARED_COMPUTER_OFF", "no"));
+
+        var result = await api.AutoSignOutAsync();
+
+        Assert.Equal(ApiOutcome.Rejected, result.Outcome);
+        Assert.Equal("SHARED_COMPUTER_OFF", result.Code);
+    }
+
+    [Fact]
+    public void The_workday_config_reads_the_shared_computer_fields()
+    {
+        var json = """{"sharedComputer":true,"shiftEndAt":"2026-11-16T08:30:00.000Z","extended":false}""";
+        var config = System.Text.Json.JsonSerializer.Deserialize<WorkdayConfig>(json, Json.Options)!;
+        Assert.True(config.SharedComputer);
+        Assert.Equal(new DateTimeOffset(2026, 11, 16, 8, 30, 0, TimeSpan.Zero), config.ShiftEndAt);
+        Assert.False(config.Extended);
+
+        var older = System.Text.Json.JsonSerializer.Deserialize<WorkdayConfig>("{}", Json.Options)!;
+        Assert.False(older.SharedComputer);
+        Assert.Null(older.ShiftEndAt);
+    }
 }

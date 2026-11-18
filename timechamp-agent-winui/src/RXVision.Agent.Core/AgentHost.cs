@@ -47,6 +47,12 @@ public enum NudgeKind
 /// <summary>A reminder to start the day, for the UI to show as a toast.</summary>
 public sealed record AgentNudge(NudgeKind Kind, string? Date);
 
+/// <summary>
+/// 4.1 shared computer: "Are you taking the next shift?" <paramref name="Deadline"/> is
+/// when the person is signed out without a "Yes". <paramref name="Last"/>: the last time it asks.
+/// </summary>
+public sealed record ShiftQuestion(DateTimeOffset ShiftEnd, DateTimeOffset Deadline, bool Last);
+
 /// <summary>Result of signing out (or quitting) with an admin's key (4.0, SPEC 2.8).</summary>
 public abstract record KeyOutcome
 {
@@ -1506,10 +1512,132 @@ public sealed class AgentHost : IDisposable
         }
     }
 
+    // ---- 4.1 shared computer: the shift-end handover ------------------------------------
+
+    private static readonly TimeSpan HandoverEvery = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ExtendRetryEvery = TimeSpan.FromSeconds(30);
+    private const int ExtendTries = 20;
+    private readonly ShiftHandover _handover = new();
+    private Timer? _handoverTimer;
+    private int _handoverBusy;
+
+    /// <summary>"Are you taking the next shift?" is due (raised 15 and 5 minutes before the shift ends).</summary>
+    public event Action<ShiftQuestion>? ShiftEndQuestion;
+
+    /// <summary>Signed out at the shift end (or after End Day) so the next person can sign in.</summary>
+    public event Action? SignedOutForNextShift;
+
+    /// <summary>When a person who is not continuing is signed out; null before the question.</summary>
+    public DateTimeOffset? HandoverDeadline => _handover.Deadline;
+
+    private void HandoverTick()
+    {
+        var config = Workday?.Config;
+        var step = _handover.Next(_clock.UtcNow, config?.SharedComputer == true, config?.ShiftEndAt,
+            config?.Extended == true, State == AgentState.Running);
+        switch (step)
+        {
+            case HandoverStep.Ask or HandoverStep.AskLast when config?.ShiftEndAt is { } end:
+                _log.Info("handover", step == HandoverStep.AskLast ? "asking again about the next shift" : "asking about the next shift");
+                ShiftEndQuestion?.Invoke(new ShiftQuestion(end, _handover.Deadline ?? end, step == HandoverStep.AskLast));
+                break;
+            case HandoverStep.SignOut:
+                if (Interlocked.Exchange(ref _handoverBusy, 1) != 0) return;
+                _ = SafeAsync("handover", async () =>
+                {
+                    try { await SignOutForNextShiftAsync(); }
+                    finally { Volatile.Write(ref _handoverBusy, 0); }
+                });
+                break;
+        }
+    }
+
+    /// <summary>
+    /// "Yes, I'm taking the next shift": the day carries on (same day, no approval) until
+    /// End Day. Told to RX Vision now, or retried for a while when it can't be reached.
+    /// </summary>
+    public async Task<bool> ContinueShiftAsync()
+    {
+        _handover.Continue();
+        _log.Info("handover", "taking the next shift; the day carries on");
+        for (var attempt = 1; attempt <= ExtendTries; attempt++)
+        {
+            var svc = _svc;
+            if (svc?.Api.CurrentUser is null) return false;
+            var result = await svc.Api.ExtendShiftAsync();
+            if (result.Ok)
+            {
+                await FetchWorkdayAsync();
+                return true;
+            }
+            if (!result.Transient)
+            {
+                _log.Warn("handover", $"carrying the day on was refused ({result.Status} {result.Code}: {result.Message})");
+                return false;
+            }
+            await Task.Delay(ExtendRetryEvery);
+        }
+        _log.Warn("handover", "could not reach RX Vision to carry the day on");
+        return false;
+    }
+
+    /// <summary>"No": signed out at the shift end.</summary>
+    public void DeclineShift()
+    {
+        _log.Info("handover", "not taking the next shift; signing out at the shift end");
+        _handover.Decline();
+    }
+
+    /// <summary>
+    /// The day ends (at the shift end, without End Day's questions) and this person is
+    /// signed out, so the next one can sign in. Everything recorded reaches RX Vision
+    /// first; offline it waits and tries again on the next tick, so one person's work is
+    /// never left behind for the next.
+    /// </summary>
+    private async Task SignOutForNextShiftAsync()
+    {
+        var svc = _svc;
+        if (svc?.Api.CurrentUser is null) return;
+        if (State == AgentState.Running)
+        {
+            if (await EnsureSyncedAsync() is { } waiting)
+            {
+                _log.Info("handover", $"waiting to sign out: {waiting.Message}");
+                return;
+            }
+            var ended = await svc.Api.EndDayAtShiftEndAsync();
+            if (!ended.Ok && ended.Code != "DAY_NOT_STARTED")
+            {
+                if (ended.Code == "SHARED_COMPUTER_OFF") _handover.Reset();
+                _log.Warn("handover", $"ending the day at the shift end failed ({ended.Status} {ended.Code}: {ended.Message})");
+                return;
+            }
+            _log.Info("handover", "day ended at the shift end");
+        }
+        if (await EnsureSyncedAsync() is { } left)
+        {
+            _log.Info("handover", $"waiting to sign out: {left.Message}");
+            return;
+        }
+        var result = await svc.Api.AutoSignOutAsync();
+        if (!result.Ok)
+        {
+            if (result.Code == "SHARED_COMPUTER_OFF") _handover.Reset();
+            _log.Warn("handover", $"signing out for the next shift failed ({result.Status} {result.Code}: {result.Message})");
+            return;
+        }
+        _log.Info("session", "signed out for the next shift (shared computer)");
+        await ClearSessionAsync(clearData: true, callLogout: false, keepAutostart: true);
+        _handover.Reset();
+        SignedOutForNextShift?.Invoke();
+    }
+
     private void StartDayCheck()
     {
         lock (_gate)
         {
+            _handoverTimer?.Dispose();
+            _handoverTimer = new Timer(_ => Guard("handover", HandoverTick), null, HandoverEvery, HandoverEvery);
             _dayCheck?.Dispose();
             _dayCheck = new Timer(_ => _ = SafeAsync("day", async () =>
             {
@@ -1769,6 +1897,14 @@ public sealed class AgentHost : IDisposable
     {
         var before = _heldEndDay;
         var outcome = await EndDayCoreAsync(comments, at);
+        // 4.1 shared computer: the person ended their day, so they are signed out for the
+        // next one: at once (still offline: the handover timer tries again every 30 seconds).
+        if (outcome is EndDayOutcome.Ended && Workday?.Config?.SharedComputer == true)
+        {
+            _log.Info("handover", "day ended on a shared computer; signing out");
+            _handover.SignOutNow();
+            _ = Task.Run(() => Guard("handover", HandoverTick));
+        }
         // A held End Day is done with once the day ended, or End Day was refused for anything a
         // comment cannot fix; asked for comments again, it stays (with the server's newest list).
         switch (outcome)
@@ -2554,8 +2690,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     internal Task SignOutAsync() => ClearSessionAsync(clearData: false, callLogout: true);
 
-    private async Task ClearSessionAsync(bool clearData, bool callLogout)
+    private async Task ClearSessionAsync(bool clearData, bool callLogout, bool keepAutostart = false)
     {
+        _handover.Reset();
         _log.Info("session", clearData ? "sign-out: clearing this device's data" : "sign-out");
         Interlocked.Increment(ref _sessionGen);
         StopTracking();
@@ -2594,13 +2731,18 @@ public sealed class AgentHost : IDisposable
         _enrollment = null;
         _dayKnown = false;
         _greetedDate = null;
-        try { _platform.Autostart.Disable(); } catch { }
+        // A shared computer stays set up for the next person: the app starts with Windows.
+        if (!keepAutostart)
+        {
+            try { _platform.Autostart.Disable(); } catch { }
+        }
         StopTimers();
         SetState(AgentState.SignIn);
     }
 
     private async Task OnSessionLostAsync(string reason)
     {
+        _handover.Reset();
         Interlocked.Increment(ref _sessionGen);
         StopTracking();
         StopNudges();
@@ -2648,6 +2790,7 @@ public sealed class AgentHost : IDisposable
         lock (_gate)
         {
             _dayCheck?.Dispose(); _dayCheck = null;
+            _handoverTimer?.Dispose(); _handoverTimer = null;
             _pendingTimer?.Dispose(); _pendingTimer = null;
             _nudgeTimer?.Dispose(); _nudgeTimer = null;
             _awayTimer?.Dispose(); _awayTimer = null;

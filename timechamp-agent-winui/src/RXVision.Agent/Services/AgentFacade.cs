@@ -52,6 +52,8 @@ public sealed class AgentFacade : IAgent, IDisposable
         host.UpdateAvailable += o => Raise(() => UpdateAvailable?.Invoke(o));
         host.ExitRequested += () => Raise(() => ExitRequested?.Invoke());
         host.SignedOutUnexpectedly += r => Raise(() => SignedOutUnexpectedly?.Invoke(r));
+        host.ShiftEndQuestion += q => Raise(() => ShiftEndQuestion?.Invoke(q));
+        host.SignedOutForNextShift += () => Raise(() => SignedOutForNextShift?.Invoke());
     }
 
     private void Raise(Action action) => _ui.Post(() =>
@@ -130,6 +132,8 @@ public sealed class AgentFacade : IAgent, IDisposable
     public event Action<UpdateOffer>? UpdateAvailable;
     public event Action? ExitRequested;
     public event Action<string>? SignedOutUnexpectedly;
+    public event Action<ShiftQuestion>? ShiftEndQuestion;
+    public event Action? SignedOutForNextShift;
 
     public Task StartAsync() => Task.Run(_host.StartAsync);
     public Task<string?> SignInAsync(string email, string password, string? server) => Task.Run(() => _host.SignInAsync(email, password, server));
@@ -159,6 +163,8 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<int> SyncNowAsync(TimeSpan timeout) => Task.Run(() => _host.SyncNowAsync(timeout));
     public Task<KeyOutcome> SignOutWithKeyAsync(string key) => Task.Run(() => _host.SignOutWithKeyAsync(key));
     public Task<KeyOutcome> QuitCheckAsync(string key) => Task.Run(() => _host.QuitCheckAsync(key));
+    public Task<bool> ContinueShiftAsync() => Task.Run(_host.ContinueShiftAsync);
+    public void DeclineShift() => _host.DeclineShift();
     public void AcknowledgeRing() => _host.AcknowledgeRing();
     public void Shutdown() => _host.Shutdown();
 

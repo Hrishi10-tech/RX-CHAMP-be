@@ -235,6 +235,16 @@ describe('WorkSessionsService auto-close', () => {
     expect(settings.get).toHaveBeenCalledWith('co-2');
   });
 
+  it('4.1: a day carried on into the next shift is not closed at the shift end', async () => {
+    const { svc, repo } = setup();
+    repo.listOpen.mockResolvedValue([session({ extendedAt: ist('2026-10-13', '18:20') })]);
+    // Past shift end + 240 minutes, but extended: still running.
+    expect(await svc.autoCloseAll(ist('2026-10-13', '22:31'))).toBe(0);
+    // A forgotten computer still closes, 14 hours after the answer.
+    expect(await svc.autoCloseAll(ist('2026-10-14', '08:20'))).toBe(0);
+    expect(await svc.autoCloseAll(ist('2026-10-14', '08:21'))).toBe(1);
+  });
+
   it('uses start + 14 hours without a shift or on a day off', async () => {
     const { svc, repo } = setup({ workday: false });
     repo.listOpen.mockResolvedValue([session({ startedAt: ist('2026-10-13', '10:00') })]);
@@ -500,5 +510,27 @@ describe('WorkSessionsService.workedAt (late activity samples)', () => {
     expect(await svc.workedAt('u1', ist('2026-10-14', '02:00'))).toBe(true);
     overlapping.mockResolvedValue([]);
     expect(await svc.workedAt('u1', ist('2026-10-13', '12:00'))).toBe(false);
+  });
+});
+
+describe('WorkSessionsService.extend (4.1 shared computer: taking the next shift)', () => {
+  const at = ist('2026-10-13', '18:20');
+
+  it('marks the open day and answers with the first mark', async () => {
+    const { svc, repo } = setup();
+    repo.findOpen.mockResolvedValue(session());
+    (repo as any).markExtended = jest.fn().mockResolvedValue(at);
+
+    await expect(svc.extend('u1', at)).resolves.toEqual({ extendedAt: at });
+    expect((repo as any).markExtended).toHaveBeenCalledWith('s1', at);
+  });
+
+  it('is 409 DAY_NOT_STARTED with no open day, and DAY_ENDED when it closed meanwhile', async () => {
+    const { svc, repo } = setup();
+    (repo as any).markExtended = jest.fn().mockResolvedValue(null);
+    await expect(svc.extend('u1', at)).rejects.toMatchObject({ code: 'DAY_NOT_STARTED' });
+
+    repo.findOpen.mockResolvedValue(session());
+    await expect(svc.extend('u1', at)).rejects.toMatchObject({ code: 'DAY_ENDED' });
   });
 });

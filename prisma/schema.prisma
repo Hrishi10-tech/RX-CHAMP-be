@@ -96,6 +96,7 @@ model Shift {
 
   breaks       ShiftBreak[]
   assignments  ShiftAssignment[]
+  departmentShifts DepartmentShift[]
   breakRecords BreakRecord[]
 
   createdAt DateTime  @default(now()) @map("created_at")
@@ -222,6 +223,9 @@ model WorkSession {
   startedAt DateTime              @map("started_at")
   endedAt   DateTime?             @map("ended_at")
   endReason WorkSessionEndReason? @map("end_reason")
+  /// 4.1 shared computer: when the person said they are taking the next shift. An
+  /// extended day is not auto-closed at the shift end; it runs until End Day.
+  extendedAt DateTime?            @map("extended_at")
   /// AGENT | LEGACY | BACKFILL
   source    String                @default("AGENT")
   createdAt DateTime              @default(now()) @map("created_at")
@@ -371,6 +375,9 @@ model ShiftAssignment {
   /// Optional last local day (inclusive). Only used on USER rows.
   effectiveTo   String?               @map("effective_to")
   createdById   String?               @map("created_by_id") @db.Uuid
+  /// 4.1: a one-day USER row written at Start Day, picking one of the department's
+  /// shifts by the time (not an Admin's choice; never shown as a person's own shift).
+  autoPicked    Boolean               @default(false) @map("auto_picked")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -378,6 +385,22 @@ model ShiftAssignment {
   @@index([userId, effectiveFrom])
   @@index([shiftId])
   @@map("shift_assignments")
+}
+
+/// 4.1: a department's extra shifts. Beside its main shift (the DEPARTMENT row in
+/// shift_assignments), people of the department get whichever of these is on when
+/// they press Start Day (in a gap, the next one).
+model DepartmentShift {
+  id            String   @id @default(uuid()) @db.Uuid
+  companyId     String?  @map("company_id") @db.Uuid
+  departmentKey String   @map("department_key")
+  shiftId       String   @map("shift_id") @db.Uuid
+  shift         Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([companyId, departmentKey, shiftId])
+  @@index([departmentKey])
+  @@map("department_shifts")
 }
 
 /// A break that was actually taken, with a copy of the schedule it was judged
@@ -847,6 +870,10 @@ model Department {
   name      String
   /// Key from the themed icon set (docs/4.0/SPEC.md 7.6).
   icon      String              @default("briefcase")
+  /// 4.1: one computer shared between shifts. People here are asked near their shift
+  /// end whether they are taking the next shift; if not, their day ends and the agent
+  /// signs out at the shift end, for the next person to sign in.
+  sharedComputer Boolean        @default(false) @map("shared_computer")
   users     User[]              @relation("UserDepartment")
   managers  ManagerDepartment[]
 

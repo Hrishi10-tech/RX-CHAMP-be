@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ConflictError, UnprocessableError } from '@shared/exceptions/app.exception';
+import {
+  ConflictError,
+  ForbiddenError,
+  UnprocessableError,
+} from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { PresenceBridge } from '@modules/shifts/application/presence-bridge.service';
 import { AgentGeneration } from '@modules/worktime/domain/agent-generation';
@@ -77,6 +81,37 @@ export class EndDayFlow {
     generation: AgentGeneration,
     now: Date,
   ): Promise<EndDayResponse> {
+    return this.run(me, dto, generation, now, true);
+  }
+
+  /**
+   * 4.1 shared computer: the shift is over and the person is not taking the next
+   * one, so the agent ends their day at the shift end. Nobody may be at the computer
+   * to answer End Day's questions, so the gates (skip comments, overdue approvals)
+   * do not apply; owed breaks are still auto-skipped and their comments stay owed.
+   * 403 SHARED_COMPUTER_OFF when the person's department does not share a computer.
+   */
+  async executeAtShiftEnd(
+    me: AuthenticatedUser,
+    generation: AgentGeneration,
+    now: Date,
+  ): Promise<EndDayResponse> {
+    if (!(await this.sessions.sharedComputerFor(me.id))) {
+      throw new ForbiddenError(
+        "Your department doesn't share a computer between shifts.",
+        'SHARED_COMPUTER_OFF',
+      );
+    }
+    return this.run(me, {}, generation, now, false);
+  }
+
+  private async run(
+    me: AuthenticatedUser,
+    dto: EndDayDto,
+    generation: AgentGeneration,
+    now: Date,
+    withGates: boolean,
+  ): Promise<EndDayResponse> {
     await this.sessions.autoCloseIfStale(me.id, now);
     // Everything is judged before anything is written, so a refused End Day leaves
     // no comment, no auto-skip, no notice and no End Day mark behind (re-audit M1):
@@ -93,7 +128,7 @@ export class EndDayFlow {
     }
     const planned = await this.skips.planAutoSkipsFor(me.id, now, true);
     const comments = await this.skips.checkEndDayComments(me, dto.comments ?? [], planned);
-    const gated = generation === 'AGENT_31' && !!open;
+    const gated = withGates && generation === 'AGENT_31' && !!open;
     if (gated) {
       await this.workday.assertNoOverdueApprovals(me, now);
       await this.workday.assertSkipsCommented(

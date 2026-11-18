@@ -139,6 +139,28 @@ describe('EndDayFlow', () => {
     expect(s.endDay).not.toHaveBeenCalled();
   });
 
+  it('4.1: at the shift end on a shared computer the day ends without the gates', async () => {
+    const { flow, s, skips, workday, endDay } = setup();
+    (s as any).sharedComputerFor = jest.fn().mockResolvedValue(true);
+    const res = await flow.executeAtShiftEnd(me, 'AGENT_31', NOW);
+    expect(workday.assertNoOverdueApprovals).not.toHaveBeenCalled();
+    expect(workday.assertSkipsCommented).not.toHaveBeenCalled();
+    // Owed breaks are still auto-skipped; their comments stay owed.
+    expect(skips.createPlanned).toHaveBeenCalled();
+    expect(s.endDay).toHaveBeenCalledWith('u1', 'AGENT_31', NOW);
+    expect(endDay.finish).toHaveBeenCalledWith('u1', '2026-10-14', NOW);
+    expect(res.ok).toBe(true);
+  });
+
+  it('4.1: the shift-end close is refused where the department does not share a computer', async () => {
+    const { flow, s } = setup();
+    (s as any).sharedComputerFor = jest.fn().mockResolvedValue(false);
+    await expect(flow.executeAtShiftEnd(me, 'AGENT_31', NOW)).rejects.toMatchObject({
+      code: 'SHARED_COMPUTER_OFF',
+    });
+    expect(s.endDay).not.toHaveBeenCalled();
+  });
+
   it('older agents are never gated', async () => {
     const { flow, s, workday } = setup();
     await flow.execute(me, {}, 'LEGACY', NOW);

@@ -10,6 +10,7 @@ import { PrismaShiftRepository } from './infrastructure/prisma-shift.repository'
 import { ApprovalRerouteSubscriber } from './application/approval-reroute.subscriber';
 import { BreakDayService } from './application/break-day.service';
 import { ShiftDayResolver } from './application/shift-day.resolver';
+import { ShiftPickService } from './application/shift-pick.service';
 import { BreakEvents } from './application/break-events.service';
 import { LegacyBreakSubscriber } from './application/legacy-break.subscriber';
 import { PresenceBridge } from './application/presence-bridge.service';
@@ -41,6 +42,7 @@ import { ShiftAssignmentsController, ShiftsController } from './presentation/shi
     { provide: BREAK_RECORD_REPOSITORY, useClass: PrismaBreakRecordRepository },
     BreakDayService,
     ShiftDayResolver,
+    ShiftPickService,
     BreakEvents,
     PresenceBridge,
     SkipsNeedingCommentQuery,
@@ -55,6 +57,7 @@ import { ShiftAssignmentsController, ShiftsController } from './presentation/shi
   exports: [
     BreakDayService,
     ShiftDayResolver,
+    ShiftPickService,
     BreakEvents,
     PresenceBridge,
     SkipsNeedingCommentQuery,

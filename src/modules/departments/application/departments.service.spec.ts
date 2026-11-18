@@ -24,7 +24,13 @@ interface Dept {
 function setup(depts: Dept[] = [], activeStaff: Record<string, number> = {}) {
   const store = depts.map((d) => ({ ...d }));
   const calls: { model: string; op: string; args: any }[] = [];
-  const pick = (d: Dept) => ({ id: d.id, name: d.name, icon: d.icon, createdAt: d.createdAt });
+  const pick = (d: Dept) => ({
+    id: d.id,
+    name: d.name,
+    icon: d.icon,
+    sharedComputer: !!(d as { sharedComputer?: boolean }).sharedComputer,
+    createdAt: d.createdAt,
+  });
   const matches = (d: Dept, where: any) =>
     (where.companyId === undefined || d.companyId === where.companyId) &&
     (where.deletedAt !== null || d.deletedAt === null) &&
@@ -61,6 +67,16 @@ function setup(depts: Dept[] = [], activeStaff: Record<string, number> = {}) {
     shiftAssignment: {
       updateMany: jest.fn(async (args: any) => {
         calls.push({ model: 'shiftAssignment', op: 'updateMany', args });
+        return { count: 1 };
+      }),
+    },
+    departmentShift: {
+      updateMany: jest.fn(async (args: any) => {
+        calls.push({ model: 'departmentShift', op: 'updateMany', args });
+        return { count: 1 };
+      }),
+      deleteMany: jest.fn(async (args: any) => {
+        calls.push({ model: 'departmentShift', op: 'deleteMany', args });
         return { count: 1 };
       }),
     },
@@ -180,6 +196,7 @@ describe('DepartmentsService rules', () => {
       companyId: ORG_A,
       name: 'Quality Assurance',
       icon: 'badge-check',
+      sharedComputer: false,
     });
     expect(view).toMatchObject({
       name: 'Quality Assurance',
@@ -262,6 +279,22 @@ describe('DepartmentsService rules', () => {
     expect(assignments.args).toEqual({
       where: { target: 'DEPARTMENT', companyId: ORG_A, departmentKey: 'electronics' },
       data: { department: 'Electronics Lab', departmentKey: 'electronics lab' },
+    });
+    expect(days.invalidate).toHaveBeenCalled();
+    expect(calls.find((c) => c.model === 'departmentShift')!.args).toEqual({
+      where: { companyId: ORG_A, departmentKey: 'electronics' },
+      data: { departmentKey: 'electronics lab' },
+    });
+  });
+
+  it('turning Shared computer off drops the extra shifts (4.1)', async () => {
+    const { service, calls, days, store } = setup(ALL);
+    Object.assign(store.find((d) => d.id === DEPT_A1)!, { sharedComputer: true });
+    await service.update(admin(ORG_A), DEPT_A1, { sharedComputer: false });
+    expect(calls.find((c) => c.model === 'departmentShift')).toEqual({
+      model: 'departmentShift',
+      op: 'deleteMany',
+      args: { where: { companyId: ORG_A, departmentKey: 'electronics' } },
     });
     expect(days.invalidate).toHaveBeenCalled();
   });

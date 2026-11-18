@@ -99,9 +99,11 @@ export class ShiftAssignmentsUseCase {
     const org = this.orgOf(me);
     const today = this.today();
     const scope = await this.people.findMany(this.scopeOf(me, org));
-    const [departments, ctx] = await Promise.all([
+    const [departments, ctx, extras, shared] = await Promise.all([
       this.people.listDepartments(org),
       this.days.context(scope.map((p) => p.id)),
+      this.shifts.listDepartmentShifts(),
+      this.sharedKeys(org),
     ]);
 
     // Which departments to show: those people are in (a Manager: their team's),
@@ -142,7 +144,7 @@ export class ShiftAssignmentsUseCase {
     const overrides = new Map<string, number>();
     for (const p of scope) {
       const r = this.days.resolveWith(ctx, p, today);
-      if (r.source !== 'OVERRIDE') continue;
+      if (r.source !== 'OVERRIDE' || r.assignment?.autoPicked) continue;
       const k = `${p.companyId ?? '-'}|${departmentKey(p.department)}`;
       overrides.set(k, (overrides.get(k) ?? 0) + 1);
     }
@@ -153,7 +155,13 @@ export class ShiftAssignmentsUseCase {
       const upcoming = this.departmentUpcoming(ctx, g.companyId, g.key, today);
       // An empty department that is back on the default shift, with nothing
       // planned, has nothing left to configure: leave it out of the list.
-      if (g.people === 0 && !current?.shift && !upcoming) continue;
+      const extraShifts = extras
+        .filter((e) => e.departmentKey === g.key && e.companyId === g.companyId)
+        .map((e) => ctx.shiftsById.get(e.shiftId))
+        .filter((x): x is ShiftRecord => !!x)
+        .map((x) => ShiftMapper.ref(x))
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      if (g.people === 0 && !current?.shift && !upcoming && !extraShifts.length) continue;
       views.push({
         department: g.department,
         departmentKey: g.key,
@@ -162,6 +170,8 @@ export class ShiftAssignmentsUseCase {
         current,
         upcoming,
         overrides: overrides.get(k) ?? 0,
+        extraShifts,
+        sharedComputer: shared.has(`${g.companyId}|${g.key}`),
       });
     }
     return views.sort((a, b) => a.department.localeCompare(b.department));
@@ -184,6 +194,11 @@ export class ShiftAssignmentsUseCase {
     );
     if (r.source !== 'DEPARTMENT' || !r.assignment) return null;
     return { shift: ShiftMapper.ref(r.shift), effectiveFrom: r.assignment.effectiveFrom };
+  }
+
+  /** 4.1: shared-computer departments of the organisation (`${companyId}|${key}`). */
+  private async sharedKeys(org: string): Promise<Set<string>> {
+    return this.people.sharedComputerKeys ? this.people.sharedComputerKeys(org) : new Set<string>();
   }
 
   /** The next scheduled change for exactly this department scope. */
@@ -228,6 +243,18 @@ export class ShiftAssignmentsUseCase {
     // Always the caller's organisation, whatever the body says.
     const shift = await this.shiftOrNull(dto.shiftId, org);
     const companyId = org;
+    // 4.1: only a shared-computer department may hold more than one shift.
+    const extraIds: string[] = [];
+    for (const id of new Set(dto.extraShiftIds ?? [])) {
+      const extra = await this.shiftOrNull(id, org);
+      if (extra && extra.id !== shift?.id) extraIds.push(extra.id);
+    }
+    if (extraIds.length && !(await this.sharedKeys(org)).has(`${companyId}|${key}`)) {
+      throw new ValidationError(
+        'Only a shared-computer department can have more than one shift. Turn on Shared computer for it in Departments first.',
+        'MULTIPLE_SHIFTS_NOT_SHARED',
+      );
+    }
 
     await this.shifts.applyAssignments([
       {
@@ -242,6 +269,10 @@ export class ShiftAssignmentsUseCase {
         createdById: me.id,
       },
     ]);
+    if (dto.extraShiftIds) {
+      // 4.1: the department's other shifts, picked by Start Day time.
+      await this.shifts.setDepartmentShifts(companyId, key, extraIds);
+    }
     this.days.invalidate();
     return this.listDepartments(me);
   }
@@ -272,7 +303,11 @@ export class ShiftAssignmentsUseCase {
 
   private personView(ctx: ResolutionContext, p: ShiftPerson, today: string): PersonShiftView {
     const resolved = this.days.resolveWith(ctx, p, today);
-    const mine = ctx.assignments.filter((a) => a.target === 'USER' && a.userId === p.id);
+    // 4.1: a pick made at Start Day is not the person's own shift.
+    const pickedByTime = !!resolved.assignment?.autoPicked;
+    const mine = ctx.assignments.filter(
+      (a) => a.target === 'USER' && a.userId === p.id && !a.autoPicked,
+    );
     const inForceNow = mine.filter((a) => inForce(a, today)).sort(newestFirst)[0];
     const next = mine
       .filter((a) => a.effectiveFrom > today)
@@ -293,7 +328,8 @@ export class ShiftAssignmentsUseCase {
       designation: p.designation,
       managerId: p.managerId,
       shift: ShiftMapper.ref(resolved.shift),
-      source: resolved.source,
+      source: pickedByTime ? 'DEPARTMENT' : resolved.source,
+      pickedByTime,
       override:
         inForceNow?.shiftId && ctx.shiftsById.has(inForceNow.shiftId)
           ? {

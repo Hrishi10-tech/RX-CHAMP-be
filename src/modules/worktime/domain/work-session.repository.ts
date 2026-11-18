@@ -15,6 +15,8 @@ export interface WorkSessionRecord {
   endedAt: Date | null;
   endReason: WorkSessionEndReason | null;
   source: string;
+  /** 4.1 shared computer: when the person chose to carry on into the next shift. */
+  extendedAt?: Date | null;
 }
 
 export type DayClosedCode = 'DAY_NOT_STARTED' | 'DAY_ENDED';
@@ -165,4 +167,10 @@ export interface WorkSessionRepository {
    * meanwhile.
    */
   extendAutoClosed(session: WorkSessionRecord, to: Date): Promise<boolean>;
+
+  /**
+   * 4.1: marks an open session as carried on into the next shift, at `at` unless it
+   * was already marked. Returns the mark (null when the session is no longer open).
+   */
+  markExtended(sessionId: string, at: Date): Promise<Date | null>;
 }

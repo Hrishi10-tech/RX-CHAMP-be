@@ -12,7 +12,11 @@ import { toPerson } from '../infrastructure/prisma-shift-people.reader';
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
 
-function person(id: string, role: ShiftPerson['role'], over: Partial<ShiftPerson> = {}): ShiftPerson {
+function person(
+  id: string,
+  role: ShiftPerson['role'],
+  over: Partial<ShiftPerson> = {},
+): ShiftPerson {
   return {
     id,
     role,
@@ -91,7 +95,9 @@ describe('BreakApprovalPolicy.route', () => {
       approverRole: 'MANAGER',
       approverId: null,
     });
-    expect(BreakApprovalPolicy.route(person('staff', 'USER'), person('sa', 'SUPER_ADMIN')).approverId).toBeNull();
+    expect(
+      BreakApprovalPolicy.route(person('staff', 'USER'), person('sa', 'SUPER_ADMIN')).approverId,
+    ).toBeNull();
   });
 });
 
@@ -121,14 +127,48 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
       // 3.3 combined approvals: judged in the subject's own organisation.
       name: 'Super Admin on All organisations',
       me: actor('sa', Role.SUPER_ADMIN),
-      decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'staffOrgB', 'managerOrgB'],
-      views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin', 'staffOrgB', 'managerOrgB'],
+      decides: [
+        'staffDept1',
+        'staffDept2',
+        'staffDept3',
+        'staffNoDept',
+        'manager',
+        'staffOrgB',
+        'managerOrgB',
+      ],
+      views: [
+        'staffDept1',
+        'staffDept2',
+        'staffDept3',
+        'staffNoDept',
+        'manager',
+        'admin',
+        'staffOrgB',
+        'managerOrgB',
+      ],
     },
     {
       name: 'Super Manager on All organisations',
       me: actor('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null }),
-      decides: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'staffOrgB', 'managerOrgB'],
-      views: ['staffDept1', 'staffDept2', 'staffDept3', 'staffNoDept', 'manager', 'admin', 'staffOrgB', 'managerOrgB'],
+      decides: [
+        'staffDept1',
+        'staffDept2',
+        'staffDept3',
+        'staffNoDept',
+        'manager',
+        'staffOrgB',
+        'managerOrgB',
+      ],
+      views: [
+        'staffDept1',
+        'staffDept2',
+        'staffDept3',
+        'staffNoDept',
+        'manager',
+        'admin',
+        'staffOrgB',
+        'managerOrgB',
+      ],
     },
     {
       name: 'Super Manager in org A',
@@ -150,7 +190,10 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
     },
     {
       name: 'Manager of dept-1 and dept-2',
-      me: actor('mgr', Role.MANAGER, { departmentId: 'dept-1', managedDepartmentIds: ['dept-1', 'dept-2'] }),
+      me: actor('mgr', Role.MANAGER, {
+        departmentId: 'dept-1',
+        managedDepartmentIds: ['dept-1', 'dept-2'],
+      }),
       decides: ['staffDept1', 'staffDept2'],
       views: ['staffDept1', 'staffDept2'],
     },
@@ -160,20 +203,36 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
       decides: [],
       views: [],
     },
-    { name: 'Staff', me: actor('staff', Role.USER, { departmentId: 'dept-1' }), decides: [], views: [] },
+    {
+      name: 'Staff',
+      me: actor('staff', Role.USER, { departmentId: 'dept-1' }),
+      decides: [],
+      views: [],
+    },
   ];
 
   for (const { name, me, decides, views } of ACTORS) {
     it(`${name}: decides ${decides.length ? decides.join(', ') : 'nothing'}`, () => {
       for (const s of NAMES) {
         const subject = SUBJECTS[s];
-        expect([s, BreakApprovalPolicy.canDecide(me, { userId: subject.id }, subject)]).toEqual([s, decides.includes(s)]);
-        expect([s, BreakApprovalPolicy.canView(me, { userId: subject.id }, subject)]).toEqual([s, views.includes(s)]);
+        expect([s, BreakApprovalPolicy.canDecide(me, { userId: subject.id }, subject)]).toEqual([
+          s,
+          decides.includes(s),
+        ]);
+        expect([s, BreakApprovalPolicy.canView(me, { userId: subject.id }, subject)]).toEqual([
+          s,
+          views.includes(s),
+        ]);
       }
     });
 
     it(`${name}: never decides their own item, but always sees it`, () => {
-      const self: ApprovalSubject = { id: me.id, role: me.role, companyId: me.companyId, departmentId: me.departmentId ?? null };
+      const self: ApprovalSubject = {
+        id: me.id,
+        role: me.role,
+        companyId: me.companyId,
+        departmentId: me.departmentId ?? null,
+      };
       expect(BreakApprovalPolicy.canDecide(me, { userId: me.id }, self)).toBe(false);
       expect(BreakApprovalPolicy.canView(me, { userId: me.id }, self)).toBe(true);
     });
@@ -187,9 +246,15 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
 
   it('a Super Admin who switches to org B decides org B, not org A', () => {
     const saInB = actor('sa', Role.SUPER_ADMIN, { orgId: ORG_B });
-    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'staff-b' }, SUBJECTS.staffOrgB)).toBe(true);
-    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'mgr-b' }, SUBJECTS.managerOrgB)).toBe(true);
-    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'staff-d1' }, SUBJECTS.staffDept1)).toBe(false);
+    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'staff-b' }, SUBJECTS.staffOrgB)).toBe(
+      true,
+    );
+    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'mgr-b' }, SUBJECTS.managerOrgB)).toBe(
+      true,
+    );
+    expect(BreakApprovalPolicy.canDecide(saInB, { userId: 'staff-d1' }, SUBJECTS.staffDept1)).toBe(
+      false,
+    );
   });
 
   it('follows the department at decision time: moving the manager or the staff member re-routes', () => {
@@ -197,15 +262,31 @@ describe('BreakApprovalPolicy.canDecide and canView (full matrix)', () => {
     const staff = SUBJECTS.staffDept1;
     expect(BreakApprovalPolicy.canDecide(mgr, { userId: staff.id }, staff)).toBe(true);
     // The manager is taken off dept-1.
-    expect(BreakApprovalPolicy.canDecide({ ...mgr, managedDepartmentIds: ['dept-2'] }, { userId: staff.id }, staff)).toBe(false);
+    expect(
+      BreakApprovalPolicy.canDecide(
+        { ...mgr, managedDepartmentIds: ['dept-2'] },
+        { userId: staff.id },
+        staff,
+      ),
+    ).toBe(false);
     // The staff member moves to dept-2, or loses their department.
-    expect(BreakApprovalPolicy.canDecide(mgr, { userId: staff.id }, { ...staff, departmentId: 'dept-2' })).toBe(false);
-    expect(BreakApprovalPolicy.canDecide(mgr, { userId: staff.id }, { ...staff, departmentId: null })).toBe(false);
+    expect(
+      BreakApprovalPolicy.canDecide(
+        mgr,
+        { userId: staff.id },
+        { ...staff, departmentId: 'dept-2' },
+      ),
+    ).toBe(false);
+    expect(
+      BreakApprovalPolicy.canDecide(mgr, { userId: staff.id }, { ...staff, departmentId: null }),
+    ).toBe(false);
   });
 
   it('a Manager decides without any view grant (grants only gate screenshots, timeline and activity)', () => {
     const mgr = actor('mgr', Role.MANAGER, { managedDepartmentIds: ['dept-1'], grants: NO_GRANTS });
-    expect(BreakApprovalPolicy.canDecide(mgr, { userId: 'staff-d1' }, SUBJECTS.staffDept1)).toBe(true);
+    expect(BreakApprovalPolicy.canDecide(mgr, { userId: 'staff-d1' }, SUBJECTS.staffDept1)).toBe(
+      true,
+    );
   });
 
   it('orgOf is the organisation the approver acts in', () => {
@@ -234,7 +315,11 @@ describe('toPerson', () => {
     expect(toPerson(row).active).toBe(false);
     expect(toPerson({ ...row, deletedAt: null }).active).toBe(true);
     expect(toPerson({ ...row, deletedAt: null, status: 'DISABLED' }).active).toBe(false);
-    expect(toPerson({ ...row, deletedAt: null })).toMatchObject({ companyId: ORG_A, departmentId: 'dept-1', role: 'MANAGER' });
+    expect(toPerson({ ...row, deletedAt: null })).toMatchObject({
+      companyId: ORG_A,
+      departmentId: 'dept-1',
+      role: 'MANAGER',
+    });
   });
 });
 
@@ -276,7 +361,9 @@ describe('BreakApprovalPolicy on All organisations (3.3)', () => {
       companyName: 'Beta',
       companyDeleted: false,
     });
-    expect(toPerson({ ...row, company: { name: 'Beta', deletedAt: new Date() } }).companyDeleted).toBe(true);
+    expect(
+      toPerson({ ...row, company: { name: 'Beta', deletedAt: new Date() } }).companyDeleted,
+    ).toBe(true);
     expect(toPerson(row)).not.toHaveProperty('companyName');
   });
 });

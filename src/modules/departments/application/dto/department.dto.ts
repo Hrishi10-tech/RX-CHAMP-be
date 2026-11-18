@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DEPARTMENT_ICONS } from '../../domain/department.rules';
 
@@ -14,6 +14,11 @@ export class CreateDepartmentDto {
   @IsOptional()
   @IsIn(DEPARTMENT_ICONS as unknown as string[], { message: ICON_MESSAGE })
   icon?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  sharedComputer?: boolean;
 }
 
 export class UpdateDepartmentDto {
@@ -27,4 +32,11 @@ export class UpdateDepartmentDto {
   @IsOptional()
   @IsIn(DEPARTMENT_ICONS as unknown as string[], { message: ICON_MESSAGE })
   icon?: string;
+
+  @ApiPropertyOptional({
+    description: '4.1: one computer shared between shifts (shift-end question, automatic sign-out)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  sharedComputer?: boolean;
 }

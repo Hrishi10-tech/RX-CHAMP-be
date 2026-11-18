@@ -1,5 +1,6 @@
 import {
   AssignmentTarget,
+  DepartmentShiftRecord,
   ShiftAssignmentRecord,
   ShiftDefinition,
   ShiftRecord,
@@ -21,6 +22,8 @@ export interface NewAssignment {
   effectiveFrom: string;
   effectiveTo: string | null;
   createdById: string | null;
+  /** 4.1: a one-day pick made at Start Day. */
+  autoPicked?: boolean;
 }
 
 export interface ShiftUsage {
@@ -69,4 +72,12 @@ export interface ShiftRepository {
   /** Every assignment (department and personal), newest first. */
   listAllAssignments(): Promise<ShiftAssignmentRecord[]>;
   listDepartmentAssignments(): Promise<ShiftAssignmentRecord[]>;
+  /** 4.1: every department's extra shifts. */
+  listDepartmentShifts(): Promise<DepartmentShiftRecord[]>;
+  /** 4.1: replaces one department's extra shifts. */
+  setDepartmentShifts(
+    companyId: string | null,
+    departmentKey: string,
+    shiftIds: string[],
+  ): Promise<void>;
 }

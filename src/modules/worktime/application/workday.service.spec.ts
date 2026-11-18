@@ -35,7 +35,11 @@ function build(over: Partial<Record<string, unknown>> = {}) {
     dayData: {},
     days: {},
     skipsQuery: { forUser: jest.fn().mockResolvedValue([]) },
-    settings: { get: jest.fn().mockResolvedValue(DEFAULT_SETTINGS), effectiveIdleFor: jest.fn() },
+    settings: {
+      get: jest.fn().mockResolvedValue(DEFAULT_SETTINGS),
+      effectiveIdleFor: jest.fn(),
+      sharedComputerFor: jest.fn().mockResolvedValue(false),
+    },
     config: { get: jest.fn() },
     plans: {},
     ...over,
@@ -61,7 +65,9 @@ describe('WorkdayService End Day gates', () => {
     const approvals = { overdueIn: jest.fn().mockResolvedValue(overdue) };
     const skipsQuery = { forUser: jest.fn().mockResolvedValue([]) };
     const settings = {
-      get: jest.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, blockManagerEndDayWhenOverdue: block }),
+      get: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_SETTINGS, blockManagerEndDayWhenOverdue: block }),
     };
     const { svc } = build({ approvals, skipsQuery, settings });
     return { svc, approvals, skipsQuery, settings };
@@ -97,7 +103,12 @@ describe('WorkdayService End Day gates', () => {
     });
     expect(settings.get).toHaveBeenCalledWith('co-1');
     expect(approvals.overdueIn).toHaveBeenCalledWith(
-      { kind: 'DEPTS', companyId: 'co-1', departmentIds: ['dept-1', 'dept-2'], excludeUserId: 'm1' },
+      {
+        kind: 'DEPTS',
+        companyId: 'co-1',
+        departmentIds: ['dept-1', 'dept-2'],
+        excludeUserId: 'm1',
+      },
       NOW,
     );
   });
@@ -167,16 +178,37 @@ describe('WorkdayService view', () => {
     targetSec: 9 * 3600 - 4200,
     ...over,
   });
-  const idle = effectiveIdle(idleFromStored({ idleDefaultEnabled: true }), null, { idleEnabled: null, idleMinutes: null });
+  const idle = effectiveIdle(idleFromStored({ idleDefaultEnabled: true }), null, {
+    idleEnabled: null,
+    idleMinutes: null,
+  });
 
-  function setup(todayKey: string, opts: { day?: Record<string, unknown>; plan?: DayPlan; overdue?: number } = {}) {
+  function setup(
+    todayKey: string,
+    opts: {
+      day?: Record<string, unknown>;
+      plan?: DayPlan;
+      overdue?: number;
+      sharedComputer?: boolean;
+    } = {},
+  ) {
     const sessions = {
       findOpen: jest.fn().mockResolvedValue(null),
       findLastEnded: jest.fn().mockResolvedValue(ended),
     };
-    const approvals = { overdueIn: jest.fn().mockResolvedValue({ count: opts.overdue ?? 0, oldestDueAt: null }) };
+    const approvals = {
+      overdueIn: jest.fn().mockResolvedValue({ count: opts.overdue ?? 0, oldestDueAt: null }),
+    };
     const people = {
-      findById: jest.fn().mockResolvedValue({ id: 'u1', role: 'USER', companyId: 'co-1', department: 'Ops', departmentId: 'dept-1' }),
+      findById: jest
+        .fn()
+        .mockResolvedValue({
+          id: 'u1',
+          role: 'USER',
+          companyId: 'co-1',
+          department: 'Ops',
+          departmentId: 'dept-1',
+        }),
     };
     const dayData = {
       load: jest.fn(async () => ({
@@ -198,11 +230,20 @@ describe('WorkdayService view', () => {
     const settings = {
       get: jest.fn().mockResolvedValue(DEFAULT_SETTINGS),
       effectiveIdleFor: jest.fn().mockResolvedValue(idle),
+      sharedComputerFor: jest.fn().mockResolvedValue(opts.sharedComputer ?? false),
     };
     const plans = {
-      context: jest.fn().mockResolvedValue({ plan: jest.fn((_p: unknown, date: string) => ({ ...(opts.plan ?? plan()), date })) }),
+      context: jest
+        .fn()
+        .mockResolvedValue({
+          plan: jest.fn((_p: unknown, date: string) => ({ ...(opts.plan ?? plan()), date })),
+        }),
     };
-    const config = { get: jest.fn((key: string) => (key === 'portalPublicUrl' ? 'https://portal.example.test' : undefined)) };
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'portalPublicUrl' ? 'https://portal.example.test' : undefined,
+      ),
+    };
     const { svc } = build({ sessions, approvals, people, dayData, days, settings, plans, config });
     return { svc, sessions, approvals, plans, settings };
   }
@@ -261,8 +302,18 @@ describe('WorkdayService view', () => {
         presence: [{ type: 'LUNCH', startedAt: lunch.startedAt, endedAt: lunch.endedAt }],
         breakRecords: [lunch],
         away: [
-          { status: 'PENDING', startedAt: ist('2026-10-14', '15:00'), endedAt: ist('2026-10-14', '15:20'), seconds: 1200 },
-          { status: 'UNEXPLAINED', startedAt: ist('2026-10-14', '16:00'), endedAt: ist('2026-10-14', '16:05'), seconds: 300 },
+          {
+            status: 'PENDING',
+            startedAt: ist('2026-10-14', '15:00'),
+            endedAt: ist('2026-10-14', '15:20'),
+            seconds: 1200,
+          },
+          {
+            status: 'UNEXPLAINED',
+            startedAt: ist('2026-10-14', '16:00'),
+            endedAt: ist('2026-10-14', '16:05'),
+            seconds: 300,
+          },
         ],
       },
     });
@@ -282,7 +333,14 @@ describe('WorkdayService view', () => {
         unpaidSec: 0,
       },
       away: { pendingSec: 20 * 60, unexplainedSec: 5 * 60 },
-      config: { idle, quickBreakMinutes: [5, 10, 15], breakBufferMin: 10 },
+      config: {
+        idle,
+        quickBreakMinutes: [5, 10, 15],
+        breakBufferMin: 10,
+        sharedComputer: false,
+        shiftEndAt: expect.any(String),
+        extended: false,
+      },
       shift: { id: 'sh-1', name: 'General', start: '09:30', end: '18:30' },
       settings: { approvalSlaHours: 48, reasonMinChars: 12 },
       portalUrl: 'https://portal.example.test',
@@ -299,19 +357,32 @@ describe('WorkdayService view', () => {
   });
 
   it('a holiday has no target and carries its label', async () => {
-    const { svc } = setup('2026-10-20', { plan: plan({ isWorkingDay: false, label: 'Diwali', targetSec: 0 }) });
+    const { svc } = setup('2026-10-20', {
+      plan: plan({ isWorkingDay: false, label: 'Diwali', targetSec: 0 }),
+    });
     const view = await svc.view(me('u1', Role.USER), ist('2026-10-20', '11:00'));
-    expect(view).toMatchObject({ isWorkingDay: false, dayLabel: 'Diwali', targetSec: 0, expectedSec: 0, lateStart: null });
+    expect(view).toMatchObject({
+      isWorkingDay: false,
+      dayLabel: 'Diwali',
+      targetSec: 0,
+      expectedSec: 0,
+      lateStart: null,
+    });
   });
 
   it("a Manager sees their departments' overdue count and whether End Day is blocked", async () => {
     const { svc, approvals } = setup('2026-10-14', { overdue: 2 });
     const view = await svc.view(me('m1', Role.MANAGER), ist('2026-10-14', '19:00'));
     expect(view).toMatchObject({ overdueApprovals: 2, endDayBlockedByOverdue: true });
-    expect(approvals.overdueIn.mock.calls[0][0]).toMatchObject({ kind: 'DEPTS', companyId: 'co-1' });
+    expect(approvals.overdueIn.mock.calls[0][0]).toMatchObject({
+      kind: 'DEPTS',
+      companyId: 'co-1',
+    });
     // Staff decide nothing: no count asked for.
     const staff = setup('2026-10-14', { overdue: 2 });
-    expect((await staff.svc.view(me('u1', Role.USER), ist('2026-10-14', '19:00'))).overdueApprovals).toBe(0);
+    expect(
+      (await staff.svc.view(me('u1', Role.USER), ist('2026-10-14', '19:00'))).overdueApprovals,
+    ).toBe(0);
     expect(staff.approvals.overdueIn).not.toHaveBeenCalled();
   });
 });
@@ -325,7 +396,12 @@ describe('AppSettingsService (per organisation, 4.0)', () => {
       }),
       companyOfUser: jest.fn(async () => 'co-1'),
       idleFactsOfUser: jest.fn(
-        async (): Promise<{ companyId: string; departmentId: string; idleEnabled: boolean | null; idleMinutes: number | null }> => ({
+        async (): Promise<{
+          companyId: string;
+          departmentId: string;
+          idleEnabled: boolean | null;
+          idleMinutes: number | null;
+        }> => ({
           companyId: 'co-1',
           departmentId: 'dept-1',
           idleEnabled: null,
@@ -357,8 +433,17 @@ describe('AppSettingsService (per organisation, 4.0)', () => {
     });
     expect(s.write).not.toHaveBeenCalled();
 
-    const saved = await svc.update('co-1', { approvalSlaHours: 24, quietHoursFlag: 6, breakBufferMin: 15 }, 'sa');
-    expect(saved).toMatchObject({ approvalSlaHours: 24, quietHoursFlag: 6, fullDayPct: 80, breakBufferMin: 15 });
+    const saved = await svc.update(
+      'co-1',
+      { approvalSlaHours: 24, quietHoursFlag: 6, breakBufferMin: 15 },
+      'sa',
+    );
+    expect(saved).toMatchObject({
+      approvalSlaHours: 24,
+      quietHoursFlag: 6,
+      fullDayPct: 80,
+      breakBufferMin: 15,
+    });
     expect(s.write).toHaveBeenCalledWith('org:co-1', saved, 'sa');
     // The write refreshed the cache: no read needed.
     const reads = s.read.mock.calls.length;
@@ -367,23 +452,37 @@ describe('AppSettingsService (per organisation, 4.0)', () => {
   });
 
   it("an organisation without its own row reads the 3.x row; saving keeps the row's other keys", async () => {
-    const s = store({ org: { approvalSlaHours: 72 }, 'org:co-2': { weekPattern: [1, 2, 3, 4, 5], fullDayPct: 90 } });
+    const s = store({
+      org: { approvalSlaHours: 72 },
+      'org:co-2': { weekPattern: [1, 2, 3, 4, 5], fullDayPct: 90 },
+    });
     const svc = new AppSettingsService(s as never);
     expect((await svc.get('co-1')).approvalSlaHours).toBe(72);
     expect((await svc.get('co-2')).fullDayPct).toBe(90);
     expect((await svc.get('co-2')).approvalSlaHours).toBe(48);
     await svc.update('co-2', { breakBufferMin: 0 }, 'admin');
     expect(s.write.mock.calls[0][0]).toBe('org:co-2');
-    expect(s.write.mock.calls[0][1]).toMatchObject({ weekPattern: [1, 2, 3, 4, 5], fullDayPct: 90, breakBufferMin: 0 });
+    expect(s.write.mock.calls[0][1]).toMatchObject({
+      weekPattern: [1, 2, 3, 4, 5],
+      fullDayPct: 90,
+      breakBufferMin: 0,
+    });
     // Organisations do not share a row.
     expect((await svc.get('co-1')).breakBufferMin).toBe(10);
   });
 
   it("a person's effective input tracking comes from their organisation and department", async () => {
-    const s = store({ 'org:co-1': { idleDefaultEnabled: true, departmentIdle: { 'dept-1': { minutes: 12 } } } });
+    const s = store({
+      'org:co-1': { idleDefaultEnabled: true, departmentIdle: { 'dept-1': { minutes: 12 } } },
+    });
     const svc = new AppSettingsService(s as never);
     expect(await svc.effectiveIdleFor('u1')).toMatchObject({ enabled: true, minutes: 7 });
-    s.idleFactsOfUser.mockResolvedValueOnce({ companyId: 'co-1', departmentId: 'dept-1', idleEnabled: false, idleMinutes: null });
+    s.idleFactsOfUser.mockResolvedValueOnce({
+      companyId: 'co-1',
+      departmentId: 'dept-1',
+      idleEnabled: false,
+      idleMinutes: null,
+    });
     expect(await svc.effectiveIdleFor('u1')).toMatchObject({ enabled: false, minutes: 12 });
   });
 });

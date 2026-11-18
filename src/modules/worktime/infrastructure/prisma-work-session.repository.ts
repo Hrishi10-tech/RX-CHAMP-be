@@ -27,6 +27,7 @@ export function sessionFromPrisma(r: WorkSession): WorkSessionRecord {
     endedAt: r.endedAt,
     endReason: (r.endReason as WorkSessionEndReason | null) ?? null,
     source: r.source,
+    extendedAt: r.extendedAt ?? null,
   };
 }
 
@@ -368,6 +369,19 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
       orderBy: { startedAt: 'desc' },
     });
     return row ? sessionFromPrisma(row) : null;
+  }
+
+  async markExtended(sessionId: string, at: Date): Promise<Date | null> {
+    // The first answer stands: a repeated or replayed YES keeps the original time.
+    await this.prisma.workSession.updateMany({
+      where: { id: sessionId, endedAt: null, extendedAt: null },
+      data: { extendedAt: at },
+    });
+    const row = await this.prisma.workSession.findUnique({
+      where: { id: sessionId },
+      select: { extendedAt: true },
+    });
+    return row?.extendedAt ?? null;
   }
 
   async extendAutoClosed(session: WorkSessionRecord, to: Date): Promise<boolean> {

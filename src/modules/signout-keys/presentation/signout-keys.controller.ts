@@ -71,6 +71,17 @@ export class AgentSignOutController {
     return envelope(await this.keys.signOut(me, body.key));
   }
 
+  @Post('auto-sign-out')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '4.1 shared computer: sign this person out with no key once their day is over, so ' +
+      'the next person can sign in. 403 SHARED_COMPUTER_OFF; 409 DAY_STILL_OPEN.',
+  })
+  async autoSignOut(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.keys.autoSignOut(me));
+  }
+
   @Post('quit-check')
   @HttpCode(200)
   @ApiOperation({

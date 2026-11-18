@@ -110,7 +110,7 @@ export class WorkdayService {
       forDate ??
       open?.date ??
       (person ? this.days.dayWith(ctx, person, now).dateKey : dateKeyInZone(now, tz));
-    const [data, settings, skipsNeedingComment, pc, idle] = await Promise.all([
+    const [data, settings, skipsNeedingComment, pc, idle, sharedComputer] = await Promise.all([
       this.dayData.load([me.id], date, date, now, { heal: true }),
       this.settings.get(me.companyId),
       this.skipsQuery.forUser(me.id, now),
@@ -118,6 +118,7 @@ export class WorkdayService {
         person ?? { id: me.id, companyId: me.companyId, department: me.department },
       ]),
       this.settings.effectiveIdleFor(me.id),
+      this.settings.sharedComputerFor(me.id),
     ]);
     const day = data.day(me.id, date);
     const plan = pc.plan(
@@ -188,6 +189,9 @@ export class WorkdayService {
         idle,
         quickBreakMinutes: QUICK_BREAK_MINUTES,
         breakBufferMin: settings.breakBufferMin,
+        sharedComputer,
+        shiftEndAt: workday && shift ? shiftBounds(shift, date, tz).end.toISOString() : null,
+        extended: !!(open && open.date === date && open.extendedAt),
       },
     };
   }

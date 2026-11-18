@@ -8,6 +8,7 @@ import {
   buildTimeline,
   DaySummaryInput,
   emptyTotals,
+  extendedSecOf,
   monthDates,
   monthRangeProblem,
   monthTotals,
@@ -786,5 +787,53 @@ describe('monthDates and monthRangeProblem', () => {
     // No sessions yet: only the current month.
     expect(monthRangeProblem('2026-10', '2026-10', null)).toBeNull();
     expect(monthRangeProblem('2026-09', '2026-10', null)).toMatch(/before 2026-10/);
+  });
+});
+
+describe('extendedSecOf (4.1 shared computer)', () => {
+  const end = new Date('2026-11-17T09:47:00Z'); // 3:17 PM IST
+  const at = (iso: string) => new Date(iso);
+  const now = at('2026-11-17T12:00:00Z');
+
+  it('is the time from the shift end to End Day on an extended day', () => {
+    const s = [
+      {
+        startedAt: at('2026-11-17T09:33:00Z'),
+        endedAt: at('2026-11-17T10:17:00Z'),
+        extendedAt: at('2026-11-17T09:34:00Z'),
+      },
+    ];
+    expect(extendedSecOf(s, end, now)).toBe(30 * 60);
+  });
+
+  it('counts to now while the day is still open', () => {
+    const s = [
+      {
+        startedAt: at('2026-11-17T09:33:00Z'),
+        endedAt: null,
+        extendedAt: at('2026-11-17T09:34:00Z'),
+      },
+    ];
+    expect(extendedSecOf(s, end, now)).toBe(2 * 3600 + 13 * 60);
+  });
+
+  it('is 0 when the day was not extended, has no shift, or ended before the shift end', () => {
+    const plain = [
+      {
+        startedAt: at('2026-11-17T09:33:00Z'),
+        endedAt: at('2026-11-17T10:17:00Z'),
+        extendedAt: null,
+      },
+    ];
+    expect(extendedSecOf(plain, end, now)).toBe(0);
+    const early = [
+      {
+        startedAt: at('2026-11-17T09:33:00Z'),
+        endedAt: at('2026-11-17T09:40:00Z'),
+        extendedAt: at('2026-11-17T09:34:00Z'),
+      },
+    ];
+    expect(extendedSecOf(early, end, now)).toBe(0);
+    expect(extendedSecOf(early, null, now)).toBe(0);
   });
 });

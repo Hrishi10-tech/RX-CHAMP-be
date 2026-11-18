@@ -121,6 +121,14 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
     return rows.map(toPerson);
   }
 
+  async sharedComputerKeys(companyId?: string): Promise<Set<string>> {
+    const rows = await this.prisma.department.findMany({
+      where: { sharedComputer: true, deletedAt: null, ...(companyId ? { companyId } : {}) },
+      select: { companyId: true, name: true },
+    });
+    return new Set(rows.map((r) => `${r.companyId}|${departmentKey(r.name)}`));
+  }
+
   async listDepartments(companyId?: string): Promise<DepartmentCount[]> {
     const rows = await this.prisma.user.groupBy({
       by: ['department', 'companyId'],

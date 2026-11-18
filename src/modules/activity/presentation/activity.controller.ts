@@ -88,6 +88,23 @@ export class ActivityController {
     );
   }
 
+  @Post('shift-end-day')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '4.1 shared computer: the agent ends the day at the shift end for a person who is ' +
+      'not taking the next shift. Like End Day without its gates (nobody may be there to ' +
+      'answer). 403 SHARED_COMPUTER_OFF; 409 DAY_NOT_STARTED. Idempotent.',
+  })
+  async endAtShiftEnd(
+    @CurrentUser() me: AuthenticatedUser,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return envelope(
+      await this.endDay.executeAtShiftEnd(me, agentGeneration(userAgent), RequestClock.now()),
+    );
+  }
+
   @Post('start-day')
   @HttpCode(200)
   @ApiOperation({

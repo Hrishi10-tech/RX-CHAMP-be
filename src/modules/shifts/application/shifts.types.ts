@@ -81,6 +81,10 @@ export interface DepartmentAssignmentView {
   upcoming: { shift: ShiftRef | null; effectiveFrom: string } | null;
   /** People in the department on a personal override today. */
   overrides: number;
+  /** 4.1: the department's other shifts; Start Day picks the one that is on. */
+  extraShifts: ShiftRef[];
+  /** 4.1: Shared computer is on; only then may the department hold several shifts. */
+  sharedComputer: boolean;
 }
 
 export interface PersonShiftView {
@@ -94,6 +98,8 @@ export interface PersonShiftView {
   /** The shift that applies today, and why. */
   shift: ShiftRef | null;
   source: ShiftSource;
+  /** 4.1: today's shift was picked by their Start Day time (one of the department's shifts). */
+  pickedByTime?: boolean;
   /** The personal override in force today, if any. */
   override: {
     shift: ShiftRef | null;

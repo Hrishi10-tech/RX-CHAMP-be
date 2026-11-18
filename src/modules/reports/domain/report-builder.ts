@@ -29,6 +29,8 @@ export interface DaySummaryInput {
   hourly: HourActivity[];
   /** The shift that applied that day (null: no shift at all). */
   shift: (ShiftForAttendance & { overrunGraceMin: number }) | null;
+  /** 4.1: the shift's end that day (how long an extended day ran past it). */
+  shiftEnd?: Date | null;
   /** The shift's start that day (for the late start), null without a shift. */
   shiftStart: Date | null;
   pending: number;
@@ -50,6 +52,20 @@ export function beforeJoining(
   worked: boolean,
 ): boolean {
   return !worked && joinedOn !== undefined && date < joinedOn;
+}
+
+/**
+ * 4.1 shared computer: how long an extended day ran past the shift end (0 when the
+ * day was not extended, has no shift, or ended before the shift did).
+ */
+export function extendedSecOf(
+  sessions: readonly { startedAt: Date; endedAt: Date | null; extendedAt?: Date | null }[],
+  shiftEnd: Date | null,
+  now: Date,
+): number {
+  if (!shiftEnd || !sessions.some((s) => !!s.extendedAt)) return 0;
+  const end = Math.max(...sessions.map((s) => (s.endedAt ?? now).getTime()));
+  return Math.max(0, Math.round((end - shiftEnd.getTime()) / 1000));
 }
 
 export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
@@ -79,6 +95,8 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     startedAt: first?.startedAt.toISOString() ?? null,
     endedAt: !open && last?.endedAt ? last.endedAt.toISOString() : null,
     autoClosed: !open && last?.endReason === 'AUTO_CLOSED',
+    extended: d.sessions.some((s) => !!s.extendedAt),
+    extendedSec: extendedSecOf(d.sessions, i.shiftEnd ?? null, i.now),
     lateStart:
       workday && first
         ? lateStartOf(first.startedAt, i.shiftStart, i.settings.lateStartGraceMin)

@@ -10,7 +10,8 @@ export class AgentSignedOutEvent {
   constructor(
     public readonly userId: string,
     public readonly companyId: string,
-    public readonly keyId: string,
+    /** The key used; null for a 4.1 shared-computer sign-out at the shift end. */
+    public readonly keyId: string | null,
     public readonly at: Date,
   ) {}
 }

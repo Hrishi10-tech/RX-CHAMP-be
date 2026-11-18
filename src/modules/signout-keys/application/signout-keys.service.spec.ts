@@ -347,3 +347,55 @@ describe('SignOutKeysService: quitting', () => {
     expect(actions(audit)).toEqual(['QUIT_KEY_FAILED']);
   });
 });
+
+describe('SignOutKeysService: automatic sign-out on a shared computer (4.1)', () => {
+  function shared(dept: { sharedComputer: boolean; deletedAt?: Date | null } | null, open = false) {
+    const ctx = setup();
+    ctx.prisma.user.findUnique = jest.fn(async () => ({
+      companyId: ORG_A,
+      departmentRef: dept ? { deletedAt: null, ...dept } : null,
+    }));
+    ctx.prisma.workSession = {
+      findFirst: jest.fn(async () => (open ? { id: 'ws-1' } : null)),
+    };
+    return ctx;
+  }
+
+  it('signs a person out with no key once their day is over', async () => {
+    const { service, refreshTokens, users, events, audit } = shared({ sharedComputer: true });
+
+    await expect(service.autoSignOut(staff(DEPT_A1, ORG_A), NOW)).resolves.toEqual({
+      signedOut: true,
+    });
+    expect(refreshTokens.revokeAgentSessions).toHaveBeenCalledWith(IDS.staffA1);
+    expect(users.bumpEnrollVersion).toHaveBeenCalledWith(IDS.staffA1);
+    expect(actions(audit)).toEqual(['AUTO_SIGN_OUT']);
+    expect(events.publish).toHaveBeenCalledWith(
+      'agent.signed-out',
+      expect.objectContaining({ userId: IDS.staffA1, keyId: null }),
+    );
+  });
+
+  it('refuses when the department does not share a computer, or is gone', async () => {
+    for (const dept of [
+      { sharedComputer: false },
+      { sharedComputer: true, deletedAt: NOW },
+      null,
+    ]) {
+      const { service, refreshTokens } = shared(dept);
+      await expect(service.autoSignOut(staff(DEPT_A1, ORG_A), NOW)).rejects.toMatchObject({
+        code: 'SHARED_COMPUTER_OFF',
+      });
+      expect(refreshTokens.revokeAgentSessions).not.toHaveBeenCalled();
+    }
+  });
+
+  it('refuses while the working day is still open', async () => {
+    const { service, refreshTokens } = shared({ sharedComputer: true }, true);
+
+    await expect(service.autoSignOut(staff(DEPT_A1, ORG_A), NOW)).rejects.toMatchObject({
+      code: 'DAY_STILL_OPEN',
+    });
+    expect(refreshTokens.revokeAgentSessions).not.toHaveBeenCalled();
+  });
+});

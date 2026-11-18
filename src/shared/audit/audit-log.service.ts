@@ -28,6 +28,7 @@ export type AuditAction =
   | 'SIGNOUT_KEY_REVOKED'
   | 'SIGNOUT_KEY_USED'
   | 'SIGNOUT_KEY_FAILED'
+  | 'AUTO_SIGN_OUT'
   | 'QUIT_KEY_USED'
   | 'QUIT_KEY_FAILED';
 

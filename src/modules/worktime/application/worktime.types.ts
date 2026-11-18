@@ -97,6 +97,16 @@ export interface WorkdayTodayView {
     };
     quickBreakMinutes: number[];
     breakBufferMin: number;
+    /**
+     * 4.1: the person's department shares one computer between shifts. The agent asks
+     * before `shiftEndAt` whether they are taking the next shift and, if not, ends the
+     * day and signs out at it.
+     */
+    sharedComputer: boolean;
+    /** Today's shift end (ISO), or null with no shift or on a day off. */
+    shiftEndAt: string | null;
+    /** The open day was carried on into the next shift (no more questions today). */
+    extended: boolean;
   };
 }
 
@@ -255,6 +265,8 @@ export interface TeamTodayRow {
   startedAt: string | null;
   endedAt: string | null;
   autoClosed: boolean;
+  /** 4.1 shared computer: the person carried their day on into the next shift. */
+  extended: boolean;
   lateStart: { minutes: number } | null;
   focus: FocusView;
   expectedSec: number;

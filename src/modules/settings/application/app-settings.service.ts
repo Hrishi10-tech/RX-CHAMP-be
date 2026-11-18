@@ -106,6 +106,11 @@ export class AppSettingsService {
     });
   }
 
+  /** 4.1: the person's department shares one computer between shifts. */
+  async sharedComputerFor(userId: string): Promise<boolean> {
+    return this.store.sharedComputerOfUser ? this.store.sharedComputerOfUser(userId) : false;
+  }
+
   /** Forget a person's cached organisation (they moved). */
   forgetUser(userId: string): void {
     this.userOrg.delete(userId);

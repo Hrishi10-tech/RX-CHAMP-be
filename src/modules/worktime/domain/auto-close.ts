@@ -19,11 +19,18 @@ export function latestEndOf(input: {
   /** End of the person's shift on the session date; null for no shift or a day off. */
   shiftEnd: Date | null;
   autoCloseAfterShiftEndMin: number;
+  /**
+   * 4.1 shared computer: when the person chose to carry on into the next shift. The
+   * day then runs until End Day, closed automatically only after a no-shift day's
+   * length from that answer (a forgotten computer still closes).
+   */
+  extendedAt?: Date | null;
 }): Date {
   const afterMs = input.autoCloseAfterShiftEndMin * 60_000;
   const start = input.startedAt.getTime();
   const rule = input.shiftEnd ? input.shiftEnd.getTime() + afterMs : start + NO_SHIFT_SESSION_MS;
-  return new Date(Math.max(rule, start + afterMs));
+  const extended = input.extendedAt ? input.extendedAt.getTime() + NO_SHIFT_SESSION_MS : 0;
+  return new Date(Math.max(rule, start + afterMs, extended));
 }
 
 export function isStale(latestEnd: Date, now: Date): boolean {

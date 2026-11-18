@@ -23,7 +23,10 @@ const me = (id: string, role: Role, over: Partial<AuthenticatedUser> = {}): Auth
 });
 
 /** The people behind the records, by id. Unlisted ids are Staff in dept-1 of org-a. */
-const SUBJECTS: Record<string, { role: string; companyId: string | null; departmentId: string | null }> = {
+const SUBJECTS: Record<
+  string,
+  { role: string; companyId: string | null; departmentId: string | null }
+> = {
   'staff-d2': { role: 'USER', companyId: ORG, departmentId: 'dept-2' },
   'staff-nodept': { role: 'USER', companyId: ORG, departmentId: null },
   'staff-b': { role: 'USER', companyId: 'org-b', departmentId: 'dept-1' },
@@ -128,7 +131,9 @@ describe('BreakApprovalsUseCase', () => {
     await expect(
       useCase.list(me('sa', Role.SUPER_ADMIN, { orgId: null, orgHeaderInvalid: true }), {}),
     ).rejects.toMatchObject({ status: 404, code: 'ORG_NOT_FOUND' });
-    await expect(useCase.list(me('admin', Role.ADMIN), { companyId: 'org-b' })).rejects.toMatchObject({
+    await expect(
+      useCase.list(me('admin', Role.ADMIN), { companyId: 'org-b' }),
+    ).rejects.toMatchObject({
       status: 404,
       code: 'ORG_NOT_FOUND',
     });
@@ -137,10 +142,14 @@ describe('BreakApprovalsUseCase', () => {
   it('3.3: the Super Manager on All organisations decides an item of any organisation, judged in its own', async () => {
     const sm = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
     records.findById.mockResolvedValue(rec({ userId: 'staff-b' }));
-    records.decide.mockResolvedValue(rec({ userId: 'staff-b', approvalStatus: 'APPROVED', decidedById: 'sm' }));
+    records.decide.mockResolvedValue(
+      rec({ userId: 'staff-b', approvalStatus: 'APPROVED', decidedById: 'sm' }),
+    );
     await expect(useCase.approve(sm, 'r-1')).resolves.toMatchObject({ approvalStatus: 'APPROVED' });
     // An Admin of org-a still cannot see org-b's item.
-    await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({ status: 404 });
+    await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('scopes a Manager to Staff in their departments, whatever the scope', async () => {
@@ -161,7 +170,11 @@ describe('BreakApprovalsUseCase', () => {
 
   it("a Manager with no departments lists nobody's items", async () => {
     await useCase.list(me('mgr', Role.MANAGER, { managedDepartmentIds: [] }), {});
-    expect(records.listApprovals.mock.calls[0][0].subjects).toEqual({ companyId: ORG, departmentIds: [], roles: ['USER'] });
+    expect(records.listApprovals.mock.calls[0][0].subjects).toEqual({
+      companyId: ORG,
+      departmentIds: [],
+      roles: ['USER'],
+    });
   });
 
   it("an Admin's or Super Admin's mine is the Admin pool of the organisation; all is the whole organisation", async () => {
@@ -175,7 +188,11 @@ describe('BreakApprovalsUseCase', () => {
 
     await useCase.list(me('sa', Role.SUPER_ADMIN), { scope: 'all', status: 'ALL' });
     const all = records.listApprovals.mock.calls[1][0];
-    expect(all).toMatchObject({ subjects: { companyId: ORG }, adminPool: false, excludeUserId: 'sa' });
+    expect(all).toMatchObject({
+      subjects: { companyId: ORG },
+      adminPool: false,
+      excludeUserId: 'sa',
+    });
     expect(all.approverId).toBeUndefined();
     expect(all.approverAny).toBeUndefined();
     expect(all.status).toEqual(['PENDING', 'APPROVED', 'REJECTED']);
@@ -194,7 +211,11 @@ describe('BreakApprovalsUseCase', () => {
   });
 
   it('summarises the same scope for one day', async () => {
-    records.countApprovals.mockResolvedValueOnce(3).mockResolvedValueOnce(1).mockResolvedValueOnce(5).mockResolvedValueOnce(0);
+    records.countApprovals
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(0);
     await expect(useCase.summary(me('mgr', Role.MANAGER), '2026-10-13')).resolves.toEqual({
       date: '2026-10-13',
       pendingToday: 3,
@@ -203,7 +224,11 @@ describe('BreakApprovalsUseCase', () => {
       rejectedToday: 0,
     });
     for (const call of records.countApprovals.mock.calls) {
-      expect(call[0].subjects).toEqual({ companyId: ORG, departmentIds: ['dept-1'], roles: ['USER'] });
+      expect(call[0].subjects).toEqual({
+        companyId: ORG,
+        departmentIds: ['dept-1'],
+        roles: ['USER'],
+      });
     }
   });
 
@@ -218,39 +243,58 @@ describe('BreakApprovalsUseCase', () => {
     );
     expect(item.approvalStatus).toBe('APPROVED');
     expect(item.user).toMatchObject({ id: 'staff', role: 'USER' });
-    expect(events.decided).toHaveBeenCalledWith(expect.objectContaining({ id: 'r-1' }), { id: 'mgr', name: 'mgr' });
+    expect(events.decided).toHaveBeenCalledWith(expect.objectContaining({ id: 'r-1' }), {
+      id: 'mgr',
+      name: 'mgr',
+    });
   });
 
   it('any manager of the department may decide; no approverId is needed', async () => {
     records.findById.mockResolvedValue(rec({ approverId: null }));
     records.decide.mockResolvedValue(rec({ approvalStatus: 'APPROVED', decidedById: 'mgr2' }));
-    await expect(useCase.approve(me('mgr2', Role.MANAGER), 'r-1')).resolves.toMatchObject({ approvalStatus: 'APPROVED' });
+    await expect(useCase.approve(me('mgr2', Role.MANAGER), 'r-1')).resolves.toMatchObject({
+      approvalStatus: 'APPROVED',
+    });
   });
 
   it('a Manager does not even see items of other departments, Managers, Admins or other organisations (404)', async () => {
     for (const userId of ['staff-d2', 'staff-nodept', 'mgr2', 'admin', 'staff-b']) {
-      records.findById.mockResolvedValue(rec({ userId, approverRole: userId === 'staff-d2' ? 'MANAGER' : 'ADMIN' }));
-      await expect(useCase.approve(me('mgr', Role.MANAGER), 'r-1')).rejects.toMatchObject({ status: 404 });
+      records.findById.mockResolvedValue(
+        rec({ userId, approverRole: userId === 'staff-d2' ? 'MANAGER' : 'ADMIN' }),
+      );
+      await expect(useCase.approve(me('mgr', Role.MANAGER), 'r-1')).rejects.toMatchObject({
+        status: 404,
+      });
     }
     expect(records.decide).not.toHaveBeenCalled();
   });
 
   it("the Admin decides a Manager's break and Staff with no department", async () => {
-    records.decide.mockImplementation(async (id: string) => rec({ id, approvalStatus: 'APPROVED', decidedById: 'admin' }));
+    records.decide.mockImplementation(async (id: string) =>
+      rec({ id, approvalStatus: 'APPROVED', decidedById: 'admin' }),
+    );
     for (const userId of ['mgr', 'staff-nodept', 'staff-d2']) {
       records.findById.mockResolvedValue(rec({ userId, approverRole: 'ADMIN' }));
-      await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).resolves.toMatchObject({ approvalStatus: 'APPROVED' });
+      await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).resolves.toMatchObject({
+        approvalStatus: 'APPROVED',
+      });
     }
     expect(records.decide).toHaveBeenCalledTimes(3);
   });
 
   it('nobody reaches into another organisation (404), not even a Super Admin acting in this one', async () => {
     records.findById.mockResolvedValue(rec({ userId: 'staff-b' }));
-    await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({ status: 404 });
-    await expect(useCase.approve(me('sa', Role.SUPER_ADMIN), 'r-1')).rejects.toMatchObject({ status: 404 });
+    await expect(useCase.approve(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(useCase.approve(me('sa', Role.SUPER_ADMIN), 'r-1')).rejects.toMatchObject({
+      status: 404,
+    });
     // Switched to org-b, the Super Admin can.
     records.decide.mockResolvedValue(rec({ userId: 'staff-b', approvalStatus: 'APPROVED' }));
-    await expect(useCase.approve(me('sa', Role.SUPER_ADMIN, { orgId: 'org-b' }), 'r-1')).resolves.toMatchObject({
+    await expect(
+      useCase.approve(me('sa', Role.SUPER_ADMIN, { orgId: 'org-b' }), 'r-1'),
+    ).resolves.toMatchObject({
       approvalStatus: 'APPROVED',
     });
   });
@@ -282,7 +326,9 @@ describe('BreakApprovalsUseCase', () => {
 
   it('answers 404 for an unknown record', async () => {
     records.findById.mockResolvedValue(null);
-    await expect(useCase.approve(me('admin', Role.ADMIN), 'nope')).rejects.toMatchObject({ status: 404 });
+    await expect(useCase.approve(me('admin', Role.ADMIN), 'nope')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('lets only one of two racing approvers win', async () => {
@@ -310,7 +356,9 @@ describe('BreakApprovalsUseCase', () => {
           ? rec({ id, userId: 'staff-d2' })
           : rec({ id }),
     );
-    records.decide.mockImplementation(async (id: string) => rec({ id, approvalStatus: 'APPROVED' }));
+    records.decide.mockImplementation(async (id: string) =>
+      rec({ id, approvalStatus: 'APPROVED' }),
+    );
     const res = await useCase.bulkApprove(me('mgr', Role.MANAGER), {
       ids: ['r-1', 'r-2', 'r-3', 'r-1'],
     });
@@ -338,23 +386,35 @@ describe('BreakApprovalsUseCase', () => {
     });
     // The manager who decided it may reopen it.
     records.findById.mockResolvedValue(rec({ approvalStatus: 'APPROVED', decidedById: 'mgr' }));
-    await expect(useCase.reopen(me('mgr', Role.MANAGER), 'r-1')).resolves.toMatchObject({ approvalStatus: 'PENDING' });
+    await expect(useCase.reopen(me('mgr', Role.MANAGER), 'r-1')).resolves.toMatchObject({
+      approvalStatus: 'PENDING',
+    });
     // Another Admin-like caller who did not decide it may too.
     records.findById.mockResolvedValue(rec({ approvalStatus: 'APPROVED', decidedById: 'mgr' }));
-    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).resolves.toMatchObject({ approvalStatus: 'PENDING' });
+    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).resolves.toMatchObject({
+      approvalStatus: 'PENDING',
+    });
   });
 
   it('reopens only a decided item, within scope', async () => {
     records.findById.mockResolvedValue(rec({ approvalStatus: 'PENDING' }));
-    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({ code: 'NOT_DECIDED' });
-    records.findById.mockResolvedValue(rec({ userId: 'staff-d2', approvalStatus: 'APPROVED', decidedById: 'mgr' }));
-    await expect(useCase.reopen(me('mgr', Role.MANAGER), 'r-1')).rejects.toMatchObject({ status: 404 });
+    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({
+      code: 'NOT_DECIDED',
+    });
+    records.findById.mockResolvedValue(
+      rec({ userId: 'staff-d2', approvalStatus: 'APPROVED', decidedById: 'mgr' }),
+    );
+    await expect(useCase.reopen(me('mgr', Role.MANAGER), 'r-1')).rejects.toMatchObject({
+      status: 404,
+    });
     records.findById.mockResolvedValue(rec({ approvalStatus: 'APPROVED', decidedById: 'admin' }));
     records.decide.mockResolvedValue(null);
-    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({ code: 'STALE' });
+    await expect(useCase.reopen(me('admin', Role.ADMIN), 'r-1')).rejects.toMatchObject({
+      code: 'STALE',
+    });
   });
 
-  it("marks in a list which items the caller can decide (never their own or a NOT_REQUIRED one)", async () => {
+  it('marks in a list which items the caller can decide (never their own or a NOT_REQUIRED one)', async () => {
     records.listApprovals.mockResolvedValue([
       rec({ id: 'a' }),
       rec({ id: 'b', userId: 'mgr', approverRole: 'ADMIN' }),

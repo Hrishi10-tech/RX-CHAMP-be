@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { RequestClock } from '@shared/tenancy';
@@ -9,6 +9,7 @@ import { AppSettingsService } from '@modules/settings/application/app-settings.s
 import { BreakDayService, ResolutionContext } from '@modules/shifts/application/break-day.service';
 import { personName } from '@modules/shifts/application/break-events.service';
 import { ShiftDayResolver } from '@modules/shifts/application/shift-day.resolver';
+import { ShiftPickService } from '@modules/shifts/application/shift-pick.service';
 import { shiftBounds } from '@modules/shifts/domain/break-schedule';
 import {
   SHIFT_PEOPLE_READER,
@@ -54,10 +55,16 @@ export class WorkSessionsService {
     private readonly days: BreakDayService,
     private readonly settings: AppSettingsService,
     private readonly dayKeys: ShiftDayResolver,
+    @Optional() private readonly shiftPick?: ShiftPickService,
   ) {}
 
   get timezone(): string {
     return appTimezone();
+  }
+
+  /** 4.1: the person's department shares one computer between shifts. */
+  sharedComputerFor(userId: string): Promise<boolean> {
+    return this.settings.sharedComputerFor(userId);
   }
 
   /**
@@ -111,7 +118,7 @@ export class WorkSessionsService {
    * close, nor a move of one, nor a replayed reopen, ever goes past it.
    */
   async latestEndOfSession(
-    s: Pick<WorkSessionRecord, 'userId' | 'date' | 'startedAt'>,
+    s: Pick<WorkSessionRecord, 'userId' | 'date' | 'startedAt' | 'extendedAt'>,
   ): Promise<Date> {
     const [people, ctx] = await Promise.all([
       this.people.findAnyByIds([s.userId]),
@@ -131,6 +138,7 @@ export class WorkSessionsService {
     now: Date,
   ): Promise<StartDayTxResult> {
     await this.autoCloseIfStale(userId, now);
+    await this.pickShift(userId, startedAt);
     const dayOf = await this.dayKeys.keyFnFor(userId);
     return this.sessions.startDay(
       userId,
@@ -139,6 +147,18 @@ export class WorkSessionsService {
       RequestClock.isReplay() ? 'REPLAY' : generation === 'AGENT_31' ? 'AGENT' : 'LEGACY',
       dayOf,
     );
+  }
+
+  /**
+   * 4.1: a department running several shifts gives the person the one that is on
+   * (first Start Day of the day only). Never blocks Start Day.
+   */
+  private async pickShift(userId: string, startedAt: Date): Promise<void> {
+    try {
+      await this.shiftPick?.pickOnStartDay(userId, startedAt);
+    } catch (err) {
+      this.logger.warn(`could not pick a shift for ${userId}: ${String(err)}`);
+    }
   }
 
   async endDay(userId: string, generation: AgentGeneration, now: Date): Promise<EndDayTxResult> {
@@ -287,7 +307,7 @@ export class WorkSessionsService {
    * start (see auto-close.ts).
    */
   latestEndFor(
-    session: Pick<WorkSessionRecord, 'date' | 'startedAt'>,
+    session: Pick<WorkSessionRecord, 'date' | 'startedAt' | 'extendedAt'>,
     person: ShiftPerson | null,
     ctx: ResolutionContext,
     autoCloseAfterShiftEndMin: number,
@@ -299,7 +319,27 @@ export class WorkSessionsService {
         shiftEnd = shiftBounds(day.resolved.shift, session.date, this.timezone).end;
       }
     }
-    return latestEndOf({ startedAt: session.startedAt, shiftEnd, autoCloseAfterShiftEndMin });
+    return latestEndOf({
+      startedAt: session.startedAt,
+      shiftEnd,
+      autoCloseAfterShiftEndMin,
+      extendedAt: session.extendedAt ?? null,
+    });
+  }
+
+  /**
+   * 4.1 shared computer: the person is taking the next shift. Their open day carries
+   * on (same day, no approval) until they press End Day; it is no longer auto-closed
+   * at the shift end. Idempotent: the first answer's time stands.
+   */
+  async extend(userId: string, now: Date): Promise<{ extendedAt: Date }> {
+    await this.autoCloseIfStale(userId, now);
+    const open = await this.sessions.findOpen(userId);
+    if (!open) throw dayClosedError('DAY_NOT_STARTED');
+    const at = await this.sessions.markExtended(open.id, now);
+    if (!at) throw dayClosedError('DAY_ENDED');
+    this.latestEndCache.delete(open.id);
+    return { extendedAt: at };
   }
 
   private remember(sessionId: string, latestEnd: Date, now: Date): void {

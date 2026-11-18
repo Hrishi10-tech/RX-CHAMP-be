@@ -11,6 +11,7 @@ import {
 import {
   BREAK_KINDS,
   BreakKind,
+  DepartmentShiftRecord,
   ShiftAssignmentRecord,
   ShiftBreakDef,
   ShiftRecord,
@@ -331,6 +332,28 @@ export class PrismaShiftRepository implements ShiftRepository {
     });
     return rows.map(toAssignment);
   }
+
+  async listDepartmentShifts(): Promise<DepartmentShiftRecord[]> {
+    const rows = await this.prisma.departmentShift.findMany({
+      where: { shift: { deletedAt: null } },
+      select: { companyId: true, departmentKey: true, shiftId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows;
+  }
+
+  async setDepartmentShifts(
+    companyId: string | null,
+    departmentKey: string,
+    shiftIds: string[],
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.departmentShift.deleteMany({ where: { companyId, departmentKey } }),
+      this.prisma.departmentShift.createMany({
+        data: [...new Set(shiftIds)].map((shiftId) => ({ companyId, departmentKey, shiftId })),
+      }),
+    ]);
+  }
 }
 
 function toAssignment(r: Prisma.ShiftAssignmentGetPayload<object>): ShiftAssignmentRecord {
@@ -346,6 +369,7 @@ function toAssignment(r: Prisma.ShiftAssignmentGetPayload<object>): ShiftAssignm
     effectiveTo: r.effectiveTo,
     createdById: r.createdById,
     createdAt: r.createdAt,
+    autoPicked: r.autoPicked,
   };
 }
 

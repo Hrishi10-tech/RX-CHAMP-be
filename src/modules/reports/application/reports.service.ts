@@ -519,6 +519,7 @@ export class ReportsService {
       hourly,
       shift,
       shiftStart: shift ? shiftBounds(shift, d.date, appTimezone()).start : null,
+      shiftEnd: shift ? shiftBounds(shift, d.date, appTimezone()).end : null,
       pending,
       settings,
       now,

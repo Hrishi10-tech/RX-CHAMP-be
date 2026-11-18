@@ -64,7 +64,15 @@ describe('LegacyBreakSubscriber', () => {
   const people = {
     findById: jest.fn(async (id: string) =>
       id === 'mgr'
-        ? { id: 'mgr', role: 'MANAGER', active: true, firstName: 'M', lastName: '', companyId: 'org-a', departmentId: 'dept-1' }
+        ? {
+            id: 'mgr',
+            role: 'MANAGER',
+            active: true,
+            firstName: 'M',
+            lastName: '',
+            companyId: 'org-a',
+            departmentId: 'dept-1',
+          }
         : {
             id,
             role: 'USER',

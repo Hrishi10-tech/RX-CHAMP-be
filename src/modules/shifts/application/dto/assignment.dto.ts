@@ -41,6 +41,17 @@ export class AssignDepartmentDto {
   })
   @Matches(DATE_KEY, { message: 'effectiveFrom must be YYYY-MM-DD' })
   effectiveFrom!: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "4.1: the department's other shifts; Start Day picks the one that is on (omit = unchanged)",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsId({ each: true })
+  extraShiftIds?: string[];
 }
 
 export class AssignPeopleDto {

@@ -43,6 +43,7 @@ export class PersonDays {
       hourly: [],
       shift: plan.shift,
       shiftStart: plan.shift ? shiftBounds(plan.shift, date, appTimezone()).start : null,
+      shiftEnd: plan.shift ? shiftBounds(plan.shift, date, appTimezone()).end : null,
       pending: this.pendingBy.get(`${p.id}|${date}`) ?? 0,
       settings,
       now: this.now,

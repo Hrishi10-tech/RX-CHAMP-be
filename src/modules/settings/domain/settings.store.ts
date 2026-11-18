@@ -13,4 +13,6 @@ export interface SettingsStore {
     idleEnabled: boolean | null;
     idleMinutes: number | null;
   } | null>;
+  /** 4.1: whether the person's department shares one computer between shifts. */
+  sharedComputerOfUser?(userId: string): Promise<boolean>;
 }

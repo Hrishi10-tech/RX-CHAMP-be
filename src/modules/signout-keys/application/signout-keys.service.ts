@@ -4,6 +4,7 @@ import { AuditLogService } from '@shared/audit/audit-log.service';
 import { PrismaService } from '@shared/database/prisma.service';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import {
+  ConflictError,
   ForbiddenError,
   NotFoundError,
   TooManyAttemptsError,
@@ -320,6 +321,54 @@ export class SignOutKeysService {
     await this.events.publish(
       AgentSignedOutEvent.eventName,
       new AgentSignedOutEvent(me.id, key.companyId, key.id, now),
+    );
+    return { signedOut: true };
+  }
+
+  /**
+   * POST /agent/auto-sign-out (4.1): on a department that shares one computer
+   * between shifts, the agent signs its person out with no key once their day is
+   * over (End Day, or the shift end), so the next person can sign in. Same effect
+   * as a key sign-out. 403 SHARED_COMPUTER_OFF; 409 DAY_STILL_OPEN.
+   */
+  async autoSignOut(me: AuthenticatedUser, now: Date = new Date()): Promise<{ signedOut: true }> {
+    const person = await this.prisma.user.findUnique({
+      where: { id: me.id },
+      select: {
+        companyId: true,
+        departmentRef: { select: { sharedComputer: true, deletedAt: true } },
+      },
+    });
+    const dept = person?.departmentRef;
+    if (!dept || dept.deletedAt || !dept.sharedComputer) {
+      throw new ForbiddenError(
+        "Your department doesn't share a computer between shifts. Ask your admin for a sign-out key.",
+        'SHARED_COMPUTER_OFF',
+      );
+    }
+    const open = await this.prisma.workSession.findFirst({
+      where: { userId: me.id, endedAt: null },
+      select: { id: true },
+    });
+    if (open) {
+      throw new ConflictError(
+        'Your working day is still open. End your day first.',
+        'DAY_STILL_OPEN',
+      );
+    }
+    const sessions = await this.refreshTokens.revokeAgentSessions(me.id);
+    const enrollVersion = await this.users.bumpEnrollVersion(me.id);
+    const companyId = person?.companyId ?? orgOf(me) ?? '';
+    await this.audit.record({
+      actorId: me.id,
+      action: 'AUTO_SIGN_OUT',
+      entity: 'USER',
+      entityId: me.id,
+      metadata: { companyId, userId: me.id, agentSessionsEnded: sessions, enrollVersion },
+    });
+    await this.events.publish(
+      AgentSignedOutEvent.eventName,
+      new AgentSignedOutEvent(me.id, companyId, null, now),
     );
     return { signedOut: true };
   }

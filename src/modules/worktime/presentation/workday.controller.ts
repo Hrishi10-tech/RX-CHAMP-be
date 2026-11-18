@@ -48,7 +48,21 @@ export class WorkdayController {
   constructor(
     private readonly workday: WorkdayService,
     private readonly history: HistoryService,
+    private readonly sessions: WorkSessionsService,
   ) {}
+
+  @Post('me/extend')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '4.1 shared computer: "I am taking the next shift". The open day carries on (same ' +
+      'day, no approval) until End Day and is not auto-closed at the shift end. Idempotent. ' +
+      '409 DAY_NOT_STARTED / DAY_ENDED.',
+  })
+  async extend(@CurrentUser() me: AuthenticatedUser) {
+    const { extendedAt } = await this.sessions.extend(me.id, RequestClock.now());
+    return envelope({ extended: true, extendedAt: extendedAt.toISOString() });
+  }
 
   @Get('me/history')
   @ApiOperation({

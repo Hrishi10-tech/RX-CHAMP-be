@@ -37,4 +37,14 @@ export class PrismaSettingsStore implements SettingsStore {
       select: { companyId: true, departmentId: true, idleEnabled: true, idleMinutes: true },
     });
   }
+
+  async sharedComputerOfUser(userId: string): Promise<boolean> {
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return false;
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { departmentRef: { select: { sharedComputer: true, deletedAt: true } } },
+    });
+    const dept = row?.departmentRef;
+    return !!dept && !dept.deletedAt && dept.sharedComputer;
+  }
 }

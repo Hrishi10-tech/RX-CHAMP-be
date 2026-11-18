@@ -147,6 +147,7 @@ export class TeamTodayService {
           startedAt: first?.startedAt.toISOString() ?? null,
           endedAt: !openSession && last?.endedAt ? last.endedAt.toISOString() : null,
           autoClosed: !openSession && last?.endReason === 'AUTO_CLOSED',
+          extended: d.sessions.some((s) => !!s.extendedAt),
           lateStart:
             workday && shift && first
               ? lateStartOf(

@@ -71,6 +71,8 @@ function deps() {
     listDefaults: jest.fn(async () => []),
     usage: jest.fn(async () => ({ activeAssignments: 0 })),
     applyAssignments: jest.fn(),
+    listDepartmentShifts: jest.fn(async () => []),
+    setDepartmentShifts: jest.fn(),
   };
   shifts.findById.mockImplementation(async (id: string) => {
     const created = shifts.createUnique.mock.results.at(-1);
@@ -263,6 +265,25 @@ describe('ShiftAssignmentsUseCase scope', () => {
         departmentKey: 'electronics',
       }),
     ]);
+  });
+
+  it('gives several shifts only to a shared-computer department (4.1)', async () => {
+    const { useCase, shifts, people } = make();
+    const dto = {
+      department: 'Electronics',
+      shiftId: SHIFT_A,
+      effectiveFrom: tomorrow,
+      extraShiftIds: [SHIFT_SHARED],
+    };
+    await expect(useCase.assignDepartment(admin(ORG_A), dto)).rejects.toMatchObject({
+      status: 400,
+      code: 'MULTIPLE_SHIFTS_NOT_SHARED',
+    });
+    expect(shifts.applyAssignments).not.toHaveBeenCalled();
+
+    (people as any).sharedComputerKeys = jest.fn(async () => new Set([`${ORG_A}|electronics`]));
+    await useCase.assignDepartment(admin(ORG_A), dto);
+    expect(shifts.setDepartmentShifts).toHaveBeenCalledWith(ORG_A, 'electronics', [SHIFT_SHARED]);
   });
 });
 

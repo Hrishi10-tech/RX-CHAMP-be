@@ -122,6 +122,15 @@ export interface ShiftAssignmentRecord {
   effectiveTo: string | null;
   createdById: string | null;
   createdAt: Date;
+  /** 4.1: written at Start Day, picking one of the department's shifts by the time. */
+  autoPicked?: boolean;
+}
+
+/** 4.1: one of a department's extra shifts (beside its main DEPARTMENT row). */
+export interface DepartmentShiftRecord {
+  companyId: string | null;
+  departmentKey: string;
+  shiftId: string;
 }
 
 /** One scheduled break of one shift on one shift-day, as absolute instants. */

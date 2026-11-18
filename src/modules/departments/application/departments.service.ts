@@ -37,17 +37,32 @@ export interface DepartmentView {
   managers: { id: string; name: string }[];
   /** The department's input-tracking override (nulls = organisation default). */
   idle: { enabled: boolean | null; minutes: number | null; reasonKeys: string[] | null };
+  /** 4.1: one computer shared between shifts (shift-end question, automatic sign-out). */
+  sharedComputer: boolean;
   createdAt: string;
 }
 
 export interface DepartmentInput {
   name?: string;
   icon?: string;
+  sharedComputer?: boolean;
 }
 
-type DeptRow = { id: string; name: string; icon: string; createdAt: Date };
+type DeptRow = {
+  id: string;
+  name: string;
+  icon: string;
+  sharedComputer: boolean;
+  createdAt: Date;
+};
 
-const DEPT_SELECT = { id: true, name: true, icon: true, createdAt: true } as const;
+const DEPT_SELECT = {
+  id: true,
+  name: true,
+  icon: true,
+  sharedComputer: true,
+  createdAt: true,
+} as const;
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -103,7 +118,7 @@ export class DepartmentsService {
         // (or deleting) organisation gets no new department (404 ORG_NOT_FOUND).
         if (!(await lockOrganisation(tx, org))) throw orgNotFound();
         const created = await tx.department.create({
-          data: { companyId: org, name, icon },
+          data: { companyId: org, name, icon, sharedComputer: input.sharedComputer ?? false },
           select: DEPT_SELECT,
         });
         await this.audit.record(
@@ -112,7 +127,7 @@ export class DepartmentsService {
             action: 'DEPARTMENT_CREATED',
             entity: 'DEPARTMENT',
             entityId: created.id,
-            metadata: { companyId: org, name, icon },
+            metadata: { companyId: org, name, icon, sharedComputer: input.sharedComputer ?? false },
           },
           tx,
         );
@@ -132,14 +147,16 @@ export class DepartmentsService {
     const icon = input.icon !== undefined ? this.checkedIcon(input.icon) : current.icon;
     const renamed = name !== current.name;
     if (renamed) await this.assertNameFree(org, name, current.id);
-    if (!renamed && icon === current.icon) return (await this.views(org, [current]))[0];
+    const sharedComputer = input.sharedComputer ?? current.sharedComputer;
+    if (!renamed && icon === current.icon && sharedComputer === current.sharedComputer)
+      return (await this.views(org, [current]))[0];
 
     let row: DeptRow;
     try {
       row = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.department.update({
           where: { id: current.id },
-          data: { name, icon },
+          data: { name, icon, sharedComputer },
           select: DEPT_SELECT,
         });
         if (renamed) {
@@ -156,6 +173,18 @@ export class DepartmentsService {
             },
             data: { department: name, departmentKey: departmentNameKey(name) },
           });
+          // 4.1: the department's extra shifts follow it too.
+          await tx.departmentShift.updateMany({
+            where: { companyId: org, departmentKey: departmentNameKey(current.name) },
+            data: { departmentKey: departmentNameKey(name) },
+          });
+        }
+        if (current.sharedComputer && !sharedComputer) {
+          // 4.1: only a shared-computer department holds several shifts; it keeps its
+          // main shift.
+          await tx.departmentShift.deleteMany({
+            where: { companyId: org, departmentKey: departmentNameKey(name) },
+          });
         }
         await this.audit.record(
           {
@@ -167,6 +196,7 @@ export class DepartmentsService {
               companyId: org,
               ...(renamed ? { from: current.name, to: name } : {}),
               ...(icon !== current.icon ? { iconFrom: current.icon, iconTo: icon } : {}),
+              ...(sharedComputer !== current.sharedComputer ? { sharedComputer } : {}),
             },
           },
           tx,
@@ -177,7 +207,7 @@ export class DepartmentsService {
       if (isUniqueViolation(err)) throw exists(name);
       throw err;
     }
-    if (renamed) this.days.invalidate();
+    if (renamed || sharedComputer !== current.sharedComputer) this.days.invalidate();
     return (await this.views(org, [row]))[0];
   }
 
@@ -331,6 +361,7 @@ export class DepartmentsService {
         minutes: idle[r.id]?.minutes ?? null,
         reasonKeys: idle[r.id]?.reasonKeys ?? null,
       },
+      sharedComputer: r.sharedComputer,
       createdAt: r.createdAt.toISOString(),
     }));
   }

@@ -33,6 +33,10 @@ export interface PersonDaySummary {
   startedAt: string | null;
   endedAt: string | null;
   autoClosed: boolean;
+  /** 4.1 shared computer: the day was carried on into the next shift. */
+  extended?: boolean;
+  /** 4.1: how long the extended day ran past the shift end. */
+  extendedSec?: number;
   lateStart: { minutes: number } | null;
   focusSec: number;
   expectedSec: number;

@@ -55,6 +55,11 @@ export interface ShiftPeopleReader {
   listAllActive(): Promise<ShiftPerson[]>;
   /** Departments in use, with active head-counts (one organisation, or all). */
   listDepartments(companyId?: string): Promise<DepartmentCount[]>;
+  /**
+   * 4.1: departments with Shared computer on, as `${companyId}|${departmentKey}`. Only
+   * these may hold more than one shift.
+   */
+  sharedComputerKeys?(companyId?: string): Promise<Set<string>>;
   /** Active Super Admin ids. */
   listSuperAdminIds(): Promise<string[]>;
   /** 4.0: active Admin ids of an organisation (approvals, escalations, digests). */

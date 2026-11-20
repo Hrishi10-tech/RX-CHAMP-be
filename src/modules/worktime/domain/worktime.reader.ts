@@ -93,7 +93,11 @@ export interface WorktimeReader {
    * Active seconds per (person, working day, local hour) of these days, aggregated
    * in SQL from the samples inside each work session of the day.
    */
-  activeSecByHour(days: { userId: string; date: string }[], tz: string): Promise<HourBucketRow[]>;
+  activeSecByHour(
+    days: { userId: string; date: string }[],
+    tz: string,
+    now?: Date,
+  ): Promise<HourBucketRow[]>;
   /**
    * 4.0: what of these work sessions (the REPLAY ones) the agent's activity samples
    * cover, as joined stretches, in one aggregated query.

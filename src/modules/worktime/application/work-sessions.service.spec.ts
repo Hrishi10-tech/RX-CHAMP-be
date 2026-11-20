@@ -246,11 +246,18 @@ describe('WorkSessionsService auto-close', () => {
     expect(await svc.autoCloseAll(ist('2026-10-14', '08:21'))).toBe(1);
   });
 
-  it('uses start + 14 hours without a shift or on a day off', async () => {
-    const { svc, repo } = setup({ workday: false });
+  it('uses start + 14 hours without a shift', async () => {
+    const { svc, repo } = setup({ shift: null });
     repo.listOpen.mockResolvedValue([session({ startedAt: ist('2026-10-13', '10:00') })]);
     expect(await svc.autoCloseAll(ist('2026-10-14', '00:00'))).toBe(0);
     expect(await svc.autoCloseAll(ist('2026-10-14', '00:01'))).toBe(1);
+  });
+
+  it("a worked day off keeps the shift's usual end (3.2)", async () => {
+    const { svc, repo } = setup({ workday: false });
+    repo.listOpen.mockResolvedValue([session({ startedAt: ist('2026-10-13', '10:00') })]);
+    expect(await svc.autoCloseAll(ist('2026-10-13', '22:30'))).toBe(0);
+    expect(await svc.autoCloseAll(ist('2026-10-13', '22:31'))).toBe(1);
   });
 
   it('a session resumed late in the evening is not closed the moment it opens', async () => {

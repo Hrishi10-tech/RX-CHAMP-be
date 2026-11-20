@@ -94,9 +94,14 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
 
   it('keeps capture ON in overtime: clockedOut is true but shouldCapture stays true', async () => {
     // Enough active seconds to cross the 9h basis (each sample capped at MAX_GAP_SEC).
+    // One sample after another (samples at the same instant count once).
     const count = Math.ceil(DEFAULT_WORKING_BASIS_SEC / MAX_GAP_SEC) + 5;
+    const first = new Date(AT).getTime() - count * MAX_GAP_SEC * 1000;
     repo.listForUserByDate.mockResolvedValue(
-      Array.from({ length: count }, () => sample(MAX_GAP_SEC)),
+      Array.from({ length: count }, (_, i) => ({
+        ...sample(MAX_GAP_SEC),
+        at: new Date(first + i * MAX_GAP_SEC * 1000),
+      })),
     );
     workDays.findEnd.mockResolvedValue(null); // day still open
 

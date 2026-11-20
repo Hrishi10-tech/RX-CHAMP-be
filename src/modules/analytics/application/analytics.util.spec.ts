@@ -74,7 +74,8 @@ describe('computeDayProductivity — focus time', () => {
   });
 
   it('splits a day broken by idle into separate stretches', () => {
-    // 30 working minutes, 10 idle, then 30 more: two qualifying stretches.
+    // 30 "working" minutes, 10 idle, then 30 more: two qualifying stretches. The idle
+    // flag comes 5 minutes after the last input, so the first stretch is 25 minutes.
     const samples = [
       ...Array.from({ length: 30 }, (_, i) => sample(i, false)),
       ...Array.from({ length: 10 }, (_, i) => sample(30 + i, true)),
@@ -83,7 +84,7 @@ describe('computeDayProductivity — focus time', () => {
 
     const { focusSec } = computeDayProductivity(online, [], NOW, samples);
 
-    expect(focusSec).toBe(60 * 60);
+    expect(focusSec).toBe(55 * 60);
   });
 
   it('drops a broken-up day below a solid one of the same total work', () => {

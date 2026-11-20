@@ -5,6 +5,7 @@ import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { LOCK_SCREEN_APP, MAX_GAP_SEC } from '@modules/activity/application/activity.constants';
 import { isUuid } from '@modules/shifts/infrastructure/prisma-shift.repository';
 import { COVERAGE_JOIN_SEC } from '../domain/focus';
+import { IDLE_LEAD_IN_SEC } from '../domain/input-activity';
 import {
   CoverageRow,
   DepartmentRow,
@@ -113,32 +114,126 @@ export class PrismaWorktimeReader implements WorktimeReader {
   async activeSecByHour(
     days: { userId: string; date: string }[],
     tz: string,
+    now: Date = new Date(),
   ): Promise<HourBucketRow[]> {
     if (!days.length) return [];
-    // Active seconds = stamped durations of non-idle, unlocked samples (each capped
-    // like the daily rollup) taken inside a work session of the day, filed under
-    // that session's working day and bucketed by the local hour the sample started
-    // in (so a night shift's hours after midnight stay on its day). Timestamps are
-    // timestamp(3) holding UTC. JIT compiles this query for longer than it runs.
+    // Keyboard and mouse input per local hour, on the rules of input-activity.ts
+    // (Fix 10), so reports and Team today agree with every other screen:
+    //   - each sample stands for its stamped span, capped at 150 s; the newest open
+    //     one stands until now;
+    //   - per PC, the 300 s before an idle flag (not a lock) was idle, not work;
+    //   - input on two PCs at once counts once (a union, not a sum);
+    //   - only time inside a work session of the day, filed under that day and
+    //     split exactly at local hour boundaries (a night shift's hours after
+    //     midnight stay on its day).
+    // Timestamps are timestamp(3) holding UTC. JIT compiles this query for longer
+    // than it runs.
+    const nowIso = now.toISOString();
     const [, rows] = await this.prisma.$transaction([
       this.prisma.$executeRaw`SET LOCAL jit = off`,
       this.prisma.$queryRaw<{ user_id: string; date: string; hour: number; active_sec: number }[]>`
-        SELECT ws.user_id::text AS user_id,
-               ws.date,
-               EXTRACT(HOUR FROM ((s.at AT TIME ZONE 'UTC') AT TIME ZONE ${tz}))::int AS hour,
-               SUM(LEAST(GREATEST(s.duration_sec, 0), ${MAX_GAP_SEC}))::int AS active_sec
-          FROM unnest(${days.map((d) => d.userId)}::uuid[], ${days.map((d) => d.date)}::text[])
-               AS d(user_id, date)
-          JOIN work_sessions ws
-            ON ws.user_id = d.user_id
-           AND ws.date = d.date
-          JOIN activity_samples s
-            ON s.user_id = ws.user_id
-           AND s.at >= ws.started_at
-           AND s.at < COALESCE(ws.ended_at, 'infinity'::timestamp)
-         WHERE s.idle = false
-           AND s.locked = false
-           AND (s.app IS NULL OR s.app <> ${LOCK_SCREEN_APP})
+        WITH params AS (
+          SELECT (${nowIso}::timestamptz AT TIME ZONE 'UTC') AS now_utc
+        ),
+        ws AS (
+          SELECT ws.user_id, ws.date, ws.started_at AS ws_start,
+                 COALESCE(ws.ended_at, p.now_utc) AS ws_end
+            FROM unnest(${days.map((d) => d.userId)}::uuid[], ${days.map((d) => d.date)}::text[])
+                 AS d(user_id, date)
+            JOIN work_sessions ws ON ws.user_id = d.user_id AND ws.date = d.date
+           CROSS JOIN params p
+        ),
+        bounds AS (
+          SELECT user_id, min(ws_start) AS lo, max(ws_end) AS hi FROM ws GROUP BY user_id
+        ),
+        smp AS (
+          SELECT s.id, s.user_id, s.device_id, s.at, s.duration_sec,
+                 (s.idle OR s.locked OR COALESCE(s.app = ${LOCK_SCREEN_APP}, false)) AS idle_flag,
+                 (s.locked OR COALESCE(s.app = ${LOCK_SCREEN_APP}, false)) AS lock_flag
+            FROM bounds b
+            JOIN activity_samples s
+              ON s.user_id = b.user_id
+             AND s.at >= b.lo - make_interval(secs => ${MAX_GAP_SEC})
+             AND s.at <  b.hi + make_interval(secs => ${IDLE_LEAD_IN_SEC})
+        ),
+        newest AS (
+          SELECT user_id, max(at) AS newest_at FROM smp GROUP BY user_id
+        ),
+        seq AS (
+          SELECT smp.*,
+                 CASE
+                   WHEN smp.duration_sec > 0 THEN LEAST(smp.duration_sec, ${MAX_GAP_SEC})::float8
+                   WHEN smp.at = n.newest_at THEN
+                     LEAST(GREATEST(EXTRACT(EPOCH FROM (p.now_utc - smp.at)), 0), ${MAX_GAP_SEC})::float8
+                   ELSE 0
+                 END AS len_sec
+            FROM smp
+            JOIN newest n ON n.user_id = smp.user_id
+           CROSS JOIN params p
+        ),
+        cut AS (
+          -- The first idle sample after this one on the same PC starts an idle
+          -- stretch. Its lead-in (the 300 s before it) was idle, unless it is a lock:
+          -- a lock is the instant work stopped, and the lead-ins of later stretches
+          -- never reach back past it.
+          SELECT seq.*,
+                 min(CASE WHEN idle_flag AND NOT lock_flag THEN at END)
+                   OVER later AS next_idle_at,
+                 min(CASE WHEN lock_flag THEN at END) OVER later AS next_lock_at
+            FROM seq
+          WINDOW later AS (PARTITION BY user_id, device_id ORDER BY at DESC, id DESC
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+        ),
+        act AS (
+          SELECT user_id,
+                 at AS a0,
+                 LEAST(at + make_interval(secs => len_sec),
+                       CASE
+                         WHEN next_idle_at IS NOT NULL
+                              AND (next_lock_at IS NULL OR next_idle_at < next_lock_at)
+                           THEN next_idle_at - make_interval(secs => ${IDLE_LEAD_IN_SEC})
+                         ELSE 'infinity'::timestamp
+                       END) AS a1
+            FROM cut
+           WHERE NOT idle_flag AND len_sec > 0
+        ),
+        uni AS (
+          -- Union across PCs: each piece starts after everything that started before it.
+          SELECT user_id,
+                 GREATEST(a0, COALESCE(max(a1) OVER (PARTITION BY user_id ORDER BY a0, a1
+                                         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), a0)) AS u0,
+                 a1 AS u1
+            FROM act
+           WHERE a1 > a0
+        ),
+        ins AS (
+          SELECT ws.user_id, ws.date,
+                 GREATEST(uni.u0, ws.ws_start) AS x0,
+                 LEAST(uni.u1, ws.ws_end) AS x1
+            FROM uni
+            JOIN ws ON ws.user_id = uni.user_id AND uni.u1 > ws.ws_start AND uni.u0 < ws.ws_end
+           WHERE uni.u1 > uni.u0
+        ),
+        parts AS (
+          SELECT ins.user_id, ins.date,
+                 EXTRACT(HOUR FROM h.local_start)::int AS hour,
+                 GREATEST(ins.x0, h.utc_start) AS p0,
+                 LEAST(ins.x1, h.utc_end) AS p1
+            FROM ins
+           CROSS JOIN LATERAL (
+             SELECT ls AS local_start,
+                    ((ls AT TIME ZONE ${tz}) AT TIME ZONE 'UTC') AS utc_start,
+                    (((ls + interval '1 hour') AT TIME ZONE ${tz}) AT TIME ZONE 'UTC') AS utc_end
+               FROM (SELECT date_trunc('hour', (ins.x0 AT TIME ZONE 'UTC') AT TIME ZONE ${tz})
+                            + k * interval '1 hour' AS ls
+                       FROM generate_series(0, 1) AS k) AS hs
+           ) AS h
+           WHERE ins.x1 > ins.x0
+        )
+        SELECT user_id::text AS user_id, date, hour,
+               ROUND(SUM(EXTRACT(EPOCH FROM (p1 - p0))))::int AS active_sec
+          FROM parts
+         WHERE p1 > p0
          GROUP BY 1, 2, 3`,
     ]);
     return rows.map((r) => ({

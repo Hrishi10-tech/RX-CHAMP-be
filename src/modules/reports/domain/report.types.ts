@@ -39,7 +39,10 @@ export interface PersonDaySummary {
   extended?: boolean;
   /** 4.1: how long the extended day ran past the shift end. */
   extendedSec?: number;
-  lateStart: { minutes: number } | null;
+  /** Minutes after the shift start plus the grace, and why (3.2; null until given). */
+  lateStart: { minutes: number; reason?: string | null } | null;
+  /** A holiday (with its name) or a weekly day off (3.2); null on a working day. */
+  dayOff?: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
   focusSec: number;
   expectedSec: number;
   breakSec: number;
@@ -76,6 +79,10 @@ export interface PersonDaySummary {
    * focusSec and paidSec; 0 on an untouched day, absent from older snapshots.
    */
   adjustedSec?: number;
+  /** Seconds with keyboard or mouse input inside the working day (3.2 Fix 10). */
+  activeSec?: number;
+  /** Seconds inside the working day not on a break or in a meeting (3.2 Fix 10). */
+  availableSec?: number;
 }
 
 export interface TimelineSegment {
@@ -110,6 +117,10 @@ export interface MonthTotals {
   expectedSec: number;
   avgFocusSec: number;
   lateStarts: number;
+  /** Late starts still without a reason (3.2). */
+  lateWithoutReason?: number;
+  /** Holidays in the month (3.2). */
+  holidays?: number;
   skipped: number;
   autoSkipped: number;
   overruns: number;
@@ -118,6 +129,9 @@ export interface MonthTotals {
   rejectedMinusSec: number;
   pending: number;
   quietHours: number;
+  /** Keyboard and mouse input inside working days (Fix 10). */
+  activeSec?: number;
+  availableSec?: number;
   needsALook: boolean;
   // ---- 4.0
   /** Sum of every day's target (future working days included). */

@@ -17,6 +17,9 @@ export interface WorkSessionRecord {
   source: string;
   /** 4.1 shared computer: when the person chose to carry on into the next shift. */
   extendedAt?: Date | null;
+  /** Why the day started late (the day's first session only). */
+  lateReason?: string | null;
+  lateReasonAt?: Date | null;
 }
 
 export type DayClosedCode = 'DAY_NOT_STARTED' | 'DAY_ENDED';
@@ -175,4 +178,6 @@ export interface WorkSessionRepository {
   markExtended(sessionId: string, at: Date): Promise<Date | null>;
   /** Which of these people have a live meeting running now (presence MEETING still open). */
   usersInLiveMeeting(userIds: string[]): Promise<Set<string>>;
+  /** Stores why the day started late on that session (the day's first). */
+  setLateReason(sessionId: string, reason: string, at: Date): Promise<WorkSessionRecord | null>;
 }

@@ -34,7 +34,13 @@ export interface DaySummaryInput {
   /** The shift's start that day (for the late start), null without a shift. */
   shiftStart: Date | null;
   pending: number;
-  settings: { fullDayPct: number; halfDayPct: number; lateStartGraceMin: number };
+  settings: {
+    fullDayPct: number;
+    halfDayPct: number;
+    lateStartGraceMin: number;
+    /** Minutes of break a day paid on top of the scheduled breaks (3.2). */
+    paidBreakBufferMin?: number;
+  };
   now: Date;
   /** The person's first day (account created): earlier days without work are days off. */
   joinedOn?: string;
@@ -97,10 +103,18 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     autoClosed: !open && last?.endReason === 'AUTO_CLOSED',
     extended: d.sessions.some((s) => !!s.extendedAt),
     extendedSec: extendedSecOf(d.sessions, i.shiftEnd ?? null, i.now),
-    lateStart:
-      workday && first
-        ? lateStartOf(first.startedAt, i.shiftStart, i.settings.lateStartGraceMin)
-        : null,
+    lateStart: (() => {
+      const late =
+        workday && first
+          ? lateStartOf(first.startedAt, i.shiftStart, i.settings.lateStartGraceMin)
+          : null;
+      // 3.2: and why, once given.
+      return late ? { minutes: late.minutes, reason: first?.lateReason?.trim() || null } : null;
+    })(),
+    // 3.2: a day the calendar marks off; 4.0's calendar label names a holiday.
+    dayOff: (i.plan ? i.plan.isWorkingDay : isWorkdayFor(i.shift, i.date))
+      ? null
+      : { kind: i.plan?.label ? 'HOLIDAY' : 'WEEKLY_OFF', name: i.plan?.label ?? null },
     focusSec: focus.focusSec,
     // A future working day expects nothing yet, so a month's expected time is
     // always the sum of its days.
@@ -134,6 +148,10 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     unverifiedSec: focus.unverifiedSec ?? 0,
     paidSec: focus.paidSec ?? focus.focusSec + (focus.paidBreakSec ?? 0),
     adjustedSec: focus.adjustedSec ?? 0,
+    // 3.2 Fix 10: keyboard and mouse input inside the working day, against the time
+    // that was available for it (sessions minus breaks and meetings).
+    activeSec: i.hourly.reduce((sum, h) => sum + (h.activeSec ?? h.activeMin * 60), 0),
+    availableSec: Math.max(0, focus.spanSec - focus.breakSec - focus.meetingSec),
   };
 }
 
@@ -158,6 +176,8 @@ const SUM_KEYS = [
   'unverifiedSec',
   'paidSec',
   'adjustedSec',
+  'activeSec',
+  'availableSec',
 ] as const;
 
 /** A month's totals: every number is the sum (or count) of its days. */
@@ -169,10 +189,13 @@ export function monthTotals(
   const workdays = days.filter((d) => d.workday && d.date <= today);
   const workdayFocus = workdays.reduce((s, d) => s + d.focusSec, 0);
   const by = (c: string) => days.filter((d) => d.dayClass === c).length;
+  // A day from a snapshot taken before 3.2 has no paid or active time: it adds 0.
   const sums = Object.fromEntries(
-    SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + (d[k] ?? 0), 0)]),
+    SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + ((d[k] as number | undefined) ?? 0), 0)]),
   ) as Record<(typeof SUM_KEYS)[number], number>;
   return {
+    holidays: days.filter((d) => d.dayOff?.kind === 'HOLIDAY').length,
+    lateWithoutReason: days.filter((d) => d.lateStart && !d.lateStart.reason).length,
     workdays: workdays.length,
     full: by('FULL'),
     half: by('HALF'),
@@ -202,6 +225,8 @@ export function teamTotals(
     'off',
     'extra',
     'lateStarts',
+    'holidays',
+    'lateWithoutReason',
     ...SUM_KEYS,
   ];
   // A snapshot locked before a key existed has no value for it: it counts as 0.
@@ -224,6 +249,8 @@ export function teamTotals(
     expectedSec: sums.expectedSec,
     avgFocusSec: sums.workdays ? Math.round(workdayFocus / sums.workdays) : 0,
     lateStarts: sums.lateStarts,
+    lateWithoutReason: sums.lateWithoutReason,
+    holidays: sums.holidays,
     skipped: sums.skipped,
     autoSkipped: sums.autoSkipped,
     overruns: sums.overruns,
@@ -242,6 +269,8 @@ export function teamTotals(
     adjustedSec: sums.adjustedSec,
     pending: sums.pending,
     quietHours: sums.quietHours,
+    activeSec: sums.activeSec,
+    availableSec: sums.availableSec,
     needsALook: rows.some((r) => r.totals.needsALook),
     people: rows.length,
   };

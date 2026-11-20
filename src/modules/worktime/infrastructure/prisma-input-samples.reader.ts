@@ -23,9 +23,10 @@ export class PrismaInputSamplesReader implements InputSamplesReader {
         idle: boolean;
         locked: boolean;
         app: string | null;
+        device_id: string | null;
       }[]
     >`
-      SELECT w.key, s.at, s.duration_sec, s.idle, s.locked, s.app
+      SELECT w.key, s.at, s.duration_sec, s.idle, s.locked, s.app, s.device_id::text AS device_id
         FROM unnest(${valid.map((w) => w.key)}::text[],
                     ${valid.map((w) => w.userId)}::uuid[],
                     ${valid.map((w) => w.from.toISOString())}::text[],
@@ -43,6 +44,7 @@ export class PrismaInputSamplesReader implements InputSamplesReader {
         idle: r.idle,
         locked: r.locked,
         app: r.app,
+        deviceId: r.device_id,
       });
     }
     return out;

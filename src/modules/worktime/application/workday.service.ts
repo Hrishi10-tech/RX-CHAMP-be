@@ -18,7 +18,7 @@ import {
 } from '@modules/shifts/domain/shift.types';
 import { DayPlanService } from './day-plan.service';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
-import { lateStartOf } from '../domain/attendance';
+import { expectedSecOf, isWorkdayFor, lateStartDetail, lateStartOf } from '../domain/attendance';
 import { FocusBreakdown } from '../domain/focus';
 import { portalUrlFrom } from '../domain/portal-url';
 import {
@@ -152,12 +152,22 @@ export class WorkdayService {
       focus: focusView(focus),
       lateStart:
         workday && shift && first
-          ? lateStartOf(
-              first.startedAt,
-              shiftBounds(shift, date, tz).start,
-              settings.lateStartGraceMin,
-            )
+          ? lateStartDetail({
+              first,
+              shiftStart: shiftBounds(shift, date, tz).start,
+              graceMin: settings.lateStartGraceMin,
+              requireReason: settings.requireLateStartReason,
+              // 4.0: nobody approves an admin's day, so nobody asks why it started late.
+              exempt:
+                me.role === Role.SUPER_ADMIN ||
+                me.role === Role.SUPER_MANAGER ||
+                me.role === Role.ADMIN,
+            })
           : null,
+      // 3.2: a day off by the calendar; 4.0's organisation calendar labels a holiday.
+      dayOff: plan.isWorkingDay
+        ? null
+        : { kind: plan.label ? 'HOLIDAY' : 'WEEKLY_OFF', name: plan.label ?? null },
       shift: shift ? { id: shift.id, name: shift.name, start: shift.start, end: shift.end } : null,
       expectedSec: plan.targetSec,
       skipsNeedingComment,
@@ -167,6 +177,11 @@ export class WorkdayService {
       settings: {
         approvalSlaHours: settings.approvalSlaHours,
         reasonMinChars: shift?.reasonMinChars ?? DEFAULT_REASON_MIN_CHARS,
+        lateStartGraceMin: settings.lateStartGraceMin,
+        requireLateStartReason: settings.requireLateStartReason,
+        forgottenEndDayIdleMin: settings.forgottenEndDayIdleMin,
+        // 3.2 name for 4.0's break buffer.
+        paidBreakBufferMin: settings.breakBufferMin,
       },
       portalUrl: portalUrlFrom(
         this.config.get<string>('portalPublicUrl'),

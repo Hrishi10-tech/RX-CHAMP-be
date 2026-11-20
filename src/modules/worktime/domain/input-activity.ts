@@ -33,6 +33,8 @@ export interface InputSample {
   idle: boolean;
   locked: boolean;
   app: string | null;
+  /** The reporting PC. Each PC has its own idle timer, so the rules apply per PC. */
+  deviceId?: string | null;
 }
 
 export interface InputIntervals {
@@ -42,39 +44,32 @@ export interface InputIntervals {
   idle: Interval[];
 }
 
-function isLocked(s: InputSample): boolean {
+export function isLockedSample(s: Pick<InputSample, 'locked' | 'app'>): boolean {
   return s.locked || s.app === LOCK_SCREEN_APP_NAME;
 }
 
-/**
- * Turns samples (any order) into active and idle intervals. `now` lets the newest
- * open sample (durationSec 0) stand until now, capped like any other; an open
- * sample that is not the newest stands for nothing.
- */
-export function inputIntervals(samples: readonly InputSample[], now: Date): InputIntervals {
-  const sorted = [...samples].sort((a, b) => a.at.getTime() - b.at.getTime());
+type Slice = { start: number; end: number; idle: boolean; locked: boolean };
+
+/** One PC's samples (sorted) as slices: each stands for its stamped span, capped. */
+function slicesOf(sorted: readonly InputSample[], newestAt: number, now: Date): Slice[] {
   const capMs = SAMPLE_CAP_SEC * 1000;
-  type Slice = { start: number; end: number; idle: boolean; locked: boolean };
-  const slices: Slice[] = [];
-  sorted.forEach((s, i) => {
+  return sorted.map((s) => {
     const start = s.at.getTime();
     let lenMs = 0;
     if (s.durationSec > 0) lenMs = Math.min(s.durationSec * 1000, capMs);
-    else if (i === sorted.length - 1) lenMs = Math.max(0, Math.min(now.getTime() - start, capMs));
-    const locked = isLocked(s);
-    slices.push({ start, end: start + lenMs, idle: s.idle || locked, locked });
+    // The newest sample of all is still open: it stands until now, capped.
+    else if (start === newestAt) lenMs = Math.max(0, Math.min(now.getTime() - start, capMs));
+    const locked = isLockedSample(s);
+    return { start, end: start + lenMs, idle: s.idle || locked, locked };
   });
+}
 
-  const active: Interval[] = [];
-  const idle: Interval[] = [];
-  for (const s of slices) {
-    if (s.end <= s.start) continue;
-    (s.idle ? idle : active).push({ start: s.start, end: s.end });
-  }
-
-  // The idle lead-in: the threshold before the first sample of each idle stretch
-  // (unless it is a lock, which is instantaneous) was idle, not work.
-  const leadIns: Interval[] = [];
+/**
+ * The idle lead-ins of one PC: the threshold before the first sample of each idle
+ * stretch (unless it is a lock, which is instantaneous) was idle, not work.
+ */
+function leadInsOf(slices: readonly Slice[]): Interval[] {
+  const out: Interval[] = [];
   let lastIdleEnd = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < slices.length; i++) {
     const s = slices[i];
@@ -82,27 +77,66 @@ export function inputIntervals(samples: readonly InputSample[], now: Date): Inpu
     const startsStretch = i === 0 || !slices[i - 1].idle;
     if (startsStretch && !s.locked) {
       const from = Math.max(s.start - IDLE_LEAD_IN_SEC * 1000, lastIdleEnd);
-      if (from < s.start) leadIns.push({ start: from, end: s.start });
+      if (from < s.start) out.push({ start: from, end: s.start });
     }
     lastIdleEnd = Math.max(lastIdleEnd, s.end);
   }
+  return out;
+}
 
-  // A locked PC that went to sleep leaves a hole until it reports again.
-  const lockedGaps: Interval[] = [];
+/** The hole a locked, sleeping PC leaves before it reports again (up to the cap). */
+function lockedGapsOf(slices: readonly Slice[]): Interval[] {
+  const out: Interval[] = [];
   for (let i = 0; i < slices.length - 1; i++) {
     const s = slices[i];
     if (!s.locked) continue;
     const gapStart = s.end;
     const gapEnd = slices[i + 1].start;
     if (gapEnd - s.start > LOCKED_GAP_CAP_SEC * 1000) continue;
-    if (gapEnd > gapStart) lockedGaps.push({ start: gapStart, end: gapEnd });
+    if (gapEnd > gapStart) out.push({ start: gapStart, end: gapEnd });
   }
+  return out;
+}
 
-  const reclassified = normalize(leadIns);
-  // Input on any device wins over idle on another: the person was working.
-  const activeFinal = normalize(subtract(normalize(active), reclassified));
-  const idleAll = normalize([...idle, ...lockedGaps, ...intersect(active, reclassified)]);
+/** One PC's active and idle intervals. */
+function deviceIntervals(slices: readonly Slice[]): InputIntervals {
+  const active = normalize(
+    slices.filter((s) => !s.idle).map((s) => ({ start: s.start, end: s.end })),
+  );
+  const idle = normalize(slices.filter((s) => s.idle).map((s) => ({ start: s.start, end: s.end })));
+  const leadIns = normalize(leadInsOf(slices));
+  const activeFinal = normalize(subtract(active, leadIns));
+  const idleAll = normalize([...idle, ...lockedGapsOf(slices), ...intersect(active, leadIns)]);
   return { active: activeFinal, idle: normalize(subtract(idleAll, activeFinal)) };
+}
+
+/**
+ * Turns samples (any order, any PC) into active and idle intervals. Each PC is read
+ * on its own (its idle flag says nothing about input on another PC); then input on
+ * any PC wins over idle on another: the person was working. `now` lets the newest
+ * open sample (durationSec 0) stand until now, capped like any other; an open
+ * sample that is not the newest stands for nothing.
+ */
+export function inputIntervals(samples: readonly InputSample[], now: Date): InputIntervals {
+  if (!samples.length) return { active: [], idle: [] };
+  const newestAt = Math.max(...samples.map((s) => s.at.getTime()));
+  const byDevice = new Map<string, InputSample[]>();
+  for (const s of samples) {
+    const k = s.deviceId ?? '';
+    const list = byDevice.get(k) ?? [];
+    list.push(s);
+    byDevice.set(k, list);
+  }
+  const active: Interval[] = [];
+  const idle: Interval[] = [];
+  for (const list of byDevice.values()) {
+    list.sort((a, b) => a.at.getTime() - b.at.getTime());
+    const d = deviceIntervals(slicesOf(list, newestAt, now));
+    active.push(...d.active);
+    idle.push(...d.idle);
+  }
+  const activeFinal = normalize(active);
+  return { active: activeFinal, idle: normalize(subtract(normalize(idle), activeFinal)) };
 }
 
 /** Milliseconds of `list` that fall inside `windows`. */

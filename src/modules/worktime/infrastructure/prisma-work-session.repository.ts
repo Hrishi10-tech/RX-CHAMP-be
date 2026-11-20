@@ -1,11 +1,12 @@
-import { realLastInput } from '../domain/auto-close';
-import { IDLE_LEAD_IN_SEC, LOCK_SCREEN_APP_NAME } from '../domain/input-activity';
 import { Injectable } from '@nestjs/common';
 import { Prisma, WorkSession } from '@prisma/client';
+import { assertMonthOpen } from '@shared/database/month-lock';
 import { PrismaService } from '@shared/database/prisma.service';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { DayKeyFn } from '@modules/shifts/application/shift-day.resolver';
 import { AgentGeneration } from '../domain/agent-generation';
+import { realLastInput } from '../domain/auto-close';
+import { IDLE_LEAD_IN_SEC, LOCK_SCREEN_APP_NAME } from '../domain/input-activity';
 import {
   AutoCloseTxResult,
   EndDayTxResult,
@@ -30,6 +31,8 @@ export function sessionFromPrisma(r: WorkSession): WorkSessionRecord {
     endReason: (r.endReason as WorkSessionEndReason | null) ?? null,
     source: r.source,
     extendedAt: r.extendedAt ?? null,
+    lateReason: r.lateReason ?? null,
+    lateReasonAt: r.lateReasonAt ?? null,
   };
 }
 
@@ -472,5 +475,23 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
       distinct: ['userId'],
     });
     return new Set(rows.map((r) => r.userId));
+  }
+
+  async setLateReason(
+    sessionId: string,
+    reason: string,
+    at: Date,
+  ): Promise<WorkSessionRecord | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.workSession.findUnique({ where: { id: sessionId } });
+      if (!row) return null;
+      // A month closed for payroll keeps what it had (409 MONTH_LOCKED).
+      await assertMonthOpen(tx, row.date, row.userId);
+      const updated = await tx.workSession.update({
+        where: { id: sessionId },
+        data: { lateReason: reason, lateReasonAt: at },
+      });
+      return sessionFromPrisma(updated);
+    });
   }
 }

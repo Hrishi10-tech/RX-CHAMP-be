@@ -1,4 +1,5 @@
 import type { AfterSkipActivity } from '../domain/input-activity';
+import type { LateStartDetail } from '../domain/attendance';
 import { BreakRecordView, SkipNeedingComment } from '@modules/shifts/application/shifts.types';
 import { BreakKind } from '@modules/shifts/domain/shift.types';
 import { ApprovalCategory, ApprovalEffect } from '../domain/approval-copy';
@@ -61,13 +62,26 @@ export interface WorkdayTodayView {
   autoClosed: boolean;
   sessions: WorkSessionView[];
   focus: FocusView;
-  lateStart: { minutes: number } | null;
+  /**
+   * Set when the day's first Start Day came after the shift start plus the grace:
+   * minutes late, the reason once given, and whether one is still asked for (3.2).
+   */
+  lateStart: LateStartDetail | null;
+  /** A holiday or a weekly day off by the calendar (3.2); null on a working day. */
+  dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
   shift: ShiftBrief | null;
   expectedSec: number;
   skipsNeedingComment: SkipNeedingComment[];
   overdueApprovals: number;
   endDayBlockedByOverdue: boolean;
-  settings: { approvalSlaHours: number; reasonMinChars: number };
+  settings: {
+    approvalSlaHours: number;
+    reasonMinChars: number;
+    lateStartGraceMin: number;
+    requireLateStartReason: boolean;
+    forgottenEndDayIdleMin: number;
+    paidBreakBufferMin: number;
+  };
   portalUrl: string | null;
   /**
    * NOT_STARTED only: the day the person ended within the last 12 hours (after
@@ -278,7 +292,9 @@ export interface TeamTodayRow {
   autoClosed: boolean;
   /** 4.1 shared computer: the person carried their day on into the next shift. */
   extended: boolean;
-  lateStart: { minutes: number } | null;
+  lateStart: LateStartDetail | null;
+  /** 4.0 calendar: a day the organisation's calendar marks as not working (a holiday). */
+  dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
   focus: FocusView;
   expectedSec: number;
   breaks: {

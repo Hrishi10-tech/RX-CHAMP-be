@@ -26,6 +26,30 @@ export class StartDayDto {
   @IsOptional()
   @IsISO8601()
   startedAt?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Why the day starts late (3.2 agents). Asked for when Start Day comes later than the ' +
+      'shift start plus the late-start grace (422 LATE_REASON_REQUIRED).',
+    example: 'Traffic on the ring road',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  lateReason?: string;
+}
+
+/** POST /workday/me/late-reason */
+export class LateReasonDto {
+  @ApiPropertyOptional({ description: 'The working day (default: today)', example: '2026-10-14' })
+  @IsOptional()
+  @IsDateKey()
+  date?: string;
+
+  @ApiProperty({ description: 'Why the day started late', example: 'Traffic on the ring road' })
+  @IsString()
+  @MaxLength(2000)
+  reason!: string;
 }
 
 export class EndDayCommentDto {

@@ -126,3 +126,42 @@ export function lateStartOf(
   const minutes = Math.floor((firstStart.getTime() - shiftStart.getTime()) / 60_000);
   return minutes > graceMin ? { minutes } : null;
 }
+
+/** Longest late-start reason kept (longer is refused). */
+export const LATE_REASON_MAX_CHARS = 500;
+
+export interface LateStartDetail {
+  minutes: number;
+  /** Minutes allowed without a reason (the setting). */
+  graceMin: number;
+  /** Why they started late, once given (agent or portal). */
+  reason: string | null;
+  reasonAt: string | null;
+  /** A reason is asked for and none was given yet. */
+  needsReason: boolean;
+}
+
+/**
+ * The late start of a day with its reason (3.2). Late when the first Start Day came
+ * more than `graceMin` minutes after the shift start; a reason is then asked for
+ * unless the setting is off or the person reports to nobody (a Super Admin).
+ */
+export function lateStartDetail(input: {
+  first: { startedAt: Date; lateReason?: string | null; lateReasonAt?: Date | null } | null;
+  shiftStart: Date | null;
+  graceMin: number;
+  requireReason: boolean;
+  exempt?: boolean;
+}): LateStartDetail | null {
+  if (!input.first) return null;
+  const late = lateStartOf(input.first.startedAt, input.shiftStart, input.graceMin);
+  if (!late) return null;
+  const reason = input.first.lateReason?.trim() ? input.first.lateReason.trim() : null;
+  return {
+    minutes: late.minutes,
+    graceMin: input.graceMin,
+    reason,
+    reasonAt: reason && input.first.lateReasonAt ? input.first.lateReasonAt.toISOString() : null,
+    needsReason: input.requireReason && !input.exempt && !reason,
+  };
+}

@@ -179,6 +179,9 @@ describe('payrollWorkbook', () => {
       'Offline, no activity data',
       // 3.3
       'Adjusted min (manual)',
+      // 3.2
+      'Active hours (keyboard/mouse)',
+      'Late starts without a reason',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -221,6 +224,9 @@ describe('payrollWorkbook', () => {
       'Away pending min',
       'Offline, no activity data',
       'Adjusted min (manual)',
+      // 3.2
+      'Available min',
+      'Late reason',
     ]);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const first = ws.getRow(2);

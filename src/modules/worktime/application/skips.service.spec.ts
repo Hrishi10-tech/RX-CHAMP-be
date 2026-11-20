@@ -147,12 +147,12 @@ const workSession = (from: string, to: string | null, userId = 'staff'): WorkSes
   source: 'AGENT',
 });
 
-function setup() {
+function setup(shift: ShiftRecord = general) {
   const shiftsRepo = {
-    list: jest.fn().mockResolvedValue([general]),
+    list: jest.fn().mockResolvedValue([shift]),
     listAssignmentsFor: jest.fn().mockResolvedValue([]),
     listAllAssignments: jest.fn().mockResolvedValue([]),
-    findById: jest.fn().mockResolvedValue(general),
+    findById: jest.fn().mockResolvedValue(shift),
   };
   const peopleReader = {
     findById: jest.fn(async (id: string) => people[id] ?? null),
@@ -304,7 +304,42 @@ describe('SkipsService.skip', () => {
   });
 
   it.each([
-    ['a break the shift does not have', 'MORNING', ist('11:02', 18), 'BREAK_NOT_SCHEDULED'],
+    ['lunch, which cannot be skipped', 'LUNCH', ist('13:00'), 'SKIP_NOT_ALLOWED'],
+    ['a window not open yet', 'EVENING', ist('11:02'), 'BREAK_NOT_OPEN'],
+    ['a window that closed', 'MORNING', ist('12:01'), 'BREAK_WINDOW_CLOSED'],
+  ] as const)('refuses %s', async (_label, kind, now, code) => {
+    const { svc, skipsRepo } = setup();
+    await expect(svc.skip(staff, { kind, reason: REASON }, 'AGENT_31', now)).rejects.toMatchObject({
+      status: 409,
+      code,
+    });
+    expect(skipsRepo.createSkip).not.toHaveBeenCalled();
+  });
+
+  it('refuses a break the shift does not have', async () => {
+    const noMorning: ShiftRecord = {
+      ...general,
+      breaks: general.breaks.map((b) => (b.kind === 'MORNING' ? { ...b, enabled: false } : b)),
+    };
+    const { svc, skipsRepo } = setup(noMorning);
+    await expect(
+      svc.skip(staff, { kind: 'MORNING', reason: REASON }, 'AGENT_31', ist('11:02')),
+    ).rejects.toMatchObject({ status: 409, code: 'BREAK_NOT_SCHEDULED' });
+    expect(skipsRepo.createSkip).not.toHaveBeenCalled();
+  });
+
+  it("a day off that is worked follows the shift's usual rules (3.2)", async () => {
+    // Sunday 18 Oct is not in the shift's days; the day is open, so the break applies.
+    const { svc, skipsRepo } = setup();
+    await svc.skip(staff, { kind: 'MORNING', reason: REASON }, 'AGENT_31', ist('11:02', 18));
+    expect(skipsRepo.createSkip.mock.calls[0][0]).toMatchObject({
+      kind: 'MORNING',
+      date: '2026-10-18',
+      outcome: 'SKIPPED',
+    });
+  });
+
+  it.each([
     ['lunch, which cannot be skipped', 'LUNCH', ist('13:00'), 'SKIP_NOT_ALLOWED'],
     ['a window not open yet', 'EVENING', ist('11:02'), 'BREAK_NOT_OPEN'],
     ['a window that closed', 'MORNING', ist('12:01'), 'BREAK_WINDOW_CLOSED'],

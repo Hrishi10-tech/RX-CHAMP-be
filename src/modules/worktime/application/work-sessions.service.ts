@@ -341,24 +341,24 @@ export class WorkSessionsService {
     return closed;
   }
 
-  /** End of the person's shift on the session's date; null with no shift or on a day off. */
+  /**
+   * End of the person's shift on the session's date; null with no shift. A day off
+   * that is worked runs on the shift's usual rules (3.2), so its shift end counts too.
+   */
   private shiftEndFor(
-    session: WorkSessionRecord,
+    session: Pick<WorkSessionRecord, 'date'>,
     person: ShiftPerson | null,
     ctx: ResolutionContext,
   ): Date | null {
     if (!person) return null;
-    const day = this.days.forDate(this.days.resolveWith(ctx, person, session.date), session.date);
-    if (day.resolved.shift && day.workday) {
-      return shiftBounds(day.resolved.shift, session.date, this.timezone).end;
-    }
-    return null;
+    const shift = this.days.resolveWith(ctx, person, session.date).shift;
+    return shift ? shiftBounds(shift, session.date, this.timezone).end : null;
   }
 
   /**
    * latestEnd = the shift end on the session's date + autoCloseAfterShiftEndMin
-   * (no shift or a day off: start + 14h), never sooner than the grace after the
-   * start (see auto-close.ts).
+   * (no shift: start + 14h), never sooner than the grace after the start (see
+   * auto-close.ts). A worked day off uses its shift's end like any other day.
    */
   latestEndFor(
     session: Pick<WorkSessionRecord, 'date' | 'startedAt' | 'extendedAt'>,
@@ -366,13 +366,7 @@ export class WorkSessionsService {
     ctx: ResolutionContext,
     autoCloseAfterShiftEndMin: number,
   ): Date {
-    let shiftEnd: Date | null = null;
-    if (person) {
-      const day = this.days.forDate(this.days.resolveWith(ctx, person, session.date), session.date);
-      if (day.resolved.shift && day.workday) {
-        shiftEnd = shiftBounds(day.resolved.shift, session.date, this.timezone).end;
-      }
-    }
+    const shiftEnd = this.shiftEndFor(session, person, ctx);
     return latestEndOf({
       startedAt: session.startedAt,
       shiftEnd,

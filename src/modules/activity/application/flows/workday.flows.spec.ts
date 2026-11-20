@@ -237,13 +237,18 @@ describe('StartDayFlow', () => {
     const workday = { view: jest.fn().mockResolvedValue({ state: 'OPEN' }) };
     const startDay = { announce: jest.fn().mockResolvedValue(undefined) };
     const presence = { broadcast: jest.fn().mockResolvedValue(undefined) };
+    const lateStart = {
+      gate: jest.fn().mockResolvedValue(null),
+      keep: jest.fn().mockResolvedValue(undefined),
+    };
     const flow = new StartDayFlow(
       s as never,
       workday as never,
       startDay as never,
       presence as never,
+      lateStart as never,
     );
-    return { flow, s, startDay, presence };
+    return { flow, s, startDay, presence, lateStart };
   }
 
   it('opens the day, announces it, and accepts a start up to 10 minutes back', async () => {

@@ -326,7 +326,7 @@ export class DayDataService implements OnModuleInit {
     }
     if (!live.length) return out;
     const fresh = new Map<string, number[]>();
-    for (const r of await this.reader.activeSecByHour(live, tz)) {
+    for (const r of await this.reader.activeSecByHour(live, tz, now)) {
       const k = key(r.userId, r.date);
       const hours = fresh.get(k) ?? Array<number>(24).fill(0);
       if (r.hour >= 0 && r.hour < 24) hours[r.hour] += r.activeSec;

@@ -10,7 +10,7 @@ import { outcomeOf } from '@modules/shifts/domain/break-record.repository';
 import { phaseAt, shiftBounds } from '@modules/shifts/domain/break-schedule';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
-import { expectedSecOf, isWorkdayFor, lateStartOf } from '../domain/attendance';
+import { expectedSecOf, isWorkdayFor, lateStartDetail } from '../domain/attendance';
 import { quietHoursOf } from '../domain/hourly';
 import { PersonRow, PresenceRow, WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
 import { focusOfDay, meetingsOfDay, PersonDayData } from '../domain/day';
@@ -124,6 +124,8 @@ export class TeamTodayService {
         const shift = resolved.shift;
         const workday = isWorkdayFor(shift, date);
         const breakDay = this.days.forDate(resolved, date);
+        // A day off shows its breaks only once the person has started it (3.2).
+        const slots = workday || d.sessions.length ? breakDay.slots : [];
         const hourly = activity
           ? this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin)
           : [];
@@ -150,15 +152,20 @@ export class TeamTodayService {
           extended: d.sessions.some((s) => !!s.extendedAt),
           lateStart:
             workday && shift && first
-              ? lateStartOf(
-                  first.startedAt,
-                  shiftBounds(shift, date, tz).start,
-                  settings.lateStartGraceMin,
-                )
+              ? lateStartDetail({
+                  first,
+                  shiftStart: shiftBounds(shift, date, tz).start,
+                  graceMin: settings.lateStartGraceMin,
+                  requireReason: settings.requireLateStartReason,
+                  // 4.0: nobody approves an admin's day, so nobody asks why it started late.
+                  exempt: ['SUPER_ADMIN', 'SUPER_MANAGER', 'ADMIN'].includes(p.role),
+                })
               : null,
+          // 4.0: holidays from the organisation calendar arrive with the calendar merge.
+          dayOff: workday ? null : { kind: 'WEEKLY_OFF' as const, name: null },
           focus: focusView(focus),
           expectedSec: workday ? expectedSecOf(shift) : 0,
-          breaks: breakDay.slots.map((slot) => {
+          breaks: slots.map((slot) => {
             const rec = recordFor(slot.kind);
             let cell: TeamBreakStatus;
             if (rec) {

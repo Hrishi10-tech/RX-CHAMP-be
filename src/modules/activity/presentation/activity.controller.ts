@@ -20,7 +20,7 @@ import { envelope } from '@shared/http/envelope';
 import { RequestClock } from '@shared/tenancy';
 import { RATE_LIMITS, RateLimit } from '@shared/security/rate-limits';
 import { ParseIdPipe } from '@shared/validation/is-id';
-import { agentGeneration, isAgent40 } from '@modules/worktime/domain/agent-generation';
+import { agentCaps, agentGeneration, isAgent40 } from '@modules/worktime/domain/agent-generation';
 import { DayQueryDto, EndDayDto, StartDayDto } from '@modules/worktime/application/dto/workday.dto';
 import { HourlyActivityService } from '@modules/worktime/application/hourly-activity.service';
 import { ActivityDayQueryDto, ReportActivityDto } from '../application/dto';
@@ -110,7 +110,8 @@ export class ActivityController {
   @ApiOperation({
     summary:
       'Start Day: opens a work session (or returns the open one); after End Day it resumes ' +
-      'the same day as a second session. Idempotent.',
+      'the same day as a second session. Idempotent. 3.2 agents: a late first start asks why ' +
+      '(422 LATE_REASON_REQUIRED; send lateReason).',
   })
   async startWorkingDay(
     @CurrentUser() me: AuthenticatedUser,
@@ -118,7 +119,13 @@ export class ActivityController {
     @Headers('user-agent') userAgent?: string,
   ) {
     return envelope(
-      await this.startDay.execute(me, body, agentGeneration(userAgent), RequestClock.now()),
+      await this.startDay.execute(
+        me,
+        body,
+        agentGeneration(userAgent),
+        RequestClock.now(),
+        agentCaps(userAgent),
+      ),
     );
   }
 

@@ -30,6 +30,7 @@ import {
   isScheduledKind,
   QUICK_BREAK_MINUTES,
 } from '../../domain/shift.types';
+import { WORKED_DAYS_READER, WorkedDaysReader } from '../../domain/worked-days.reader';
 import { BreakApprovalPolicy } from '../break-approval.policy';
 import { BreakDay, BreakDayService } from '../break-day.service';
 import { BreakEvents } from '../break-events.service';
@@ -72,6 +73,7 @@ export class MyBreaksUseCase {
     private readonly days: BreakDayService,
     private readonly presence: PresenceBridge,
     private readonly events: BreakEvents,
+    @Inject(WORKED_DAYS_READER) private readonly worked?: WorkedDaysReader,
   ) {}
 
   private async person(id: string): Promise<ShiftPerson> {
@@ -95,13 +97,18 @@ export class MyBreaksUseCase {
     // A paused break whose window has closed ends at its pause (lazily, as the job does).
     await this.records.endExpiredPaused(now, person.id);
     const day = await this.days.dayFor(person, now);
-    const [rows, open, paused, dayEnded] = await Promise.all([
+    const [rows, open, paused, dayEnded, workedIds] = await Promise.all([
       this.records.listForUserOnDate(person.id, day.dateKey),
       this.records.findOpenForUser(person.id),
       this.records.findPausedForUser(person.id),
       this.presence.dayEnded(person.id, dateKeyInZone(now, this.days.timezone)),
+      day.workday || !this.worked
+        ? Promise.resolve(new Set<string>())
+        : this.worked.usersWithSessionOn([person.id], day.dateKey),
     ]);
-    return this.dayView(day, rows, open, dayEnded, now, hasReviewer(person), paused);
+    // A day off runs on the shift's usual rules once the person starts it (3.2).
+    const offDayWorked = !day.workday && workedIds.has(person.id);
+    return this.dayView(day, rows, open, dayEnded, now, hasReviewer(person), paused, offDayWorked);
   }
 
   /**
@@ -117,6 +124,7 @@ export class MyBreaksUseCase {
     now: Date,
     reviewed: boolean,
     paused: BreakRecordRow | null = null,
+    offDayWorked = false,
   ): Promise<MyBreakDayView> {
     const tz = this.days.timezone;
     let all = open && !rows.some((r) => r.id === open.id) ? [...rows, open] : rows;
@@ -129,13 +137,23 @@ export class MyBreaksUseCase {
     for (const r of rows) if (isScheduledKind(r.kind)) byKind.set(r.kind, views.get(r.id)!);
 
     const shift = day.resolved.shift;
-    const scheduled = !!shift && day.workday && day.slots.length > 0;
+    const runs = day.workday || offDayWorked;
+    const slots = runs ? day.slots : [];
+    const scheduled = !!shift && runs && slots.length > 0;
     return {
       date: day.dateKey,
       serverNow: now.toISOString(),
       timezone: tz,
       mode: scheduled ? 'SCHEDULED' : 'FREE',
       workday: day.workday,
+      dayOff: day.workday
+        ? null
+        : {
+            // 4.0: holiday names arrive with the calendar merge.
+            kind: 'WEEKLY_OFF',
+            name: null,
+            worked: offDayWorked,
+          },
       dayEnded,
       shift: shift
         ? {
@@ -153,7 +171,7 @@ export class MyBreaksUseCase {
           }
         : null,
       source: day.resolved.source,
-      breaks: day.slots.map((s) => ShiftMapper.slotView(s, tz, byKind.get(s.kind) ?? null)),
+      breaks: slots.map((s) => ShiftMapper.slotView(s, tz, byKind.get(s.kind) ?? null)),
       unscheduled: rows.filter((r) => !r.kind).map((r) => views.get(r.id)!),
       activeBreak: open ? views.get(open.id)! : null,
       quick: rows.filter((r) => r.kind === 'QUICK').map((r) => views.get(r.id)!),

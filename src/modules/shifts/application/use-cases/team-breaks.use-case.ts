@@ -27,6 +27,7 @@ import {
   ShiftPerson,
 } from '../../domain/shift-people.reader';
 import { BreakSlot } from '../../domain/shift.types';
+import { WORKED_DAYS_READER, WorkedDaysReader } from '../../domain/worked-days.reader';
 import { BreakDayService } from '../break-day.service';
 import { personName } from '../break-events.service';
 import { TeamBreaksQueryDto } from '../dto';
@@ -52,6 +53,7 @@ export class TeamBreaksUseCase {
     @Inject(SHIFT_PEOPLE_READER) private readonly people: ShiftPeopleReader,
     private readonly days: BreakDayService,
     private readonly prisma: PrismaService,
+    @Inject(WORKED_DAYS_READER) private readonly worked: WorkedDaysReader,
   ) {}
 
   /**
@@ -104,9 +106,10 @@ export class TeamBreaksUseCase {
     const date = q.date ?? dateKeyInZone(now, tz);
 
     const ids = team.map((p) => p.id);
-    const [ctx, rows] = await Promise.all([
+    const [ctx, rows, workedIds] = await Promise.all([
       this.days.context(ids),
       this.records.listForUsersOnDate(ids, date),
+      this.worked.usersWithSessionOn(ids, date),
     ]);
     const deciders = rows.map((r) => r.decidedById).filter((x): x is string => !!x);
     const names = new Map(
@@ -133,13 +136,15 @@ export class TeamBreaksUseCase {
     const out: TeamBreakRowView[] = [];
 
     for (const p of team.sort((a, b) => personName(a).localeCompare(personName(b)))) {
-      const day = this.days.forDate(this.days.resolveWith(ctx, p, date), date);
+      const day = this.days.dayOn(ctx, p, date);
       const mine = byUser.get(p.id) ?? [];
+      // A day off shows its breaks only once the person has started it (3.2).
+      const slots = day.workday || workedIds.has(p.id) ? day.slots : [];
       const views = new Map<string, BreakRecordView>(
         mine.map((r) => [r.id, ShiftMapper.recordView(r, now, names)]),
       );
 
-      const cells: TeamBreakCellView[] = day.slots.map((slot) => {
+      const cells: TeamBreakCellView[] = slots.map((slot) => {
         const rec = mine.find((r) => r.kind === slot.kind) ?? null;
         const status = this.cellStatus(slot, rec, now);
         if (status === 'MISSED') totals.missed += 1;

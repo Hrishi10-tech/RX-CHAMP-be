@@ -30,9 +30,15 @@ import { MyBreaksUseCase } from '@modules/shifts/application/use-cases/my-breaks
 import { BreakDayView } from '@modules/shifts/application/shifts.types';
 import { DEFAULT_REASON_MIN_CHARS } from '@modules/shifts/domain/shift.types';
 import { agentGeneration } from '../domain/agent-generation';
-import { OverviewQueryDto, TeamQueryDto, TeamTodayQueryDto } from '../application/dto/workday.dto';
+import {
+  LateReasonDto,
+  OverviewQueryDto,
+  TeamQueryDto,
+  TeamTodayQueryDto,
+} from '../application/dto/workday.dto';
 import { TeamOverviewService } from '../application/team-overview.service';
 import { CombinedViewsService } from '../application/combined-views.service';
+import { LateStartService } from '../application/late-start.service';
 import { SkipsService } from '../application/skips.service';
 import { TeamTodayService } from '../application/team-today.service';
 import { WorkSessionsService } from '../application/work-sessions.service';
@@ -49,7 +55,19 @@ export class WorkdayController {
     private readonly workday: WorkdayService,
     private readonly history: HistoryService,
     private readonly sessions: WorkSessionsService,
+    private readonly lateStart: LateStartService,
   ) {}
+
+  @Post('me/late-reason')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Why the day started late (3.2): today, or an earlier day by date. Needed when Start Day ' +
+      'came after the shift start plus the late-start grace; a locked month answers 409 MONTH_LOCKED.',
+  })
+  async lateReason(@CurrentUser() me: AuthenticatedUser, @Body() body: LateReasonDto) {
+    return envelope(await this.lateStart.addReason(me, body, RequestClock.now()));
+  }
 
   @Post('me/extend')
   @HttpCode(200)

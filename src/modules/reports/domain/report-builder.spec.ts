@@ -352,7 +352,7 @@ describe('summarizeDay', () => {
     const late = summarize(
       day('2026-09-07', { sessions: [session('2026-09-07', '09:45', '18:30')] }),
     );
-    expect(late.lateStart).toEqual({ minutes: 15 });
+    expect(late.lateStart).toEqual({ minutes: 15, reason: null });
     const inGrace = summarize(
       day('2026-09-07', { sessions: [session('2026-09-07', '09:40', '18:30')] }),
     );
@@ -612,6 +612,11 @@ describe('monthTotals', () => {
       paidSec: 12 * H + 4800,
       // 3.3: no day was adjusted by hand.
       adjustedSec: 0,
+      // 3.2: the fixture days carry no active time, no holiday, one late start with no reason.
+      activeSec: 0,
+      availableSec: 0,
+      holidays: 0,
+      lateWithoutReason: 1,
     });
   });
 

@@ -228,6 +228,10 @@ model WorkSession {
   extendedAt DateTime?            @map("extended_at")
   /// AGENT | LEGACY | BACKFILL
   source    String                @default("AGENT")
+  /// Why the day started late (3.2): set on the day's first session when Start Day came
+  /// later than the shift start plus the late-start grace. From the agent or the portal.
+  lateReason   String?            @map("late_reason")
+  lateReasonAt DateTime?          @map("late_reason_at")
   createdAt DateTime              @default(now()) @map("created_at")
   updatedAt DateTime              @updatedAt @map("updated_at")
 

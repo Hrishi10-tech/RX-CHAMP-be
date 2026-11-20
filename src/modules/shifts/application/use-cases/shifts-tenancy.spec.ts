@@ -298,7 +298,13 @@ describe('TeamBreaksUseCase scope', () => {
     return {
       ...d,
       prisma,
-      useCase: new TeamBreaksUseCase(records as any, d.people as any, d.days as any, prisma as any),
+      useCase: new TeamBreaksUseCase(
+        records as any,
+        d.people as any,
+        d.days as any,
+        prisma as any,
+        { usersWithSessionOn: jest.fn(async () => new Set<string>()) } as any,
+      ),
     };
   };
 

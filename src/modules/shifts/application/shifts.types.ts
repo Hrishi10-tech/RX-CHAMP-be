@@ -219,6 +219,11 @@ export interface MyBreakDayView {
   timezone: string;
   mode: 'SCHEDULED' | 'FREE';
   workday: boolean;
+  /**
+   * A holiday or weekly day off by the calendar (3.2), null on a working day. A day
+   * off that has been started (`worked`) runs on the shift's usual break rules.
+   */
+  dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null; worked: boolean } | null;
   /** The person pressed End Day: no break can start until tomorrow. */
   dayEnded: boolean;
   shift: (ShiftRef & { rules: ShiftRules }) | null;

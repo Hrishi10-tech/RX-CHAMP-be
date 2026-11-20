@@ -12,6 +12,8 @@ import { Interval, intersect, normalize } from './intervals';
 export interface HourActivity {
   hour: number;
   activeMin: number;
+  /** Exact seconds of keyboard or mouse input in the hour (activeMin rounds it). */
+  activeSec?: number;
   availableMin: number;
   breakMin: number;
   meetingMin: number;
@@ -92,14 +94,13 @@ export function buildHourly(input: HourlyInput): HourActivity[] {
     const breakMs = overlapIn(breaks, h);
     const meetingMs = overlapIn(meetings, h);
     const availableMs = Math.max(0, workMs - overlapIn(workAway, h));
-    const activeMin = Math.min(
-      60,
-      Math.max(0, Math.round((input.activeSecByHour[hour] ?? 0) / 60)),
-    );
+    const activeSec = Math.min(3600, Math.max(0, Math.round(input.activeSecByHour[hour] ?? 0)));
+    const activeMin = Math.min(60, Math.round(activeSec / 60));
     const availableMin = min(availableMs);
     return {
       hour,
       activeMin,
+      activeSec,
       availableMin,
       breakMin: min(breakMs),
       meetingMin: min(meetingMs),

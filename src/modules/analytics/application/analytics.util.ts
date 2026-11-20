@@ -1,5 +1,6 @@
 import { ActivitySampleRecord } from '@modules/activity/domain/activity-sample.repository';
 import { MAX_GAP_SEC } from '@modules/activity/application/activity.constants';
+import { inputIntervals } from '@modules/worktime/domain/input-activity';
 import { MeetingWindow } from '@modules/activity/domain/meeting-window.reader';
 import { OnlineRow, PresenceRow } from '../domain/analytics.reader';
 import { FocusSession } from './analytics.types';
@@ -111,48 +112,46 @@ export function computeDayProductivity(
 }
 
 /**
- * Continuous active stretches ≥ {@link FOCUS_SESSION_MIN_SEC}. A run breaks on an
- * idle sample or a gap longer than one sample window (MAX_GAP_SEC).
+ * Continuous active stretches ≥ {@link FOCUS_SESSION_MIN_SEC}, read from the same
+ * keyboard and mouse rules as active time (input-activity.ts: the idle lead-in is
+ * not work, input on any PC counts once), so focus can never exceed active. A run
+ * breaks on idle, or on a gap longer than one sample window (MAX_GAP_SEC).
  */
 export function detectFocusSessions(
   samples: ActivitySampleRecord[],
   minSec: number = FOCUS_SESSION_MIN_SEC,
+  now: Date = new Date(),
 ): FocusSession[] {
+  const { active } = inputIntervals(
+    samples.map((s) => ({
+      at: s.at,
+      durationSec: s.durationSec,
+      idle: s.idle,
+      locked: s.locked,
+      app: s.app,
+      deviceId: s.deviceId ?? null,
+    })),
+    now,
+  );
   const sessions: FocusSession[] = [];
-  let start: Date | null = null;
-  let end: Date | null = null;
-  let active = 0;
-
-  const flush = (): void => {
-    if (start && end && active >= minSec) {
-      sessions.push({ start: start.toISOString(), end: end.toISOString(), durationSec: active });
+  let run: { start: number; end: number; activeMs: number } | null = null;
+  const flush = () => {
+    if (run && run.activeMs >= minSec * 1000) {
+      sessions.push({
+        start: new Date(run.start).toISOString(),
+        end: new Date(run.end).toISOString(),
+        durationSec: Math.round(run.activeMs / 1000),
+      });
     }
-    start = null;
-    end = null;
-    active = 0;
+    run = null;
   };
-
-  for (const s of samples) {
-    const dur = Math.min(Math.max(0, s.durationSec), MAX_GAP_SEC);
-    if (s.idle || dur <= 0) {
-      flush();
-      continue;
-    }
-    if (start === null || end === null) {
-      start = s.at;
-      end = new Date(s.at.getTime() + dur * 1000);
-      active = dur;
+  for (const i of active) {
+    if (run && i.start - run.end <= MAX_GAP_SEC * 1000) {
+      run.end = i.end;
+      run.activeMs += i.end - i.start;
     } else {
-      const gap = (s.at.getTime() - end.getTime()) / 1000;
-      if (gap > MAX_GAP_SEC) {
-        flush();
-        start = s.at;
-        end = new Date(s.at.getTime() + dur * 1000);
-        active = dur;
-      } else {
-        end = new Date(s.at.getTime() + dur * 1000);
-        active += dur;
-      }
+      flush();
+      run = { start: i.start, end: i.end, activeMs: i.end - i.start };
     }
   }
   flush();

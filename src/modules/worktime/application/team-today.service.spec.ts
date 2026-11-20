@@ -78,6 +78,12 @@ function setup() {
     dayWith: jest.fn().mockReturnValue({ dateKey: '2026-10-14' }),
     resolveWith: jest.fn().mockReturnValue({ shift: null }),
     forDate: jest.fn().mockReturnValue({ slots: [] }),
+    dayOn: jest.fn().mockReturnValue({
+      resolved: { shift: null },
+      workday: true,
+      calendar: { kind: 'WORKING', holidayName: null },
+      slots: [],
+    }),
   };
   const settings = {
     get: jest.fn().mockResolvedValue({ quietHourActiveMin: 20, lateStartGraceMin: 10 }),

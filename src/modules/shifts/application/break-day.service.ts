@@ -10,7 +10,11 @@ export interface BreakDay {
   dateKey: string;
   resolved: ResolvedShift;
   workday: boolean;
-  /** Enabled breaks of the resolved shift on that day (empty on a day off). */
+  /**
+   * Enabled breaks of the resolved shift on that day. On a day off they are listed
+   * too: a day off can be worked, and then the shift's usual rules apply (3.2). The
+   * schedule views show them only once the person has started that day.
+   */
   slots: BreakSlot[];
 }
 
@@ -112,10 +116,15 @@ export class BreakDayService {
   }
 
   /** The break day for an explicit shift-day (portal views of a past or future day). */
+  /** The person's break day on an explicit shift-day (portal views of a past or future day). */
+  dayOn(ctx: ResolutionContext, person: PersonForShift, dateKey: string): BreakDay {
+    return this.forDate(this.resolveWith(ctx, person, dateKey), dateKey);
+  }
+
   forDate(resolved: ResolvedShift, dateKey: string): BreakDay {
     const shift = resolved.shift;
     const workday = shift ? isWorkDay(shift, dateKey) : false;
-    const slots = shift && workday ? breakSlots(shift, dateKey, this.timezone) : [];
+    const slots = shift ? breakSlots(shift, dateKey, this.timezone) : [];
     return { dateKey, resolved, workday, slots };
   }
 

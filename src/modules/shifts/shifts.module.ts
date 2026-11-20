@@ -21,6 +21,8 @@ import { MyBreaksUseCase } from './application/use-cases/my-breaks.use-case';
 import { ShiftAssignmentsUseCase } from './application/use-cases/shift-assignments.use-case';
 import { TeamBreaksUseCase } from './application/use-cases/team-breaks.use-case';
 import { BreaksController } from './presentation/breaks.controller';
+import { WORKED_DAYS_READER } from './domain/worked-days.reader';
+import { PrismaWorkedDaysReader } from './infrastructure/prisma-worked-days.reader';
 import { ShiftAssignmentsController, ShiftsController } from './presentation/shifts.controller';
 
 /**
@@ -40,6 +42,7 @@ import { ShiftAssignmentsController, ShiftsController } from './presentation/shi
     { provide: SHIFT_REPOSITORY, useClass: PrismaShiftRepository },
     { provide: SHIFT_PEOPLE_READER, useClass: PrismaShiftPeopleReader },
     { provide: BREAK_RECORD_REPOSITORY, useClass: PrismaBreakRecordRepository },
+    { provide: WORKED_DAYS_READER, useClass: PrismaWorkedDaysReader },
     BreakDayService,
     ShiftDayResolver,
     ShiftPickService,
@@ -55,6 +58,7 @@ import { ShiftAssignmentsController, ShiftsController } from './presentation/shi
     ApprovalRerouteSubscriber,
   ],
   exports: [
+    WORKED_DAYS_READER,
     BreakDayService,
     ShiftDayResolver,
     ShiftPickService,

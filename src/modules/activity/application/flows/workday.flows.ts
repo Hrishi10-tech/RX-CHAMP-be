@@ -6,7 +6,12 @@ import {
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { PresenceBridge } from '@modules/shifts/application/presence-bridge.service';
-import { AgentGeneration } from '@modules/worktime/domain/agent-generation';
+import {
+  AgentCaps,
+  AgentGeneration,
+  NO_AGENT_CAPS,
+} from '@modules/worktime/domain/agent-generation';
+import { LateStartService } from '@modules/worktime/application/late-start.service';
 import { boundedStartedAt } from '@modules/worktime/domain/meetings';
 import { SkipsService } from '@modules/worktime/application/skips.service';
 import { WorkSessionsService } from '@modules/worktime/application/work-sessions.service';
@@ -23,7 +28,10 @@ import { StartDayUseCase } from '../use-cases/start-day.use-case';
 
 /**
  * POST /activity/start-day (SPEC 3.1): opens a work session unless one is open
- * (idempotent), reopens the day for every 3.0 reader, announces it.
+ * (idempotent), reopens the day for every 3.0 reader, announces it. 3.2: a late
+ * first start on a working day asks why (agents that can ask: 422
+ * LATE_REASON_REQUIRED until `lateReason` comes with it); the reason is kept on
+ * the day's first session.
  */
 @Injectable()
 export class StartDayFlow {
@@ -32,6 +40,7 @@ export class StartDayFlow {
     private readonly workday: WorkdayService,
     private readonly startDay: StartDayUseCase,
     private readonly presence: PresenceBridge,
+    private readonly lateStart: LateStartService,
   ) {}
 
   async execute(
@@ -39,13 +48,18 @@ export class StartDayFlow {
     dto: StartDayDto,
     generation: AgentGeneration,
     now: Date,
+    caps: AgentCaps = NO_AGENT_CAPS,
   ): Promise<StartDayResponse> {
-    const result = await this.sessions.startDay(
-      me.id,
-      boundedStartedAt(dto.startedAt, now),
-      generation,
-      now,
-    );
+    const startedAt = boundedStartedAt(dto.startedAt, now);
+    // A session left open from an earlier day closes first, so "first start of the
+    // day" is judged on the day being started.
+    await this.sessions.autoCloseIfStale(me.id, now);
+    const late = await this.lateStart.gate(me, startedAt, dto.lateReason, caps);
+    const result = await this.sessions.startDay(me.id, startedAt, generation, now);
+    if (result.opened && !result.resumed && late && result.session.date === late.late.date) {
+      if (late.reason) await this.lateStart.keep(result.session.id, late.reason, now);
+      else await this.lateStart.remind(me.id, late.late);
+    }
     if (result.opened) {
       await this.startDay.announce(me.id, result.session.date, now);
       void this.presence.broadcast(me.id, null, now);

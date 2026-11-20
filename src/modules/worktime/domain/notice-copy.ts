@@ -19,6 +19,7 @@ export const NOTICE = {
   AWAY_REQUESTED: 'AWAY_REQUESTED',
   AWAY_DECIDED: 'AWAY_DECIDED',
   FOCUS_ADJUSTED: 'FOCUS_ADJUSTED',
+  LATE_START_REASON: 'LATE_START_REASON',
 } as const;
 
 export interface Copy {
@@ -207,5 +208,18 @@ export function focusAdjustedCopy(i: {
     body:
       `The Super Manager ${i.deltaSec < 0 ? `took ${min} minutes off` : `added ${min} minutes to`} ` +
       `your focus time for ${day}: ${i.reason}`,
+  };
+}
+
+/**
+ * To the person (3.2): a late start with no reason yet, from an agent that cannot ask.
+ * 4.0: Staff do not use the portal, so the reason reaches the manager another way.
+ */
+export function lateStartReasonCopy(i: { minutes: number; graceMin: number }): Copy {
+  return {
+    title: `You started ${i.minutes} minutes late`,
+    body:
+      `Your day started more than ${i.graceMin} minutes after your shift start. ` +
+      'Let your manager know why. Updating RX Vision on this computer lets it ask you next time.',
   };
 }

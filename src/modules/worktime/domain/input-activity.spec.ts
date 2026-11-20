@@ -91,6 +91,19 @@ describe('inputIntervals and breakdownIn', () => {
     expect(b.idleSec).toBe(0);
   });
 
+  it('one PC going idle never cuts the input on another PC (each PC has its own idle timer)', () => {
+    const a = run(0, 30).map((x) => ({ ...x, deviceId: 'laptop' }));
+    // The desktop was left alone at 5: its idle flag comes at 10.
+    const b = [...run(0, 10), ...run(10, 30, true)].map((x) => ({ ...x, deviceId: 'desktop' }));
+    const b0 = breakdownIn(inputIntervals([...a, ...b], LATER), [win(0, 30)], LATER);
+    expect(b0.activeSec).toBe(30 * 60);
+    expect(b0.idleSec).toBe(0);
+    // Alone, the desktop's lead-in is idle.
+    const b1 = breakdownIn(inputIntervals(b, LATER), [win(0, 30)], LATER);
+    expect(b1.activeSec).toBe(5 * 60);
+    expect(b1.idleSec).toBe(25 * 60);
+  });
+
   it('counts only the part of the windows that has happened', () => {
     const now = new Date(T0.getTime() + 10 * 60_000);
     const b = breakdownIn(inputIntervals(run(0, 10), now), [win(0, 60)], now);

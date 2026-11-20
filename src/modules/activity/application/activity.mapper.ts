@@ -5,8 +5,12 @@ import { ActivityTeamMember } from '../domain/activity-access.reader';
 import { MeetingWindow } from '../domain/meeting-window.reader';
 import { appDisplayName } from './app-display-name';
 import { clamp, elapsedSeconds, localDateString } from './activity-date.util';
-import { IDLE_THRESHOLD_SEC, LIVE_GRACE_SEC, MAX_GAP_SEC, TOP_N } from './activity.constants';
-import { fillLockedGaps, isLockedSample } from './locked-time.util';
+import { appTimezone } from '@shared/utils/timezone';
+import { hourWindows } from '@modules/worktime/domain/hourly';
+import { InputSample, inputIntervals, overlapIn } from '@modules/worktime/domain/input-activity';
+import { intersect, normalize, subtract } from '@modules/worktime/domain/intervals';
+import { LIVE_GRACE_SEC, MAX_GAP_SEC, TOP_N } from './activity.constants';
+import { isLockedSample } from './locked-time.util';
 import {
   ActivityStatus,
   CurrentActivityView,
@@ -15,21 +19,6 @@ import {
   MyActivityUpdate,
   TeamMemberActivityView,
 } from './activity.types';
-
-/** One sample's contribution to a day, with its seconds split active vs idle. */
-interface DaySlice {
-  hour: number;
-  activeSec: number;
-  idleSec: number;
-  /** True when the agent itself flagged the sample idle (not backfilled). */
-  flaggedIdle: boolean;
-  /** Workstation locked: inactivity starts here, so there is no lead-in to reclaim. */
-  locked: boolean;
-  /** Fell inside a meeting, so its active seconds must not be reclassified as idle. */
-  inMeeting: boolean;
-  app: string | null;
-  url: string | null;
-}
 
 export class ActivityMapper {
   /**
@@ -150,67 +139,60 @@ export class ActivityMapper {
     // Once the day has been ended, every live figure is measured against that
     // instant instead of the wall clock — the totals must not drift afterwards.
     const asOf = this.asOf(now, endedAt);
-    const hourly: HourBucket[] = Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      activeSec: 0,
-      idleSec: 0,
+    const tz = appTimezone();
+    // One rule set for every screen (input-activity.ts, Fix 10): each PC read on its
+    // own, the idle lead-in before an idle flag is idle, a lock is idle from the
+    // instant it locks, a locked sleeping PC's hole is idle, input on any PC wins.
+    const input: InputSample[] = samples.map((s) => ({
+      at: s.at,
+      durationSec: s.durationSec,
+      idle: s.idle,
+      locked: s.locked,
+      app: s.app,
+      deviceId: s.deviceId ?? null,
     }));
+    // A trailing open sample of a past day has an unknown tail: it stands for nothing.
+    const openUntil = dayIsToday ? asOf : new Date(Math.min(asOf.getTime(), this.lastAt(samples)));
+    const intervals = inputIntervals(input, openUntil);
+    // A meeting outranks the idle flag: the user is working, just not typing.
+    const meetingSpans = normalize(
+      meetings
+        .map((m) => {
+          const start = m.start.getTime();
+          if (m.end) return { start, end: m.end.getTime() };
+          // An unclosed meeting is only trusted while it could still be running
+          // (today, up to now); left open on a past day it is incomplete data.
+          return { start, end: dayIsToday ? asOf.getTime() : start };
+        })
+        .filter((m) => m.end > m.start),
+    );
+    const active = normalize([...intervals.active, ...intersect(intervals.idle, meetingSpans)]);
+    const idle = subtract(intervals.idle, meetingSpans);
+
+    const hourly: HourBucket[] = hourWindows(date, tz).map((w, hour) => ({
+      hour,
+      activeSec: Math.round(overlapIn(active, [w]) / 1000),
+      idleSec: Math.round(overlapIn(idle, [w]) / 1000),
+    }));
+    const activeSec = hourly.reduce((sum, h) => sum + h.activeSec, 0);
+    const idleSec = hourly.reduce((sum, h) => sum + h.idleSec, 0);
+
+    // App and site time follows each sample's active part only, so the idle lead-in
+    // stops inflating "top apps" as well.
     const apps = new Map<string, number>();
     const sites = new Map<string, number>();
-
-    let activeSec = 0;
-    let idleSec = 0;
-
-    // Split each sample's effective duration into active/idle seconds, then push
-    // the pre-flag inactivity into the idle column before totalling anything up.
-    const slices: DaySlice[] = [];
     samples.forEach((s, i) => {
       const dur = this.durationOf(s, i === samples.length - 1, dayIsToday, asOf);
       if (dur <= 0) return;
-      // A meeting outranks the idle flag: the user is working, just not typing.
-      const inMeeting = this.isInMeeting(s.at, meetings, dayIsToday, asOf);
-      // A locked workstation is idle from the instant it locks, whatever the agent
-      // computed: with the flag missing in the field the lock screen would otherwise
-      // spend one idle threshold being counted as work.
-      const locked = isLockedSample(s);
-      const countIdle = (s.idle || locked) && !inMeeting;
-      slices.push({
-        hour: s.at.getHours(),
-        activeSec: countIdle ? 0 : dur,
-        idleSec: countIdle ? dur : 0,
-        flaggedIdle: countIdle,
-        locked,
-        inMeeting,
-        app: s.app,
-        url: s.url,
-      });
+      const start = s.at.getTime();
+      const sec = Math.round(overlapIn(active, [{ start, end: start + dur * 1000 }]) / 1000);
+      if (sec <= 0) return;
+      // Renamed before aggregating, so a stored `TimeChampAgent` and a newer
+      // `RX Vision Agent` land in the same row rather than two.
+      const app = appDisplayName(s.app);
+      if (app) apps.set(app, (apps.get(app) ?? 0) + sec);
+      if (s.url) sites.set(s.url, (sites.get(s.url) ?? 0) + sec);
     });
-    this.backfillIdleGrace(slices);
-
-    // Breaks taken on a locked machine arrive as holes rather than idle samples,
-    // because a sleeping PC cannot report. Put those seconds back before totalling.
-    for (const filled of fillLockedGaps(samples)) {
-      idleSec += filled.idleSec;
-      hourly[filled.hour].idleSec += filled.idleSec;
-    }
-
-    for (const slice of slices) {
-      if (slice.idleSec > 0) {
-        idleSec += slice.idleSec;
-        hourly[slice.hour].idleSec += slice.idleSec;
-      }
-      if (slice.activeSec > 0) {
-        activeSec += slice.activeSec;
-        hourly[slice.hour].activeSec += slice.activeSec;
-        // App/site time follows the active portion only, so reclassified seconds
-        // stop inflating "top apps" as well.
-        // Renamed before aggregating, so a stored `TimeChampAgent` and a newer
-        // `RX Vision Agent` land in the same row rather than two.
-        const app = appDisplayName(slice.app);
-        if (app) apps.set(app, (apps.get(app) ?? 0) + slice.activeSec);
-        if (slice.url) sites.set(slice.url, (sites.get(slice.url) ?? 0) + slice.activeSec);
-      }
-    }
 
     const extraSec = Math.max(0, activeSec - workingBasisSec);
     const remainingSec = Math.max(0, workingBasisSec - activeSec);
@@ -235,6 +217,11 @@ export class ActivityMapper {
       topWebsites: this.top(sites),
       hourly,
     };
+  }
+
+  /** The newest sample's instant (ms), or 0 with none. */
+  private static lastAt(samples: ActivitySampleRecord[]): number {
+    return samples.reduce((max, x) => Math.max(max, x.at.getTime()), 0);
   }
 
   /** The user's own live payload: current status/app + the day's running totals. */
@@ -267,64 +254,6 @@ export class ActivityMapper {
       idleSec: daily.idleSec,
       topApps: daily.topApps,
     };
-  }
-
-  /**
-   * The agent can only flag a sample idle once input has *already* been missing for
-   * {@link IDLE_THRESHOLD_SEC}, so that lead-in was recorded as active even though
-   * nobody was there — the classic "walk away for 7 minutes, get credited 5". For
-   * each stretch of idle samples, walk back over the preceding active seconds and
-   * move up to one threshold's worth into the idle column.
-   *
-   * Only already-recorded seconds are reclassified, never invented: a gap the agent
-   * never sampled (asleep, closed, offline) stays absent from both totals.
-   */
-  /**
-   * Whether a sample landed inside one of the day's meetings. A session covers
-   * `[start, end)`, so a sample stamped exactly at `end` belongs to whatever followed.
-   *
-   * An unclosed session is only trusted while it could still be running — i.e. on today,
-   * bounded by `now`. Left-open sessions on a past day are incomplete data (the agent
-   * died, or the user never pressed end) and are ignored: honouring them would convert
-   * the entire remainder of that day into meeting time.
-   */
-  private static isInMeeting(
-    at: Date,
-    meetings: MeetingWindow[],
-    dayIsToday: boolean,
-    now: Date,
-  ): boolean {
-    const t = at.getTime();
-    return meetings.some((m) => {
-      if (t < m.start.getTime()) return false;
-      if (m.end) return t < m.end.getTime();
-      return dayIsToday && t <= now.getTime();
-    });
-  }
-
-  private static backfillIdleGrace(slices: DaySlice[]): void {
-    for (let i = 0; i < slices.length; i++) {
-      // Only the first sample of each idle stretch carries a lead-in.
-      if (!slices[i].flaggedIdle) continue;
-      if (i > 0 && slices[i - 1].flaggedIdle) continue;
-      // A lock is instantaneous: the user was working right up to it, so there is no
-      // lead-in to reclaim and reclassifying would steal genuine work.
-      if (slices[i].locked) continue;
-
-      let budget = IDLE_THRESHOLD_SEC;
-      for (let j = i - 1; j >= 0 && budget > 0; j--) {
-        const prev = slices[j];
-        // Stop at the previous idle stretch: the lead-in is the contiguous run of
-        // active time immediately before this one, nothing earlier. Meeting time is
-        // confirmed work, so it is never eligible to be reclassified either.
-        if (prev.flaggedIdle || prev.inMeeting || prev.activeSec <= 0) break;
-
-        const moved = Math.min(prev.activeSec, budget);
-        prev.activeSec -= moved;
-        prev.idleSec += moved;
-        budget -= moved;
-      }
-    }
   }
 
   private static top(map: Map<string, number>): UsageEntry[] {

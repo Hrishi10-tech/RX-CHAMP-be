@@ -55,6 +55,9 @@ const PAYROLL: Col[] = [
   { header: UNVERIFIED_HEADER, key: 'unverifiedHours', width: 24, hours: true },
   // 3.3, after every earlier column so sheets read by position keep working.
   { header: ADJUSTED_HEADER, key: 'adjustedMin', width: 20 },
+  // 3.2, after every earlier column so sheets read by position keep working.
+  { header: 'Active hours (keyboard/mouse)', key: 'activeHours', width: 26, hours: true },
+  { header: 'Late starts without a reason', key: 'lateWithoutReason', width: 26 },
 ];
 
 const DAYS: Col[] = [
@@ -87,6 +90,9 @@ const DAYS: Col[] = [
   { header: 'Away pending min', key: 'awayPendingMin', width: 16 },
   { header: UNVERIFIED_HEADER, key: 'unverifiedHours', width: 24, hours: true },
   { header: ADJUSTED_HEADER, key: 'adjustedMin', width: 20 },
+  // 3.2, after every earlier column so sheets read by position keep working.
+  { header: 'Available min', key: 'availableMin', width: 13 },
+  { header: 'Late reason', key: 'lateReason', width: 30 },
 ];
 
 function sheet(wb: Workbook, name: string, cols: Col[]): Worksheet {
@@ -112,6 +118,7 @@ function dayRow(p: PersonMonthReport, d: PersonDaySummary, tz: string) {
     breakMin: minutes(d.breakSec),
     meetingMin: minutes(d.meetingSec),
     lateMin: d.lateStart?.minutes ?? 0,
+    lateReason: d.lateStart?.reason ?? '',
     breaksTaken: d.breaksTaken,
     skipped: d.skipped,
     autoSkipped: d.autoSkipped,
@@ -128,6 +135,7 @@ function dayRow(p: PersonMonthReport, d: PersonDaySummary, tz: string) {
     awayPendingMin: minutes(d.awayPendingSec ?? 0),
     unverifiedHours: hours(d.unverifiedSec ?? 0),
     adjustedMin: signedMinutes(d.adjustedSec ?? 0),
+    availableMin: minutes(d.availableSec ?? 0),
   };
 }
 
@@ -154,7 +162,9 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       paidHours: hours(t.paidSec ?? t.focusSec + (t.paidBreakSec ?? 0)),
       expectedHours: hours(t.expectedSec),
       avgFocusHours: hours(t.avgFocusSec),
+      activeHours: hours(t.activeSec ?? 0),
       lateStarts: t.lateStarts,
+      lateWithoutReason: t.lateWithoutReason ?? 0,
       skipped: t.skipped,
       autoSkipped: t.autoSkipped,
       overruns: t.overruns,

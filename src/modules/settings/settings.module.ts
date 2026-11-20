@@ -3,6 +3,7 @@ import { SETTINGS_STORE } from './domain/settings.store';
 import { PrismaSettingsStore } from './infrastructure/prisma-settings.store';
 import { AppSettingsService } from './application/app-settings.service';
 import { IdleSettingsService } from './application/idle-settings.service';
+import { ReasonPresetsService } from './application/reason-presets.service';
 import { SettingsController } from './presentation/settings.controller';
 import { IdleSettingsController } from './presentation/idle-settings.controller';
 
@@ -17,7 +18,8 @@ import { IdleSettingsController } from './presentation/idle-settings.controller'
     { provide: SETTINGS_STORE, useClass: PrismaSettingsStore },
     AppSettingsService,
     IdleSettingsService,
+    ReasonPresetsService,
   ],
-  exports: [AppSettingsService, IdleSettingsService],
+  exports: [AppSettingsService, IdleSettingsService, ReasonPresetsService],
 })
 export class SettingsModule {}

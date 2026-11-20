@@ -35,13 +35,12 @@ function reference(input: HourlyInput) {
     const breakMs = lengthMs(intersect(breaks, [h]));
     const meetingMs = lengthMs(intersect(meetings, [h]));
     const availableMs = Math.max(0, workMs - lengthMs(intersect(inWork, away)));
-    const activeMin = Math.min(
-      60,
-      Math.max(0, Math.round((input.activeSecByHour[hour] ?? 0) / 60)),
-    );
+    const activeSec = Math.min(3600, Math.max(0, Math.round(input.activeSecByHour[hour] ?? 0)));
+    const activeMin = Math.min(60, Math.round(activeSec / 60));
     return {
       hour,
       activeMin,
+      activeSec,
       availableMin: Math.round(availableMs / 60_000),
       breakMin: Math.round(breakMs / 60_000),
       meetingMin: Math.round(meetingMs / 60_000),

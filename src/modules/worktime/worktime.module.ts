@@ -28,6 +28,7 @@ import { FocusAdjustmentsService } from './application/focus-adjustments.service
 import { HistoryService } from './application/history.service';
 import { PersonDaysService } from './application/person-days.service';
 import { HourlyActivityService } from './application/hourly-activity.service';
+import { LateStartService } from './application/late-start.service';
 import {
   ApprovalsDigestJob,
   ApprovalsSlaJob,
@@ -108,6 +109,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     TeamOverviewService,
     CombinedViewsService,
     HourlyActivityService,
+    LateStartService,
     AutoCloseJob,
     AutoSkipJob,
     ApprovalsSlaJob,
@@ -126,6 +128,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     PeopleScopeService,
     ApprovalsService,
     HourlyActivityService,
+    LateStartService,
     WORK_SESSION_REPOSITORY,
     WORKTIME_READER,
     APPROVALS_READER,

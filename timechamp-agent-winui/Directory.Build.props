@@ -15,4 +15,10 @@
     <Copyright>RX Vision</Copyright>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  <!-- Security (S-1, 19 November 2026): this arrives through other packages at a version with
+       a known advisory (System.Text.Json 8.0.4, GHSA-8g4q-xg66-9fp4), so every project names the
+       fixed release itself. Remove the line when the package that brings it in moves on. -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.6" />
+  </ItemGroup>
 </Project>

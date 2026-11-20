@@ -5,6 +5,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import sharp from 'sharp';
 import {
   MAX_DIRECT_UPLOAD_BYTES,
   UPLOAD_URL_TTL_SECONDS,
@@ -18,7 +19,13 @@ import {
  * upload is deleted from the bucket.
  */
 describe('UploadScreenshotUseCase — presigned uploads', () => {
-  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+  // 3.6 (F-15): a real JPEG; an image header alone no longer passes.
+  let JPEG: Buffer;
+  beforeAll(async () => {
+    JPEG = await sharp({ create: { width: 16, height: 9, channels: 3, background: '#4060a0' } })
+      .jpeg()
+      .toBuffer();
+  });
   const KEY = 'uploads/screenshots/u-1/2026-11-12/2026-11-12T05-00-00-000Z-abc.jpg';
 
   const repo = { create: jest.fn(), setOcrText: jest.fn(), findByStorageKey: jest.fn() } as any;
@@ -114,7 +121,7 @@ describe('UploadScreenshotUseCase — presigned uploads', () => {
     it('checks the stored object and records it', async () => {
       const view = await useCase.completeUpload('u-1', { key: KEY, kind: 'AUTO' });
 
-      expect(s3.read).toHaveBeenCalledWith(KEY, 16);
+      expect(s3.read).toHaveBeenCalledWith(KEY);
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'u-1', storageKey: KEY, kind: 'AUTO' }),
       );
@@ -164,6 +171,18 @@ describe('UploadScreenshotUseCase — presigned uploads', () => {
       s3.read.mockResolvedValue(Buffer.from('<html>nope</html>'));
 
       await expect(useCase.completeUpload('u-1', { key: KEY })).rejects.toThrow(/PNG or JPEG/);
+      expect(s3.remove).toHaveBeenCalledWith(KEY);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('3.6 (F-15): deletes and refuses an object with a JPEG header that does not decode', async () => {
+      s3.read.mockResolvedValue(
+        Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 9)]),
+      );
+
+      await expect(useCase.completeUpload('u-1', { key: KEY })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(s3.remove).toHaveBeenCalledWith(KEY);
       expect(repo.create).not.toHaveBeenCalled();
     });

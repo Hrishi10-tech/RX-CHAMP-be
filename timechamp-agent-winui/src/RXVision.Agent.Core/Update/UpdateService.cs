@@ -107,6 +107,10 @@ public sealed class UpdateService : IDisposable
 
     private static string Clean(string v) => v.Trim().TrimStart('v', 'V').Split('-', '+')[0];
 
+    /// <summary>The public key updates must be signed with; null: signing not set up (tests set it).</summary>
+    internal string? TrustedKey { get; set; } = UpdateSignature.PublicKeyPem;
+    private bool _unsignedNoted;
+
     public async Task<bool> CheckAsync(CancellationToken ct = default)
     {
         if (!_api.IsSignedIn || Interlocked.Exchange(ref _busy, 1) == 1) return false;
@@ -145,16 +149,48 @@ public sealed class UpdateService : IDisposable
                 return false;
             }
 
-            _log.Info("update", $"verified {info.Version}; starting the installer");
-            // Recorded first: once the installer runs, this process is stopped. The
-            // next start compares it with the running version (ReconcileLastAttempt).
-            _attemptVersion = info.Version;
-            _attemptAt = DateTimeOffset.UtcNow;
-            SaveState();
-            if (_platform.Updater.Launch(path, info.Version))
+            // Security review S-01, S-08: with the owner's key built in, only a signed build runs,
+            // and what runs is the verified copy, held open so nothing can swap it before launch.
+            var launchPath = path;
+            FileStream? held = null;
+            if (TrustedKey is { } key)
             {
-                ExitForUpdate?.Invoke();
-                return true;
+                var verified = Path.Combine(_platform.Paths.TempDir, $"rxvision-{Clean(info.Version)}-verified{ext}");
+                held = UpdateSignature.VerifyAndStrip(path, verified, _platform.Name, Clean(info.Version), key, out var problem);
+                try { File.Delete(path); } catch { }
+                if (held is null)
+                {
+                    Fail(info.Version, $"refused: {problem}");
+                    return false;
+                }
+                launchPath = verified;
+            }
+            // Audit F-01: a build without the key still installs on the server's checksum; it does
+            // not refuse. The agents already on people's machines carry no key, and this is how
+            // they take the first signed build (build/signing/README.md, "The first signed
+            // release"); refusing here would leave them on an unsigned build for good. The gap is
+            // closed where the build is made instead: a release build without the key does not
+            // build unless asked for on purpose (RxvAllowUnsignedUpdates), says so beside its
+            // version, and the publish scripts never upload it.
+            else if (!_unsignedNoted)
+            {
+                _unsignedNoted = true;
+                _log.Warn("update", "update signing is not set up in this build; trusting the server's checksum");
+            }
+
+            using (held)
+            {
+                _log.Info("update", $"verified {info.Version}; starting the installer");
+                // Recorded first: once the installer runs, this process is stopped. The
+                // next start compares it with the running version (ReconcileLastAttempt).
+                _attemptVersion = info.Version;
+                _attemptAt = DateTimeOffset.UtcNow;
+                SaveState();
+                if (_platform.Updater.Launch(launchPath, info.Version))
+                {
+                    ExitForUpdate?.Invoke();
+                    return true;
+                }
             }
             _attemptVersion = null;
             Fail(info.Version, "installer did not start");
@@ -206,7 +242,19 @@ public sealed class UpdateService : IDisposable
                 _log.Warn("update", $"{info.Version}: manual download failed the checksum or size check");
                 return new ManualDownload(null, "The download didn't match the published build, so it was deleted. Try again later.");
             }
-            File.Move(part, dest, overwrite: true);
+            if (TrustedKey is { } key)
+            {
+                // The saved copy is the verified one, without its signature (S-01).
+                using var held = UpdateSignature.VerifyAndStrip(part, dest, _platform.Name, Clean(info.Version), key, out var problem);
+                if (held is null)
+                {
+                    _log.Warn("update", $"{info.Version}: manual download refused: {problem}");
+                    return new ManualDownload(null, "Try the download again soon. That copy didn't match, so it was removed.");
+                }
+            }
+            // No key in this build: saved on the server's checksum, as CheckAsync installs (F-01).
+            else File.Move(part, dest, overwrite: true);
+            if (File.Exists(part)) { try { File.Delete(part); } catch { } }
             part = null;
             _log.Info("update", $"saved {info.Version} for a manual install");
             return new ManualDownload(dest, null);

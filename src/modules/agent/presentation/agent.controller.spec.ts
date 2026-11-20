@@ -43,10 +43,13 @@ function setup(stores: unknown = {}) {
     ),
   };
   const tokens = {
-    signEnrollmentToken: jest.fn(async (id: string, v: number) => `token-${id}-${v}`),
+    signEnrollmentToken: jest.fn(
+      async (id: string, b: { enrollVersion?: number }) => `token-${id}-${b.enrollVersion}`,
+    ),
   };
   const users = {
     findById: jest.fn(async (id: string) => PEOPLE.find((p) => p.id === id) ?? null),
+    authEpochOf: jest.fn(async () => 4),
   };
   const audit = { record: jest.fn() };
   const controller = new AgentController(
@@ -68,6 +71,16 @@ describe('GET /agent/setup-code (4.0)', () => {
     expect(res.data.code).toMatch(/^RXV1\./);
     await controller.setupCode(actor('admin', Role.ADMIN), 'mgr');
     expect(tokens.signEnrollmentToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('3.6 (F-02): the token carries the enrollVersion, the auth epoch and who minted it', async () => {
+    const { controller, tokens } = setup();
+    await controller.setupCode(actor('admin', Role.ADMIN), 'staff');
+    expect(tokens.signEnrollmentToken).toHaveBeenCalledWith('staff', {
+      enrollVersion: 3,
+      epoch: 4,
+      mintedBy: 'admin',
+    });
   });
 
   it('a Super Admin also for the Admin', async () => {

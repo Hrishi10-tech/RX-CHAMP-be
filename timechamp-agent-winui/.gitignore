@@ -5,3 +5,6 @@ publish/
 *.user
 .vs/
 TestResults/
+
+# Update-signing private keys never enter the repository (build/signing/README.md).
+*signing-key*.pem

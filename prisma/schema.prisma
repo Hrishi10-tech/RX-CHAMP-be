@@ -506,6 +506,12 @@ model User {
   // used to notify their manager exactly once. Null = agent never activated yet.
   agentActivatedAt DateTime? @map("agent_activated_at")
 
+  /// Raised by one whenever the person's credentials must end (sign out everywhere,
+  /// a block or unblock, a delete, a role or manager change). Access tokens, socket
+  /// tickets and enrolment tokens carry the value they were minted under (`ep`) and
+  /// are refused once it has moved. A token without the claim counts as 0.
+  authEpoch Int @default(0) @map("auth_epoch")
+
   /// Whether this user's agent takes automatic screenshots. Turning it off stops
   /// only that periodic capture — activity tracking carries on, and a manager can
   /// still request a shot by hand. Defaults on, so existing users are unaffected.

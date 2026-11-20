@@ -2,10 +2,9 @@ import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { OrganisationChangedEvent } from '@shared/events/organisation-changed.event';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Permission } from '@shared/rbac/permissions.enum';
 import { Role, seesEveryOrg } from '@shared/rbac/roles.enum';
-import { AuthUserReader } from '../domain/auth-user-reader.port';
+import { AuthUserReader, AuthUserRecord } from '../domain/auth-user-reader.port';
 
 const ORG_TTL_MS = 30_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,7 +26,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
     );
   }
 
-  async loadById(id: string, orgHeader?: string | null): Promise<AuthenticatedUser | null> {
+  async loadById(id: string, orgHeader?: string | null): Promise<AuthUserRecord | null> {
     const row = await this.prisma.user.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -44,7 +43,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
     const role = row.role.name as Role;
     // 4.0: someone left in an organisation that was deleted acts in none (404).
     const orgDeleted = !seesEveryOrg(role) && !!row.companyId && !!row.company?.deletedAt;
-    const user: AuthenticatedUser = {
+    const user: AuthUserRecord = {
       id: row.id,
       email: row.email,
       role,
@@ -65,6 +64,7 @@ export class PrismaAuthUserReader implements AuthUserReader, OnModuleInit {
               activity: row.grantActivity,
             }
           : undefined,
+      authEpoch: row.authEpoch,
     };
 
     if (seesEveryOrg(role)) {

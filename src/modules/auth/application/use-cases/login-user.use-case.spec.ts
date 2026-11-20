@@ -31,7 +31,11 @@ function buildUser(status: 'ACTIVE' | 'DISABLED' = 'ACTIVE'): User {
 }
 
 describe('LoginUserUseCase', () => {
-  const users = { findByEmail: jest.fn(), markAgentActivatedIfFirst: jest.fn() } as any;
+  const users = {
+    findByEmail: jest.fn(),
+    markAgentActivatedIfFirst: jest.fn(),
+    authEpochOf: jest.fn().mockResolvedValue(3),
+  } as any;
   const hasher = { compare: jest.fn(), hash: jest.fn() } as any;
   const tokens = { signAccessToken: jest.fn() } as any;
   const refreshTokens = {
@@ -99,6 +103,8 @@ describe('LoginUserUseCase', () => {
         sub: 'u-1',
         email: 'admin@timechamp.test',
         role: Role.SUPER_ADMIN,
+        // Minted under the person's current auth epoch (3.6).
+        ep: 3,
       }),
     );
     expect(refreshTokens.issue).toHaveBeenCalledWith('u-1', meta);

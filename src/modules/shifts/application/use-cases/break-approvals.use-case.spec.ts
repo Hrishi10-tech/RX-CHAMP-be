@@ -383,6 +383,8 @@ describe('BreakApprovalsUseCase', () => {
       decidedById: null,
       decidedAt: null,
       note: null,
+      // 3.6 (F-13): routed again by the person's department now.
+      routing: { approverRole: 'MANAGER', approverId: null },
     });
     // The manager who decided it may reopen it.
     records.findById.mockResolvedValue(rec({ approvalStatus: 'APPROVED', decidedById: 'mgr' }));

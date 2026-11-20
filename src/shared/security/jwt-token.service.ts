@@ -3,17 +3,20 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
   AccessTokenPayload,
-  EnrollmentToken,
+  EnrollmentClaims,
   SOCKET_TICKET_TTL_SEC,
   SOCKET_TOKEN_TYPE,
   TokenService,
+  epochOf,
 } from './token.service.port';
 
-interface EnrollmentClaims {
+interface EnrollmentTokenBody {
   sub: string;
   typ: string;
   /** 4.0: the person's enrollVersion when issued. */
   ev?: number;
+  ep?: unknown;
+  mb?: unknown;
 }
 
 @Injectable()
@@ -36,9 +39,18 @@ export class JwtTokenService implements TokenService {
     );
   }
 
-  async signEnrollmentToken(userId: string, enrollVersion = 1): Promise<string> {
+  async signEnrollmentToken(
+    userId: string,
+    binding: { enrollVersion?: number; epoch: number; mintedBy: string },
+  ): Promise<string> {
     return this.jwt.signAsync(
-      { sub: userId, typ: 'enroll', ev: enrollVersion },
+      {
+        sub: userId,
+        typ: 'enroll',
+        ev: binding.enrollVersion ?? 1,
+        ep: binding.epoch,
+        mb: binding.mintedBy,
+      },
       {
         secret: this.config.get<string>('jwt.enrollSecret'),
         expiresIn: this.config.get<string>('jwt.enrollTtl') ?? '365d',
@@ -46,11 +58,13 @@ export class JwtTokenService implements TokenService {
     );
   }
 
-  async verifyEnrollmentToken(token: string): Promise<EnrollmentToken> {
-    let claims: EnrollmentClaims;
+  async verifyEnrollmentToken(token: string): Promise<EnrollmentClaims> {
+    let claims: EnrollmentTokenBody;
     try {
-      claims = await this.jwt.verifyAsync<EnrollmentClaims>(token, {
+      claims = await this.jwt.verifyAsync<EnrollmentTokenBody>(token, {
         secret: this.config.get<string>('jwt.enrollSecret'),
+        // Only what we sign with: the header never gets to pick the algorithm.
+        algorithms: ['HS256'],
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired enrollment token.');
@@ -60,6 +74,11 @@ export class JwtTokenService implements TokenService {
     }
     // Tokens from before 4.0 carry no version: they were issued for version 1.
     const ev = Number.isInteger(claims.ev) && (claims.ev as number) > 0 ? (claims.ev as number) : 1;
-    return { userId: claims.sub, enrollVersion: ev };
+    return {
+      userId: claims.sub,
+      enrollVersion: ev,
+      epoch: epochOf(claims),
+      mintedBy: typeof claims.mb === 'string' && claims.mb ? claims.mb : null,
+    };
   }
 }

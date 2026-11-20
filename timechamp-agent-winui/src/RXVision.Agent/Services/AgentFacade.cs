@@ -68,6 +68,10 @@ public sealed class AgentFacade : IAgent, IDisposable
     public PresenceTotals Totals => _host.Totals;
     public WorkdayToday? Workday => _host.Workday;
     public bool DayKnown => _host.DayKnown;
+    public string? SignInNotice => _host.SignInNotice;
+    public void SignInNoticeShown() => _host.SignInNoticeShown();
+    public string? BuiltForHosts => AgentOptions.BuiltForProductionOnly ? null : string.Join(", ", AgentOptions.BuiltInHosts);
+    public string? UnsignedUpdatesNote => UpdateSignature.UnsignedBuildNote;
     public MeetingRecord? LiveMeeting => _host.LiveMeeting;
     public IReadOnlyList<ApprovalItem> MyApprovals => _host.MyApprovals;
     public string ApiBaseUrl => _host.ApiBaseUrl;

@@ -25,6 +25,14 @@ public interface IAgent
     WorkdayToday? Workday { get; }
     /// <summary>A day is known (from the server, or kept from an earlier run).</summary>
     bool DayKnown { get; }
+    /// <summary>A line for the sign-in window to show once (a saved server this build may not use), or null.</summary>
+    string? SignInNotice { get; }
+    /// <summary>The sign-in window has shown <see cref="SignInNotice"/>.</summary>
+    void SignInNoticeShown();
+    /// <summary>The API hosts this build was made for when they are not production alone (a staging or pilot build), else null.</summary>
+    string? BuiltForHosts { get; }
+    /// <summary>A line to show under the version when this build does not check update signatures (a test build, audit F-01), else null.</summary>
+    string? UnsignedUpdatesNote { get; }
     /// <summary>The meeting in progress, if it has a record.</summary>
     MeetingRecord? LiveMeeting { get; }
     /// <summary>The person's own items with their approver, pending first.</summary>

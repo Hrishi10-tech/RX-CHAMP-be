@@ -14,7 +14,13 @@ function req(headers: Record<string, string | string[]> = {}) {
  * API credential for its lifetime.
  */
 describe('JwtStrategy — socket tickets are not API credentials', () => {
-  const activeUser = { id: 'u-1', email: 'u@test', role: 'MANAGER', status: 'ACTIVE' };
+  const activeUser = {
+    id: 'u-1',
+    email: 'u@test',
+    role: 'MANAGER',
+    status: 'ACTIVE',
+    authEpoch: 0,
+  };
   const reader = { loadById: jest.fn() } as any;
   const config = { get: jest.fn().mockReturnValue('secret') } as any;
 
@@ -27,7 +33,12 @@ describe('JwtStrategy — socket tickets are not API credentials', () => {
 
   it('rejects a socket ticket', async () => {
     await expect(
-      strategy.validate(req(), { sub: 'u-1', email: 'u@test', role: 'MANAGER', typ: SOCKET_TOKEN_TYPE }),
+      strategy.validate(req(), {
+        sub: 'u-1',
+        email: 'u@test',
+        role: 'MANAGER',
+        typ: SOCKET_TOKEN_TYPE,
+      }),
     ).rejects.toBeInstanceOf(UnauthorizedError);
 
     // Refused before the user is even loaded.
@@ -66,7 +77,14 @@ describe('JwtStrategy — socket tickets are not API credentials', () => {
 });
 
 describe('JwtStrategy — X-Org-Id (4.0 organisation switcher)', () => {
-  const superAdmin = { id: 'sa-1', email: 'sa@test', role: 'SUPER_ADMIN', status: 'ACTIVE', orgId: 'org-a' };
+  const superAdmin = {
+    id: 'sa-1',
+    email: 'sa@test',
+    role: 'SUPER_ADMIN',
+    status: 'ACTIVE',
+    orgId: 'org-a',
+    authEpoch: 0,
+  };
   const reader = { loadById: jest.fn() } as any;
   const config = { get: jest.fn().mockReturnValue('secret') } as any;
   let strategy: JwtStrategy;
@@ -78,13 +96,21 @@ describe('JwtStrategy — X-Org-Id (4.0 organisation switcher)', () => {
   });
 
   it("passes the header to the reader, which resolves the Super Admin's organisation", async () => {
-    const user = await strategy.validate(req({ 'x-org-id': 'org-a' }), { sub: 'sa-1', email: 'sa@test', role: 'SUPER_ADMIN' });
+    const user = await strategy.validate(req({ 'x-org-id': 'org-a' }), {
+      sub: 'sa-1',
+      email: 'sa@test',
+      role: 'SUPER_ADMIN',
+    });
     expect(reader.loadById).toHaveBeenCalledWith('sa-1', 'org-a');
     expect(user).toBe(superAdmin);
   });
 
   it('a repeated header uses the first value', async () => {
-    await strategy.validate(req({ 'x-org-id': ['org-a', 'org-b'] }), { sub: 'sa-1', email: 'sa@test', role: 'SUPER_ADMIN' });
+    await strategy.validate(req({ 'x-org-id': ['org-a', 'org-b'] }), {
+      sub: 'sa-1',
+      email: 'sa@test',
+      role: 'SUPER_ADMIN',
+    });
     expect(reader.loadById).toHaveBeenCalledWith('sa-1', 'org-a');
   });
 
@@ -94,7 +120,66 @@ describe('JwtStrategy — X-Org-Id (4.0 organisation switcher)', () => {
   });
 
   it('a request without headers (socket-less edge) still validates', async () => {
-    await strategy.validate(undefined as never, { sub: 'sa-1', email: 'sa@test', role: 'SUPER_ADMIN' });
+    await strategy.validate(undefined as never, {
+      sub: 'sa-1',
+      email: 'sa@test',
+      role: 'SUPER_ADMIN',
+    });
     expect(reader.loadById).toHaveBeenCalledWith('sa-1', undefined);
+  });
+});
+
+/**
+ * F-03, F-12: an access token is bound to the auth epoch it was minted under. Once
+ * the person's sessions are ended (the epoch moves) it is refused, however long it
+ * has left, so it cannot fetch a new socket ticket or call the API.
+ */
+describe('JwtStrategy: the auth epoch', () => {
+  const reader = { loadById: jest.fn() } as any;
+  const config = { get: jest.fn().mockReturnValue('secret') } as any;
+  const user = (authEpoch: number) => ({
+    id: 'u-1',
+    email: 'u@test',
+    role: 'MANAGER',
+    status: 'ACTIVE',
+    authEpoch,
+  });
+  const token = (ep?: number) => ({ sub: 'u-1', email: 'u@test', role: 'MANAGER', ep });
+
+  let strategy: JwtStrategy;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    strategy = new JwtStrategy(config, reader);
+  });
+
+  it('accepts a token minted under the current epoch, and hands the epoch on', async () => {
+    reader.loadById.mockResolvedValue(user(2));
+    await expect(strategy.validate(req(), token(2))).resolves.toMatchObject({
+      id: 'u-1',
+      authEpoch: 2,
+    });
+  });
+
+  it('refuses a token from before the epoch was raised', async () => {
+    reader.loadById.mockResolvedValue(user(3));
+    await expect(strategy.validate(req(), token(2))).rejects.toMatchObject({
+      status: 401,
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('counts a token without the claim as epoch 0: fine until the first raise, refused after', async () => {
+    reader.loadById.mockResolvedValue(user(0));
+    await expect(strategy.validate(req(), token())).resolves.toMatchObject({ id: 'u-1' });
+
+    reader.loadById.mockResolvedValue(user(1));
+    await expect(strategy.validate(req(), token())).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('refuses a claim that is not a whole number unless the account is still at 0', async () => {
+    reader.loadById.mockResolvedValue(user(1));
+    await expect(strategy.validate(req(), { ...token(), ep: '1' } as never)).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
   });
 });

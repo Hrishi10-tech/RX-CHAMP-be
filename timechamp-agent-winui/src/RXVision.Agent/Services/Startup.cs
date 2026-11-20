@@ -20,13 +20,17 @@ public static class PlatformFactory
 {
     /// <summary>
     /// Windows: WindowsPlatform; macOS: MacPlatform; anything else, or
-    /// RXV_PLATFORM=dev: DevPlatform (nothing real is recorded). Diagnostics from
+    /// RXV_PLATFORM=dev (Debug builds only): DevPlatform (nothing real is recorded). Diagnostics from
     /// the platform go to <paramref name="log"/> once it has a target.
     /// </summary>
     public static IPlatform Create(DeferredLog log)
     {
+#if DEBUG
+        // Debug builds only (security review S-03): in a release build anyone could set this
+        // variable and have the agent report a fake, never idle day with blank screenshots.
         var requested = Environment.GetEnvironmentVariable("RXV_PLATFORM");
         if (string.Equals(requested, "dev", StringComparison.OrdinalIgnoreCase)) return new DevPlatform();
+#endif
 #if !RXV_NO_PLATFORMS
         if (OperatingSystem.IsWindows()) return new global::RXVision.Agent.Platform.Windows.WindowsPlatform(message => log.Info("platform", message));
         if (OperatingSystem.IsMacOS()) return new global::RXVision.Agent.Platform.Mac.MacPlatform(log);

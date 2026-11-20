@@ -158,7 +158,13 @@ function away(over: Partial<AwayRow> = {}): AwayRow {
   };
 }
 
-type Decision = { status: string; decidedById: string | null; decidedAt: Date | null; note: string | null; dueAt?: Date | null };
+type Decision = {
+  status: string;
+  decidedById: string | null;
+  decidedAt: Date | null;
+  note: string | null;
+  dueAt?: Date | null;
+};
 
 function setup() {
   const reader = {
@@ -229,12 +235,25 @@ function setup() {
     settings as never,
   );
   const notices = () =>
-    events.publish.mock.calls.filter(([n]) => n === NoticeEvent.eventName).map(([, p]) => p as NoticeEvent);
+    events.publish.mock.calls
+      .filter(([n]) => n === NoticeEvent.eventName)
+      .map(([, p]) => p as NoticeEvent);
   const pushes = () =>
     events.publish.mock.calls
       .filter(([n]) => n === WorkdayChangedEvent.eventName)
       .map(([, p]) => p as WorkdayChangedEvent);
-  return { svc, reader, breaks, meetings, awayRepo, breakApprovals, meetingService, settings, notices, pushes };
+  return {
+    svc,
+    reader,
+    breaks,
+    meetings,
+    awayRepo,
+    breakApprovals,
+    meetingService,
+    settings,
+    notices,
+    pushes,
+  };
 }
 
 describe('ApprovalsService deciding meetings', () => {
@@ -283,15 +302,25 @@ describe('ApprovalsService deciding meetings', () => {
   it('nobody decides their own (403); a Manager of another department does not even see it (404); staff are kept out (403)', async () => {
     const { svc, meetings } = setup();
     meetings.findById.mockResolvedValue(meeting({ userId: 'mgr', approverRole: 'ADMIN' }));
-    await expect(svc.approve(MGR, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 403 });
-    meetings.findById.mockResolvedValue(meeting({ userId: 'admin', approverRole: null, approvalStatus: 'NOT_REQUIRED' }));
-    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 403 });
+    await expect(svc.approve(MGR, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+      status: 403,
+    });
+    meetings.findById.mockResolvedValue(
+      meeting({ userId: 'admin', approverRole: null, approvalStatus: 'NOT_REQUIRED' }),
+    );
+    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+      status: 403,
+    });
 
     meetings.findById.mockResolvedValue(meeting());
-    await expect(svc.approve(me('mgr2', Role.MANAGER), 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+    await expect(
+      svc.approve(me('mgr2', Role.MANAGER), 'meeting', 'm1', undefined, NOW),
+    ).rejects.toMatchObject({
       status: 404,
     });
-    await expect(svc.approve(me('staff2', Role.USER), 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+    await expect(
+      svc.approve(me('staff2', Role.USER), 'meeting', 'm1', undefined, NOW),
+    ).rejects.toMatchObject({
       status: 403,
     });
     expect(meetings.decide).not.toHaveBeenCalled();
@@ -299,12 +328,20 @@ describe('ApprovalsService deciding meetings', () => {
 
   it("the Admin and a Super Admin decide anyone's in the organisation; a manager's goes to them", async () => {
     const { svc, meetings } = setup();
-    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({ status: 'APPROVED' });
-    await expect(svc.approve(SA, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({ status: 'APPROVED' });
+    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({
+      status: 'APPROVED',
+    });
+    await expect(svc.approve(SA, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({
+      status: 'APPROVED',
+    });
     meetings.findById.mockResolvedValue(meeting({ userId: 'mgr', approverRole: 'ADMIN' }));
-    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({ status: 'APPROVED' });
+    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).resolves.toMatchObject({
+      status: 'APPROVED',
+    });
     // A manager never decides another manager's.
-    await expect(svc.approve(me('mgr2', Role.MANAGER), 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+    await expect(
+      svc.approve(me('mgr2', Role.MANAGER), 'meeting', 'm1', undefined, NOW),
+    ).rejects.toMatchObject({
       status: 404,
     });
   });
@@ -312,8 +349,12 @@ describe('ApprovalsService deciding meetings', () => {
   it('never across organisations: 404 for an item of another organisation', async () => {
     const { svc, meetings } = setup();
     meetings.findById.mockResolvedValue(meeting({ userId: 'staffB' }));
-    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
-    await expect(svc.approve(SA, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+    await expect(svc.approve(ADMIN, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(svc.approve(SA, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
     expect(meetings.decide).not.toHaveBeenCalled();
   });
 
@@ -329,21 +370,32 @@ describe('ApprovalsService deciding meetings', () => {
     expect(meetings.decide).toHaveBeenCalledTimes(2);
     // A subject in no organisation (or a deleted one) is unknown, even here.
     meetings.findById.mockResolvedValue(meeting({ userId: 'sa' }));
-    await expect(svc.approve(SM_ALL, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+    await expect(svc.approve(SM_ALL, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('3.3: the Super Manager reopens a decision that is not hers, on All organisations too', async () => {
     const { svc, meetings } = setup();
     meetings.findById.mockResolvedValue(
-      meeting({ userId: 'staffB', approvalStatus: 'APPROVED', decidedById: 'admin', decidedAt: NOW }),
+      meeting({
+        userId: 'staffB',
+        approvalStatus: 'APPROVED',
+        decidedById: 'admin',
+        decidedAt: NOW,
+      }),
     );
     const SM_ALL = me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: null });
-    await expect(svc.reopen(SM_ALL, 'meeting', 'm1', NOW)).resolves.toMatchObject({ status: 'PENDING' });
+    await expect(svc.reopen(SM_ALL, 'meeting', 'm1', NOW)).resolves.toMatchObject({
+      status: 'PENDING',
+    });
   });
 
   it('a live meeting is healed first and cannot be decided while it runs', async () => {
     const { svc, meetings, meetingService } = setup();
-    meetings.findById.mockResolvedValue(meeting({ mode: 'LIVE', endedAt: null, durationSec: null }));
+    meetings.findById.mockResolvedValue(
+      meeting({ mode: 'LIVE', endedAt: null, durationSec: null }),
+    );
     await expect(svc.approve(MGR, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
       status: 409,
       code: 'MEETING_IN_PROGRESS',
@@ -374,7 +426,9 @@ describe('ApprovalsService deciding meetings', () => {
 
   it('reopens: only the decider or an Admin / Super Admin, only a decided meeting', async () => {
     const { svc, meetings } = setup();
-    meetings.findById.mockResolvedValue(meeting({ approvalStatus: 'REJECTED', decidedById: 'admin' }));
+    meetings.findById.mockResolvedValue(
+      meeting({ approvalStatus: 'REJECTED', decidedById: 'admin' }),
+    );
     await expect(svc.reopen(MGR, 'meeting', 'm1', NOW)).rejects.toMatchObject({ status: 403 });
     const item = await svc.reopen(SA, 'meeting', 'm1', NOW);
     expect(meetings.decide).toHaveBeenCalledWith('m1', ['APPROVED', 'REJECTED'], {
@@ -382,10 +436,16 @@ describe('ApprovalsService deciding meetings', () => {
       decidedById: null,
       decidedAt: null,
       note: null,
+      // 3.6 (F-13): routed again by the person's department now.
+      routing: expect.objectContaining({ approverId: null }),
     });
     expect(item.status).toBe('PENDING');
-    meetings.findById.mockResolvedValue(meeting({ approvalStatus: 'APPROVED', decidedById: 'mgr' }));
-    await expect(svc.reopen(MGR, 'meeting', 'm1', NOW)).resolves.toMatchObject({ status: 'PENDING' });
+    meetings.findById.mockResolvedValue(
+      meeting({ approvalStatus: 'APPROVED', decidedById: 'mgr' }),
+    );
+    await expect(svc.reopen(MGR, 'meeting', 'm1', NOW)).resolves.toMatchObject({
+      status: 'PENDING',
+    });
     meetings.findById.mockResolvedValue(meeting());
     await expect(svc.reopen(ADMIN, 'meeting', 'm1', NOW)).rejects.toMatchObject({
       code: 'NOT_DECIDED',
@@ -503,13 +563,21 @@ describe('ApprovalsService deciding away time (4.0)', () => {
   it('follows the same routing: own 403, out of scope 404, already decided 409', async () => {
     const { svc, awayRepo } = setup();
     awayRepo.findById.mockResolvedValueOnce(away({ userId: 'mgr' }));
-    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({ status: 403 });
+    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({
+      status: 403,
+    });
     awayRepo.findById.mockResolvedValueOnce(away({ userId: 'other' }));
-    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
     awayRepo.findById.mockResolvedValueOnce(away({ userId: 'staffB', companyId: 'co-2' }));
-    await expect(svc.approve(ADMIN, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+    await expect(svc.approve(ADMIN, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
     awayRepo.findById.mockResolvedValueOnce(null);
-    await expect(svc.approve(ADMIN, 'away', 'nope', undefined, NOW)).rejects.toMatchObject({ status: 404 });
+    await expect(svc.approve(ADMIN, 'away', 'nope', undefined, NOW)).rejects.toMatchObject({
+      status: 404,
+    });
     awayRepo.findById.mockResolvedValueOnce(away({ status: 'APPROVED' }));
     await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({
       code: 'ALREADY_DECIDED',
@@ -521,7 +589,9 @@ describe('ApprovalsService deciding away time (4.0)', () => {
       message: 'This needs no approval.',
     });
     awayRepo.decide.mockResolvedValueOnce(null as never);
-    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({ code: 'ALREADY_DECIDED' });
+    await expect(svc.approve(MGR, 'away', 'a1', undefined, NOW)).rejects.toMatchObject({
+      code: 'ALREADY_DECIDED',
+    });
   });
 
   it("reopens a decided away item with a fresh due time from the person's organisation", async () => {
@@ -539,7 +609,9 @@ describe('ApprovalsService deciding away time (4.0)', () => {
     });
     expect(item).toMatchObject({ status: 'PENDING', effect: { text: '+25 min if approved' } });
     awayRepo.findById.mockResolvedValue(away());
-    await expect(svc.reopen(ADMIN, 'away', 'a1', NOW)).rejects.toMatchObject({ code: 'NOT_DECIDED' });
+    await expect(svc.reopen(ADMIN, 'away', 'a1', NOW)).rejects.toMatchObject({
+      code: 'NOT_DECIDED',
+    });
   });
 });
 
@@ -581,7 +653,12 @@ describe('ApprovalsService views and lists', () => {
     );
     expect(items.map((i) => i.id)).toEqual(['m1', 'a1', 'b-old']);
     expect(reader.lockedMonths.mock.calls[0][0]).toEqual([ORG, ORG, ORG, ORG, ORG, ORG]);
-    expect(items[0]).toMatchObject({ dueSoon: true, overdue: false, canDecide: true, locked: false });
+    expect(items[0]).toMatchObject({
+      dueSoon: true,
+      overdue: false,
+      canDecide: true,
+      locked: false,
+    });
     expect(items[1]).toMatchObject({ type: 'AWAY', canDecide: true, locked: false });
     expect(items[2]).toMatchObject({
       overdue: true,
@@ -609,7 +686,10 @@ describe('ApprovalsService views and lists', () => {
       skip({ id: 'b-mgr', userId: 'mgr', approverRole: 'ADMIN' }),
     ]);
     meetings.listByIds.mockResolvedValue([]);
-    const refs = ['b-staff', 'b-other', 'b-b', 'b-mgr'].map((id) => ({ type: 'BREAK' as const, id }));
+    const refs = ['b-staff', 'b-other', 'b-b', 'b-mgr'].map((id) => ({
+      type: 'BREAK' as const,
+      id,
+    }));
     expect((await svc.views(MGR, refs, NOW)).map((i) => [i.id, i.canDecide])).toEqual([
       ['b-staff', true],
       ['b-mgr', false],
@@ -625,7 +705,12 @@ describe('ApprovalsService views and lists', () => {
     const { svc, reader } = setup();
     await svc.list(MGR, { scope: 'all' }, NOW);
     expect(reader.list.mock.calls[0][0]).toMatchObject({
-      scope: { kind: 'DEPTS', companyId: ORG, departmentIds: ['dept-billing'], excludeUserId: 'mgr' },
+      scope: {
+        kind: 'DEPTS',
+        companyId: ORG,
+        departmentIds: ['dept-billing'],
+        excludeUserId: 'mgr',
+      },
       statuses: ['PENDING'],
       skip: 0,
       take: 50,
@@ -644,7 +729,10 @@ describe('ApprovalsService views and lists', () => {
       overdueAt: NOW,
     });
     await svc.list(ADMIN, { status: 'DECIDED', type: 'AWAY' }, NOW);
-    expect(reader.list.mock.calls[3][0]).toMatchObject({ statuses: ['APPROVED', 'REJECTED'], type: 'AWAY' });
+    expect(reader.list.mock.calls[3][0]).toMatchObject({
+      statuses: ['APPROVED', 'REJECTED'],
+      type: 'AWAY',
+    });
     await expect(svc.list(me('staff', Role.USER), {}, NOW)).rejects.toMatchObject({ status: 403 });
     await expect(
       svc.list(me('sa', Role.SUPER_ADMIN, { orgId: null, orgHeaderInvalid: true }), {}, NOW),
@@ -682,7 +770,11 @@ describe('ApprovalsService views and lists', () => {
     });
     // With an organisation picked she sees that organisation, as in 4.0.
     await svc.list(me('sm', Role.SUPER_MANAGER, { companyId: null, orgId: ORG }), {}, NOW);
-    expect(reader.list.mock.calls[3][0].scope).toEqual({ kind: 'ORG', companyId: ORG, excludeUserId: 'sm' });
+    expect(reader.list.mock.calls[3][0].scope).toEqual({
+      kind: 'ORG',
+      companyId: ORG,
+      excludeUserId: 'sm',
+    });
   });
 
   it('3.3: combined views tag every item with its organisation and decide it in that organisation', async () => {

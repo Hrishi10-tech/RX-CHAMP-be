@@ -1,9 +1,11 @@
 import { createHash } from 'crypto';
-import { createReadStream, existsSync, statSync } from 'fs';
-import { isAbsolute, resolve } from 'path';
+import { createReadStream, existsSync, realpathSync, statSync } from 'fs';
+import { isAbsolute, relative, resolve, sep } from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { AgentBinaryInfo, AgentBinaryStore } from '../domain/agent-binary.store';
+
+const unavailable = (): AgentBinaryInfo => ({ available: false, sizeBytes: 0, isDirectory: false });
 
 /**
  * Serves the agent binary from the local filesystem (developer machines, or a
@@ -16,17 +18,35 @@ export class LocalAgentBinaryStore implements AgentBinaryStore {
 
   constructor(private readonly configuredPath: string) {}
 
-  private path(): string {
-    const p = this.configuredPath ?? '';
+  /**
+   * Where the build is, or null when no path is configured. An empty path must
+   * mean "no local build": resolved, it would be the working directory, and the
+   * download route zips whatever directory this store names.
+   */
+  private path(): string | null {
+    const p = (this.configuredPath ?? '').trim();
+    if (!p) return null;
     return isAbsolute(p) ? p : resolve(process.cwd(), p);
+  }
+
+  /**
+   * True for the process working directory and everything above it (".", "..",
+   * "/"). That is the server's own folder (environment file, sources), never an
+   * agent publish folder, so it is not served.
+   */
+  private holdsWorkingDirectory(dir: string): boolean {
+    const rel = relative(real(dir), real(process.cwd()));
+    const outside = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    return !outside;
   }
 
   async info(): Promise<AgentBinaryInfo> {
     const path = this.path();
-    if (!existsSync(path)) return { available: false, sizeBytes: 0, isDirectory: false };
+    if (!path || !existsSync(path)) return unavailable();
 
     const stat = statSync(path);
     if (stat.isDirectory()) {
+      if (this.holdsWorkingDirectory(path)) return unavailable();
       return { available: true, sizeBytes: 0, isDirectory: true };
     }
     return {
@@ -57,11 +77,23 @@ export class LocalAgentBinaryStore implements AgentBinaryStore {
   }
 
   async openStream(): Promise<Readable> {
-    return createReadStream(this.path());
+    const path = this.path();
+    if (!path) throw new Error('No local agent build is configured');
+    return createReadStream(path);
   }
 
   directoryPath(): string | null {
     const path = this.path();
-    return existsSync(path) && statSync(path).isDirectory() ? path : null;
+    if (!path || !existsSync(path) || !statSync(path).isDirectory()) return null;
+    return this.holdsWorkingDirectory(path) ? null : path;
+  }
+}
+
+/** The path with symbolic links followed, so a link to the working directory is caught too. */
+function real(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
   }
 }

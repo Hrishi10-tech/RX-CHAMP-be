@@ -11,6 +11,7 @@ import {
   BreakRecordRow,
   BreakState,
   Decision,
+  DecisionGuard,
   FinishBreak,
   FinishBreakResult,
   NewBreakRecord,
@@ -470,6 +471,7 @@ export class PrismaBreakRecordRepository implements BreakRecordRepository {
     id: string,
     expected: BreakApprovalStatus[],
     decision: Decision,
+    guard?: DecisionGuard,
   ): Promise<BreakRecordRow | null> {
     if (!isUuid(id)) return null;
     const clock =
@@ -484,12 +486,22 @@ export class PrismaBreakRecordRepository implements BreakRecordRepository {
       // 409 MONTH_LOCKED, and a lock can never slip in between check and write.
       await assertMonthOpen(tx, found.date, found.user_id);
       const res = await tx.breakRecord.updateMany({
-        where: { id, approvalStatus: { in: expected } },
+        where: {
+          id,
+          approvalStatus: { in: expected },
+          ...(guard ? { approverId: guard.approverId } : {}),
+        },
         data: {
           approvalStatus: decision.status,
           decidedById: decision.decidedById,
           decidedAt: decision.decidedAt,
           decisionNote: decision.note,
+          ...(decision.routing
+            ? {
+                approverRole: decision.routing.approverRole,
+                approverId: decision.routing.approverId,
+              }
+            : {}),
           ...clock,
         },
       });

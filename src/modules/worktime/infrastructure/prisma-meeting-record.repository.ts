@@ -5,7 +5,7 @@ import { ConflictError } from '@shared/exceptions/app.exception';
 import { assertMonthOpen } from '@shared/database/month-lock';
 import { RequestClock } from '@shared/tenancy';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
-import { Routing } from '@modules/shifts/domain/break-record.repository';
+import { DecisionGuard, Routing } from '@modules/shifts/domain/break-record.repository';
 import { ApproverRole, BreakApprovalStatus } from '@modules/shifts/domain/shift.types';
 import { pendingClock } from '@modules/shifts/infrastructure/prisma-break-record.repository';
 import { isUuid } from '@modules/shifts/infrastructure/prisma-shift.repository';
@@ -389,6 +389,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     id: string,
     expected: BreakApprovalStatus[],
     decision: MeetingDecision,
+    guard?: DecisionGuard,
   ): Promise<MeetingRecordRow | null> {
     if (!isUuid(id)) return null;
     const owner =
@@ -410,12 +411,22 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
         );
       }
       const res = await tx.meetingRecord.updateMany({
-        where: { id, approvalStatus: { in: expected } },
+        where: {
+          id,
+          approvalStatus: { in: expected },
+          ...(guard ? { approverId: guard.approverId } : {}),
+        },
         data: {
           approvalStatus: decision.status,
           decidedById: decision.decidedById,
           decidedAt: decision.decidedAt,
           decisionNote: decision.note,
+          ...(decision.routing
+            ? {
+                approverRole: decision.routing.approverRole,
+                approverId: decision.routing.approverId,
+              }
+            : {}),
           ...clock,
         },
       });

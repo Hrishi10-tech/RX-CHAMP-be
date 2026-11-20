@@ -3,6 +3,28 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   role: string;
+  /** The person's auth epoch when the token was minted (see `epochOf`). */
+  ep: number;
+}
+
+/** What an enrolment token says once verified. */
+export interface EnrollmentClaims {
+  userId: string;
+  /** 4.0: the enrollVersion it was issued for (1 for tokens from before 4.0). */
+  enrollVersion: number;
+  /** The subject's auth epoch when the token was minted; 0 for a token from before 3.6. */
+  epoch: number;
+  /** Who minted it; null for a token from before 3.6. */
+  mintedBy: string | null;
+}
+
+/**
+ * The epoch a token was minted under. A token without the claim counts as 0, so
+ * tokens issued before the claim existed keep working until the first time their
+ * person's epoch is raised.
+ */
+export function epochOf(claims: { ep?: unknown }): number {
+  return typeof claims.ep === 'number' && Number.isInteger(claims.ep) ? claims.ep : 0;
 }
 
 /** Marks a token as usable for a socket handshake only, never as an API credential. */
@@ -40,16 +62,15 @@ export interface TokenService {
   /**
    * Long-lived, per-user token baked into an agent download (or a setup code) for
    * password-less enrollment. 4.0: it carries the person's enrollVersion, and is
-   * refused once that version moves on (key sign-out, credential reset).
+   * refused once that version moves on (key sign-out, credential reset). 3.6: it is
+   * also bound to the subject's auth epoch and to whoever minted it, so the exchange
+   * can refuse it once either no longer stands.
    */
-  signEnrollmentToken(userId: string, enrollVersion?: number): Promise<string>;
+  signEnrollmentToken(
+    userId: string,
+    binding: { enrollVersion?: number; epoch: number; mintedBy: string },
+  ): Promise<string>;
 
-  /** Verifies an enrollment token, or throws if invalid/expired. */
-  verifyEnrollmentToken(token: string): Promise<EnrollmentToken>;
-}
-
-export interface EnrollmentToken {
-  userId: string;
-  /** The enrollVersion it was issued for (1 for tokens from before 4.0). */
-  enrollVersion: number;
+  /** Verifies an enrollment token and returns its claims, or throws if invalid/expired. */
+  verifyEnrollmentToken(token: string): Promise<EnrollmentClaims>;
 }

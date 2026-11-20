@@ -194,6 +194,16 @@ export interface Decision {
   decidedById: string | null;
   decidedAt: Date | null;
   note: string | null;
+  /** A reopen stores who approves for the person now, in the same write as PENDING. */
+  routing?: Routing;
+}
+
+/**
+ * The approver a Manager's decision was authorised against. The write goes through only
+ * while the record still names them, so a re-route that lands in between is not overtaken.
+ */
+export interface DecisionGuard {
+  approverId: string;
 }
 
 /** How a break ended through POST /breaks/end (3.1). */
@@ -269,12 +279,14 @@ export interface BreakRecordRepository extends BreakRecordRepository40 {
   /**
    * Applies a decision only if the record is still in `expected` status and its
    * month is not locked (409 MONTH_LOCKED). Back to PENDING restarts the due time.
-   * Returns the updated row, or null when it changed meanwhile.
+   * Returns the updated row, or null when it changed meanwhile (with a `guard`: also when
+   * the record has moved to another approver).
    */
   decide(
     id: string,
     expected: BreakApprovalStatus[],
     decision: Decision,
+    guard?: DecisionGuard,
   ): Promise<BreakRecordRow | null>;
 
   /** Moves a still-pending record to another approver. False when it was decided meanwhile. */

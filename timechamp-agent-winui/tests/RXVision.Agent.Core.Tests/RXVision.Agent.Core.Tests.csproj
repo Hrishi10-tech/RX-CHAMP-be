@@ -16,4 +16,7 @@
     <ProjectReference Include="../../src/RXVision.Agent.Core/RXVision.Agent.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures/update-signing/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

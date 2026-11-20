@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+
 /**
  * Screenshot checks. The agent uploads straight to S3 (a JPEG at most 2560 px
  * wide), so the server no longer re-encodes anything; it only checks that what
@@ -19,4 +21,30 @@ export function sniffImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | nul
     return 'image/jpeg';
   }
   return null;
+}
+
+/**
+ * 3.6 (F-15): the most pixels any reader of screenshots will decode. A screen
+ * capture is far below it (four 4K monitors are 33 million).
+ */
+export const MAX_INPUT_PIXELS = 80_000_000;
+
+/**
+ * 3.6 (F-15): whether the bytes are a PNG or JPEG that really decodes, within
+ * MAX_INPUT_PIXELS. Magic bytes alone let anything with an image header through;
+ * what was not decoded is never kept. A real capture cut off part way still
+ * decodes (failOn 'none') and is kept.
+ */
+export async function isDecodableImage(bytes: Buffer): Promise<boolean> {
+  if (!sniffImageType(bytes)) return false;
+  try {
+    // A small resize forces a full decode of every pixel row.
+    await sharp(bytes, { failOn: 'none', limitInputPixels: MAX_INPUT_PIXELS })
+      .resize({ width: 32, withoutEnlargement: true })
+      .raw()
+      .toBuffer();
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -395,6 +395,12 @@ public sealed class AppController : IDisposable
     {
         var window = _signIn ??= new SignInWindow { DataContext = _signInVm };
         _signInVm.Prepare(_agent.State);
+        if (_agent.SignInNotice is { } notice)
+        {
+            // AG-2: a saved server this build may not use. Said once, in the sign-in window.
+            _signInVm.Error = notice;
+            _agent.SignInNoticeShown();
+        }
         if (!window.IsVisible) window.Show();
         window.Activate();
     }

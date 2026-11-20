@@ -104,4 +104,15 @@ export interface UserRepository {
    * version they were issued for). Answers the new version.
    */
   bumpEnrollVersion(id: string): Promise<number>;
+  /**
+   * The person's auth epoch: the value an access token, socket ticket or enrolment
+   * token must carry to be accepted. Null when there is no such account.
+   */
+  authEpochOf(id: string): Promise<number | null>;
+  /**
+   * Raises the auth epoch by one, atomically, which ends every credential minted
+   * under the old value. Also done for a deleted account, so nothing comes back
+   * with it.
+   */
+  raiseAuthEpoch(id: string): Promise<void>;
 }

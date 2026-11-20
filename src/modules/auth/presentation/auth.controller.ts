@@ -13,6 +13,7 @@ import {
 } from '@shared/security/token.service.port';
 import { ChangePasswordDto, EnrollDto, LoginDto } from '../application/dto';
 import { ChangePasswordUseCase } from '../application/use-cases/change-password.use-case';
+import { AuthUserRecord } from '../domain/auth-user-reader.port';
 import { RefreshTokenMeta } from '../domain/refresh-token.repository';
 import { LoginUserUseCase } from '../application/use-cases/login-user.use-case';
 import { EnrollAgentUseCase } from '../application/use-cases/enroll-agent.use-case';
@@ -90,11 +91,14 @@ export class AuthController {
       'same-origin HTTP and pass it as `auth.token` when connecting. Not usable as an ' +
       'API credential.',
   })
-  async socketTicket(@CurrentUser() me: AuthenticatedUser) {
+  async socketTicket(@CurrentUser() me: AuthUserRecord) {
+    // The epoch the strategy just checked this request against: a ticket is no
+    // more durable than the session that asked for it.
     const token = await this.tokens.signSocketTicket({
       sub: me.id,
       email: me.email,
       role: me.role,
+      ep: me.authEpoch,
     });
     return { token, expiresIn: SOCKET_TICKET_TTL_SEC };
   }

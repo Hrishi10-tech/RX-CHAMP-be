@@ -12,6 +12,15 @@
 #   agent/dist/mac/RXVision-mac.zip        (osx-arm64, ?platform=mac)
 #   agent/dist/mac/RXVision-mac-intel.zip  (osx-x64,   ?platform=mac-x64)
 #
+# Option: --api-hosts <a,b> (or RXV_API_HOSTS): the API hosts this build may talk to (review
+# AG-2). Not given: production alone (api.rxvision.shop). A staging or pilot build names its
+# hosts on purpose; the first one is where a fresh install signs in.
+#
+# Option: --unsigned-updates: a test build without the owner's update-signing key (audit F-01).
+# Such an agent installs whatever update the server offers, says "Updates are not signed in this
+# build." beside its version, and must not go to people's machines. Without this option the
+# script stops when the public key is not in the source.
+#
 # Override points (env):
 #   RXV_APP_CSPROJ  path to the app csproj (default src/RXVision.Agent/...)
 #   RCODESIGN       rcodesign binary (default: on PATH)
@@ -19,6 +28,51 @@
 #   MAC_NOTARY_API_KEY_FILE                        App Store Connect API key JSON
 #                                                  (from `rcodesign encode-app-store-connect-api-key`)
 set -euo pipefail
+
+API_HOSTS="${RXV_API_HOSTS:-}"
+UNSIGNED_UPDATES=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --api-hosts) API_HOSTS="$2"; shift 2;;
+    --unsigned-updates) UNSIGNED_UPDATES=1; shift;;
+    *) echo "unknown option: $1" >&2; exit 2;;
+  esac
+done
+
+# Audit F-01: an agent that goes to people must check update signatures, so it is built with the
+# owner's public key in the source. Without the key the script stops before it builds anything,
+# unless the build was asked for as a test build (--unsigned-updates).
+UPDATE_KEY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src/RXVision.Agent.Core/Update/update-public-key.pem"
+UNSIGNED_PROP=()
+if [[ -f "$UPDATE_KEY" ]]; then
+  if [[ "$UNSIGNED_UPDATES" -eq 1 ]]; then
+    echo "NOTE: --unsigned-updates has no effect: the update key is in the source, so this build checks update signatures." >&2
+    UNSIGNED_UPDATES=0
+  fi
+elif [[ "$UNSIGNED_UPDATES" -eq 1 ]]; then
+  printf '\n*** UPDATES ARE NOT SIGNED IN THIS BUILD: a test build, it must not go to people'"'"'s machines ***\n\n' >&2
+  UNSIGNED_PROP=("-p:RxvAllowUnsignedUpdates=true")
+else
+  cat >&2 <<EOF
+ERROR: the update-signing public key is not in the source:
+  $UPDATE_KEY
+An agent built without it installs any update the server offers. Do one of these:
+  1. Create the key once, on the owner's own computer:
+       build/signing/make-update-key.sh <a folder outside the repository>
+     then copy update-public-key.pem from that folder to
+       src/RXVision.Agent.Core/Update/update-public-key.pem
+     and commit it (the public half only; build/signing/README.md).
+  2. For a test build that never goes to people's machines, run this script again
+     with --unsigned-updates.
+EOF
+  exit 1
+fi
+HOSTS_PROP=()
+if [[ -n "$API_HOSTS" ]]; then
+  printf '\n*** NOT A PRODUCTION BUILD: this agent talks to %s ***\n\n' "$API_HOSTS" >&2
+  # %2C: a comma inside an MSBuild property given on the command line.
+  HOSTS_PROP=("-p:RxvAllowedApiHosts=${API_HOSTS//,/%2C}")
+fi
 
 APP_NAME="RX Vision"
 EXE_NAME="RXVision"
@@ -224,7 +278,16 @@ build_one() {
   # Self-contained, NOT single-file: Avalonia/Skia native libs must sit next to
   # the managed binaries inside Contents/MacOS.
   dotnet publish "$APP_CSPROJ" -c Release -r "$rid" --self-contained true \
-    -p:UseAppHost=true -p:PublishSingleFile=false --nologo -o "$pub"
+    -p:UseAppHost=true -p:PublishSingleFile=false ${HOSTS_PROP[@]+"${HOSTS_PROP[@]}"} \
+    ${UNSIGNED_PROP[@]+"${UNSIGNED_PROP[@]}"} --nologo -o "$pub"
+
+  # What goes into the bundle says itself whether it checks update signatures (the build bakes
+  # RxvUpdateSigning into RXVision.Agent.Core.dll: the name, one length byte, the value).
+  if [[ "$UNSIGNED_UPDATES" -eq 0 ]]; then
+    local signed
+    signed="$(LC_ALL=C grep -a -c 'RxvUpdateSigning.signed' "$pub/RXVision.Agent.Core.dll" || true)"
+    [[ "${signed:-0}" -ge 1 ]] || { echo "ERROR: the agent just built does not check update signatures; not packing it" >&2; exit 1; }
+  fi
 
   [ -f "$pub/$EXE_NAME" ] || { echo "ERROR: publish produced no $EXE_NAME apphost (is AssemblyName=$EXE_NAME?)" >&2; exit 1; }
 
@@ -281,4 +344,8 @@ build_one osx-x64   RXVision-mac-intel.zip
 
 echo
 echo "Done. Zips in $DIST"
-echo "Next: build/publish-mac.sh uploads them to S3 (version $VERSION)."
+if [[ "$UNSIGNED_UPDATES" -eq 1 ]]; then
+  echo "NOT FOR RELEASE: updates are not signed in this build (--unsigned-updates). publish-mac.sh will not upload it."
+else
+  echo "Next: build/publish-mac.sh uploads them to S3 (version $VERSION)."
+fi

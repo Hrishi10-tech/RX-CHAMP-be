@@ -153,3 +153,81 @@ public class TimeBoundSecretStoreTests
         Assert.Equal(4, new ActivityQueue(slow, dir, "u-1", NullLog.Instance).Count);
     }
 }
+
+/// <summary>Security review S-02 and S-04, as a release build applies them.</summary>
+public class ReleaseOptionsTests
+{
+    private static readonly string[] Release = { "api.rxvision.shop" };
+
+    [Theory]
+    [InlineData("https://api.rxvision.shop/api/v1", "https://api.rxvision.shop/api/v1")]
+    [InlineData("https://API.rxvision.shop/api/v1/", "https://api.rxvision.shop/api/v1")]
+    [InlineData("https://rxvision-support.example/api/v1", null)]
+    [InlineData("http://api.rxvision.shop/api/v1", null)]
+    [InlineData("http://localhost:4000/api/v1", null)]
+    [InlineData("https://api.rxvision.shop.evil.example/api/v1", null)]
+    public void A_release_build_talks_only_to_its_own_server(string raw, string? expected) =>
+        Assert.Equal(expected, RXVision.Agent.Core.Config.AgentOptions.NormaliseUrl(raw, allowInsecure: true, Release));
+
+    [Fact]
+    public void A_setup_code_for_another_server_is_refused_by_the_same_rule()
+    {
+        var json = "{\"ApiBaseUrl\":\"https://rxvision-support.example/api/v1\",\"EnrollmentToken\":\"x\"}";
+        var code = "RXV1." + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        Assert.Null(RXVision.Agent.Core.Config.AgentOptions.NormaliseUrl("https://rxvision-support.example/api/v1", false, Release));
+        // Debug builds (this test run) still accept it, so tests and local runs keep working.
+        Assert.NotNull(RXVision.Agent.Core.Config.Enrollment.FromSetupCode(code, "https://api.rxvision.shop/api/v1"));
+    }
+
+    [Fact]
+    public void A_release_build_takes_only_check_timings_from_the_local_file()
+    {
+        var file = new RXVision.Agent.Core.Config.AgentOptions
+        {
+            ApiBaseUrl = "https://elsewhere.example/api/v1", ScreenshotMinutes = 60, IdleThresholdSeconds = 900,
+            HeartbeatSeconds = 300, AutoUpdate = false, AllowInsecureHttp = true, ActivitySeconds = 90, UpdateCheckMinutes = 30,
+        };
+        var used = RXVision.Agent.Core.Config.AgentOptions.FromLocalFile(file, locked: true);
+        var defaults = new RXVision.Agent.Core.Config.AgentOptions();
+        Assert.Equal(defaults.ApiBaseUrl, used.ApiBaseUrl);
+        Assert.Equal(defaults.ScreenshotMinutes, used.ScreenshotMinutes);
+        Assert.Equal(defaults.IdleThresholdSeconds, used.IdleThresholdSeconds);
+        Assert.Equal(defaults.HeartbeatSeconds, used.HeartbeatSeconds);
+        Assert.True(used.AutoUpdate);
+        Assert.False(used.AllowInsecureHttp);
+        Assert.Equal(90, used.ActivitySeconds);
+        Assert.Equal(30, used.UpdateCheckMinutes);
+    }
+}
+
+/// <summary>Review AG-2: the hosts a build may talk to come from the build, never from the PC.</summary>
+public class BuiltInHostsTests
+{
+    [Fact]
+    public void With_nothing_set_a_build_talks_to_production_alone()
+    {
+        Assert.Equal(new[] { "api.rxvision.shop" }, RXVision.Agent.Core.Config.AgentOptions.ParseHosts(null));
+        Assert.Equal(new[] { "api.rxvision.shop" }, RXVision.Agent.Core.Config.AgentOptions.ParseHosts("  "));
+        Assert.True(RXVision.Agent.Core.Config.AgentOptions.BuiltForProductionOnly);
+        Assert.Equal(RXVision.Agent.Core.Config.AgentOptions.DefaultApiBaseUrl, RXVision.Agent.Core.Config.AgentOptions.BuiltInApiBaseUrl);
+    }
+
+    [Fact]
+    public void A_build_made_for_staging_lists_exactly_the_hosts_it_was_given()
+    {
+        Assert.Equal(
+            new[] { "staging.rxvision.shop", "api.rxvision.shop" },
+            RXVision.Agent.Core.Config.AgentOptions.ParseHosts("Staging.rxvision.shop, api.rxvision.shop;staging.rxvision.shop"));
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/api")]
+    [InlineData("*.rxvision.shop")]
+    [InlineData("10.0.0.5")]
+    [InlineData("localhost")]
+    [InlineData("api.rxvision.shop:8443")]
+    public void What_is_not_a_plain_host_name_is_never_allowed(string raw)
+    {
+        Assert.Equal(new[] { "api.rxvision.shop" }, RXVision.Agent.Core.Config.AgentOptions.ParseHosts(raw));
+    }
+}

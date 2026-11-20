@@ -392,7 +392,21 @@ public sealed class AgentHost : IDisposable
         if (enrollmentKnown) _enrollment = _storeEnrollment.Value;
         var legacy = sessionKnown && saved is null ? _platform.Legacy.TryReadSession() : null;
 
-        var baseUrl = _enrollment?.ApiBaseUrl ?? saved?.ApiBaseUrl ?? _options.ApiBaseUrl;
+        // S-02: a stored address is held to the allowlist too (one saved before this build, or written by hand).
+        var baseUrl = AgentOptions.NormaliseUrl(_enrollment?.ApiBaseUrl) ?? AgentOptions.NormaliseUrl(saved?.ApiBaseUrl) ?? _options.ApiBaseUrl;
+        if (_enrollment is not null && AgentOptions.NormaliseUrl(_enrollment.ApiBaseUrl) is null)
+        {
+            _log.Warn("session", "the stored enrollment names a server this build does not talk to; ignoring it");
+            _enrollment = null;
+            SignInNotice = ServerNotAllowed;
+        }
+        if (saved is not null && AgentOptions.NormaliseUrl(saved.ApiBaseUrl) is null)
+        {
+            // Review AG-2: never a silent sign-out. The sign-in window says why it is there.
+            _log.Warn("session", "the saved session names a server this build does not talk to; sign-in is asked again");
+            saved = null;
+            SignInNotice = ServerNotAllowed;
+        }
         if (saved is not null && _enrollment is not null && !SameServer(saved.ApiBaseUrl, _enrollment.ApiBaseUrl))
         {
             // A per-user download for another server: that is who this machine belongs to now.
@@ -600,7 +614,11 @@ public sealed class AgentHost : IDisposable
             if (!string.IsNullOrWhiteSpace(server))
             {
                 var url = AgentOptions.NormaliseUrl(server, _options.AllowInsecureHttp);
-                if (url is null) return "The server address must start with https://";
+                if (url is null)
+                    // S-02: an https address this build may not use is not a typing slip.
+                    return server.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                        ? ServerNotAllowed
+                        : "Start the server address with https://";
                 UseServer(url);
             }
             var result = await _svc!.Api.LoginAsync(email, password);
@@ -873,6 +891,21 @@ public sealed class AgentHost : IDisposable
             return;
         }
         await EnterDayStateAsync();
+    }
+
+    /// <summary>C-966: an https server this build may not use (S-02, AG-2).</summary>
+    public const string ServerNotAllowed = "Check the server address with your manager.";
+
+    /// <summary>
+    /// A line the sign-in window shows once when it opens: set when a saved session or setup was
+    /// for a server this build does not talk to, so the person is not signed out without a word.
+    /// </summary>
+    public string? SignInNotice { get; private set; }
+
+    /// <summary>The sign-in window has shown <see cref="SignInNotice"/>.</summary>
+    public void SignInNoticeShown()
+    {
+        SignInNotice = null;
     }
 
     /// <summary>

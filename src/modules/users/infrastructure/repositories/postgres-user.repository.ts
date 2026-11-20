@@ -283,4 +283,23 @@ export class PostgresUserRepository implements UserRepository {
     });
     return res.count > 0;
   }
+
+  async authEpochOf(id: string): Promise<number | null> {
+    if (!isId(id)) return null;
+    const row = await this.prisma.user.findFirst({
+      where: { id, ...this.notDeleted },
+      select: { authEpoch: true },
+    });
+    return row ? row.authEpoch : null;
+  }
+
+  async raiseAuthEpoch(id: string): Promise<void> {
+    if (!isId(id)) return;
+    // An increment in the database, so two changes at once both count. No
+    // deleted-at filter: a delete is one of the reasons to raise it.
+    await this.prisma.user.updateMany({
+      where: { id },
+      data: { authEpoch: { increment: 1 } },
+    });
+  }
 }

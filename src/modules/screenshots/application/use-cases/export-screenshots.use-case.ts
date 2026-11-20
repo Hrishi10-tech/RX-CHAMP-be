@@ -9,6 +9,7 @@ import {
 import { S3StorageService } from '../../infrastructure/s3-storage.service';
 import { ExportScreenshotsQueryDto } from '../dto/export-screenshots-query.dto';
 import { assertCanAccess } from '../screenshot-access';
+import { csvLine } from '../screenshot-csv';
 
 /** Builds a CSV manifest (id, takenAt, kind, presigned url) of a user's screenshots. */
 @Injectable()
@@ -40,13 +41,8 @@ export class ExportScreenshotsUseCase {
       }),
     );
 
-    const header = 'id,takenAt,kind,url';
-    const body = rows.map((cols) => cols.map(csvCell).join(',')).join('\n');
+    const header = csvLine(['id', 'takenAt', 'kind', 'url']);
+    const body = rows.map((cols) => csvLine(cols)).join('\n');
     return `${header}\n${body}\n`;
   }
-}
-
-/** Minimal CSV escaping. */
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

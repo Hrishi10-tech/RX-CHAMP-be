@@ -975,6 +975,24 @@ public class AgentHostTests
     }
 
     [Fact]
+    public async Task A_saved_setup_for_a_server_this_build_may_not_use_asks_for_sign_in_and_says_why()
+    {
+        // Review AG-2: never a silent sign-out. (A debug build takes any https host, so the
+        // refused address here is plain http to another machine.)
+        var platform = PlatformWithAppDir();
+        new Session.SessionStore(platform).SaveEnrollment(new EnrollmentConfig("http://elsewhere.example/api/v1", FakeServer.Jwt("u-7")));
+        using var h = new HostHarness(HostHarness.Day("NOT_STARTED"), platform: platform);
+
+        await h.Host.StartAsync();
+
+        Assert.Equal(AgentState.SignIn, h.Host.State);
+        Assert.Equal("Check the server address with your manager.", h.Host.SignInNotice);
+        Assert.Equal(0, h.Server.Count("POST auth/enroll"));
+        h.Host.SignInNoticeShown();
+        Assert.Null(h.Host.SignInNotice);
+    }
+
+    [Fact]
     public async Task A_newer_enrollment_is_never_overridden_by_the_2x_one()
     {
         var platform = PlatformWithAppDir();

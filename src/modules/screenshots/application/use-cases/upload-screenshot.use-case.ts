@@ -23,7 +23,11 @@ import {
 } from '../../domain/screenshot-policy.reader';
 import { S3StorageService } from '../../infrastructure/s3-storage.service';
 import { OcrService } from '../../infrastructure/ocr.service';
-import { MAX_OCR_BYTES, sniffImageType } from '../../infrastructure/image-normaliser';
+import {
+  MAX_OCR_BYTES,
+  isDecodableImage,
+  sniffImageType,
+} from '../../infrastructure/image-normaliser';
 import { ScreenshotMapper } from '../screenshot.mapper';
 import { ScreenshotView } from '../screenshot.types';
 
@@ -163,7 +167,10 @@ export class UploadScreenshotUseCase {
           `Screenshot is ${mb(size)} MB; the limit is ${MAX_DIRECT_UPLOAD_BYTES / 1048576} MB.`,
         );
       }
-      if (!sniffImageType(await this.s3.read(key, 16))) {
+      // 3.6 (F-15): only an image that really decodes is kept. A PNG or JPEG
+      // header on anything else is refused and the object deleted.
+      const bytes = await this.s3.read(key);
+      if (!(await isDecodableImage(bytes))) {
         await this.s3.remove(key);
         throw new BadRequestException('Screenshots must be PNG or JPEG images');
       }
@@ -178,14 +185,8 @@ export class UploadScreenshotUseCase {
       }
 
       const rec = await this.repo.create({ userId, storageKey: key, kind, takenAt, ocrText: null });
-      if (size <= MAX_OCR_BYTES) {
-        setImmediate(() => {
-          this.s3
-            .read(key)
-            .then((bytes) => this.ocrLater(rec.id, bytes))
-            .catch((err: Error) => this.logger.warn(`OCR of ${rec.id} skipped: ${err.message}`));
-        });
-      }
+      // OCR after the answer, from the bytes already read (ocrLater skips large ones).
+      this.ocrLater(rec.id, bytes);
       return ScreenshotMapper.toView(rec, await this.s3.presignGet(key));
     } catch (err) {
       this.recordRefusal(userId, err, size, refusal);

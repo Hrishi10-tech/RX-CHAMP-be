@@ -108,6 +108,7 @@ export class LoginUserUseCase {
       sub: user.id,
       email: user.email,
       role: user.role,
+      ep: (await this.users.authEpochOf(user.id)) ?? 0,
     });
     const { token: refreshToken } = await this.refreshTokens.issue(user.id, meta);
     if (meta.userAgent && AGENT_USER_AGENT.test(meta.userAgent)) await this.agentActivated(user);

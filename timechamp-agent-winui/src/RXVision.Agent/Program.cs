@@ -16,7 +16,7 @@ internal static class Program
     /// <summary>
     /// RX Vision agent. Arguments: --minimized (started at login: no dashboard,
     /// just the tray and the floating button). Environment, for development:
-    /// RXV_PLATFORM=dev (fake OS layer), RXV_API=http://localhost:4000/api/v1.
+    /// RXV_PLATFORM=dev (fake OS layer, Debug builds only), RXV_API=http://localhost:4000/api/v1.
     /// </summary>
     [STAThread]
     public static int Main(string[] args)

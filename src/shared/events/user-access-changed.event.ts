@@ -24,3 +24,17 @@ export class UserAccessChangedEvent {
     public readonly active?: boolean,
   ) {}
 }
+
+/**
+ * Whether credentials minted before this change must stop working: the person's
+ * auth epoch is raised and their live sockets drop. A sign-out, a delete, a role
+ * or manager change, and a block or an unblock. The unblock counts too: an account
+ * blocked before the epoch existed still sits at 0, which is also what a token
+ * without the claim reads as, so coming back must move it. A password set by an
+ * administrator without "sign out everywhere" does not.
+ */
+export function endsCredentials(e: UserAccessChangedEvent): boolean {
+  return e.changes.some(
+    (c) => c === 'SIGN_OUT' || c === 'DELETED' || c === 'STATUS' || c === 'ROLE' || c === 'MANAGER',
+  );
+}

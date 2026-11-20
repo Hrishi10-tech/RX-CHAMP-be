@@ -62,7 +62,19 @@ internal sealed class MacSecretStore : ISecretStore
             if (_cache.TryGetValue(key, out var cached)) return (byte[])cached.Clone();
 
             // A fallback file is newer than any Keychain copy (a Keychain save deletes it).
-            var value = Decode(LoadFile(key));
+            var file = LoadFile(key);
+            var value = Decode(file);
+            if (value is not null && file is not null)
+            {
+                // Security review S-06: a plaintext file must not outlive a Keychain that works.
+                // Move it in (it is the newer value) and delete it; it stays only while the
+                // Keychain still refuses.
+                if (TryKeychainSave(key, file))
+                {
+                    DeleteFile(key);
+                    _log.Info("secrets", $"moved '{key}' from the file fallback into the Keychain");
+                }
+            }
             if (value is null)
             {
                 var (status, stored) = TryKeychainLoad(key);

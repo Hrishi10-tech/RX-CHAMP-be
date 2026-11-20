@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { OnGatewayInit } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
-import { SocketHandshakeAuth, SocketTokenClaims } from './socket.types';
+import { epochOf } from '@shared/security/token.service.port';
+import { SocketHandshakeAuth, SocketIdentity, SocketTokenClaims } from './socket.types';
 import { SocketAccessService, accountRoom } from './socket-access.service';
 import { LiveSection, membersRoom } from './socket-rooms';
 
@@ -27,7 +28,7 @@ export abstract class AuthenticatedGateway implements OnGatewayInit {
     this.access.track(server);
   }
 
-  protected authenticate(client: Socket): string | null {
+  protected authenticate(client: Socket): SocketIdentity | null {
     const token = this.tokenFrom(client);
     if (!token) return null;
     try {
@@ -36,27 +37,34 @@ export abstract class AuthenticatedGateway implements OnGatewayInit {
       });
       // An access token (no typ) or a socket ticket; never any other typed token.
       if (claims.typ !== undefined && claims.typ !== 'socket') return null;
-      return claims.sub ?? null;
+      return claims.sub ? { userId: claims.sub, epoch: epochOf(claims) } : null;
     } catch {
       return null;
     }
   }
 
   /**
-   * Admits a socket or disconnects it: allowed origin, valid token, and an
-   * account that is still active. On success the socket joins its account room
-   * (used to drop it when the account is blocked or signed out).
+   * Admits a socket or disconnects it: allowed origin, valid token, an account
+   * that is still active, and a token minted under the account's current auth
+   * epoch (one from before a sign-out is refused however long it has left). On
+   * success the socket joins its account room (used to drop it when the account is
+   * blocked or signed out) and is checked again every access-token lifetime.
    */
   protected async authenticateOrDisconnect(client: Socket): Promise<string | null> {
     const origin = client.handshake.headers.origin;
-    const userId = this.access.originAllowed(origin) ? this.authenticate(client) : null;
-    if (!userId || !(await this.access.isActive(userId))) {
+    const who = this.access.originAllowed(origin) ? this.authenticate(client) : null;
+    const account = who ? await this.access.admit(who.userId, who.epoch) : null;
+    if (!who || !account) {
       client.emit('unauthorized', { message: 'Not signed in' });
       client.disconnect(true);
       return null;
     }
-    await client.join(accountRoom(userId));
-    return userId;
+    // Gone while the account was being read: nothing to join or watch.
+    if (client.disconnected) return null;
+    client.data.role = account.role;
+    await client.join(accountRoom(who.userId));
+    this.access.watch(client, who.userId, who.epoch);
+    return who.userId;
   }
 
   /** 4.0: joins the organisation and department rooms for this namespace's live data. */

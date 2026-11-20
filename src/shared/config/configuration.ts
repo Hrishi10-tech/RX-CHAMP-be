@@ -100,8 +100,10 @@ export default (): AppConfig => ({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
   },
   agent: {
+    // `||`, not `??`: an empty AGENT_BINARY_PATH= must mean "not set", never the
+    // working directory (which the download route would then serve as a zip).
     binaryPath:
-      process.env.AGENT_BINARY_PATH ?? 'timechamp-agent-installer/publish/RXChampAgent.exe',
+      process.env.AGENT_BINARY_PATH?.trim() || 'timechamp-agent-installer/publish/RXChampAgent.exe',
     s3Key: process.env.AGENT_S3_KEY ?? '',
     s3Bucket: process.env.AGENT_S3_BUCKET ?? '',
     fileName: process.env.AGENT_FILE_NAME ?? 'RXVision.exe',

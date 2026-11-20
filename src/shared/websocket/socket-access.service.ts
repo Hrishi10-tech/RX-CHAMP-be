@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Namespace } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { PrismaService } from '@shared/database/prisma.service';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
-import { UserAccessChangedEvent } from '@shared/events/user-access-changed.event';
+import { OtherDevicesSignedOutEvent } from '@shared/events/other-devices-signed-out.event';
+import { UserAccessChangedEvent, endsCredentials } from '@shared/events/user-access-changed.event';
+import { parseDurationMs } from '@shared/utils/duration';
 import {
   activityViewRoom,
   deptRoom,
@@ -21,20 +23,31 @@ export function accountRoom(userId: string): string {
   return `account:${userId}`;
 }
 
+/** Whether an open socket may stay; `unknown` when the account could not be read. */
+export type SocketStanding = 'current' | 'ended' | 'unknown';
+
 /**
  * Socket admission and eviction, shared by every gateway:
  *  - a browser handshake must come from an allowed origin (native agents send
  *    no Origin header and are unaffected);
  *  - the account must still be active and not deleted (a valid token alone is
- *    not enough: it outlives a block by up to its TTL);
- *  - when someone is blocked, deleted, signed out or changes role, their open
- *    sockets are dropped at once, so live data stops immediately.
+ *    not enough: it outlives a block by up to its TTL), and the token or ticket
+ *    must have been minted under the account's current auth epoch, so one from
+ *    before a sign-out opens nothing;
+ *  - when someone is blocked, deleted or signed out, changes role or manager, or
+ *    signs their other devices out themselves, their open sockets are dropped at
+ *    once, so live data stops immediately;
+ *  - an open socket is asked about again every access-token lifetime and dropped
+ *    once the account is off or its epoch has moved, so no socket outlives a
+ *    sign-out by more than a token would, even if an event above was missed.
  */
 @Injectable()
 export class SocketAccessService implements OnModuleInit {
   private readonly logger = new Logger(SocketAccessService.name);
   private readonly namespaces = new Set<Namespace>();
   private readonly allowedOrigins: string[] | null;
+  /** One access-token lifetime: how long a socket goes between checks of its account. */
+  private readonly recheckMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -43,11 +56,18 @@ export class SocketAccessService implements OnModuleInit {
   ) {
     const origins = (config.get<string[]>('corsOrigins') ?? []).filter(Boolean);
     this.allowedOrigins = origins.length === 0 || origins.includes('*') ? null : origins;
+    this.recheckMs = parseDurationMs(config.get<string>('jwt.accessTtl') ?? '15m');
   }
 
   onModuleInit(): void {
     this.events.subscribe<UserAccessChangedEvent>(UserAccessChangedEvent.eventName, (e) =>
       this.onAccessChanged(e),
+    );
+    // Their own "sign out other devices": a socket opened from one of those devices
+    // (or from a copied session) must stop receiving too. This device's sockets go
+    // with them and come back on the session the password change just issued.
+    this.events.subscribe<OtherDevicesSignedOutEvent>(OtherDevicesSignedOutEvent.eventName, (e) =>
+      this.dropSockets(e.userId),
     );
   }
 
@@ -60,17 +80,75 @@ export class SocketAccessService implements OnModuleInit {
     return this.allowedOrigins.includes(origin);
   }
 
-  async isActive(userId: string): Promise<boolean> {
+  /**
+   * Admission. Answers the account's role when it is active, not deleted, and
+   * `epoch` (what the handshake's token or ticket was minted under) is its current
+   * auth epoch; null otherwise, and when the account cannot be read.
+   */
+  async admit(userId: string, epoch: number): Promise<{ role: string } | null> {
     try {
-      const row = await this.prisma.user.findFirst({
-        where: { id: userId, deletedAt: null, status: 'ACTIVE' },
-        select: { id: true },
-      });
-      return row !== null;
+      const row = await this.account(userId);
+      if (!row || row.status !== 'ACTIVE' || row.authEpoch !== epoch) return null;
+      return { role: row.role.name };
     } catch (err) {
       this.logger.warn(`socket account check failed: ${(err as Error).message}`);
-      return false;
+      return null;
     }
+  }
+
+  /**
+   * The same question for a socket that is already open. A failed read answers
+   * `unknown` rather than `ended`: a database blip must not end every live socket,
+   * and the next check asks again.
+   */
+  async standing(userId: string, epoch: number): Promise<SocketStanding> {
+    try {
+      const row = await this.account(userId);
+      return row && row.status === 'ACTIVE' && row.authEpoch === epoch ? 'current' : 'ended';
+    } catch (err) {
+      this.logger.warn(`socket account re-check failed: ${(err as Error).message}`);
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Bounds how long an admitted socket goes unquestioned. The handshake is the only
+   * time its credential is verified, so every access-token lifetime the account is
+   * read again and the socket is ended, the way an evicted one is, once the account
+   * is off or its epoch has moved since the credential was minted.
+   *
+   * Re-checked in place rather than closed at that age: a socket whose account
+   * still stands is left open.
+   */
+  watch(client: Socket, userId: string, epoch: number): void {
+    let timer: NodeJS.Timeout | null = null;
+    const arm = () => {
+      timer = setTimeout(() => void check(), this.recheckMs);
+      // Never keeps the process alive.
+      timer.unref();
+    };
+    const check = async () => {
+      timer = null;
+      if (client.disconnected) return;
+      if ((await this.standing(userId, epoch)) === 'ended') {
+        this.logger.debug(`ended a socket of ${userId}: its credential no longer stands`);
+        client.disconnect(true);
+        return;
+      }
+      if (!client.disconnected) arm();
+    };
+    client.once('disconnect', () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    });
+    arm();
+  }
+
+  private account(userId: string) {
+    return this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { status: true, authEpoch: true, role: { select: { name: true } } },
+    });
   }
 
   /**
@@ -192,13 +270,14 @@ export class SocketAccessService implements OnModuleInit {
 
   private onAccessChanged(e: UserAccessChangedEvent): void {
     this.subjects.delete(e.userId);
-    const evict =
-      e.changes.includes('DELETED') ||
-      e.changes.includes('SIGN_OUT') ||
-      e.changes.includes('ROLE') ||
-      (e.changes.includes('STATUS') && e.active === false);
-    if (!evict) return;
-    for (const ns of this.namespaces) ns.in(accountRoom(e.userId)).disconnectSockets(true);
-    this.logger.debug(`dropped live sockets of ${e.userId}`);
+    // 4.0 evicts on a role change (a socket's rooms were picked for the old role);
+    // 3.6 on everything that raises the auth epoch: whatever an open socket was
+    // admitted with is no longer a credential.
+    if (endsCredentials(e)) this.dropSockets(e.userId);
+  }
+
+  private dropSockets(userId: string): void {
+    for (const ns of this.namespaces) ns.in(accountRoom(userId)).disconnectSockets(true);
+    this.logger.debug(`dropped live sockets of ${userId}`);
   }
 }

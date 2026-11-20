@@ -19,7 +19,10 @@ import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.
 import { pendingClock } from '@modules/shifts/infrastructure/prisma-break-record.repository';
 import { personName } from '@modules/shifts/application/break-events.service';
 import { ShiftMapper } from '@modules/shifts/application/shift.mapper';
-import { BreakApprovalsUseCase } from '@modules/shifts/application/use-cases/break-approvals.use-case';
+import {
+  BreakApprovalsUseCase,
+  reopenRouting,
+} from '@modules/shifts/application/use-cases/break-approvals.use-case';
 import { cleanReason } from '@modules/shifts/application/use-cases/my-breaks.use-case';
 import {
   BREAK_RECORD_REPOSITORY,
@@ -344,6 +347,8 @@ export class ApprovalsService {
       decidedById: null,
       decidedAt: null,
       note: null,
+      // 3.6 (F-13): a reopened item waits on whoever approves for the person now.
+      routing: reopenRouting(subject),
     });
     if (!updated) throw new ConflictError('It changed meanwhile. Refresh and try again.', 'STALE');
     await this.touched(updated.userId);

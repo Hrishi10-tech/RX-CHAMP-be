@@ -390,7 +390,11 @@ export class AgentController {
     }
     const person = target!;
 
-    const token = await this.tokens.signEnrollmentToken(person.id, person.enrollVersion);
+    const token = await this.tokens.signEnrollmentToken(person.id, {
+      enrollVersion: person.enrollVersion,
+      epoch: (await this.users.authEpochOf(person.id)) ?? 0,
+      mintedBy: me.id,
+    });
     await this.audit.record({
       actorId: me.id,
       action: 'AGENT_ENROLLMENT_ISSUED',

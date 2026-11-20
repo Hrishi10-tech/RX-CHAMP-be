@@ -38,6 +38,8 @@ public class UpdateTests
         Assert.True((await api.LoginAsync("a@x.test", "pw")).Ok);
         var folder = Directory.CreateTempSubdirectory().FullName;
         var updates = new UpdateService(api, platform, new AgentOptions().Normalised(), NullLog.Instance, "3.0.0", folder);
+        // A build without the owner's key unless a test sets one: not whatever this checkout carries (F-01).
+        updates.TrustedKey = null;
         return (updates, server, folder);
     }
 
@@ -53,6 +55,31 @@ public class UpdateTests
             platform = "windows",
         }));
         server.Route("GET agent/download", (_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
+    }
+
+    /// <summary>Security review S-01: with the owner's key built in, the server's checksum alone is not enough.</summary>
+    [Fact]
+    public async Task With_signing_set_up_an_unsigned_build_is_refused_and_a_signed_one_is_saved_without_its_signature()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var (updates, server, folder) = await SignedIn();
+        updates.TrustedKey = key.ExportSubjectPublicKeyInfoPem();
+        var payload = RandomNumberGenerator.GetBytes(4096);
+
+        Serve(server, payload, Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant());
+        Assert.NotNull((await updates.DownloadForManualInstallAsync()).Error);
+        Assert.Empty(Directory.GetFiles(folder));
+
+        var signature = key.SignData(UpdateSignature.Message("dev", "3.1.0", SHA256.HashData(payload)), HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        var version = System.Text.Encoding.UTF8.GetBytes("3.1.0");
+        var signed = payload.Concat(signature).Concat(version)
+            .Concat(BitConverter.GetBytes((ushort)version.Length)).Concat(BitConverter.GetBytes((ushort)signature.Length))
+            .Concat(System.Text.Encoding.ASCII.GetBytes(UpdateSignature.Magic)).ToArray();
+        Serve(server, signed, Convert.ToHexString(SHA256.HashData(signed)).ToLowerInvariant());
+        var result = await updates.DownloadForManualInstallAsync();
+        Assert.Null(result.Error);
+        Assert.Equal(payload, File.ReadAllBytes(result.Path!));
+        Assert.Single(Directory.GetFiles(folder));
     }
 
     [Fact]

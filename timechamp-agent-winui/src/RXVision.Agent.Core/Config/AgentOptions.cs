@@ -16,7 +16,7 @@ public sealed class AgentOptions
     /// <summary>The production API. Per-user downloads and setup codes carry their own.</summary>
     public const string DefaultApiBaseUrl = "https://api.rxvision.shop/api/v1";
 
-    public string ApiBaseUrl { get; set; } = DefaultApiBaseUrl;
+    public string ApiBaseUrl { get; set; } = BuiltInApiBaseUrl;
     public int HeartbeatSeconds { get; set; } = 60;
     public int IdleThresholdSeconds { get; set; } = 300;
     public int ActivitySeconds { get; set; } = 60;
@@ -31,6 +31,80 @@ public sealed class AgentOptions
         ?? typeof(AgentOptions).Assembly.GetName().Version?.ToString(3)
         ?? "0.0.0";
 
+    /// <summary>
+    /// Security review S-02: the API hosts a release build may talk to. A setup code, the sidecar,
+    /// the Advanced server field, <c>RXV_API</c>, appsettings.json and a saved session are all
+    /// held to this list, so no message or file can point the agent at another server. Debug
+    /// builds (tests, local runs) take any https host and this machine. A new production host
+    /// needs a new build.
+    /// </summary>
+#if DEBUG
+    public static readonly IReadOnlyCollection<string>? AllowedApiHosts = null;
+#else
+    public static readonly IReadOnlyCollection<string>? AllowedApiHosts = BuiltInHosts;
+#endif
+
+    /// <summary>The production host: the only one a build allows unless it was made for others on purpose.</summary>
+    public const string ProductionApiHost = "api.rxvision.shop";
+
+    /// <summary>
+    /// Review AG-2: the hosts this build was made for, from the build property
+    /// <c>RxvAllowedApiHosts</c> (comma separated; build-windows.sh and build-mac.sh take
+    /// <c>--api-hosts</c>). Not set: production alone. A staging or pilot build is therefore made on
+    /// purpose, says so in its build output and shows its hosts in Profile; no file, message or
+    /// environment variable on a PC can widen the list.
+    /// </summary>
+    public static IReadOnlyList<string> BuiltInHosts { get; } = ParseHosts(
+        typeof(AgentOptions).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "RxvAllowedApiHosts")?.Value);
+
+    /// <summary>True when this build talks to production alone.</summary>
+    public static bool BuiltForProductionOnly =>
+        BuiltInHosts.Count == 1 && string.Equals(BuiltInHosts[0], ProductionApiHost, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Where a fresh install signs in: the first built-in host.</summary>
+    public static string BuiltInApiBaseUrl => BuiltForProductionOnly ? DefaultApiBaseUrl : $"https://{BuiltInHosts[0]}/api/v1";
+
+    /// <summary>
+    /// Audit F-01: whether this build carries the owner's update-signing public key, from the
+    /// build (assembly metadata <c>RxvUpdateSigning</c>: "signed" when
+    /// <c>Update/update-public-key.pem</c> was in the source, else "unsigned"). A release build
+    /// without the key does not build unless it was asked for on purpose with the build property
+    /// <c>RxvAllowUnsignedUpdates</c> (build-windows.sh and build-mac.sh take
+    /// <c>--unsigned-updates</c>); such a build says so beside its version
+    /// (<see cref="Update.UpdateSignature.UnsignedBuildNote"/>) and is never published. Nothing on a
+    /// PC can change it.
+    /// </summary>
+    public static bool BuiltWithSignedUpdates { get; } = ParseUpdateSigning(
+        typeof(AgentOptions).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "RxvUpdateSigning")?.Value);
+
+    /// <summary>Only the exact word counts: a missing or unknown value reads as not signed.</summary>
+    internal static bool ParseUpdateSigning(string? raw) =>
+        string.Equals(raw?.Trim(), "signed", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Host names only: lower case, no scheme, path, port, wildcard or address. Nothing valid: production.</summary>
+    internal static IReadOnlyList<string> ParseHosts(string? raw)
+    {
+        var hosts = (raw ?? "")
+            .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(h => h.ToLowerInvariant())
+            .Where(h => Uri.CheckHostName(h) == UriHostNameType.Dns && h.Contains('.') && !h.Contains('*'))
+            .Distinct()
+            .ToArray();
+        return hosts.Length > 0 ? hosts : new[] { ProductionApiHost };
+    }
+
+    /// <summary>
+    /// Security review S-04: in a release build the staff member can write appsettings.json, so the
+    /// keys that set how much is recorded, whether updates come, and http are never taken from it.
+    /// </summary>
+#if DEBUG
+    internal const bool LocalFileLocked = false;
+#else
+    internal const bool LocalFileLocked = true;
+#endif
+
     /// <summary>Loads appsettings.json from <paramref name="appDir"/> and clamps every value.</summary>
     public static AgentOptions Load(string appDir)
     {
@@ -41,7 +115,7 @@ public sealed class AgentOptions
             if (File.Exists(path))
             {
                 var parsed = JsonSerializer.Deserialize<AgentOptions>(File.ReadAllText(path), Json.Options);
-                if (parsed is not null) options = parsed;
+                if (parsed is not null) options = FromLocalFile(parsed, LocalFileLocked);
             }
         }
         catch
@@ -49,6 +123,18 @@ public sealed class AgentOptions
             // A broken file falls back to the defaults.
         }
         return options.Normalised();
+    }
+
+    /// <summary>What a local file may set: with <paramref name="locked"/>, the timing of checks only.</summary>
+    internal static AgentOptions FromLocalFile(AgentOptions file, bool locked)
+    {
+        if (!locked) return file;
+        var safe = new AgentOptions
+        {
+            ActivitySeconds = file.ActivitySeconds,
+            UpdateCheckMinutes = file.UpdateCheckMinutes,
+        };
+        return safe;
     }
 
     public AgentOptions Normalised()
@@ -67,10 +153,20 @@ public sealed class AgentOptions
     /// server on this machine (development), so passwords and screenshots never
     /// travel in clear text.
     /// </summary>
-    public static string? NormaliseUrl(string? raw, bool allowInsecure = false)
+    public static string? NormaliseUrl(string? raw, bool allowInsecure = false) =>
+        NormaliseUrl(raw, allowInsecure, AllowedApiHosts);
+
+    /// <summary>As above, held to <paramref name="allowedHosts"/> when one is given (release builds).</summary>
+    internal static string? NormaliseUrl(string? raw, bool allowInsecure, IReadOnlyCollection<string>? allowedHosts)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
         if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri)) return null;
+        if (allowedHosts is not null)
+        {
+            // Release: https to a listed host only; no http, no other server, not even this machine.
+            if (uri.Scheme != Uri.UriSchemeHttps || !allowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)) return null;
+            return uri.ToString().TrimEnd('/');
+        }
         var local = uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
         if (uri.Scheme != Uri.UriSchemeHttps && !(uri.Scheme == Uri.UriSchemeHttp && (local || allowInsecure))) return null;
         return uri.ToString().TrimEnd('/');

@@ -220,6 +220,10 @@ public sealed class FakeAgent : IAgent
     public CurrentPresence Presence { get; set; } = new();
     public WorkdayToday? Workday { get; set; }
     public bool DayKnown { get; set; } = true;
+    public string? SignInNotice { get; set; }
+    public void SignInNoticeShown() => SignInNotice = null;
+    public string? BuiltForHosts { get; set; }
+    public string? UnsignedUpdatesNote { get; set; }
     public MeetingRecord? LiveMeeting { get; set; }
 
     // ---- 4.0 ----

@@ -151,6 +151,11 @@ export class FocusAdjustmentsService {
     this.assertSuperManager(me);
     const current = await this.repo.findById(id);
     if (!current) throw new NotFoundError('Unknown adjustment');
+    // The same rule as create (3.6, F-14): nobody changes their own focus time by
+    // hand, in either direction.
+    if (current.userId === me.id) {
+      throw new ForbiddenError('You cannot undo an adjustment to your own focus time.');
+    }
     // Outside the organisation in view it does not exist for her.
     const target = await this.subject(me, current.userId).catch((err: unknown) => {
       if (err instanceof NotFoundError) throw new NotFoundError('Unknown adjustment');

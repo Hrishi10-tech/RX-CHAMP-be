@@ -14,6 +14,7 @@ import {
   BREAK_RECORD_REPOSITORY,
   BreakRecordRepository,
   BreakRecordRow,
+  Routing,
 } from '../../domain/break-record.repository';
 import {
   SHIFT_PEOPLE_READER,
@@ -46,6 +47,20 @@ const DECIDED: BreakApprovalStatus[] = ['APPROVED', 'REJECTED'];
  * decides their own. Decisions are conditional updates, so two approvers acting at
  * once cannot both win.
  */
+/**
+ * 3.6 (F-13): the route a reopened item takes, by the person's placement now (their
+ * department may have changed since it was decided). Someone who now needs no
+ * approval, or is gone, waits on the organisation's Admin, so it can be decided again.
+ */
+export function reopenRouting(
+  subject: Pick<ShiftPerson, 'role' | 'departmentId'> | null | undefined,
+): Routing {
+  const route = subject ? BreakApprovalPolicy.route(subject) : null;
+  return route?.status === 'PENDING'
+    ? { approverRole: route.approverRole, approverId: null }
+    : { approverRole: 'ADMIN', approverId: null };
+}
+
 @Injectable()
 export class BreakApprovalsUseCase {
   constructor(
@@ -175,6 +190,8 @@ export class BreakApprovalsUseCase {
       decidedById: null,
       decidedAt: null,
       note: null,
+      // 3.6 (F-13): a reopened item waits on whoever approves for the person now.
+      routing: reopenRouting(subject[0]),
     });
     if (!updated) throw new ConflictError('It changed meanwhile. Refresh and try again.', 'STALE');
     return updated;

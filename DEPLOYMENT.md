@@ -248,6 +248,35 @@ migration. Restore the snapshot only to undo the data itself.
 Deploy the API first, then roll out the 3.1 agents; 3.0 and 2.9.1 agents keep
 working against the 3.1 API.
 
+### Security fixes ported from RX Vision 3.6 (D-91)
+
+The 19 November 2026 security audit of RX Vision 3.6 found 15 issues (none critical or
+high). The ones that apply to 4.0 are ported here; those about leave, comp off and
+biometric attendance come with those features. One migration:
+`20261119_rx36_auth_epoch` (`users.auth_epoch`, 0 for everyone, no data rewrite).
+
+1. **RDS snapshot**, then deploy as usual (`npx prisma migrate deploy` runs the migration).
+2. **Nobody is signed out by the deploy.** Sessions and installed agents carry on. From
+   then on a sign-out everywhere, a block or unblock, a delete, a new role, or someone's
+   own "sign out other devices" also ends that person's access tokens, live sockets and
+   setup codes, not only their refresh tokens. An open socket is checked again every
+   access-token lifetime. In 4.0 a change of department or grants counts as a role
+   change: the person's portal refreshes its session once, unnoticed, and an installer
+   or setup code issued for them before the change needs to be issued again.
+3. **Setup codes and per-person installers** now also name who made them. One stops
+   working when its maker is blocked or could no longer issue it (no longer the
+   organisation's Admin, for example), as well as on 4.0's key sign-out.
+4. **Screenshots:** an upload that has an image header but does not decode is refused and
+   deleted from the bucket. Exported screenshot lists cannot carry a spreadsheet formula.
+5. **Approvals:** a reopened break or meeting is routed again by the person's current
+   department. Nobody undoes a focus-time adjustment on their own day.
+6. **`CORS_ORIGINS` must list the portal's address** (it also decides which browser
+   pages may open a live socket).
+7. **`AGENT_BINARY_PATH`:** leave it unset unless the API serves a local build. An empty
+   value now means "no local build".
+8. **Agent updates:** see "Once: the update signing key" under the agent section below.
+   Until that key is made, release builds of the agent fail on purpose.
+
 Smoke-test before involving PM2:
 
 ```bash
@@ -350,10 +379,48 @@ on-disk default for the agent binary can't resolve. `.env.production` sets
 `AGENT_S3_KEY=agent/RXChampAgent.exe`, which switches `agent.module.ts` to
 serve from S3.
 
-From RX Vision Agent 3.0 the agents are built from the `agent/` folder beside
-this backend, and uploaded with their version and SHA-256 stamped on the S3
-object (agents refuse an update without a checksum, so never upload with a
-plain `aws s3 cp`):
+Agents are built from the `agent/` folder beside this backend and uploaded with their
+version and SHA-256 stamped on the S3 object (agents refuse an update without a checksum,
+so never upload with a plain `aws s3 cp`).
+
+### Once: the update signing key (security review S-01, S-3)
+
+Until this is done, an agent installs any update whose checksum matches what the API says,
+so whoever can write the object in storage can run code on every PC.
+
+1. On the owner's own computer, never on a server:
+   `agent/build/signing/make-update-key.sh ~/rxvision-update-key`
+2. Keep `update-signing-key.pem` offline and backed up. It is the only key that can sign
+   updates. If it is lost, the next agent needs a new key and a manual reinstall on every PC.
+3. Copy `update-public-key.pem` to
+   `agent/src/RXVision.Agent.Core/Update/update-public-key.pem` and commit it (it is public).
+   Every build from then on installs only signed updates, and every publish script below
+   refuses to upload an unsigned build.
+
+Agents built before the key was added take a signed file as an ordinary update, so the first
+signed release needs no special step.
+
+Since 19 November (audit F-01, D-91) the build itself holds this: without the public key
+file a release build of the agent fails (RXV0001), and every publish script stops before it
+builds or uploads anything. A test build can still be made with
+`agent/build/build-windows.sh --unsigned-updates` or `build-mac.sh --unsigned-updates`; it
+says "Updates are not signed in this build." under its version, and no publish script will
+upload it. The agents delivered on 19 November are such test builds: build again after
+step 3 before anything goes to people's machines.
+
+### Every release
+
+1. **Build and test.** `bash ../agent/build/build-windows.sh` and
+   `bash ../agent/build/build-mac.sh`, then run the installer on a real Windows PC and the
+   zip on a real Mac against a staging API (`MANUAL_QA.md`). A release build talks only to
+   `api.rxvision.shop`. For staging or a pilot, build on purpose with
+   `--api-hosts staging.example.com`: the build prints NOT A PRODUCTION BUILD and shows its
+   hosts beside the version. Never upload such a build to the live key.
+2. **Publish to a pilot first** (staged release, D-90). Upload is the release: every agent
+   that reads a key takes the new version within about 15 minutes. So upload to a pilot key
+   (`agent/pilot/RXChampAgent.exe`), point the API of a test server or two named PCs at it
+   for two working days, and only then publish to the live key.
+3. **Publish, signed:**
 
 ```bash
 # Windows installer (on Windows):

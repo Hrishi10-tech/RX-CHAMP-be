@@ -23,6 +23,34 @@ internal sealed class MacScreenCapture : IScreenCapture
     {
         _tempDir = tempDir;
         _log = log;
+        SweepLeftovers(tempDir, DateTime.UtcNow, log);
+    }
+
+    /// <summary>
+    /// Security review S-09: a crash, a force quit or an update's kill can stop a capture before its
+    /// files are deleted, leaving a full-size image of every screen in the cache folder. Any
+    /// capture file older than a minute is a leftover (a capture takes 15 seconds at most).
+    /// </summary>
+    internal static int SweepLeftovers(string tempDir, DateTime nowUtc, ILog log)
+    {
+        var removed = 0;
+        try
+        {
+            if (!Directory.Exists(tempDir)) return 0;
+            foreach (var file in Directory.EnumerateFiles(tempDir, "cap-*.jpg"))
+            {
+                try
+                {
+                    if (nowUtc - File.GetLastWriteTimeUtc(file) < TimeSpan.FromMinutes(1)) continue;
+                    File.Delete(file);
+                    removed++;
+                }
+                catch { /* the next start tries again */ }
+            }
+            if (removed > 0) log.Info("screen", $"removed {removed} capture file(s) left by an earlier run");
+        }
+        catch { }
+        return removed;
     }
 
     public CapturedImage? Capture(int maxLongSide, int quality)

@@ -1,5 +1,5 @@
 import { ApproverRole, BreakApprovalStatus } from '@modules/shifts/domain/shift.types';
-import { Routing } from '@modules/shifts/domain/break-record.repository';
+import { DecisionGuard, Routing } from '@modules/shifts/domain/break-record.repository';
 import { AgentGeneration } from './agent-generation';
 import { PastMeetingConflict } from './meetings';
 
@@ -78,6 +78,8 @@ export interface MeetingDecision {
   decidedById: string | null;
   decidedAt: Date | null;
   note: string | null;
+  /** A reopen stores who approves for the person now, in the same write as PENDING. */
+  routing?: Routing;
 }
 
 /** A live meeting shorter than this is deleted when it ends (SPEC 1.6). */
@@ -123,12 +125,13 @@ export interface MeetingRecordRepository {
   /**
    * Conditional decision with the month lock (409 MONTH_LOCKED) and the live
    * rule (409 MEETING_IN_PROGRESS); back to PENDING restarts the 48-hour clock.
-   * Null when it changed meanwhile.
+   * Null when it changed meanwhile (with a `guard`: also when it moved to another approver).
    */
   decide(
     id: string,
     expected: BreakApprovalStatus[],
     decision: MeetingDecision,
+    guard?: DecisionGuard,
   ): Promise<MeetingRecordRow | null>;
 
   reroute(id: string, routing: Routing): Promise<boolean>;

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="RxvUpdatePublicKeyFile;RxvUpdateSigning">
 
   <!-- Everything the agent does that is not drawing pixels or calling the OS:
        the API client, sign-in and session, scheduled breaks, activity with its
@@ -8,11 +8,60 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>RXVision.Agent.Core</RootNamespace>
     <AssemblyName>RXVision.Agent.Core</AssemblyName>
+    <!-- The one place the owner's update-signing public key lives (audit F-01, below). -->
+    <RxvUpdatePublicKeyFile>$(MSBuildThisFileDirectory)Update/update-public-key.pem</RxvUpdatePublicKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="SocketIOClient" Version="3.1.2" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Security review S-01: the owner's update-signing public key, when it is set up (build/signing/README.md). -->
+    <EmbeddedResource Include="Update/update-public-key.pem" LogicalName="RXVision.Agent.Core.Update.update-public-key.pem" Condition="Exists('$(RxvUpdatePublicKeyFile)')" />
+  </ItemGroup>
+
+  <!-- Review AG-2: the API hosts a release build may talk to. Production alone unless the build
+       names others (-p:RxvAllowedApiHosts=staging.example.com, or the build scripts' api-hosts option). -->
+  <PropertyGroup>
+    <RxvAllowedApiHosts Condition="'$(RxvAllowedApiHosts)' == ''">api.rxvision.shop</RxvAllowedApiHosts>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="RxvAllowedApiHosts" Value="$(RxvAllowedApiHosts)" />
+  </ItemGroup>
+
+  <!-- Audit F-01: a build that goes to people must check update signatures. Whether the owner's
+       public key is in this build is worked out here, never taken from the command line, and
+       baked in beside the hosts: AgentOptions.BuiltWithSignedUpdates reads it. -->
+  <PropertyGroup>
+    <RxvUpdateSigning>unsigned</RxvUpdateSigning>
+    <RxvUpdateSigning Condition="Exists('$(RxvUpdatePublicKeyFile)')">signed</RxvUpdateSigning>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="RxvUpdateSigning" Value="$(RxvUpdateSigning)" />
+  </ItemGroup>
+
+  <!-- The guard. Without the key file, anything but a Debug build stops here, unless it was asked
+       for on purpose with -p:RxvAllowUnsignedUpdates=true (the build scripts: unsigned-updates).
+       Debug builds (tests, local runs) are not held to it. Not run for an editor's design-time build. -->
+  <Target Name="RxvRequireUpdatePublicKey" BeforeTargets="BeforeBuild;CoreCompile"
+          Condition="'$(Configuration)' != 'Debug' And '$(DesignTimeBuild)' != 'true' And !Exists('$(RxvUpdatePublicKeyFile)')">
+    <Error Condition="'$(RxvAllowUnsignedUpdates)' != 'true'" Code="RXV0001"
+           Text="The update-signing public key is missing (src/RXVision.Agent.Core/Update/update-public-key.pem), so this $(Configuration) build would install updates without checking who signed them. Create the key once with build/signing/make-update-key.sh and commit the public half at that path (build/signing/README.md). For a test build only, pass -p:RxvAllowUnsignedUpdates=true (build scripts: --unsigned-updates)." />
+    <Warning Condition="'$(RxvAllowUnsignedUpdates)' == 'true'" Code="RXV0002"
+             Text="Updates are not signed in this build (RxvAllowUnsignedUpdates=true). It is a test build: it must not go to people's machines." />
+  </Target>
+
+  <!-- A key file that is empty or is not a public key would pass the guard and check nothing, and
+       the private half must never be built into the agent. Held in every configuration. -->
+  <Target Name="RxvCheckUpdatePublicKey" BeforeTargets="BeforeBuild;CoreCompile"
+          Condition="'$(DesignTimeBuild)' != 'true' And Exists('$(RxvUpdatePublicKeyFile)')">
+    <PropertyGroup>
+      <_RxvUpdateKeyText>$([System.IO.File]::ReadAllText('$(RxvUpdatePublicKeyFile)'))</_RxvUpdateKeyText>
+    </PropertyGroup>
+    <Error Condition="!$(_RxvUpdateKeyText.Contains('-----BEGIN PUBLIC KEY-----')) Or $(_RxvUpdateKeyText.Contains('PRIVATE KEY'))" Code="RXV0003"
+           Text="src/RXVision.Agent.Core/Update/update-public-key.pem is not a public key. Copy update-public-key.pem from the folder build/signing/make-update-key.sh wrote; the private key (update-signing-key.pem) never goes into the repository." />
+  </Target>
 
   <ItemGroup>
     <InternalsVisibleTo Include="RXVision.Agent.Core.Tests" />

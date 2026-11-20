@@ -18,6 +18,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Linux desktop only, brought in by Avalonia at 0.20.0 (GHSA-xrw6-gwf8-vvr9): the fixed release, named here (S-1). -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <PackageReference Include="Avalonia" Version="11.2.8" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.8" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.8" />

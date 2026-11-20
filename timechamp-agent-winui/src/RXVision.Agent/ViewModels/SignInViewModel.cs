@@ -25,7 +25,10 @@ public sealed partial class SignInViewModel : ObservableObject
         _server = agent.ApiBaseUrl;
     }
 
-    public string VersionText => $"Version {_agent.Version}";
+    /// <summary>As the foot of the Profile tab: the version, other servers than production (AG-2), unsigned updates (F-01).</summary>
+    public string VersionText =>
+        (_agent.BuiltForHosts is { } hosts ? $"Version {_agent.Version} · {hosts}" : $"Version {_agent.Version}")
+        + (_agent.UnsignedUpdatesNote is { } note ? "\n" + note : "");
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SignInCommand))]

@@ -32,6 +32,7 @@ export class RefreshTokenUseCase {
       sub: user.id,
       email: user.email,
       role: user.role,
+      ep: user.authEpoch,
     });
 
     return { accessToken, refreshToken: rotated.token };

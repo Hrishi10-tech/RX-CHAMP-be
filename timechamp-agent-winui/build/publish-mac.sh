@@ -18,6 +18,11 @@
 #
 # Usage:
 #   build/publish-mac.sh [--version X] [--bucket B] [--region R] [--skip-build] [--no-upload]
+#
+# Audit F-01: only an agent that checks update signatures is published. The script stops before
+# it builds when the owner's public key is not in the source, it does not take
+# --unsigned-updates, and it reads each zip back and refuses one whose agent was built without
+# the key (a test build left in dist/mac, with --skip-build).
 set -euo pipefail
 
 BUCKET="rx-timechamp"
@@ -33,6 +38,7 @@ while [ $# -gt 0 ]; do
     --region)  REGION="$2";  shift 2 ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --no-upload)  NO_UPLOAD=1;  shift ;;
+    --unsigned-updates) echo "ERROR: --unsigned-updates is refused here: an unsigned build is never published. For a test build use build/build-mac.sh --unsigned-updates." >&2; exit 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -46,6 +52,23 @@ if [ -z "$VERSION" ]; then
   echo "Version $VERSION (from Directory.Build.props)"
 fi
 [ -n "$VERSION" ] || { echo "ERROR: no version" >&2; exit 1; }
+
+# Audit F-01: without the owner's public key the agent would install any update the server
+# offers, so nothing is built or uploaded from here.
+PUBLIC_KEY="$AGENT_DIR/src/RXVision.Agent.Core/Update/update-public-key.pem"
+if [ ! -f "$PUBLIC_KEY" ]; then
+  cat >&2 <<EOF
+ERROR: the update-signing public key is not in the source, and an unsigned build is never published:
+  $PUBLIC_KEY
+Create the key once, on the owner's own computer:
+  build/signing/make-update-key.sh <a folder outside the repository>
+then copy update-public-key.pem from that folder to
+  src/RXVision.Agent.Core/Update/update-public-key.pem
+and commit it (the public half only; build/signing/README.md). Publish again with
+RXV_UPDATE_SIGNING_KEY set to the private half.
+EOF
+  exit 1
+fi
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
   echo "==> Building the mac zips first"
@@ -74,10 +97,31 @@ for zip in "$ARM_ZIP" "$X64_ZIP"; do
   fi
 done
 
+# Audit F-01: the agent in each zip says itself whether it checks update signatures (the build
+# bakes RxvUpdateSigning into RXVision.Agent.Core.dll: the name, one length byte, the value). A
+# zip built without the key, before it was added or with --unsigned-updates, is never uploaded.
+for zip in "$ARM_ZIP" "$X64_ZIP"; do
+  signed="$(unzip -p "$zip" "RX Vision.app/Contents/MacOS/RXVision.Agent.Core.dll" | LC_ALL=C grep -a -c 'RxvUpdateSigning.signed' || true)"
+  if [ "${signed:-0}" -lt 1 ]; then
+    echo "ERROR: the agent in $(basename "$zip") was built without the update-signing public key; an unsigned build is never published. Rebuild (without --skip-build)." >&2
+    exit 1
+  fi
+done
+
 sha256() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}';
   else sha256sum "$1" | awk '{print $1}'; fi
 }
+
+# Security review S-01: sign both zips with the owner's offline key before the SHA-256 is taken.
+if [ -n "${RXV_UPDATE_SIGNING_KEY:-}" ]; then
+  for zip in "$ARM_ZIP" "$X64_ZIP"; do
+    bash "$AGENT_DIR/build/signing/sign-update.sh" "$zip" mac "$VERSION" "$RXV_UPDATE_SIGNING_KEY"
+  done
+elif [ -f "$PUBLIC_KEY" ]; then
+  echo "ERROR: this build checks update signatures; set RXV_UPDATE_SIGNING_KEY to the signing key (build/signing/README.md)." >&2
+  exit 1
+fi
 
 ARM_SHA="$(sha256 "$ARM_ZIP")"
 X64_SHA="$(sha256 "$X64_ZIP")"

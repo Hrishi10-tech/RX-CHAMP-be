@@ -18,6 +18,11 @@
 #   --real            require the real app project
 #   --skip-app        reuse the existing payload/app.zip
 #   --no-upload       build only; do not touch S3
+#
+# Audit F-01: only an agent that checks update signatures is published. The script stops before
+# it builds when the owner's public key is not in the source, and it does not take
+# --unsigned-updates: a test build made with build-windows.sh --unsigned-updates stays on the
+# machine that made it.
 set -euo pipefail
 
 BUCKET="rx-timechamp"
@@ -32,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift 2;;
     --no-upload) NO_UPLOAD=1; shift;;
     --stub|--real|--skip-app) BUILD_ARGS+=("$1"); shift;;
+    --unsigned-updates) echo "ERROR: --unsigned-updates is refused here: an unsigned build is never published. For a test build use build/build-windows.sh --unsigned-updates." >&2; exit 2;;
     -c) BUILD_ARGS+=("$1" "$2"); shift 2;;
     *) echo "unknown option: $1" >&2; exit 2;;
   esac
@@ -59,9 +65,37 @@ if [[ "${VERSION#v}" != "$PROPS_VERSION" ]]; then
 fi
 VERSION="$PROPS_VERSION"
 
+# Audit F-01: without the owner's public key the agent would install any update the server
+# offers, so nothing is built or uploaded from here. (build-windows.sh then reads the payload
+# back and stops if the agent in it, a reused one included, was built without the key.)
+PUBLIC_KEY="$AGENT_ROOT/src/RXVision.Agent.Core/Update/update-public-key.pem"
+if [[ ! -f "$PUBLIC_KEY" ]]; then
+  cat >&2 <<EOF
+ERROR: the update-signing public key is not in the source, and an unsigned build is never published:
+  $PUBLIC_KEY
+Create the key once, on the owner's own computer:
+  build/signing/make-update-key.sh <a folder outside the repository>
+then copy update-public-key.pem from that folder to
+  src/RXVision.Agent.Core/Update/update-public-key.pem
+and commit it (the public half only; build/signing/README.md). Publish again with
+RXV_UPDATE_SIGNING_KEY set to the private half.
+EOF
+  exit 1
+fi
+
 # 1-5. Build the installer.
 bash "$SCRIPT_DIR/build-windows.sh" "${BUILD_ARGS[@]}"
 [[ -f "$OUT_EXE" ]] || { echo "ERROR: $OUT_EXE was not produced." >&2; exit 1; }
+
+# Security review S-01: sign the installer with the owner's offline key before the SHA-256 is
+# taken. A build that carries the public key installs only signed updates, so it is never
+# published unsigned.
+if [[ -n "${RXV_UPDATE_SIGNING_KEY:-}" ]]; then
+  bash "$SCRIPT_DIR/signing/sign-update.sh" "$OUT_EXE" windows "$VERSION" "$RXV_UPDATE_SIGNING_KEY"
+elif [[ -f "$PUBLIC_KEY" ]]; then
+  echo "ERROR: this build checks update signatures; set RXV_UPDATE_SIGNING_KEY to the signing key (build/signing/README.md)." >&2
+  exit 1
+fi
 
 SHA256="$(sha256sum "$OUT_EXE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$OUT_EXE" | cut -d' ' -f1)"
 

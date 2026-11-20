@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { OtherDevicesSignedOutEvent } from '@shared/events/other-devices-signed-out.event';
 import { UnauthorizedError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { PASSWORD_HASHER, PasswordHasher } from '@shared/security/password-hasher.port';
@@ -26,6 +28,7 @@ export class ChangePasswordUseCase {
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
     @Inject(REFRESH_TOKEN_REPOSITORY) private readonly refreshTokens: RefreshTokenRepository,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async execute(
@@ -51,14 +54,33 @@ export class ChangePasswordUseCase {
 
     user.setPasswordHash(await this.hasher.hash(next));
     await this.users.save(user);
-    if (signOutOtherDevices) await this.refreshTokens.revokeAllForUser(user.id);
+    if (signOutOtherDevices) {
+      await this.refreshTokens.revokeAllForUser(user.id);
+      // Refresh tokens alone leave the other devices their access tokens, socket
+      // tickets and the desktop app's enrollment token. Raising the epoch ends
+      // those too. Awaited here, not left to a subscriber: the token signed below
+      // must carry the new value.
+      await this.users.raiseAuthEpoch(user.id);
+    }
 
+    // This device's new session, minted under the current epoch, so it carries on
+    // with the cookies in this response and never sees a refusal.
     const accessToken = await this.tokens.signAccessToken({
       sub: user.id,
       email: user.email,
       role: user.role,
+      ep: (await this.users.authEpochOf(user.id)) ?? 0,
     });
     const { token: refreshToken } = await this.refreshTokens.issue(user.id, meta);
+
+    // Last, once this device's new session exists: live sockets and phone pushes
+    // follow this event.
+    if (signOutOtherDevices) {
+      await this.events.publish(
+        OtherDevicesSignedOutEvent.eventName,
+        new OtherDevicesSignedOutEvent(user.id),
+      );
+    }
     return { accessToken, refreshToken };
   }
 }

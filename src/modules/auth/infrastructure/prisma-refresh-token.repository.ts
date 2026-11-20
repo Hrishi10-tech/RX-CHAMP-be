@@ -19,6 +19,12 @@ import {
  */
 const REFRESH_REUSE_GRACE_MS = 30_000;
 
+/**
+ * How far a rotation chain is followed to find its newest token. A real race is
+ * one or two links long; a chain longer than this inside the grace is refused.
+ */
+const MAX_CHAIN_HOPS = 20;
+
 @Injectable()
 export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
   constructor(
@@ -131,6 +137,12 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
    * rotated moments ago belongs to the loser of a concurrent refresh, not to someone
    * replaying a stolen one.
    *
+   * That holds only while the session it was rotated into is still alive. If the
+   * newest token of the chain was revoked since (a logout, a sign-out everywhere, a
+   * block) or has expired, the session is over and the old token buys nothing:
+   * otherwise a token rotated just before a sign-out would mint an access token
+   * after it.
+   *
    * The loser is handed the very token the winner was given, not one of its own.
    * Minting a second was the whole problem: each race left an extra live session
    * behind, every session refreshes on its own timer, and more sessions raced more
@@ -150,6 +162,7 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
       now.getTime() - current.revokedAt.getTime() <= REFRESH_REUSE_GRACE_MS;
 
     if (!rotatedJustNow) return null;
+    if (!(await this.chainStillLive(current.replacedById, now))) return null;
 
     const replayed = await this.cache.get<{ token: string; expiresAt: string }>(
       this.replayKey(tokenHash),
@@ -168,6 +181,28 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
     // than the rule.
     const issued = await this.issue(current.userId, meta);
     return { userId: current.userId, token: issued.token, expiresAt: issued.expiresAt };
+  }
+
+  /**
+   * Follows `replacedById` from a successor to the newest token of its chain and
+   * says whether that one can still be used. A successor that was itself rotated
+   * is followed, so the losers of back-to-back races are still tolerated. Revoked
+   * with no successor is the mark of logout and revokeAllForUser; for the few
+   * milliseconds a rotation is in flight it is also what the token being rotated
+   * looks like, and refusing then fails closed.
+   */
+  private async chainStillLive(successorId: string | null, now: Date): Promise<boolean> {
+    let id = successorId;
+    for (let hop = 0; id !== null && hop < MAX_CHAIN_HOPS; hop += 1) {
+      const row = await this.prisma.refreshToken.findUnique({
+        where: { id },
+        select: { revokedAt: true, replacedById: true, expiresAt: true },
+      });
+      if (!row) return false;
+      if (row.revokedAt === null) return row.expiresAt.getTime() > now.getTime();
+      id = row.replacedById;
+    }
+    return false;
   }
 
   async purgeDead(cutoff: Date): Promise<number> {
@@ -204,9 +239,36 @@ export class PrismaRefreshTokenRepository implements RefreshTokenRepository {
   }
 
   async revoke(rawToken: string): Promise<void> {
+    const tokenHash = this.hash(rawToken);
     await this.prisma.refreshToken.updateMany({
-      where: { tokenHash: this.hash(rawToken), revokedAt: null },
+      where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    await this.forgetReplayOf(tokenHash);
+  }
+
+  /**
+   * Logout: the token just revoked may still be waiting in the replay cache under
+   * the token it replaced. tolerateRace already refuses that chain; this stops a
+   * signed-out refresh token sitting in memory for the rest of the grace. Best
+   * effort, like the write that put it there.
+   */
+  private async forgetReplayOf(tokenHash: string): Promise<void> {
+    try {
+      const row = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash },
+        select: { id: true },
+      });
+      if (!row) return;
+      const predecessors = await this.prisma.refreshToken.findMany({
+        where: { replacedById: row.id },
+        select: { tokenHash: true },
+      });
+      for (const predecessor of predecessors) {
+        await this.cache.del(this.replayKey(predecessor.tokenHash));
+      }
+    } catch {
+      /* the chain check in tolerateRace is what refuses the replay */
+    }
   }
 }

@@ -18,7 +18,7 @@ import { liveUpdateFor } from '../application/activity-redaction';
  *  - Every client joins a personal room `user:<id>` and receives `activity:me`
  *    updates for their own dashboard (status + current app + running totals).
  *  - A manager additionally receives `activity:update` for each of their reports
- *    in their `manager:<id>` room (the live team board).
+ *    in their `manager:<id>` room (the live team board). Staff never join it.
  */
 @WebSocketGateway({
   namespace: '/activity',

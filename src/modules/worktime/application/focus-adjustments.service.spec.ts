@@ -277,6 +277,16 @@ describe('FocusAdjustmentsService.void', () => {
     await failsWith(service.void(SM, 'a1', NOW), 409, 'ALREADY_VOID');
   });
 
+  it('3.6 (F-14): never undoes an adjustment to its own day', async () => {
+    const { service, repo, events } = setup();
+    // Made before this person was given the role.
+    repo.findById.mockResolvedValue(record({ userId: 'sm', deltaSec: -45 * 60, createdById: 'x' }));
+    const err = await failsWith(service.void(me(Role.SUPER_MANAGER, 'sm'), 'a1', NOW), 403);
+    expect(err.message).toBe('You cannot undo an adjustment to your own focus time.');
+    expect(repo.void).not.toHaveBeenCalled();
+    expect(events.publish).not.toHaveBeenCalled();
+  });
+
   it('is the Super Manager’s alone and 404s an unknown id', async () => {
     const { service } = setup();
     await failsWith(service.void(me(Role.SUPER_ADMIN), 'a1', NOW), 403);

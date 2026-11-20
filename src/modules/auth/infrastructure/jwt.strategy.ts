@@ -4,9 +4,8 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
-import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { AccessTokenPayload } from '@shared/security/token.service.port';
-import { AUTH_USER_READER, AuthUserReader } from '../domain/auth-user-reader.port';
+import { AccessTokenPayload, epochOf } from '@shared/security/token.service.port';
+import { AUTH_USER_READER, AuthUserReader, AuthUserRecord } from '../domain/auth-user-reader.port';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -27,8 +26,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
   async validate(
     req: Request,
-    payload: AccessTokenPayload & { typ?: string },
-  ): Promise<AuthenticatedUser> {
+    payload: Omit<AccessTokenPayload, 'ep'> & { ep?: unknown; typ?: string },
+  ): Promise<AuthUserRecord> {
     // A socket ticket is signed with this same secret, and it is readable by
     // JavaScript — unlike the httpOnly access cookie. Accepting one here would hand
     // anything that scraped a ticket a working API credential, which is exactly what
@@ -50,6 +49,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     );
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedError('Account is no longer active');
+    }
+    // Minted before the person's sessions were ended (sign out everywhere, a role
+    // or manager change, their own sign-out of other devices): no longer a
+    // credential, however long it has left. The client refreshes, and a refresh
+    // token that survived the change gets a token under the new epoch.
+    if (epochOf(payload) !== user.authEpoch) {
+      throw new UnauthorizedError();
     }
     return user;
   }

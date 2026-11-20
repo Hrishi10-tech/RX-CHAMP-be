@@ -85,6 +85,47 @@ $outExe    = Join-Path $agent 'dist\windows\RXChampAgent.exe'
 
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 
+# Audit F-01: without the owner's public key the agent would install any update the
+# server offers, so nothing is built or uploaded from here. This script never passes
+# RxvAllowUnsignedUpdates: a test build is made with agent/build/build-windows.sh
+# --unsigned-updates and stays on the test machine.
+$updateKey = Join-Path $agent 'src\RXVision.Agent.Core\Update\update-public-key.pem'
+if (-not (Test-Path $updateKey)) {
+  throw @"
+The update-signing public key is not in the source, and an unsigned build is never published:
+  $updateKey
+Create the key once, on the owner's own computer:
+  agent/build/signing/make-update-key.sh <a folder outside the repository>
+then copy update-public-key.pem from that folder to
+  agent/src/RXVision.Agent.Core/Update/update-public-key.pem
+and commit it (the public half only; agent/build/signing/README.md). Publish again with
+RXV_UPDATE_SIGNING_KEY set to the private half.
+"@
+}
+
+# What is about to be wrapped in the installer says itself whether it checks update
+# signatures: the build bakes RxvUpdateSigning into RXVision.Agent.Core.dll. Read it
+# back, so an agent built without the key, a reused payload included, is never uploaded.
+function Assert-PayloadChecksSignatures($zipPath) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+  try {
+    $entry = $zip.Entries | Where-Object { $_.FullName -eq 'RXVision.Agent.Core.dll' } | Select-Object -First 1
+    if (-not $entry) { throw "No RXVision.Agent.Core.dll in $zipPath." }
+    $stream = $entry.Open()
+    try {
+      $buffer = New-Object System.IO.MemoryStream
+      $stream.CopyTo($buffer)
+      # Latin-1 keeps every byte as one character, so the text search is a byte search.
+      $text = [System.Text.Encoding]::GetEncoding(28591).GetString($buffer.ToArray())
+    } finally { $stream.Dispose() }
+  } finally { $zip.Dispose() }
+  # The fact as the compiler stores it: the name, one length byte, the value.
+  if ($text -notmatch 'RxvUpdateSigning.signed') {
+    throw "The agent in $zipPath was built without the update-signing public key (an older build or a test build). Run this script again without -SkipAgentBuild. Nothing was uploaded."
+  }
+}
+
 # 1. Publish the self-contained Avalonia agent ----------------------------------
 if (-not $SkipAgentBuild) {
   Step 'Publishing the Avalonia agent (self-contained, win-x64)'
@@ -126,6 +167,7 @@ if (-not $SkipAgentBuild) {
   Step 'Skipping agent build; reusing existing payload/app.zip'
   if (-not (Test-Path $payload)) { throw "No existing payload at $payload" }
 }
+Assert-PayloadChecksSignatures $payload
 
 # 3. Build the single-file installer exe ----------------------------------------
 Step 'Publishing installer exe'

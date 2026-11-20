@@ -1,9 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { RequestClock } from '@shared/tenancy';
 import { addDaysToKey, dateKeyInZone, time12InZone } from '@shared/utils/timezone';
+import { ReasonPresetsService } from '@modules/settings/application/reason-presets.service';
+import type { PresetKind } from '@modules/settings/domain/reason-presets';
 import {
   BREAK_RECORD_REPOSITORY,
   BreakRecordRepository,
@@ -74,7 +76,15 @@ export class MyBreaksUseCase {
     private readonly presence: PresenceBridge,
     private readonly events: BreakEvents,
     @Inject(WORKED_DAYS_READER) private readonly worked?: WorkedDaysReader,
+    // 3.2: a preset picked as-is counts as a reason whatever its length.
+    @Optional() private readonly presets?: ReasonPresetsService,
   ) {}
+
+  /** Long enough, or one of the kind's presets (3.2). */
+  private async enough(kind: PresetKind, text: string | null, minChars: number): Promise<boolean> {
+    if ((text?.length ?? 0) >= minChars) return true;
+    return this.presets ? this.presets.accepts(kind, text, minChars) : false;
+  }
 
   private async person(id: string): Promise<ShiftPerson> {
     const p = await this.people.findById(id);
@@ -249,7 +259,8 @@ export class MyBreaksUseCase {
     // Nobody reviews a Super Admin's breaks, so there is no one to explain to.
     const reasonRequired = judged.reasonRequired && hasReviewer(person);
     const reason = cleanReason(dto.reason);
-    if (reasonRequired && (reason?.length ?? 0) < shift.reasonMinChars) {
+    const presetKind: PresetKind = judged.timing === 'LATE' ? 'BREAK_LATE' : 'BREAK_EARLY';
+    if (reasonRequired && !(await this.enough(presetKind, reason, shift.reasonMinChars))) {
       const when = judged.timing === 'LATE' ? 'late' : 'early';
       throw new UnprocessableError(
         `You're starting the ${lower(dto.kind)} ${judged.minutesOff} min ${when}. ` +
@@ -536,7 +547,12 @@ export class MyBreaksUseCase {
     const overGrace = overrunSec > graceSec;
     const asks = overGrace && (dto.askToCount ?? !!reason);
 
-    if (asks && dto.askToCount === true && reviewed && (reason?.length ?? 0) < minChars) {
+    if (
+      asks &&
+      dto.askToCount === true &&
+      reviewed &&
+      !(await this.enough('BREAK_OVERRUN', reason, minChars))
+    ) {
       const overMin = Math.max(1, Math.round(overrunSec / 60));
       throw new UnprocessableError(
         `Say why you were back ${overMin} min late (at least ${minChars} characters), ` +

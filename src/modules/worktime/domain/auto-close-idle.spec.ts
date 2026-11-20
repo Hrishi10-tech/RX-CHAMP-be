@@ -64,7 +64,7 @@ describe('realLastInput', () => {
     ).toEqual(at('19:35'));
   });
 
-  it('nothing after (PC switched off): the last active sample stands its own span', () => {
+  it('nothing after (PC switched off): the last sample that saw input', () => {
     expect(
       realLastInput({
         lastActiveAt: at('19:34'),
@@ -74,7 +74,20 @@ describe('realLastInput', () => {
         idleThresholdSec: 300,
         now,
       }),
-    ).toEqual(at('19:35'));
+    ).toEqual(at('19:34'));
+  });
+
+  it('a lock long after the last sample: at most one sample after it', () => {
+    expect(
+      realLastInput({
+        lastActiveAt: at('19:34'),
+        lastActiveSec: 60,
+        nextIdleAt: at('20:10'),
+        nextIdleLocked: true,
+        idleThresholdSec: 300,
+        now,
+      }),
+    ).toEqual(new Date(at('19:34').getTime() + 150_000));
   });
 
   it('no active sample at all: unknown', () => {

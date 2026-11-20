@@ -1,5 +1,6 @@
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { reasonAccepted } from '@modules/settings/domain/reason-presets';
 import { lateStartDetail } from '../domain/attendance';
 import { LateStartService } from './late-start.service';
 
@@ -56,7 +57,13 @@ function setup(
       requireLateStartReason: opts.require ?? true,
     }),
   };
-  const presets = { get: jest.fn().mockResolvedValue({ LATE_DAY_START: ['Traffic'] }) };
+  const list = { LATE_DAY_START: ['Traffic'] } as Record<string, string[]>;
+  const presets = {
+    get: jest.fn().mockResolvedValue(list),
+    accepts: jest.fn(async (kind: string, text: string | null, min: number) =>
+      reasonAccepted(text, min, list[kind]),
+    ),
+  };
   const events = { publish: jest.fn(async () => undefined) };
   // 4.0: the day plan (organisation calendar and settings) decides the working day.
   const plans = {
@@ -98,6 +105,20 @@ describe('LateStartService.gate (fix 1)', () => {
       details: expect.objectContaining({ minutesLate: 25, graceMin: 10, presets: ['Traffic'] }),
     });
     await expect(svc.gate(me(), ist('10:25'), 'Too short', CAN_ASK)).rejects.toMatchObject({
+      code: 'LATE_REASON_REQUIRED',
+    });
+  });
+
+  it('takes a preset as it is, even under the minimum length (3.2)', async () => {
+    const { svc } = setup();
+    // "Traffic" is 7 characters against a 10-character minimum, but it is a preset.
+    expect(await svc.gate(me(), ist('10:25'), 'Traffic', CAN_ASK)).toMatchObject({
+      reason: 'Traffic',
+    });
+    expect(await svc.gate(me(), ist('10:25'), ' traffic ', CAN_ASK)).toMatchObject({
+      reason: 'traffic',
+    });
+    await expect(svc.gate(me(), ist('10:25'), 'Traffic!', CAN_ASK)).rejects.toMatchObject({
       code: 'LATE_REASON_REQUIRED',
     });
   });
@@ -163,6 +184,12 @@ describe('LateStartService.addReason (portal)', () => {
       status: 422,
       code: 'REASON_REQUIRED',
     });
+  });
+
+  it('takes a preset in the portal too', async () => {
+    const { svc } = setup({ sessions: [{ id: 's1', startedAt: ist('10:25'), lateReason: null }] });
+    const r = await svc.addReason(me(), { reason: 'Traffic' }, ist('12:00'));
+    expect(r.lateStart).toMatchObject({ reason: 'Traffic', needsReason: false });
   });
 });
 

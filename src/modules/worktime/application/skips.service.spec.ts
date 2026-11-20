@@ -1,3 +1,4 @@
+import { reasonAccepted } from '@modules/settings/domain/reason-presets';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { NoticeEvent } from '@shared/events/notice.event';
@@ -147,7 +148,7 @@ const workSession = (from: string, to: string | null, userId = 'staff'): WorkSes
   source: 'AGENT',
 });
 
-function setup(shift: ShiftRecord = general) {
+function setup(shift: ShiftRecord = general, presetLists?: Record<string, string[]>) {
   const shiftsRepo = {
     list: jest.fn().mockResolvedValue([shift]),
     listAssignmentsFor: jest.fn().mockResolvedValue([]),
@@ -201,6 +202,12 @@ function setup(shift: ShiftRecord = general) {
     sessions as never,
     breakEvents as never,
     presence as never,
+    (presetLists
+      ? {
+          accepts: async (kind: string, text: string | null, min: number) =>
+            reasonAccepted(text, min, presetLists[kind]),
+        }
+      : undefined) as never,
   );
   const notices = () => events.publish.mock.calls.map(([, p]) => p as NoticeEvent);
   return { svc, records, skipsRepo, sessionsRepo, events, presence, breakEvents, notices };
@@ -409,6 +416,15 @@ describe('SkipsService.skip', () => {
       svc.skip(staff, { kind: 'MORNING', reason: ' too   short ' }, 'AGENT_31', ist('11:02')),
     ).rejects.toMatchObject({ status: 422, code: 'REASON_REQUIRED', details: { minChars: 10 } });
     expect(skipsRepo.createSkip).not.toHaveBeenCalled();
+  });
+
+  it('takes a short preset as the reason (3.2)', async () => {
+    const { svc, skipsRepo } = setup(general, { BREAK_SKIP: ['Deadline'] });
+    await svc.skip(staff, { kind: 'MORNING', reason: 'Deadline' }, 'AGENT_31', ist('11:02'));
+    expect(skipsRepo.createSkip.mock.calls[0][0]).toMatchObject({ reason: 'Deadline' });
+    await expect(
+      svc.skip(staff, { kind: 'MORNING', reason: 'Deadlines' }, 'AGENT_31', ist('11:02')),
+    ).rejects.toMatchObject({ status: 422, code: 'REASON_REQUIRED' });
   });
 
   it('turns a refusal from the transaction into the matching 409', async () => {

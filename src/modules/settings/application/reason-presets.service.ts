@@ -10,6 +10,7 @@ import {
   presetsFromStored,
   REASON_PRESETS_KEY,
   ReasonPresets,
+  reasonAccepted,
 } from '../domain/reason-presets';
 import { SETTINGS_STORE, SettingsStore } from '../domain/settings.store';
 
@@ -35,6 +36,24 @@ export class ReasonPresetsService {
     const value = presetsFromStored(await this.store.read(REASON_PRESETS_KEY));
     this.cached = { value, at: now };
     return value;
+  }
+
+  /**
+   * Whether `text` is enough for a reason of `kind`: `minChars` long, or one of
+   * that kind's presets picked as it is. If the presets cannot be read, length decides.
+   */
+  async accepts(
+    kind: PresetKind,
+    text: string | null | undefined,
+    minChars: number,
+  ): Promise<boolean> {
+    if ((text ?? '').trim().length >= minChars) return true;
+    try {
+      return reasonAccepted(text, minChars, (await this.get())[kind]);
+    } catch (err) {
+      this.logger.warn(`reason presets unreadable: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   async view(): Promise<ReasonPresetsView> {

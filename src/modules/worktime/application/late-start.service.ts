@@ -122,7 +122,8 @@ export class LateStartService {
         'REASON_TOO_LONG',
       ).withDetails({ maxChars: LATE_REASON_MAX_CHARS });
     }
-    if (caps.lateStartReason && late.reasonRequired && (reason?.length ?? 0) < late.minChars) {
+    const enough = await this.presets.accepts('LATE_DAY_START', reason, late.minChars);
+    if (caps.lateStartReason && late.reasonRequired && !enough) {
       const presets = await this.presets.get();
       throw new UnprocessableError(
         `You're starting ${late.minutes} minutes after your shift start (${hmInZone(late.shiftStart, appTimezone())}). ` +
@@ -138,7 +139,7 @@ export class LateStartService {
         presets: presets.LATE_DAY_START,
       });
     }
-    return { late, reason: reason && reason.length >= late.minChars ? reason : null };
+    return { late, reason: reason && enough ? reason : null };
   }
 
   /**
@@ -208,7 +209,7 @@ export class LateStartService {
     }
     const minChars = shift?.reasonMinChars ?? DEFAULT_REASON_MIN_CHARS;
     const reason = clean(dto.reason);
-    if ((reason?.length ?? 0) < minChars) {
+    if (!reason || !(await this.presets.accepts('LATE_DAY_START', reason, minChars))) {
       throw new UnprocessableError(
         `Say why you started late (at least ${minChars} characters).`,
         'REASON_REQUIRED',

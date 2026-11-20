@@ -40,10 +40,12 @@ export function idleCloseDue(input: {
 }
 
 /**
- * The real last input from the samples around it: the agent only flags idle once
- * its threshold has passed, so when an idle (not locked) sample follows the last
- * active one, the input stopped one threshold before that flag; a lock is the
- * instant work stopped; with nothing after, the last active sample's own span.
+ * The real last input from the samples around it. An active sample at t says the
+ * keyboard or mouse was used within one idle threshold before t, so with nothing
+ * after it the last input is taken as t. When an idle flag (not a lock) follows at
+ * T, nothing was touched for one threshold before T: the last input is T minus the
+ * threshold, but never after t nor more than a threshold before it. A lock is the
+ * moment work stopped (pressing Win+L is input), at most one sample after t.
  */
 export function realLastInput(input: {
   lastActiveAt: Date | null;
@@ -54,15 +56,12 @@ export function realLastInput(input: {
   now: Date;
 }): Date | null {
   if (!input.lastActiveAt) return null;
-  const at = input.lastActiveAt.getTime();
-  const own = at + Math.max(0, Math.min(input.lastActiveSec, 150)) * 1000;
-  let end = Math.min(own, input.now.getTime());
-  if (input.nextIdleAt) {
-    const flag = input.nextIdleAt.getTime();
-    end = Math.min(end, input.nextIdleLocked ? flag : flag - input.idleThresholdSec * 1000);
-  }
-  // An active sample means input within one threshold before it.
-  return new Date(Math.max(end, at - input.idleThresholdSec * 1000));
+  const t = Math.min(input.lastActiveAt.getTime(), input.now.getTime());
+  if (!input.nextIdleAt) return new Date(t);
+  const flag = input.nextIdleAt.getTime();
+  if (input.nextIdleLocked) return new Date(Math.max(t, Math.min(flag, t + 150_000)));
+  const threshold = input.idleThresholdSec * 1000;
+  return new Date(Math.max(t - threshold, Math.min(t, flag - threshold)));
 }
 
 export function latestEndOf(input: {

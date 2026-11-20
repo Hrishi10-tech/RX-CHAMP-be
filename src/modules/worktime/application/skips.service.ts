@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnprocessableError,
+} from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { addDaysToKey, appTimezone, dateKeyInZone, time12InZone } from '@shared/utils/timezone';
+import { ReasonPresetsService } from '@modules/settings/application/reason-presets.service';
+import type { PresetKind } from '@modules/settings/domain/reason-presets';
 import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.policy';
 import { BreakDay, BreakDayService } from '@modules/shifts/application/break-day.service';
 import { BreakEvents, personName } from '@modules/shifts/application/break-events.service';
@@ -101,7 +108,15 @@ export class SkipsService {
     private readonly sessions: WorkSessionsService,
     private readonly breakEvents: BreakEvents,
     private readonly presence: PresenceBridge,
+    // 3.2: a preset picked as-is counts as a reason whatever its length.
+    @Optional() private readonly presets?: ReasonPresetsService,
   ) {}
+
+  /** Long enough, or one of the kind's presets (3.2). */
+  private async enough(kind: PresetKind, text: string | null, minChars: number): Promise<boolean> {
+    if ((text?.length ?? 0) >= minChars) return true;
+    return this.presets ? this.presets.accepts(kind, text, minChars) : false;
+  }
 
   // ---- Manual skip ---------------------------------------------------------------
 
@@ -182,7 +197,7 @@ export class SkipsService {
     const reviewed =
       person.role !== 'SUPER_ADMIN' && person.role !== 'SUPER_MANAGER' && person.role !== 'ADMIN';
     const reason = cleanReason(dto.reason);
-    if (reviewed && (reason?.length ?? 0) < shift.reasonMinChars) {
+    if (reviewed && !(await this.enough('BREAK_SKIP', reason, shift.reasonMinChars))) {
       throw new UnprocessableError(
         `Say why you are skipping the ${lower(dto.kind)} (at least ${shift.reasonMinChars} characters).`,
         'REASON_REQUIRED',
@@ -253,7 +268,7 @@ export class SkipsService {
     }
     const minChars = minCharsFor(record, await this.shiftMap());
     const text = cleanReason(comment);
-    if ((text?.length ?? 0) < minChars) {
+    if (!(await this.enough('SKIP_COMMENT', text, minChars))) {
       throw new UnprocessableError(
         `Add a comment of at least ${minChars} characters.`,
         'REASON_REQUIRED',
@@ -315,7 +330,8 @@ export class SkipsService {
       if (record.reason) continue;
       const minChars = minCharsFor(record, shifts);
       const text = cleanReason(c.comment) ?? '';
-      if (text.length < minChars) throw problem('TOO_SHORT', minChars);
+      if (!(await this.enough('SKIP_COMMENT', text, minChars)))
+        throw problem('TOO_SHORT', minChars);
       if (text.length > REASON_MAX_CHARS) throw problem('TOO_LONG');
       out.push({ id: record.id, text });
     }

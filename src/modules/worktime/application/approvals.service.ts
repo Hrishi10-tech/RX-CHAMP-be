@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ConflictError,
   ForbiddenError,
@@ -16,6 +16,7 @@ import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@sha
 import { monthOf } from '@shared/database/month-lock';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { assertApprover } from '@modules/shifts/application/approval-scope';
+import { ReasonPresetsService } from '@modules/settings/application/reason-presets.service';
 import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.policy';
 import { pendingClock } from '@modules/shifts/infrastructure/prisma-break-record.repository';
 import { personName } from '@modules/shifts/application/break-events.service';
@@ -138,6 +139,8 @@ export class ApprovalsService {
     private readonly meetingService: MeetingsService,
     private readonly settings: AppSettingsService,
     @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
+    // 3.2: a decision-note preset picked as-is is enough for a rejection.
+    @Optional() private readonly presets?: ReasonPresetsService,
   ) {}
 
   /**
@@ -347,7 +350,9 @@ export class ApprovalsService {
     now: Date,
   ): Promise<ApprovalItemView> {
     const clean = cleanReason(note);
-    if (!clean || clean.length < 3) {
+    const enough =
+      !!clean && (clean.length >= 3 || !!(await this.presets?.accepts('DECISION_NOTE', clean, 3)));
+    if (!enough) {
       throw new ValidationError(
         'Say why it was rejected (3 characters or more). The person sees this note.',
         'NOTE_REQUIRED',

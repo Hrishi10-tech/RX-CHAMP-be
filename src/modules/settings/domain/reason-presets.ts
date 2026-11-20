@@ -160,3 +160,33 @@ export function applyPresetsPatch(
   }
   return { ok: true, value: next, changed };
 }
+
+/** A text as presets are compared: trimmed, single spaces, case ignored. */
+function presetKey(text: string): string {
+  return text.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Whether `text` is one of `list`, picked as offered (case and spacing aside). */
+export function isPresetText(
+  list: readonly string[] | null | undefined,
+  text: string | null | undefined,
+): boolean {
+  if (!list?.length || !text) return false;
+  const key = presetKey(text);
+  return key.length > 0 && list.some((p) => presetKey(p) === key);
+}
+
+/**
+ * Whether a reason is enough: at least `minChars` long, or one of the presets the
+ * Super Admin offers for it, picked as it is. A preset is an answer the
+ * organisation chose, so a short one ("Traffic") counts even under a 10-character
+ * minimum.
+ */
+export function reasonAccepted(
+  text: string | null | undefined,
+  minChars: number,
+  presets?: readonly string[] | null,
+): boolean {
+  const t = (text ?? '').trim();
+  return t.length >= minChars || isPresetText(presets, t);
+}

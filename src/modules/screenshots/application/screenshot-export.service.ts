@@ -420,15 +420,21 @@ export class ScreenshotExportService implements OnApplicationBootstrap, OnModule
     const due = archiveDue(oldest.month);
     const label = monthName(oldest.month);
     const dueText = dayLabel(due.dueBy);
+    // What is left to do. Screenshots that arrived after the archive started are not in
+    // it, so once the rest is deleted they need an archive of their own.
     let step: ArchiveNudgeView['step'] = 'ARCHIVE';
     if (state.archive && !state.archive.downloadedAt) step = 'DOWNLOAD';
-    else if (state.archive) step = 'DELETE';
+    else if (state.archive && state.deletable > 0) step = 'DELETE';
+    const leftOver = step === 'ARCHIVE' && !!state.archive;
     const message =
-      step === 'ARCHIVE'
-        ? `${label} screenshots are waiting: create the archive, download it, then delete the month (due by ${dueText}).`
-        : step === 'DOWNLOAD'
-          ? `The ${label} archive is ready. Download it, then delete the month (due by ${dueText}).`
-          : `${label} is archived. Delete its screenshots to free storage (due by ${dueText}).`;
+      step === 'DOWNLOAD'
+        ? `The ${label} archive is ready. Download it, then delete the month (due by ${dueText}).`
+        : step === 'DELETE'
+          ? `${label} is archived. Delete its screenshots to free storage (due by ${dueText}).`
+          : leftOver
+            ? `${label}: ${oldest.count} screenshot${oldest.count === 1 ? '' : 's'} arrived after its archive. ` +
+              `Create a new archive, download it, then delete them (due by ${dueText}).`
+            : `${label} screenshots are waiting: create the archive, download it, then delete the month (due by ${dueText}).`;
     return {
       month: oldest.month,
       label,

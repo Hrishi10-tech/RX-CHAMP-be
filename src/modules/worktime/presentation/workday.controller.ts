@@ -29,6 +29,7 @@ import { SkipsNeedingCommentQuery } from '@modules/shifts/application/skips-need
 import { MyBreaksUseCase } from '@modules/shifts/application/use-cases/my-breaks.use-case';
 import { BreakDayView } from '@modules/shifts/application/shifts.types';
 import { DEFAULT_REASON_MIN_CHARS } from '@modules/shifts/domain/shift.types';
+import { ReasonPresetsService } from '@modules/settings/application/reason-presets.service';
 import { agentGeneration } from '../domain/agent-generation';
 import {
   LateReasonDto,
@@ -57,6 +58,16 @@ export class WorkdayController {
     private readonly sessions: WorkSessionsService,
     private readonly lateStart: LateStartService,
   ) {}
+
+  @Get('guide')
+  @ApiOperation({
+    summary:
+      "How RX Vision works (3.2): the staff guide with this organisation's numbers filled in " +
+      '(the paid break buffer, the late-start grace, ring times). The agent Instructions screen reads it.',
+  })
+  async guide(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.workday.guide(me, new Date()));
+  }
 
   @Post('me/late-reason')
   @HttpCode(200)
@@ -117,6 +128,7 @@ export class WorkdayBreaksController {
     private readonly skips: SkipsService,
     private readonly skipsQuery: SkipsNeedingCommentQuery,
     private readonly sessions: WorkSessionsService,
+    private readonly presets: ReasonPresetsService,
   ) {}
 
   @Get('me/today')
@@ -134,6 +146,7 @@ export class WorkdayBreaksController {
       ...base,
       skipsNeedingComment: await this.skipsQuery.forUser(me.id, now),
       reasonMinChars: base.shift?.rules.reasonMinChars ?? DEFAULT_REASON_MIN_CHARS,
+      reasonPresets: await this.presets.get(),
     };
     return envelope(view);
   }

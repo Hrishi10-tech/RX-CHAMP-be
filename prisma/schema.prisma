@@ -789,6 +789,7 @@ model Screenshot {
   @@index([deviceId])
   @@index([userId])
   @@index([takenAt])
+  @@index([userId, takenAt])
   @@map("screenshots")
 }
 
@@ -1007,4 +1008,72 @@ model AgentEvent {
   @@index([receivedAt])
   @@index([userId, eventAt])
   @@map("agent_events")
+}
+
+// What a screenshot export job makes (3.2).
+//   PERSON_REPORT  one person's screenshots for a day, days, a month or a time window: one PDF
+//   MONTH_ARCHIVE  every screenshot of a month: a zip of Month/Department/Employee/<day>.pdf
+//   MONTH_PURGE    deletes a month's screenshots that a complete post-month archive holds
+enum ScreenshotExportKind {
+  PERSON_REPORT
+  MONTH_ARCHIVE
+  MONTH_PURGE
+}
+
+enum ScreenshotExportStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+/// A screenshot report, monthly archive or monthly deletion, run in the background
+/// while the portal shows its progress (3.2). Closing the progress window cancels it.
+model ScreenshotExport {
+  id              String                 @id @default(uuid()) @db.Uuid
+  kind            ScreenshotExportKind
+  status          ScreenshotExportStatus @default(QUEUED)
+  requestedById   String                 @map("requested_by_id") @db.Uuid
+  /// 4.0: the organisation the job belongs to; archives and deletions cover only its people.
+  companyId       String?                @map("company_id") @db.Uuid
+  /// PERSON_REPORT: whose screenshots.
+  userId          String?                @map("user_id") @db.Uuid
+  /// MONTH_ARCHIVE and MONTH_PURGE: "YYYY-MM".
+  month           String?
+  /// PERSON_REPORT: the days (inclusive) and an optional time of day window "HH:MM".
+  fromDate        String?                @map("from_date")
+  toDate          String?                @map("to_date")
+  fromTime        String?                @map("from_time")
+  toTime          String?                @map("to_time")
+  /// MONTH_PURGE: the archive whose contents it deletes.
+  archiveId       String?                @map("archive_id") @db.Uuid
+  total           Int                    @default(0)
+  done            Int                    @default(0)
+  /// Screenshots whose image could not be read (shown as missing in the PDF).
+  missing         Int                    @default(0)
+  bytes           BigInt                 @default(0)
+  storageKey      String?                @map("storage_key")
+  fileName        String?                @map("file_name")
+  error           String?
+  /// MONTH_ARCHIVE: finished with every screenshot of the month uploaded before it started.
+  complete        Boolean                @default(false)
+  /// MONTH_ARCHIVE: screenshots uploaded before this instant are inside it.
+  coveredUntil    DateTime?              @map("covered_until")
+  cancelRequested Boolean                @default(false) @map("cancel_requested")
+  /// The portal's last progress poll; a job nobody watches any more is cancelled.
+  lastSeenAt      DateTime               @default(now()) @map("last_seen_at")
+  startedAt       DateTime?              @map("started_at")
+  finishedAt      DateTime?              @map("finished_at")
+  downloadedAt    DateTime?              @map("downloaded_at")
+  /// The file is removed from storage after this (the record stays).
+  expiresAt       DateTime?              @map("expires_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  @@index([companyId, kind, month, status])
+  @@index([kind, month, status])
+  @@index([status, createdAt])
+  @@index([requestedById, createdAt])
+  @@map("screenshot_exports")
 }

@@ -16,13 +16,21 @@ import { RequestCaptureUseCase } from './application/use-cases/request-capture.u
 import { ArchiveScreenshotsUseCase } from './application/use-cases/archive-screenshots.use-case';
 import { ExportScreenshotsUseCase } from './application/use-cases/export-screenshots.use-case';
 import { ScreenshotsController } from './presentation/screenshots.controller';
+import { ScreenshotExportsController } from './presentation/screenshot-exports.controller';
+import { SCREENSHOT_EXPORT_REPOSITORY } from './domain/screenshot-export.repository';
+import { PrismaScreenshotExportRepository } from './infrastructure/prisma-screenshot-export.repository';
+import { ScreenshotExportService } from './application/screenshot-export.service';
 import { ScreenshotsGateway } from './presentation/screenshots.gateway';
 
 @Module({
   // AgentContactService: refused uploads are recorded against the person (3.3).
   imports: [AgentHealthModule],
-  controllers: [ScreenshotsController],
+  // The exports controller first: its /screenshots/exports and /screenshots/archives
+  // routes must win over anything more general.
+  controllers: [ScreenshotExportsController, ScreenshotsController],
   providers: [
+    { provide: SCREENSHOT_EXPORT_REPOSITORY, useClass: PrismaScreenshotExportRepository },
+    ScreenshotExportService,
     { provide: SCREENSHOT_REPOSITORY, useClass: PrismaScreenshotRepository },
     { provide: SCREENSHOT_ACCESS_READER, useClass: PrismaScreenshotAccessReader },
     { provide: DAY_END_READER, useClass: PrismaDayEndReader },

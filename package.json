@@ -36,6 +36,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.967.0",
     "@aws-sdk/client-textract": "^3.967.0",
+    "@aws-sdk/lib-storage": "^3.1173.0",
     "@aws-sdk/s3-presigned-post": "^3.967.0",
     "@aws-sdk/s3-request-presigner": "^3.967.0",
     "@nestjs/common": "^10.4.4",
@@ -62,6 +63,7 @@
     "nestjs-pino": "^4.1.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pdfkit": "^0.17.2",
     "pino": "^10.3.1",
     "pino-http": "^10.3.0",
     "pino-pretty": "^11.3.0",
@@ -85,6 +87,7 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^20.16.10",
     "@types/passport-jwt": "^4.0.1",
+    "@types/pdfkit": "^0.17.7",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",

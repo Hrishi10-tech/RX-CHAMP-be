@@ -104,6 +104,12 @@ export interface PersonDayReport {
   hourly: HourActivity[];
   /** 3.3: the day's manual focus adjustments, newest first, voided ones included. */
   adjustments?: FocusAdjustmentView[];
+  /**
+   * The day's keyboard and mouse input inside the available time (sessions minus
+   * breaks and meetings), Fix 10: active, idle (nobody at the computer, a lock),
+   * and no data (the agent was not reporting). Null when it could not be read.
+   */
+  input?: { activeSec: number; idleSec: number; noDataSec: number; availableSec: number } | null;
 }
 
 export interface MonthTotals {

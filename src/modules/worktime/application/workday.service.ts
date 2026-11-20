@@ -28,6 +28,7 @@ import {
   WorkSessionRepository,
 } from '../domain/work-session.repository';
 import { focusOfDay } from '../domain/day';
+import { GuideItem, staffGuide } from '../domain/staff-guide';
 import { DayDataService } from './day-data.service';
 import { SkipsService } from './skips.service';
 import { WorkSessionsService } from './work-sessions.service';
@@ -209,6 +210,31 @@ export class WorkdayService {
         extended: !!(open && open.date === date && open.extendedAt),
       },
     };
+  }
+
+  /**
+   * GET /workday/guide (3.2): how RX Vision works, with this organisation's numbers
+   * and the person's own ring times (their shift today, else the defaults).
+   */
+  async guide(
+    me: AuthenticatedUser,
+    now: Date,
+  ): Promise<{ items: GuideItem[]; numbers: Record<string, number> }> {
+    const [settings, person, ctx] = await Promise.all([
+      // 4.0: the organisation's settings.
+      this.settings.get(me.companyId ?? null),
+      this.people.findById(me.id),
+      this.days.context([me.id]),
+    ]);
+    const shift = person ? this.days.dayWith(ctx, person, now).resolved.shift : null;
+    const numbers = {
+      paidBreakBufferMin: settings.breakBufferMin,
+      lateStartGraceMin: settings.lateStartGraceMin,
+      forgottenEndDayIdleMin: settings.forgottenEndDayIdleMin,
+      ringLeadMin: shift?.ringLeadMin ?? 1,
+      ringDurationMin: shift?.ringDurationMin ?? 5,
+    };
+    return { items: staffGuide(numbers), numbers };
   }
 
   /** The day ended within LAST_ENDED_WITHIN_MS before now (not `date`), with its focus. */

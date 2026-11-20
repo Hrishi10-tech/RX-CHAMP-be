@@ -281,3 +281,52 @@ describe('work days and overrun', () => {
     expect(overrunSeconds(null, start, null, at('13:00'))).toBe(0);
   });
 });
+
+describe('the ring decides the reason (fix 2): ring 1 minute before, 10 minutes long', () => {
+  const def = general({ ringLeadMin: 1, ringDurationMin: 10 });
+  const [morning] = breakSlots(def, '2026-10-13', IST);
+  const sec = (hm: string, s: number) => new Date(at(hm).getTime() + s * 1000);
+
+  it('rings 10:59 to 11:09 for an 11:00 break', () => {
+    expect(morning.ringStart).toEqual(at('10:59'));
+    expect(morning.ringEnd).toEqual(at('11:09'));
+  });
+
+  it('starting while it rings needs no reason, at both ends', () => {
+    expect(classifyStart(morning, at('10:59'), def)).toEqual({
+      timing: 'ON_TIME',
+      minutesOff: 0,
+      reasonRequired: false,
+    });
+    expect(classifyStart(morning, sec('11:08', 59), def).reasonRequired).toBe(false);
+  });
+
+  it('before the ring needs a reason (early), after it stops needs one too (late)', () => {
+    expect(classifyStart(morning, sec('10:58', 59), def)).toMatchObject({
+      timing: 'EARLY',
+      reasonRequired: true,
+    });
+    expect(classifyStart(morning, at('11:09'), def)).toMatchObject({
+      timing: 'LATE',
+      minutesOff: 9,
+      reasonRequired: true,
+    });
+  });
+
+  it('"Ask for a reason when a break starts late" off: late needs none, early still does', () => {
+    const noLate = general({ ringLeadMin: 1, ringDurationMin: 10, reasonOnLate: false });
+    const [m] = breakSlots(noLate, '2026-10-13', IST);
+    expect(classifyStart(m, at('11:20'), noLate)).toMatchObject({
+      timing: 'LATE',
+      reasonRequired: false,
+    });
+    expect(classifyStart(m, at('10:50'), noLate).reasonRequired).toBe(true);
+  });
+
+  it('"Ask for a reason when a break starts early" off: early needs none, late still does', () => {
+    const noEarly = general({ ringLeadMin: 1, ringDurationMin: 10, reasonOnEarly: false });
+    const [m] = breakSlots(noEarly, '2026-10-13', IST);
+    expect(classifyStart(m, at('10:50'), noEarly).reasonRequired).toBe(false);
+    expect(classifyStart(m, at('11:20'), noEarly).reasonRequired).toBe(true);
+  });
+});

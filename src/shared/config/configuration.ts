@@ -37,6 +37,17 @@ export interface AppConfig {
     prefix: string;
     accessKeyId: string;
     secretAccessKey: string;
+    /**
+     * An S3-compatible endpoint instead of AWS (MinIO, a local test server). Empty:
+     * AWS itself. `forcePathStyle` goes with it for most such servers.
+     */
+    endpoint: string;
+    forcePathStyle: boolean;
+  };
+  /** Screenshot reports and monthly archives (3.2). */
+  exports: {
+    /** Days a finished report or archive file stays downloadable. */
+    retentionDays: number;
   };
   /** Screenshot text search reads captures with AWS Textract; `false` stops those calls (3.6). */
   ocr: {
@@ -102,6 +113,14 @@ export default (): AppConfig => ({
     prefix: process.env.AWS_PREFIX ?? 'uploads/',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
+    endpoint: process.env.AWS_S3_ENDPOINT?.trim() ?? '',
+    forcePathStyle: (process.env.AWS_S3_FORCE_PATH_STYLE ?? '').trim().toLowerCase() === 'true',
+  },
+  exports: {
+    retentionDays: Math.max(
+      1,
+      parseInt(process.env.SCREENSHOT_EXPORT_RETENTION_DAYS ?? '7', 10) || 7,
+    ),
   },
   ocr: {
     enabled: (process.env.OCR_ENABLED ?? 'true').trim().toLowerCase() !== 'false',

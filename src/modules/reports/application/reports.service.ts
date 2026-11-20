@@ -20,7 +20,18 @@ import { meetingView, MeetingsService } from '@modules/worktime/application/meet
 import { nameOf, PeopleScopeService } from '@modules/worktime/application/people-scope.service';
 import { asShiftPerson } from '@modules/worktime/application/team-today.service';
 import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/approvals.reader';
-import { focusOfDay, PersonDayData } from '@modules/worktime/domain/day';
+import { focusOfDay, intervalsOfDay, PersonDayData } from '@modules/worktime/domain/day';
+import {
+  breakdownIn,
+  IDLE_LEAD_IN_SEC,
+  inputIntervals,
+  SAMPLE_CAP_SEC,
+} from '@modules/worktime/domain/input-activity';
+import {
+  INPUT_SAMPLES_READER,
+  InputSamplesReader,
+} from '@modules/worktime/domain/input-samples.reader';
+import { normalize, subtract } from '@modules/worktime/domain/intervals';
 import { HourActivity } from '@modules/worktime/domain/hourly';
 import {
   PersonRow,
@@ -86,7 +97,33 @@ export class ReportsService {
     private readonly plans: DayPlanService,
     private readonly personDays: PersonDaysService,
     private readonly adjustments: FocusAdjustmentsService,
+    @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
   ) {}
+
+  /**
+   * Keyboard and mouse input of one day, inside the time available for it (work
+   * sessions minus breaks and meetings), on the rules every screen shares (Fix 10):
+   * active, idle (nobody at the computer), and no data (the agent was not reporting).
+   */
+  private async inputOf(d: PersonDayData, now: Date): Promise<PersonDayReport['input']> {
+    const { work, breaks, meetings } = intervalsOfDay(d, now);
+    const available = subtract(normalize(work), normalize([...breaks, ...meetings]));
+    if (!available.length) return { activeSec: 0, idleSec: 0, noDataSec: 0, availableSec: 0 };
+    const from = new Date(available[0].start - SAMPLE_CAP_SEC * 1000);
+    const to = new Date(available[available.length - 1].end + IDLE_LEAD_IN_SEC * 1000);
+    try {
+      const got = await this.samples.samplesInWindows([{ key: 'day', userId: d.userId, from, to }]);
+      const b = breakdownIn(inputIntervals(got.get('day') ?? [], now), available, now);
+      return {
+        activeSec: b.activeSec,
+        idleSec: b.idleSec,
+        noDataSec: b.noDataSec,
+        availableSec: b.spanSec,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   private today(now: Date): string {
     return dateKeyInZone(now, appTimezone());
@@ -269,6 +306,7 @@ export class ReportsService {
       approvals: await this.approvals.itemsFor(me, [userId], day, day, now),
       hourly,
       adjustments: await this.adjustments.views(d.adjustments ?? []),
+      input: await this.inputOf(d, now),
     };
   }
 

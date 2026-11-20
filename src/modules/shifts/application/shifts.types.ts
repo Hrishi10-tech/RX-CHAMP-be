@@ -252,6 +252,12 @@ export interface MyBreakDayView {
 
 /** GET /breaks/me/today in 3.1: the day view plus what the End Day dialog needs. */
 export interface BreakDayView extends MyBreakDayView {
+  /**
+   * Quick answers for every comment box (3.2), edited by a Super Admin: keys
+   * BREAK_EARLY, BREAK_LATE, BREAK_SKIP, SKIP_COMMENT, BREAK_OVERRUN, LATE_DAY_START,
+   * MEETING_AGENDA, DECISION_NOTE.
+   */
+  reasonPresets?: Record<string, string[]>;
   /** Skips from the last 31 days still waiting for a comment, newest first. */
   skipsNeedingComment: SkipNeedingComment[];
   /** Minimum length of a skip reason or comment today. */

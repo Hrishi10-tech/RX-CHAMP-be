@@ -6,8 +6,10 @@ import { DetectDocumentTextCommand, TextractClient } from '@aws-sdk/client-textr
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private readonly client: TextractClient;
+  private readonly enabled: boolean;
 
   constructor(config: ConfigService) {
+    this.enabled = config.get<boolean>('ocr.enabled') ?? true;
     this.client = new TextractClient({
       region: config.get<string>('s3.region')!,
       credentials: {
@@ -18,10 +20,11 @@ export class OcrService {
   }
 
   /**
-   * The text in an image, or null (no text, not configured, failed, or past
-   * `timeoutMs`). Never throws: OCR only feeds the search box.
+   * The text in an image, or null (no text, switched off with OCR_ENABLED=false, not
+   * configured, failed, or past `timeoutMs`). Never throws: OCR only feeds the search box.
    */
   async extractText(image: Buffer, timeoutMs = 20_000): Promise<string | null> {
+    if (!this.enabled) return null;
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     try {

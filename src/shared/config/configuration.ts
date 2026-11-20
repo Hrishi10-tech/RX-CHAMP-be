@@ -38,6 +38,10 @@ export interface AppConfig {
     accessKeyId: string;
     secretAccessKey: string;
   };
+  /** Screenshot text search reads captures with AWS Textract; `false` stops those calls (3.6). */
+  ocr: {
+    enabled: boolean;
+  };
   agent: {
     binaryPath: string;
     /** S3 object key for the agent binary; when set, it's served from S3 not disk. */
@@ -98,6 +102,9 @@ export default (): AppConfig => ({
     prefix: process.env.AWS_PREFIX ?? 'uploads/',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
+  },
+  ocr: {
+    enabled: (process.env.OCR_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
   },
   agent: {
     // `||`, not `??`: an empty AGENT_BINARY_PATH= must mean "not set", never the

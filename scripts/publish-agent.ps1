@@ -201,6 +201,23 @@ if (-not $env:AWS_ACCESS_KEY_ID -and (Test-Path (Join-Path $repo '.env'))) {
 $versionedKey = "agent/$Version/RXChampAgent.exe"
 $latestKey    = 'agent/RXChampAgent.exe'
 
+# Security review S-01, S-3: sign the installer with the owner's offline key before the SHA-256 is
+# taken, exactly as agent/build/publish-windows.sh does. A build that carries the public key
+# installs only signed updates, so it is never published unsigned. Signing is done by
+# agent/build/signing/sign-update.sh (bash and openssl, both in Git for Windows).
+$publicKey  = Join-Path $agent 'src\RXVision.Agent.Core\Update\update-public-key.pem'
+$signScript = Join-Path $agent 'build\signing\sign-update.sh'
+if ($env:RXV_UPDATE_SIGNING_KEY) {
+  if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
+    throw 'Signing needs bash and openssl on PATH (Git for Windows has both). Or publish with agent/build/publish-windows.sh.'
+  }
+  Step 'Signing the installer with the update key'
+  & bash ($signScript -replace '\\', '/') ($outExe -replace '\\', '/') windows $Version ($env:RXV_UPDATE_SIGNING_KEY -replace '\\', '/')
+  if ($LASTEXITCODE -ne 0) { throw 'sign-update.sh failed: nothing was uploaded.' }
+} elseif (Test-Path $publicKey) {
+  throw 'This build checks update signatures: set RXV_UPDATE_SIGNING_KEY to the signing key (agent/build/signing/README.md). Nothing was uploaded.'
+}
+
 # Stamp the version and a checksum onto the object itself. Agents already in the
 # field read these back through GET /agent/version to decide whether to update, so
 # uploading IS the release — there is no backend env to change afterwards, and a

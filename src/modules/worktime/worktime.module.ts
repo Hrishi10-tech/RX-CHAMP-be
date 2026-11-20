@@ -7,6 +7,8 @@ import { ShiftsModule } from '@modules/shifts/shifts.module';
 import { APPROVALS_READER } from './domain/approvals.reader';
 import { AWAY_REPOSITORY } from './domain/away.repository';
 import { FOCUS_ADJUSTMENT_REPOSITORY } from './domain/focus-adjustment.repository';
+import { INPUT_SAMPLES_READER } from './domain/input-samples.reader';
+import { PrismaInputSamplesReader } from './infrastructure/prisma-input-samples.reader';
 import { MEETING_RECORD_REPOSITORY } from './domain/meeting-record.repository';
 import { SKIP_REPOSITORY } from './domain/skip.repository';
 import { WORK_SESSION_REPOSITORY } from './domain/work-session.repository';
@@ -90,6 +92,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     { provide: AWAY_REPOSITORY, useClass: PrismaAwayRepository },
     { provide: FOCUS_ADJUSTMENT_REPOSITORY, useClass: PrismaFocusAdjustmentRepository },
     FocusAdjustmentsService,
+    { provide: INPUT_SAMPLES_READER, useClass: PrismaInputSamplesReader },
     WorkSessionsService,
     SkipsService,
     MeetingsService,
@@ -126,6 +129,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     WORK_SESSION_REPOSITORY,
     WORKTIME_READER,
     APPROVALS_READER,
+    INPUT_SAMPLES_READER,
     MEETING_RECORD_REPOSITORY,
     AWAY_REPOSITORY,
     FocusAdjustmentsService,

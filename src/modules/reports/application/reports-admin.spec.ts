@@ -388,6 +388,27 @@ describe('ReportRunsService (per organisation, 4.0)', () => {
   });
 });
 
+const BLOCKER = {
+  type: 'BREAK',
+  id: 'b1',
+  date: '2026-09-30',
+  category: 'BREAK_LATE',
+  userId: 'a',
+  userName: 'Asha K',
+  approverId: 'm1',
+  approverName: 'Ravi M',
+  approverRole: 'MANAGER',
+  approverActive: true,
+  dueAt: '2026-10-02T05:00:00.000Z',
+  escalated: false,
+};
+const OPEN_DAY = {
+  userId: 'a',
+  userName: 'Asha K',
+  date: '2026-09-30',
+  startedAt: '2026-09-30T04:30:00.000Z',
+};
+
 describe('MonthLockService (per organisation, 4.0)', () => {
   function setup(
     lockResult: unknown = {
@@ -405,8 +426,12 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       ),
       findLock: jest.fn().mockResolvedValue(null),
       unlockMonth: jest.fn().mockResolvedValue(true),
+      openSessionsInMonth: jest.fn().mockResolvedValue([OPEN_DAY]),
     };
-    const approvals = { pendingInMonth: jest.fn().mockResolvedValue(3) };
+    const approvals = {
+      pendingInMonth: jest.fn().mockResolvedValue(3),
+      pendingInMonthDetails: jest.fn().mockResolvedValue([BLOCKER]),
+    };
     const reader = {
       listPeople: jest
         .fn()
@@ -468,7 +493,11 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       .lock(ADMIN, '2026-09', new Date('2026-10-02T05:00:00Z'))
       .catch((x: unknown) => x);
     expect(err).toBeInstanceOf(AppException);
-    expect(err).toMatchObject({ status: 409, code: 'PENDING_APPROVALS', details: { count: 2 } });
+    expect(err).toMatchObject({
+      status: 409,
+      code: 'PENDING_APPROVALS',
+      details: { count: 2, items: [BLOCKER], moreItems: true },
+    });
     expect((err as Error).message).toBe(
       '2 items dated in 2026-09 still wait for a decision. Decide them before locking the month.',
     );
@@ -517,6 +546,7 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       lockedAt: '2026-10-02T05:00:00.000Z',
       lockedByName: 'Meera Nair',
       pending: 0,
+      blockers: { items: [], moreItems: false, openSessions: [] },
     });
     expect(store.lockMonth).toHaveBeenCalledWith('c1', '2026-09', 'admin', expect.any(Function));
     expect(reader.listPeople).toHaveBeenCalledWith({
@@ -542,6 +572,42 @@ describe('MonthLockService (per organisation, 4.0)', () => {
     await svc.status(ADMIN, '2026-09', new Date());
     expect(approvals.pendingInMonth).toHaveBeenLastCalledWith('c1', '2026-09');
     expect(store.findLock).toHaveBeenCalledWith('c1', '2026-09');
+  });
+
+  it('names what holds the lock: the pending rows, and open days of an ended month (Super Admin)', async () => {
+    const { svc, approvals, store } = setup();
+    const sa = user('sa', Role.SUPER_ADMIN);
+    const ended = await svc.status(sa, '2026-09', new Date('2026-10-02T05:00:00Z'));
+    expect(ended.blockers).toEqual({ items: [BLOCKER], moreItems: true, openSessions: [OPEN_DAY] });
+    expect(approvals.pendingInMonthDetails).toHaveBeenLastCalledWith('c1', '2026-09', 50);
+    // The current month: today's open days are expected, so none are named.
+    store.openSessionsInMonth.mockClear();
+    const current = await svc.status(sa, '2026-10', new Date('2026-10-14T06:00:00Z'));
+    expect(current.blockers.openSessions).toEqual([]);
+    expect(store.openSessionsInMonth).not.toHaveBeenCalled();
+    // A Manager: their team's rows only, never the open days.
+    const mine = await svc.status(
+      user('m1', Role.MANAGER),
+      '2026-09',
+      new Date('2026-10-02T05:00:00Z'),
+    );
+    expect(approvals.pendingInMonthDetails).toHaveBeenLastCalledWith('c1', '2026-09', 50, [
+      'a',
+      'b',
+    ]);
+    expect(mine.blockers.openSessions).toEqual([]);
+  });
+
+  it('a locked month names no blockers', async () => {
+    const { svc, store, approvals } = setup();
+    store.findLock.mockResolvedValue({
+      month: '2026-09',
+      lockedById: 'sa',
+      lockedAt: new Date('2026-10-02T05:00:00Z'),
+    });
+    const view = await svc.status(user('sa', Role.SUPER_ADMIN), '2026-09', new Date());
+    expect(view.blockers).toEqual({ items: [], moreItems: false, openSessions: [] });
+    expect(approvals.pendingInMonthDetails).not.toHaveBeenCalled();
   });
 
   it('unlocks', async () => {

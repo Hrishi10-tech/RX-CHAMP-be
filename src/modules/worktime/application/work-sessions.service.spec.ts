@@ -50,6 +50,7 @@ function setup(
     findOpen: jest.fn().mockResolvedValue(null),
     listOpen: jest.fn().mockResolvedValue([]),
     lastInputs: jest.fn().mockResolvedValue(new Map()),
+    usersInLiveMeeting: jest.fn().mockResolvedValue(new Set()),
     autoClose: jest.fn().mockResolvedValue({ closed: true, newlyEnded: true }),
     startDay: jest.fn(),
     endDay: jest.fn(),

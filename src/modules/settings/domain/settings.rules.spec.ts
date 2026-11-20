@@ -13,11 +13,13 @@ describe('settings rules', () => {
       fullDayPct: 80,
       halfDayPct: 40,
       lateStartGraceMin: 10,
+      requireLateStartReason: true,
       quietHourActiveMin: 20,
       quietHoursFlag: 4,
       autoCloseAfterShiftEndMin: 240,
       breakBufferMin: 10,
       focusAdjustmentsEnabled: true,
+      forgottenEndDayIdleMin: 30,
     });
     expect(SETTING_BOUNDS.breakBufferMin).toEqual({ min: 0, max: 60 });
   });
@@ -94,7 +96,10 @@ describe('settings rules', () => {
       value: { ...DEFAULT_SETTINGS, breakBufferMin: 0 },
       changed: ['breakBufferMin'],
     });
-    expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 60 })).toMatchObject({ ok: true, changed: ['breakBufferMin'] });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 60 })).toMatchObject({
+      ok: true,
+      changed: ['breakBufferMin'],
+    });
     expect(applySettingsPatch(DEFAULT_SETTINGS, { breakBufferMin: 61 })).toMatchObject({
       ok: false,
       field: 'breakBufferMin',
@@ -134,7 +139,9 @@ describe('settings rules', () => {
     expect(settingsFromStored({ breakBufferMin: 0 }).breakBufferMin).toBe(0);
     expect(settingsFromStored({ breakBufferMin: 90 }).breakBufferMin).toBe(10);
     // Calendar and input-tracking keys in the same row are not settings.
-    expect(settingsFromStored({ weekPattern: [1, 2], idleDefaultEnabled: true })).toEqual(DEFAULT_SETTINGS);
+    expect(settingsFromStored({ weekPattern: [1, 2], idleDefaultEnabled: true })).toEqual(
+      DEFAULT_SETTINGS,
+    );
     // A stored pair that contradicts itself falls back to the default pair.
     expect(settingsFromStored({ fullDayPct: 30, halfDayPct: 50 })).toMatchObject({
       fullDayPct: 80,

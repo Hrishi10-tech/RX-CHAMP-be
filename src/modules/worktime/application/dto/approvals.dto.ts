@@ -15,7 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsId } from '@shared/validation/is-id';
-import { IsDateKey } from '@shared/validation/date-key';
+import { IsDateKey, IsMonthKey } from '@shared/validation/date-key';
 import { APPROVAL_CATEGORIES, ApprovalCategory } from '../../domain/approval-copy';
 
 /** DECIDED = approved or rejected (the portal's "All decisions" tab). */
@@ -62,6 +62,14 @@ export class ApprovalsListQueryDto {
   @IsDateKey()
   date?: string;
 
+  @ApiPropertyOptional({
+    example: '2026-10',
+    description: 'Only items dated in this month (the payroll lock counts exactly these)',
+  })
+  @IsOptional()
+  @IsMonthKey()
+  month?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsId()
@@ -93,7 +101,7 @@ export class ApprovalsListQueryDto {
   limit?: number = 50;
 }
 
-/** GET /approvals/summary (3.3: scope and companyId). */
+/** GET /approvals/summary (3.3: scope and companyId; 3.2: month). */
 export class ApprovalsSummaryQueryDto {
   @ApiPropertyOptional({
     enum: ['mine', 'all'],
@@ -110,6 +118,11 @@ export class ApprovalsSummaryQueryDto {
   @IsOptional()
   @IsId()
   companyId?: string;
+
+  @ApiPropertyOptional({ example: '2026-10', description: '3.2: only items dated in this month' })
+  @IsOptional()
+  @IsMonthKey()
+  month?: string;
 }
 
 /** GET /approvals/me */

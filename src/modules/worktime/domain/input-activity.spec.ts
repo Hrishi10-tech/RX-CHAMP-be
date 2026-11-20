@@ -1,0 +1,156 @@
+import {
+  afterSkipActivity,
+  afterSkipWindow,
+  breakdownIn,
+  InputSample,
+  inputIntervals,
+} from './input-activity';
+
+const T0 = new Date('2026-10-14T05:30:00.000Z'); // 11:00 in India
+
+/** A sample every minute from `fromMin` to `toMin` (exclusive), each standing 60 s. */
+function run(fromMin: number, toMin: number, idle = false, locked = false): InputSample[] {
+  const out: InputSample[] = [];
+  for (let m = fromMin; m < toMin; m++) {
+    out.push({
+      at: new Date(T0.getTime() + m * 60_000),
+      durationSec: 60,
+      idle,
+      locked,
+      app: locked ? 'LockApp.exe' : 'Code.exe',
+    });
+  }
+  return out;
+}
+
+const win = (fromMin: number, toMin: number) => ({
+  start: T0.getTime() + fromMin * 60_000,
+  end: T0.getTime() + toMin * 60_000,
+});
+const LATER = new Date(T0.getTime() + 6 * 60 * 60_000);
+
+describe('inputIntervals and breakdownIn', () => {
+  it('counts steady input as active', () => {
+    const b = breakdownIn(inputIntervals(run(0, 30), LATER), [win(0, 30)], LATER);
+    expect(b).toEqual({ activeSec: 1800, idleSec: 0, noDataSec: 0, spanSec: 1800 });
+  });
+
+  it('moves the five minutes before an idle flag from active to idle', () => {
+    // Worked 0-20, walked away at 20: the agent still says "active" until 25, then idle.
+    const samples = [...run(0, 25), ...run(25, 40, true)];
+    const b = breakdownIn(inputIntervals(samples, LATER), [win(0, 40)], LATER);
+    expect(b.activeSec).toBe(20 * 60);
+    expect(b.idleSec).toBe(20 * 60);
+    expect(b.noDataSec).toBe(0);
+  });
+
+  it('gives a lock no lead-in: the person worked right up to it', () => {
+    const samples = [...run(0, 25), ...run(25, 40, true, true)];
+    const b = breakdownIn(inputIntervals(samples, LATER), [win(0, 40)], LATER);
+    expect(b.activeSec).toBe(25 * 60);
+    expect(b.idleSec).toBe(15 * 60);
+  });
+
+  it('fills the hole a locked, sleeping PC leaves before it reports again', () => {
+    // Locked at 10, nothing reported 11-50, back at 50.
+    const samples = [...run(0, 10), ...run(10, 11, true, true), ...run(50, 60)];
+    const b = breakdownIn(inputIntervals(samples, LATER), [win(0, 60)], LATER);
+    expect(b.activeSec).toBe(20 * 60);
+    expect(b.idleSec).toBe(40 * 60);
+    expect(b.noDataSec).toBe(0);
+  });
+
+  it('leaves time with no sample at all as no data, never as active or idle', () => {
+    const samples = [...run(0, 10), ...run(40, 50)];
+    const b = breakdownIn(inputIntervals(samples, LATER), [win(0, 50)], LATER);
+    expect(b.activeSec).toBe(20 * 60);
+    expect(b.idleSec).toBe(0);
+    expect(b.noDataSec).toBe(30 * 60);
+  });
+
+  it('caps one sample at 150 s', () => {
+    const s: InputSample[] = [{ at: T0, durationSec: 3600, idle: false, locked: false, app: 'x' }];
+    expect(breakdownIn(inputIntervals(s, LATER), [win(0, 60)], LATER).activeSec).toBe(150);
+  });
+
+  it('lets the newest open sample stand until now, capped', () => {
+    const s: InputSample[] = [{ at: T0, durationSec: 0, idle: false, locked: false, app: 'x' }];
+    const now = new Date(T0.getTime() + 90_000);
+    expect(breakdownIn(inputIntervals(s, now), [win(0, 60)], now)).toEqual({
+      activeSec: 90,
+      idleSec: 0,
+      noDataSec: 0,
+      spanSec: 90,
+    });
+  });
+
+  it('counts input on one device over idle on another', () => {
+    const samples = [...run(0, 10), ...run(0, 10, true)];
+    const b = breakdownIn(inputIntervals(samples, LATER), [win(0, 10)], LATER);
+    expect(b.activeSec).toBe(10 * 60);
+    expect(b.idleSec).toBe(0);
+  });
+
+  it('counts only the part of the windows that has happened', () => {
+    const now = new Date(T0.getTime() + 10 * 60_000);
+    const b = breakdownIn(inputIntervals(run(0, 10), now), [win(0, 60)], now);
+    expect(b.spanSec).toBe(600);
+  });
+});
+
+describe('afterSkipWindow', () => {
+  const skippedAt = new Date(T0.getTime() - 10 * 60_000);
+  it('judges a manual skip from the moment it was pressed', () => {
+    const w = afterSkipWindow('SKIPPED', skippedAt, T0);
+    expect(w).toEqual({
+      from: skippedAt,
+      to: new Date(skippedAt.getTime() + 15 * 60_000),
+      basis: 'SKIPPED_AT',
+    });
+  });
+  it('judges an auto-skip from when the break was due', () => {
+    const closedAt = new Date(T0.getTime() + 60 * 60_000);
+    const w = afterSkipWindow('AUTO_SKIPPED', closedAt, T0);
+    expect(w).toEqual({ from: T0, to: new Date(T0.getTime() + 15 * 60_000), basis: 'BREAK_START' });
+  });
+});
+
+describe('afterSkipActivity', () => {
+  const window = afterSkipWindow('SKIPPED', T0, null);
+
+  it('ACTIVE when they kept working', () => {
+    const r = afterSkipActivity(window, run(0, 40), LATER);
+    expect(r).toMatchObject({
+      verdict: 'ACTIVE',
+      activeSec: 900,
+      windowMin: 15,
+      basis: 'SKIPPED_AT',
+    });
+  });
+
+  it('NONE when they walked away right after skipping (the lead-in is not work)', () => {
+    // Skipped at 0 and left: active-looking samples until the idle flag at 5.
+    const r = afterSkipActivity(window, [...run(0, 5), ...run(5, 30, true)], LATER);
+    expect(r.verdict).toBe('NONE');
+    expect(r.activeSec).toBe(0);
+    expect(r.idleSec).toBe(900);
+  });
+
+  it('LOW when there was a little input', () => {
+    // Two minutes of work, then away (idle flagged at 7).
+    const r = afterSkipActivity(window, [...run(0, 7), ...run(7, 30, true)], LATER);
+    expect(r.verdict).toBe('LOW');
+    expect(r.activeSec).toBe(120);
+  });
+
+  it('NO_DATA when the agent reported nothing', () => {
+    expect(afterSkipActivity(window, [], LATER).verdict).toBe('NO_DATA');
+  });
+
+  it('PENDING until the window and one idle threshold have passed', () => {
+    const now = new Date(T0.getTime() + 19 * 60_000);
+    expect(afterSkipActivity(window, run(0, 19), now).verdict).toBe('PENDING');
+    const settled = new Date(T0.getTime() + 20 * 60_000);
+    expect(afterSkipActivity(window, run(0, 20), settled).verdict).toBe('ACTIVE');
+  });
+});

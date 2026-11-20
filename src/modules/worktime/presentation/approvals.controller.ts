@@ -68,7 +68,9 @@ export class ApprovalsController {
     summary: 'Counts for the badge: pending, due soon, overdue, escalated, decided today',
   })
   async summary(@CurrentUser() me: AuthenticatedUser, @Query() q: ApprovalsSummaryQueryDto) {
-    return envelope(await this.approvals.summary(me, new Date(), q.scope ?? 'mine', q.companyId));
+    return envelope(
+      await this.approvals.summary(me, new Date(), q.scope ?? 'mine', q.companyId, q.month),
+    );
   }
 
   @Get('me')

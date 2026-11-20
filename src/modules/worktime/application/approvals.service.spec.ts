@@ -223,6 +223,7 @@ function setup() {
     get: jest.fn().mockResolvedValue({ approvalSlaHours: 48 }),
     forUser: jest.fn().mockResolvedValue({ approvalSlaHours: 24 }),
   };
+  const samples = { samplesInWindows: jest.fn(async () => new Map()) };
   const svc = new ApprovalsService(
     reader as never,
     breaks as never,
@@ -233,6 +234,7 @@ function setup() {
     breakApprovals as never,
     meetingService as never,
     settings as never,
+    samples as never,
   );
   const notices = () =>
     events.publish.mock.calls
@@ -253,6 +255,7 @@ function setup() {
     settings,
     notices,
     pushes,
+    samples,
   };
 }
 
@@ -821,6 +824,8 @@ describe('ApprovalsService views and lists', () => {
       approvedToday: 4,
       rejectedToday: 3,
       slaHours: 48,
+      scope: 'mine',
+      month: null,
     });
     expect(settings.get).toHaveBeenCalledWith(ORG);
     expect(reader.count.mock.calls[1][0].dueWithin).toEqual({

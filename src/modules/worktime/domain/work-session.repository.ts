@@ -173,4 +173,6 @@ export interface WorkSessionRepository {
    * was already marked. Returns the mark (null when the session is no longer open).
    */
   markExtended(sessionId: string, at: Date): Promise<Date | null>;
+  /** Which of these people have a live meeting running now (presence MEETING still open). */
+  usersInLiveMeeting(userIds: string[]): Promise<Set<string>>;
 }

@@ -9,7 +9,8 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { WorkdayChangedEvent } from '@shared/events/workday-changed.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { allOrgsInView, orgOf, requireOrg, seesWholeOrg } from '@shared/tenancy';
+import { Role } from '@shared/rbac/roles.enum';
+import { allOrgsInView, isAdminLike, orgOf, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { buildMeta, PaginationMeta } from '@shared/utils/pagination';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { monthOf } from '@shared/database/month-lock';
@@ -66,6 +67,14 @@ import {
 import { meetingDecidedCopy, NOTICE } from '../domain/notice-copy';
 import { DUE_SOON_MS, slaState } from '../domain/sla';
 import { approverScopeOf } from './approver-scope';
+import {
+  AfterSkipActivity,
+  afterSkipActivity,
+  afterSkipWindow,
+  IDLE_LEAD_IN_SEC,
+  SAMPLE_CAP_SEC,
+} from '../domain/input-activity';
+import { INPUT_SAMPLES_READER, InputSamplesReader } from '../domain/input-samples.reader';
 import { ApprovalPathType, ApprovalsListQueryDto } from './dto/approvals.dto';
 import { meetingView, MeetingsService } from './meetings.service';
 import {
@@ -128,7 +137,52 @@ export class ApprovalsService {
     private readonly breakApprovals: BreakApprovalsUseCase,
     private readonly meetingService: MeetingsService,
     private readonly settings: AppSettingsService,
+    @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
   ) {}
+
+  /**
+   * Fix 3: for each skipped or auto-skipped break, the keyboard and mouse input in the
+   * 15 minutes after the skip (an auto-skip: after the break was due), so the approver
+   * can tell "skipped and kept working" from "skipped and walked away". Only for
+   * Managers and Super Admins: never on the person's own items.
+   */
+  private async afterSkipFor(
+    me: AuthenticatedUser,
+    rows: BreakRecordRow[],
+    now: Date,
+  ): Promise<Map<string, AfterSkipActivity>> {
+    const out = new Map<string, AfterSkipActivity>();
+    // 4.0: whoever decides others' items (a Manager, the Admin, a Super Admin).
+    if (!isAdminLike(me) && me.role !== Role.MANAGER) return out;
+    const skips = rows.filter((r) => r.userId !== me.id && isSkipOutcome(outcomeOf(r)));
+    if (!skips.length) return out;
+    const windows = skips.map((r) => ({
+      row: r,
+      w: afterSkipWindow(
+        outcomeOf(r) as 'SKIPPED' | 'AUTO_SKIPPED',
+        r.startedAt,
+        r.scheduledStart ?? null,
+      ),
+    }));
+    try {
+      const samples = await this.samples.samplesInWindows(
+        windows.map(({ row, w }) => ({
+          key: row.id,
+          userId: row.userId,
+          // The sample standing at the start, and an idle flag up to one threshold after.
+          from: new Date(w.from.getTime() - SAMPLE_CAP_SEC * 1000),
+          to: new Date(w.to.getTime() + IDLE_LEAD_IN_SEC * 1000),
+        })),
+      );
+      for (const { row, w } of windows) {
+        out.set(row.id, afterSkipActivity(w, samples.get(row.id) ?? [], now));
+      }
+    } catch (err) {
+      // Best-effort: the approvals list must never fail because of this hint.
+      this.logger.warn(`after-skip activity unavailable: ${(err as Error).message}`);
+    }
+    return out;
+  }
 
   private assertApprover(me: AuthenticatedUser): void {
     assertApprover(me);
@@ -183,6 +237,7 @@ export class ApprovalsService {
       category: q.category,
       overdueAt: q.overdue ? now : undefined,
       date: q.date,
+      month: q.month,
       userId: q.userId,
       skip: (page - 1) * limit,
       take: limit,
@@ -196,6 +251,7 @@ export class ApprovalsService {
     now: Date,
     scopeName: 'mine' | 'all' = 'mine',
     companyId?: string,
+    month?: string,
   ): Promise<ApprovalsSummaryView31> {
     this.assertApprover(me);
     await this.meetingService.heal(null, now);
@@ -206,7 +262,7 @@ export class ApprovalsService {
     const today = dateKeyInZone(now, tz);
     const dayStart = startOfDayInZone(today, tz);
     const dayEnd = startOfDayInZone(addDaysToKey(today, 1), tz);
-    const pending: ApprovalQuery = { scope, statuses: ['PENDING'] };
+    const pending: ApprovalQuery = { scope, statuses: ['PENDING'], month };
     const [all, dueSoon, overdue, escalated, approvedToday, rejectedToday, settings] =
       await Promise.all([
         this.reader.count(pending),
@@ -228,6 +284,8 @@ export class ApprovalsService {
       approvedToday,
       rejectedToday,
       slaHours: settings.approvalSlaHours,
+      scope: scope.kind === 'ALL' ? 'all' : 'mine',
+      month: month ?? null,
     };
   }
 
@@ -616,7 +674,10 @@ export class ApprovalsService {
       ids.add(r.userId);
       if (r.decidedById) ids.add(r.decidedById);
     }
-    const people = await this.people.findAnyByIds([...ids]);
+    const [people, afterSkip] = await Promise.all([
+      this.people.findAnyByIds([...ids]),
+      this.afterSkipFor(me, breaks, now),
+    ]);
     const byId = new Map(people.map((p) => [p.id, p]));
     const all = [...breaks, ...meetings, ...away];
     const locked = await this.reader.lockedMonths(
@@ -658,6 +719,7 @@ export class ApprovalsService {
               isLocked(r.userId, r.date),
               tz,
               now,
+              afterSkip.get(r.id) ?? null,
             ),
           );
         }
@@ -692,6 +754,7 @@ export class ApprovalsService {
     locked: boolean,
     tz: string,
     now: Date,
+    afterSkip: AfterSkipActivity | null = null,
   ): ApprovalItemView {
     const view = ShiftMapper.recordView(r, now, names);
     const category = breakCategory({
@@ -737,6 +800,7 @@ export class ApprovalsService {
       canDecide:
         r.userId !== me.id && !locked && BreakApprovalPolicy.canDecide(me, r, people.get(r.userId)),
       locked,
+      afterSkip,
       break: view,
       meeting: null,
       away: null,
@@ -797,6 +861,7 @@ export class ApprovalsService {
         !locked &&
         BreakApprovalPolicy.canDecide(me, m, people.get(m.userId)),
       locked,
+      afterSkip: null,
       break: null,
       meeting: view,
       away: null,
@@ -833,6 +898,7 @@ export class ApprovalsService {
     return {
       type: 'AWAY',
       id: a.id,
+      afterSkip: null,
       category,
       user: personLite(people.get(a.userId), a.userId),
       date: a.date,
@@ -874,4 +940,8 @@ export class ApprovalsService {
       away,
     };
   }
+}
+
+function isSkipOutcome(outcome: string): boolean {
+  return outcome === 'SKIPPED' || outcome === 'AUTO_SKIPPED';
 }

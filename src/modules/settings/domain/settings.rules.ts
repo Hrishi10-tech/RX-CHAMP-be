@@ -19,11 +19,13 @@ export interface AppSettings {
   halfDayPct: number;
   /** A first Start Day more than this many minutes after the shift start is a late start. */
   lateStartGraceMin: number;
+  /** A late start (past the grace) needs the person's reason (Fix 1). */
+  requireLateStartReason: boolean;
   /** An available hour with fewer active minutes than this is a quiet hour. */
   quietHourActiveMin: number;
   /** This many quiet hours in a month or more: the person "needs a look". */
   quietHoursFlag: number;
-  /** An open session is closed this many minutes after the shift ends. */
+  /** An open session is closed at the latest this many minutes after the shift ends. */
   autoCloseAfterShiftEndMin: number;
   /** 4.0: paid minutes on top of the scheduled breaks for overruns and quick breaks. */
   breakBufferMin: number;
@@ -32,6 +34,11 @@ export interface AppSettings {
    * time by hand (meant for a rollout). Off: no adjustment can be added or undone.
    */
   focusAdjustmentsEnabled: boolean;
+  /**
+   * 3.2 Forgotten End Day: once the shift has ended, a day with no keyboard or mouse
+   * input for this many minutes is ended automatically, at that last input.
+   */
+  forgottenEndDayIdleMin: number;
 }
 
 export type SettingKey = keyof AppSettings;
@@ -50,15 +57,21 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = Object.freeze({
   fullDayPct: 80,
   halfDayPct: 40,
   lateStartGraceMin: 10,
+  requireLateStartReason: true,
   quietHourActiveMin: 20,
   quietHoursFlag: 4,
   autoCloseAfterShiftEndMin: 240,
   breakBufferMin: 10,
   focusAdjustmentsEnabled: true,
+  forgottenEndDayIdleMin: 30,
 });
 
-/** The on/off settings; every other one is a whole number. */
-const BOOLEAN_KEYS = ['blockManagerEndDayWhenOverdue', 'focusAdjustmentsEnabled'] as const;
+/** The on/off settings; every other one is a whole number with bounds. */
+const BOOLEAN_KEYS = [
+  'blockManagerEndDayWhenOverdue',
+  'focusAdjustmentsEnabled',
+  'requireLateStartReason',
+] as const;
 type BooleanKey = (typeof BOOLEAN_KEYS)[number];
 type IntKey = Exclude<SettingKey, BooleanKey>;
 
@@ -73,6 +86,7 @@ export const SETTING_BOUNDS: Readonly<Record<IntKey, { min: number; max: number 
     quietHoursFlag: { min: 1, max: 100 },
     autoCloseAfterShiftEndMin: { min: 30, max: 720 },
     breakBufferMin: { min: 0, max: 60 },
+    forgottenEndDayIdleMin: { min: 10, max: 240 },
   },
 );
 
@@ -81,12 +95,14 @@ const LABEL: Record<SettingKey, string> = {
   blockManagerEndDayWhenOverdue: 'Block End Day for managers with overdue approvals',
   fullDayPct: 'Full day (% of expected)',
   halfDayPct: 'Half day (% of expected)',
-  lateStartGraceMin: 'Late start grace (minutes)',
+  lateStartGraceMin: 'Late start allowed without a reason (minutes)',
+  requireLateStartReason: 'Ask for a reason after a late start',
   quietHourActiveMin: 'Quiet hour (active minutes)',
   quietHoursFlag: 'Quiet hours before a look',
-  autoCloseAfterShiftEndMin: 'Auto-close after shift end (minutes)',
+  autoCloseAfterShiftEndMin: 'Latest automatic close after the shift ends (minutes)',
   breakBufferMin: 'Paid break buffer (minutes)',
   focusAdjustmentsEnabled: 'Manual focus adjustments by the Super Manager',
+  forgottenEndDayIdleMin: 'Forgotten End Day: end the day after no input for (minutes)',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as SettingKey[];

@@ -7,6 +7,8 @@ import {
 } from '@modules/worktime/application/worktime.types';
 import { DayClass } from '@modules/worktime/domain/attendance';
 import { HourActivity } from '@modules/worktime/domain/hourly';
+import type { PendingBlocker } from '@modules/worktime/domain/approvals.reader';
+import type { OpenSessionBlocker } from './report.store';
 
 /** Report shapes (SPEC 3.7). */
 
@@ -179,6 +181,19 @@ export interface MonthLockView {
   lockedAt: string | null;
   lockedByName: string | null;
   pending: number;
+  /**
+   * What keeps the month from being locked, so the portal can name it instead of
+   * only counting it: the undecided items (oldest day first, at most 50, in the
+   * caller's scope) and the working days still open (Super Admin only).
+   */
+  blockers: MonthLockBlockers;
+}
+
+export interface MonthLockBlockers {
+  items: PendingBlocker[];
+  /** True when there are more undecided items than `items` lists. */
+  moreItems: boolean;
+  openSessions: OpenSessionBlocker[];
 }
 
 export interface ReportRunView {

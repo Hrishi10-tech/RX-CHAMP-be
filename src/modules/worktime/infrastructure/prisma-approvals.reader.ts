@@ -9,6 +9,7 @@ import {
   ApprovalsReader,
   ApprovalType,
   DigestRow,
+  PendingBlocker,
   SlaClaim,
 } from '../domain/approvals.reader';
 import { DIGEST_DUE_MS, DUE_SOON_MS } from '../domain/sla';
@@ -119,6 +120,7 @@ function whereSql(q: ApprovalQuery): Prisma.Sql {
   }
   if (q.escalatedOnly) parts.push(Prisma.sql`a.escalated_at IS NOT NULL`);
   if (q.date) parts.push(Prisma.sql`a.date = ${q.date}`);
+  if (q.month) parts.push(Prisma.sql`left(a.date, 7) = ${q.month}`);
   if (q.fromDate) parts.push(Prisma.sql`a.date >= ${q.fromDate}`);
   if (q.toDate) parts.push(Prisma.sql`a.date <= ${q.toDate}`);
   if (q.userId) parts.push(Prisma.sql`a.user_id = ${q.userId}::uuid`);
@@ -333,6 +335,65 @@ export class PrismaApprovalsReader implements ApprovalsReader {
       date: r.date,
       pending: r.pending,
       overdue: r.overdue,
+    }));
+  }
+
+  async pendingInMonthDetails(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<PendingBlocker[]> {
+    if (userIds && !userIds.length) return [];
+    const people = userIds ? Prisma.sql`AND a.user_id = ANY(${userIds}::uuid[])` : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
+      {
+        type: ApprovalType;
+        id: string;
+        date: string;
+        category: string;
+        user_id: string;
+        user_first: string | null;
+        user_last: string | null;
+        approver_id: string | null;
+        approver_role: string | null;
+        approver_first: string | null;
+        approver_last: string | null;
+        approver_active: boolean | null;
+        due_at: Date | null;
+        escalated_at: Date | null;
+      }[]
+    >`
+      SELECT a.type, a.id::text AS id, a.date, a.category, a.user_id::text AS user_id,
+             s.first_name AS user_first, s.last_name AS user_last,
+             a.approver_id::text AS approver_id, a.approver_role,
+             ap.first_name AS approver_first, ap.last_name AS approver_last,
+             (ap.id IS NOT NULL AND ap.status = 'ACTIVE' AND ap.deleted_at IS NULL) AS approver_active,
+             a.due_at, a.escalated_at
+        FROM ${ITEMS}
+        LEFT JOIN users s ON s.id = a.user_id
+        LEFT JOIN users ap ON ap.id = a.approver_id
+       WHERE a.status = 'PENDING' AND left(a.date, 7) = ${month} AND ${inOrg(companyId)} ${people}
+       ORDER BY a.date ASC, a.created_at ASC, a.id ASC
+       LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}`;
+    const name = (f: string | null, l: string | null) =>
+      [f, l]
+        .filter((x) => x && x.trim())
+        .join(' ')
+        .trim();
+    return rows.map((r) => ({
+      type: r.type,
+      id: r.id,
+      date: r.date,
+      category: r.category,
+      userId: r.user_id,
+      userName: name(r.user_first, r.user_last) || 'Former user',
+      approverId: r.approver_id,
+      approverName: r.approver_id ? name(r.approver_first, r.approver_last) || 'Former user' : null,
+      approverRole: r.approver_role,
+      approverActive: r.approver_id ? !!r.approver_active : true,
+      dueAt: r.due_at ? r.due_at.toISOString() : null,
+      escalated: !!r.escalated_at,
     }));
   }
 

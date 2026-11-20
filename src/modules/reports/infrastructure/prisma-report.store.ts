@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
 import { lockMonthExclusive } from '@shared/database/month-lock';
-import { LockMonthResult, MonthLockRow, ReportRunRow, ReportStore } from '../domain/report.store';
+import {
+  LockMonthResult,
+  MonthLockRow,
+  OpenSessionBlocker,
+  ReportRunRow,
+  ReportStore,
+} from '../domain/report.store';
 import { MonthSnapshot } from '../domain/report.types';
 
 /** Building a whole company's month can take a while; decisions wait meanwhile. */
@@ -127,6 +133,31 @@ export class PrismaReportStore implements ReportStore {
       });
       return { ok: true as const, lock, created: true };
     }, LOCK_TX);
+  }
+
+  async openSessionsInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+  ): Promise<OpenSessionBlocker[]> {
+    const rows = await this.prisma.workSession.findMany({
+      where: { endedAt: null, date: { startsWith: `${month}-` }, user: { companyId } },
+      orderBy: [{ date: 'asc' }, { startedAt: 'asc' }],
+      take: Math.max(1, Math.min(500, Math.floor(limit))),
+      select: {
+        userId: true,
+        date: true,
+        startedAt: true,
+        user: { select: { firstName: true, lastName: true } },
+      },
+    });
+    return rows.map((r) => ({
+      userId: r.userId,
+      userName:
+        [r.user?.firstName, r.user?.lastName].filter(Boolean).join(' ').trim() || 'Former user',
+      date: r.date,
+      startedAt: r.startedAt.toISOString(),
+    }));
   }
 
   async unlockMonth(companyId: string, month: string): Promise<boolean> {

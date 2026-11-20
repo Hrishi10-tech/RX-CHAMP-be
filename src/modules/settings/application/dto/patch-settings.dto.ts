@@ -24,9 +24,19 @@ export class PatchSettingsDto {
   @Allow()
   halfDayPct?: unknown;
 
-  @ApiPropertyOptional({ type: Number, minimum: 0, maximum: 120, example: 10 })
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 0,
+    maximum: 120,
+    example: 10,
+    description: 'Minutes after the shift start a day may begin without a reason',
+  })
   @Allow()
   lateStartGraceMin?: unknown;
+
+  @ApiPropertyOptional({ type: Boolean, example: true })
+  @Allow()
+  requireLateStartReason?: unknown;
 
   @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 59, example: 20 })
   @Allow()
@@ -51,4 +61,15 @@ export class PatchSettingsDto {
   })
   @Allow()
   focusAdjustmentsEnabled?: unknown;
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 10,
+    maximum: 240,
+    example: 30,
+    description:
+      '3.2 Forgotten End Day: after the shift ends, a day with no keyboard or mouse input for this long is ended at that last input',
+  })
+  @Allow()
+  forgottenEndDayIdleMin?: unknown;
 }

@@ -10,7 +10,7 @@ import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/appr
 import { WORKTIME_READER, WorktimeReader } from '@modules/worktime/domain/worktime.reader';
 import { monthDates } from '../domain/report-builder';
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
-import { MonthLockView, MonthSnapshot } from '../domain/report.types';
+import { MonthLockBlockers, MonthLockView, MonthSnapshot } from '../domain/report.types';
 import { ReportsService } from './reports.service';
 
 /**
@@ -45,25 +45,53 @@ export class MonthLockService {
     // Reading the status never fails on the range: a month with nothing to report
     // is simply open with nothing pending (or shows the lock it has).
     if (await this.reports.monthProblem(month, now)) {
-      return this.view(month, await this.store.findLock(companyId, month), 0);
+      return this.view(month, await this.store.findLock(companyId, month), 0, EMPTY_BLOCKERS);
     }
-    let pending: number;
-    if (isAdminLike(me)) {
-      pending = await this.approvals.pendingInMonth(companyId, month);
-    } else {
-      const dates = monthDates(month);
-      const team = await this.scope.scope(me, {
-        fromDate: dates[0],
-        toDate: dates[dates.length - 1],
-      });
-      pending = await this.approvals.pendingInMonth(
-        companyId,
-        month,
-        team.map((p) => p.id),
-      );
-    }
+    const people = await this.peopleInScope(me, month);
+    const pending = people
+      ? await this.approvals.pendingInMonth(companyId, month, people)
+      : await this.approvals.pendingInMonth(companyId, month);
     const lock = await this.store.findLock(companyId, month);
-    return this.view(month, lock, pending);
+    // Open working days only hold an ended month (today's are expected).
+    const ended = month < dateKeyInZone(now, appTimezone()).slice(0, 7);
+    const blockers = lock
+      ? EMPTY_BLOCKERS
+      : await this.blockers(companyId, month, pending, people, ended && isAdminLike(me));
+    return this.view(month, lock, pending, blockers);
+  }
+
+  /** The organisation's admin sees everyone (undefined); a Manager their team for the month. */
+  private async peopleInScope(me: AuthenticatedUser, month: string): Promise<string[] | undefined> {
+    if (isAdminLike(me)) return undefined;
+    const dates = monthDates(month);
+    const team = await this.scope.scope(me, {
+      fromDate: dates[0],
+      toDate: dates[dates.length - 1],
+    });
+    return team.map((p) => p.id);
+  }
+
+  /**
+   * 3.2: the rows that hold the lock: the same PENDING predicate the lock itself
+   * counts (every item of the organisation dated in the month), so "N approvals
+   * open" always comes with the N rows to decide.
+   */
+  private async blockers(
+    companyId: string,
+    month: string,
+    pending: number,
+    people: string[] | undefined,
+    withSessions: boolean,
+  ): Promise<MonthLockBlockers> {
+    const [items, openSessions] = await Promise.all([
+      pending > 0
+        ? people
+          ? this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT, people)
+          : this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT)
+        : [],
+      withSessions ? this.store.openSessionsInMonth(companyId, month, BLOCKER_LIMIT) : [],
+    ]);
+    return { items, moreItems: pending > items.length, openSessions };
   }
 
   async lock(me: AuthenticatedUser, month: string, now: Date): Promise<MonthLockView> {
@@ -79,21 +107,23 @@ export class MonthLockService {
       this.snapshot(companyId, month, now),
     );
     if (!result.ok && result.reason === 'OPEN_SESSIONS') {
+      const sessions = await this.store.openSessionsInMonth(companyId, month, BLOCKER_LIMIT);
       throw new ConflictError(
         `${result.count === 1 ? '1 working day dated in ' + month + ' is' : `${result.count} working days dated in ${month} are`} ` +
           'still open. Lock the month once they have ended (End Day, or the automatic close).',
         'OPEN_SESSIONS',
-      ).withDetails({ count: result.count });
+      ).withDetails({ count: result.count, sessions });
     }
     if (!result.ok) {
+      const items = await this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT);
       throw new ConflictError(
         `${result.count === 1 ? '1 item' : `${result.count} items`} dated in ${month} still ` +
           'wait for a decision. Decide them before locking the month.',
         'PENDING_APPROVALS',
-      ).withDetails({ count: result.count });
+      ).withDetails({ count: result.count, items, moreItems: result.count > items.length });
     }
     if (result.created) this.logger.log(`${month} of ${companyId} locked by ${me.id}`);
-    return this.view(month, result.lock, 0);
+    return this.view(month, result.lock, 0, EMPTY_BLOCKERS);
   }
 
   async unlock(me: AuthenticatedUser, month: string, now: Date): Promise<MonthLockView> {
@@ -102,7 +132,14 @@ export class MonthLockService {
     if (await this.store.unlockMonth(companyId, month)) {
       this.logger.log(`${month} of ${companyId} unlocked by ${me.id}`);
     }
-    return this.view(month, null, await this.approvals.pendingInMonth(companyId, month));
+    const pending = await this.approvals.pendingInMonth(companyId, month);
+    const ended = month < dateKeyInZone(now, appTimezone()).slice(0, 7);
+    return this.view(
+      month,
+      null,
+      pending,
+      await this.blockers(companyId, month, pending, undefined, ended),
+    );
   }
 
   /** The organisation's everyone report and each person's month, as they stand now. */
@@ -128,6 +165,7 @@ export class MonthLockService {
     month: string,
     lock: { lockedById: string; lockedAt: Date } | null,
     pending: number,
+    blockers: MonthLockBlockers,
   ): Promise<MonthLockView> {
     const by = lock ? (await this.people.findAnyByIds([lock.lockedById]))[0] : undefined;
     return {
@@ -136,6 +174,11 @@ export class MonthLockService {
       lockedAt: lock?.lockedAt.toISOString() ?? null,
       lockedByName: by ? personName(by) : null,
       pending,
+      blockers,
     };
   }
 }
+
+/** How many blocking rows the status and a refused lock name (the count is always exact). */
+const BLOCKER_LIMIT = 50;
+const EMPTY_BLOCKERS: MonthLockBlockers = { items: [], moreItems: false, openSessions: [] };

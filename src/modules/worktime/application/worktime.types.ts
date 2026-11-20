@@ -1,3 +1,4 @@
+import type { AfterSkipActivity } from '../domain/input-activity';
 import { BreakRecordView, SkipNeedingComment } from '@modules/shifts/application/shifts.types';
 import { BreakKind } from '@modules/shifts/domain/shift.types';
 import { ApprovalCategory, ApprovalEffect } from '../domain/approval-copy';
@@ -214,6 +215,12 @@ export interface ApprovalItemView {
   decisionNote: string | null;
   canDecide: boolean;
   locked: boolean;
+  /**
+   * Skipped and auto-skipped breaks, for Managers and Super Admins only: keyboard and
+   * mouse input in the 15 minutes after the skip (or after the break was due). Null
+   * on every other item, and always null for the person themself.
+   */
+  afterSkip: AfterSkipActivity | null;
   break: BreakRecordView | null;
   meeting: MeetingRecordView | null;
   /** 4.0. */
@@ -228,6 +235,10 @@ export interface ApprovalsSummaryView31 {
   approvedToday: number;
   rejectedToday: number;
   slaHours: number;
+  /** Which items the counts cover: the caller's queue, or the whole organisation. */
+  scope: 'mine' | 'all';
+  /** The month the counts are limited to, or null for every month. */
+  month: string | null;
 }
 
 export interface BulkApproveResult31 {

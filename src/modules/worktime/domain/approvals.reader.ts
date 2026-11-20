@@ -43,6 +43,8 @@ export interface ApprovalQuery {
   /** Only items that were escalated (past due). */
   escalatedOnly?: boolean;
   date?: string;
+  /** Only items dated in this month, "YYYY-MM" (the payroll lock's own predicate). */
+  month?: string;
   fromDate?: string;
   toDate?: string;
   userId?: string;
@@ -113,6 +115,35 @@ export interface ApprovalsReader {
     toDate: string,
     now: Date,
   ): Promise<{ userId: string; date: string; pending: number; overdue: number }[]>;
+  /**
+   * 3.2: the PENDING items of the organisation dated in the month, oldest day first
+   * (at most `limit`), with whose they are and whose queue they sit in: what holds
+   * the payroll lock.
+   */
+  pendingInMonthDetails(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<PendingBlocker[]>;
   /** How many items of the organisation dated in the month are PENDING (optionally only these people's). */
   pendingInMonth(companyId: string, month: string, userIds?: string[]): Promise<number>;
+}
+
+/** One undecided item that keeps a month from being locked for payroll. */
+export interface PendingBlocker {
+  type: ApprovalType;
+  id: string;
+  date: string;
+  category: string;
+  userId: string;
+  userName: string;
+  approverId: string | null;
+  approverName: string | null;
+  /** SUPER_ADMIN for the Super Admin pool, else the approver's role. */
+  approverRole: string | null;
+  /** False when the approver is disabled, deleted or gone (it sits with the Super Admins). */
+  approverActive: boolean;
+  dueAt: string | null;
+  escalated: boolean;
 }

@@ -57,4 +57,21 @@ export interface ReportStore {
   ): Promise<LockMonthResult>;
   /** True when a lock was removed. */
   unlockMonth(companyId: string, month: string): Promise<boolean>;
+  /**
+   * 3.2: the organisation's work sessions dated in the month that are still open
+   * (at most `limit`), oldest first.
+   */
+  openSessionsInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+  ): Promise<OpenSessionBlocker[]>;
+}
+
+/** A working day dated in the month that has not ended yet. */
+export interface OpenSessionBlocker {
+  userId: string;
+  userName: string;
+  date: string;
+  startedAt: string;
 }

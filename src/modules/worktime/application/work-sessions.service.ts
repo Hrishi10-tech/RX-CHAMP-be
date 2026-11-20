@@ -21,7 +21,13 @@ import {
   BreakRecordRepository,
 } from '@modules/shifts/domain/break-record.repository';
 import { AgentGeneration } from '../domain/agent-generation';
-import { autoCloseAt, isStale, latestEndOf } from '../domain/auto-close';
+import {
+  autoCloseAt,
+  idleCloseDue,
+  idleRuleFrom,
+  isStale,
+  latestEndOf,
+} from '../domain/auto-close';
 import { START_DAY_BACKDATE_MS } from '../domain/meetings';
 import { dayAutoClosedManagerCopy, dayAutoClosedSelfCopy, NOTICE } from '../domain/notice-copy';
 import {
@@ -219,11 +225,13 @@ export class WorkSessionsService {
   async autoCloseIfStale(userId: string, now: Date): Promise<boolean> {
     const open = await this.sessions.findOpen(userId);
     if (!open) return false;
+    // The cache holds the earliest instant this session could be closed (the idle
+    // rule's due time, or the hard stop): nothing to check before it.
     const cached = this.latestEndCache.get(open.id);
     if (
       cached &&
       now.getTime() - cached.at < LATEST_END_TTL_MS &&
-      now.getTime() <= cached.latestEnd
+      now.getTime() < cached.latestEnd
     ) {
       return false;
     }
@@ -251,27 +259,59 @@ export class WorkSessionsService {
       await Promise.all(orgs.map(async (o) => [o, await this.settings.get(o)] as const)),
     );
     const stale: { session: WorkSessionRecord; latestEnd: Date }[] = [];
+    // 3.2 Forgotten End Day: past the shift's end, a day nobody has touched the
+    // keyboard or mouse in for `forgottenEndDayIdleMin` is ended. Needs the last
+    // input, read in one query.
+    const watch: {
+      session: WorkSessionRecord;
+      latestEnd: Date;
+      basis: { startedAt: Date; shiftEnd: Date | null };
+      idleMin: number;
+    }[] = [];
     for (const s of open) {
       const person = byId.get(s.userId) ?? null;
-      const latestEnd = this.latestEndFor(
-        s,
-        person,
-        ctx,
-        settingsByOrg.get(person?.companyId ?? null)!.autoCloseAfterShiftEndMin,
-      );
-      this.remember(s.id, latestEnd, now);
+      const settings = settingsByOrg.get(person?.companyId ?? null)!;
+      const latestEnd = this.latestEndFor(s, person, ctx, settings.autoCloseAfterShiftEndMin);
+      // 4.1 shared computer: a day carried on into the next shift is measured from
+      // that answer, as a day with no shift, never from the first shift's end.
+      const basis = s.extendedAt
+        ? { startedAt: s.extendedAt, shiftEnd: null }
+        : { startedAt: s.startedAt, shiftEnd: this.shiftEndFor(s, person, ctx) };
+      const idleFrom = idleRuleFrom(basis);
       if (isStale(latestEnd, now)) stale.push({ session: s, latestEnd });
+      else if (now.getTime() >= idleFrom.getTime()) {
+        watch.push({ session: s, latestEnd, basis, idleMin: settings.forgottenEndDayIdleMin });
+      }
+      // The lazy check needs nothing before the idle rule can apply.
+      this.remember(s.id, new Date(Math.min(latestEnd.getTime(), idleFrom.getTime())), now);
     }
-    if (!stale.length) return 0;
+    if (!stale.length && !watch.length) return 0;
 
     const lastInputs = await this.sessions.lastInputs(
-      stale.map(({ session, latestEnd }) => ({
+      [...stale, ...watch].map(({ session, latestEnd }) => ({
         sessionId: session.id,
         userId: session.userId,
         from: session.startedAt,
         to: new Date(Math.max(now.getTime(), latestEnd.getTime())),
       })),
     );
+    const inMeeting = watch.length
+      ? await this.sessions.usersInLiveMeeting(watch.map((w) => w.session.userId))
+      : new Set<string>();
+    for (const w of watch) {
+      // A live meeting is work without typing: never ended by the idle rule.
+      if (inMeeting.has(w.session.userId)) continue;
+      const due = idleCloseDue({
+        ...w.basis,
+        lastInput: lastInputs.get(w.session.id) ?? null,
+        idleMin: w.idleMin,
+      });
+      if (now.getTime() >= due.getTime())
+        stale.push({ session: w.session, latestEnd: w.latestEnd });
+      else this.remember(w.session.id, due, now);
+    }
+    if (!stale.length) return 0;
+
     let closed = 0;
     for (const { session, latestEnd } of stale) {
       try {
@@ -299,6 +339,20 @@ export class WorkSessionsService {
     }
     if (closed) this.logger.log(`auto-closed ${closed} work session(s) with no End Day`);
     return closed;
+  }
+
+  /** End of the person's shift on the session's date; null with no shift or on a day off. */
+  private shiftEndFor(
+    session: WorkSessionRecord,
+    person: ShiftPerson | null,
+    ctx: ResolutionContext,
+  ): Date | null {
+    if (!person) return null;
+    const day = this.days.forDate(this.days.resolveWith(ctx, person, session.date), session.date);
+    if (day.resolved.shift && day.workday) {
+      return shiftBounds(day.resolved.shift, session.date, this.timezone).end;
+    }
+    return null;
   }
 
   /**

@@ -1,3 +1,5 @@
+import { realLastInput } from '../domain/auto-close';
+import { IDLE_LEAD_IN_SEC, LOCK_SCREEN_APP_NAME } from '../domain/input-activity';
 import { Injectable } from '@nestjs/common';
 import { Prisma, WorkSession } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
@@ -407,21 +409,68 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
   async lastInputs(queries: LastInputQuery[]): Promise<Map<string, Date | null>> {
     const out = new Map<string, Date | null>();
     if (!queries.length) return out;
-    // Timestamps are timestamp(3) holding UTC, so ISO strings are read back in UTC.
-    const rows = await this.prisma.$queryRaw<{ session_id: string; last: Date | null }[]>`
-      SELECT q.session_id::text AS session_id,
-             (SELECT max(s.at) FROM activity_samples s
-               WHERE s.user_id = q.user_id
-                 AND s.idle = false
-                 AND s.at >= (q.from_at::timestamptz AT TIME ZONE 'UTC')
-                 AND s.at <= (q.to_at::timestamptz AT TIME ZONE 'UTC')) AS last
-      FROM unnest(
-        ${queries.map((q) => q.sessionId)}::uuid[],
-        ${queries.map((q) => q.userId)}::uuid[],
-        ${queries.map((q) => q.from.toISOString())}::text[],
-        ${queries.map((q) => q.to.toISOString())}::text[]
-      ) AS q(session_id, user_id, from_at, to_at)`;
-    for (const r of rows) out.set(r.session_id, r.last);
+    // The last active (input) sample in the span, and the first idle sample after it:
+    // the agent flags idle only once its threshold has passed, so the real last input
+    // is worked out from both (realLastInput). Timestamps are timestamp(3) holding UTC.
+    const rows = await this.prisma.$queryRaw<
+      {
+        session_id: string;
+        last_at: Date | null;
+        last_sec: number | null;
+        next_idle_at: Date | null;
+        next_idle_locked: boolean | null;
+      }[]
+    >`
+      SELECT q.session_id::text AS session_id, la.at AS last_at, la.duration_sec AS last_sec,
+             ni.at AS next_idle_at, ni.locked AS next_idle_locked
+        FROM unnest(
+          ${queries.map((q) => q.sessionId)}::uuid[],
+          ${queries.map((q) => q.userId)}::uuid[],
+          ${queries.map((q) => q.from.toISOString())}::text[],
+          ${queries.map((q) => q.to.toISOString())}::text[]
+        ) AS q(session_id, user_id, from_at, to_at)
+        LEFT JOIN LATERAL (
+          SELECT s.at, s.duration_sec FROM activity_samples s
+           WHERE s.user_id = q.user_id
+             AND s.idle = false
+             AND s.locked = false
+             AND (s.app IS NULL OR s.app <> ${LOCK_SCREEN_APP_NAME})
+             AND s.at >= (q.from_at::timestamptz AT TIME ZONE 'UTC')
+             AND s.at <= (q.to_at::timestamptz AT TIME ZONE 'UTC')
+           ORDER BY s.at DESC LIMIT 1
+        ) la ON true
+        LEFT JOIN LATERAL (
+          SELECT s.at, (s.locked OR s.app = ${LOCK_SCREEN_APP_NAME}) AS locked FROM activity_samples s
+           WHERE s.user_id = q.user_id
+             AND s.idle = true
+             AND s.at > la.at
+             AND s.at <= (q.to_at::timestamptz AT TIME ZONE 'UTC')
+           ORDER BY s.at ASC LIMIT 1
+        ) ni ON true`;
+    const now = new Date();
+    for (const r of rows) {
+      out.set(
+        r.session_id,
+        realLastInput({
+          lastActiveAt: r.last_at,
+          lastActiveSec: Number(r.last_sec ?? 0),
+          nextIdleAt: r.next_idle_at,
+          nextIdleLocked: !!r.next_idle_locked,
+          idleThresholdSec: IDLE_LEAD_IN_SEC,
+          now,
+        }),
+      );
+    }
     return out;
+  }
+
+  async usersInLiveMeeting(userIds: string[]): Promise<Set<string>> {
+    if (!userIds.length) return new Set();
+    const rows = await this.prisma.presenceSession.findMany({
+      where: { userId: { in: [...new Set(userIds)] }, type: 'MEETING', endedAt: null },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return new Set(rows.map((r) => r.userId));
   }
 }

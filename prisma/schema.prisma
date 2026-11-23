@@ -47,15 +47,17 @@ model Role {
 
 /// An organisation (4.0). The table keeps its 2.x name.
 model Company {
-  id           String        @id @default(uuid()) @db.Uuid
-  name         String
-  users        User[]
-  shifts       Shift[]
-  departments  Department[]
-  calendarDays CalendarDay[]
-  signOutKeys  SignOutKey[]
-  monthLocks   MonthLock[]
-  reportRuns   ReportRun[]
+  id                          String                       @id @default(uuid()) @db.Uuid
+  name                        String
+  users                       User[]
+  shifts                      Shift[]
+  departments                 Department[]
+  calendarDays                CalendarDay[]
+  signOutKeys                 SignOutKey[]
+  monthLocks                  MonthLock[]
+  reportRuns                  ReportRun[]
+  /// 3.6: when this organisation's biometric integration was on (the payroll pause).
+  biometricIntegrationPeriods BiometricIntegrationPeriod[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -83,6 +85,7 @@ model Shift {
   ringLeadMin     Int     @default(1) @map("ring_lead_min")
   /// ...and rings for this long. Starting a break while it rings is "on time".
   ringDurationMin Int     @default(5) @map("ring_duration_min")
+  /// Unread and unwritten since 3.6: no alert makes a sound (brief 1.2). Every answer says false.
   ringSound       Boolean @default(true) @map("ring_sound")
   /// Whether starting early (window open, before the ring) needs a reason.
   reasonOnEarly   Boolean @default(true) @map("reason_on_early")
@@ -94,10 +97,10 @@ model Shift {
   /// Minutes over a break that are simply break time (no approval). 3.1 default 3.
   overrunGraceMin Int     @default(3) @map("overrun_grace_min")
 
-  breaks       ShiftBreak[]
-  assignments  ShiftAssignment[]
+  breaks           ShiftBreak[]
+  assignments      ShiftAssignment[]
   departmentShifts DepartmentShift[]
-  breakRecords BreakRecord[]
+  breakRecords     BreakRecord[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -215,28 +218,29 @@ enum WorkSessionEndReason {
 /// row lock on the user and by the partial unique index
 /// work_sessions_one_open_per_user (migration SQL only; Prisma cannot express it).
 model WorkSession {
-  id        String                @id @default(uuid()) @db.Uuid
-  userId    String                @map("user_id") @db.Uuid
-  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String                @id @default(uuid()) @db.Uuid
+  userId       String                @map("user_id") @db.Uuid
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Business-timezone day of startedAt. A session running past midnight keeps it.
-  date      String
-  startedAt DateTime              @map("started_at")
-  endedAt   DateTime?             @map("ended_at")
-  endReason WorkSessionEndReason? @map("end_reason")
+  date         String
+  startedAt    DateTime              @map("started_at")
+  endedAt      DateTime?             @map("ended_at")
+  endReason    WorkSessionEndReason? @map("end_reason")
   /// 4.1 shared computer: when the person said they are taking the next shift. An
   /// extended day is not auto-closed at the shift end; it runs until End Day.
-  extendedAt DateTime?            @map("extended_at")
+  extendedAt   DateTime?             @map("extended_at")
   /// AGENT | LEGACY | BACKFILL
-  source    String                @default("AGENT")
+  source       String                @default("AGENT")
   /// Why the day started late (3.2): set on the day's first session when Start Day came
   /// later than the shift start plus the late-start grace. From the agent or the portal.
-  lateReason   String?            @map("late_reason")
-  lateReasonAt DateTime?          @map("late_reason_at")
-  createdAt DateTime              @default(now()) @map("created_at")
-  updatedAt DateTime              @updatedAt @map("updated_at")
+  lateReason   String?               @map("late_reason")
+  lateReasonAt DateTime?             @map("late_reason_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
 
   @@index([userId, date])
   @@index([endedAt])
+  @@index([userId, endedAt])
   @@map("work_sessions")
 }
 
@@ -267,6 +271,12 @@ model MeetingRecord {
   dueAt             DateTime?           @map("due_at")
   escalatedAt       DateTime?           @map("escalated_at")
   remindedAt        DateTime?           @map("reminded_at")
+  /// 3.6: a status meeting is STATUS; everything earlier is DECLARED.
+  kind              MeetingKind         @default(DECLARED)
+  startSource       MeetingStartSource? @map("start_source")
+  /// The start, then each "Still in it": the 2 hour check counts from here.
+  confirmedAt       DateTime?           @map("confirmed_at")
+  endReason         MeetingEndReason?   @map("end_reason")
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
 
@@ -530,6 +540,14 @@ model User {
   /// The day (YYYY-MM-DD) the source last changed: punches shape days from then on.
   attendanceSourceFrom String? @map("attendance_source_from")
 
+  biometricSourcePeriods BiometricSourcePeriod[]
+  /// Picks the avatar library and the default avatar (3.6). Null: not set yet, the
+  /// person shows initials. Set by a Super Admin.
+  gender                 Gender?
+  /// The preset the person chose: a manifest ID, nothing else is ever stored. Null
+  /// means the default for their gender.
+  avatarId               String?                 @map("avatar_id")
+
   /// 4.0: the person's department (staff: required; managers: their own, optional).
   departmentId       String?             @map("department_id") @db.Uuid
   departmentRef      Department?         @relation("UserDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
@@ -562,13 +580,13 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
+  @@unique([companyId, biometricCode])
   @@index([roleId])
   @@index([managerId])
   @@index([department])
   @@index([status])
   @@index([companyId])
   @@index([departmentId])
-  @@unique([companyId, biometricCode])
   @@map("users")
 }
 
@@ -885,18 +903,18 @@ model AuditLog {
 
 /// A department of an organisation. Staff belong to one; managers to one or more.
 model Department {
-  id        String              @id @default(uuid()) @db.Uuid
-  companyId String              @map("company_id") @db.Uuid
-  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name      String
+  id             String              @id @default(uuid()) @db.Uuid
+  companyId      String              @map("company_id") @db.Uuid
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
   /// Key from the themed icon set (docs/4.0/SPEC.md 7.6).
-  icon      String              @default("briefcase")
+  icon           String              @default("briefcase")
   /// 4.1: one computer shared between shifts. People here are asked near their shift
   /// end whether they are taking the next shift; if not, their day ends and the agent
   /// signs out at the shift end, for the next person to sign in.
-  sharedComputer Boolean        @default(false) @map("shared_computer")
-  users     User[]              @relation("UserDepartment")
-  managers  ManagerDepartment[]
+  sharedComputer Boolean             @default(false) @map("shared_computer")
+  users          User[]              @relation("UserDepartment")
+  managers       ManagerDepartment[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -972,15 +990,15 @@ model AwayEvent {
 /// A date whose working status differs from the organisation's week pattern (holidays,
 /// extra working days).
 model CalendarDay {
-  companyId   String   @map("company_id") @db.Uuid
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  date        String
-  isWorking   Boolean  @map("is_working")
-  label       String?
+  companyId     String   @map("company_id") @db.Uuid
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  date          String
+  isWorking     Boolean  @map("is_working")
+  label         String?
   /// 3.5: the departments it is for (a holiday for some departments); empty: everyone.
   departmentIds String[] @default([]) @map("department_ids") @db.Uuid
-  updatedById String?  @map("updated_by_id") @db.Uuid
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedById   String?  @map("updated_by_id") @db.Uuid
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@id([companyId, date])
   @@map("calendar_days")
@@ -1250,8 +1268,6 @@ model LeaveRequestDay {
   @@map("leave_request_days")
 }
 
-
-
 // ----------------------------------------------------------------------------
 // Biometric attendance (3.5): punches from the device, matched to people by their
 // biometric code; a biometric person's day runs from the first punch to the last.
@@ -1441,3 +1457,115 @@ model CompOffCredit {
   @@map("comp_off_credits")
 }
 
+// ----------------------------------------------------------------------------
+// RX Vision 3.6
+// ----------------------------------------------------------------------------
+
+// Which avatar library a person sees and which default they get (3.6). Set by a
+// Super Admin; null on the user means not set yet.
+enum Gender {
+  MALE
+  FEMALE
+}
+
+/// DECLARED: the 3.1 meeting (agenda, participants, approval). STATUS: "In a meeting" (3.6):
+/// only its start and end travel, no approval, and the 2 hour check is its control.
+enum MeetingKind {
+  DECLARED
+  STATUS
+}
+
+/// Where a status meeting started: the Start meeting button, or a suggestion the person tapped.
+enum MeetingStartSource {
+  BUTTON
+  SUGGESTION
+}
+
+/// Why a status meeting ended.
+enum MeetingEndReason {
+  USER
+  BREAK
+  END_DAY
+  NO_ANSWER
+  AUTO_CLOSED
+}
+
+/// When an organisation's biometric integration was on (3.6; 4.0: per organisation): a
+/// biometric person's payroll for a day is calculated only if a period of their
+/// organisation covers that day. A history: rows are closed, never deleted. At most one
+/// is open per organisation: enforced by the partial unique index
+/// biometric_integration_periods_one_open (migration SQL only; Prisma cannot express it).
+model BiometricIntegrationPeriod {
+  id          String    @id @default(uuid()) @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// First business day it was on (the day it was switched on counts in full).
+  fromDate    String    @map("from_date")
+  /// Last business day it was on; null while it is on.
+  toDate      String?   @map("to_date")
+  startedAt   DateTime  @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+  startedById String?   @map("started_by_id") @db.Uuid
+  endedById   String?   @map("ended_by_id") @db.Uuid
+
+  @@index([companyId, fromDate])
+  @@map("biometric_integration_periods")
+}
+
+/// A stretch someone was on biometric, written when they move back to the agent (3.6): the
+/// payroll pause reads the source in force on a date, so moving back never recalculates the
+/// days before it. Their current stretch is on the user (attendanceSource, attendanceSourceFrom).
+model BiometricSourcePeriod {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// First business day on biometric; null when that was never recorded (from the beginning).
+  fromDate    String?  @map("from_date")
+  /// Last business day on biometric: the day before the move.
+  toDate      String   @map("to_date")
+  changedAt   DateTime @map("changed_at")
+  changedById String?  @map("changed_by_id") @db.Uuid
+
+  @@index([userId, toDate])
+  @@map("biometric_source_periods")
+}
+
+/// A phone that can receive push notifications (3.6, server half). `token` is the FCM
+/// registration token: never logged and never sent back by the API. One token belongs to
+/// one person (the last to sign in on that phone).
+model PushDevice {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  /// android | ios | web
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("push_devices")
+}
+
+/// Every push the API would send, whether or not it went out. Holds no device
+/// token and no provider key.
+model PushOutbox {
+  id          String    @id @default(uuid()) @db.Uuid
+  recipientId String    @map("recipient_id") @db.Uuid
+  title       String
+  body        String
+  /// Short strings only (what the phone opens on a tap).
+  data        Json      @default("{}")
+  /// NOT_SENT (flag off or no credentials), NO_DEVICE, SENT or FAILED.
+  sentState   String    @default("NOT_SENT") @map("sent_state")
+  /// How many devices it was tried on, and how many took it.
+  devices     Int       @default(0)
+  delivered   Int       @default(0)
+  /// Why it failed, as a short code; never the provider's answer.
+  errorCode   String?   @map("error_code")
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([recipientId, createdAt])
+  @@index([sentState, createdAt])
+  @@map("push_outbox")
+}

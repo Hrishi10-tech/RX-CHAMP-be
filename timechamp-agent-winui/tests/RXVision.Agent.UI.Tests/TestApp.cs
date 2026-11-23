@@ -57,11 +57,11 @@ public sealed class NoScreenRecordingPlatform : IPlatform, IPermissions
     public ILockProbe Lock => _dev.Lock;
     public ISleepClock SleepClock => _dev.SleepClock;
     public IForegroundProbe Foreground => _dev.Foreground;
+    public ICallWindowProbe CallWindows => _dev.CallWindows;
     public IScreenCapture Screen => _dev.Screen;
     public ISecretStore Secrets => _dev.Secrets;
     public IAutostart Autostart => _dev.Autostart;
     public IPermissions Permissions => this;
-    public ISoundPlayer Sound => _dev.Sound;
     public IScreenInfo ScreenInfo => _dev.ScreenInfo;
     public IUpdateInstaller Updater => _dev.Updater;
     public IShell Shell => _dev.Shell;

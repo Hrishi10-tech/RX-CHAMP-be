@@ -223,8 +223,8 @@ public class NetworkFailureLogTests
     }
 
     [Fact]
-    public void The_agent_says_it_is_4_0()
+    public void The_agent_says_it_is_4_1()
     {
-        Assert.StartsWith("4.0.", RXVision.Agent.Core.Config.AgentOptions.AppVersion);
+        Assert.StartsWith("4.1.", RXVision.Agent.Core.Config.AgentOptions.AppVersion);
     }
 }

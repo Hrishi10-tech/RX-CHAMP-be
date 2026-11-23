@@ -6,18 +6,17 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,20" Spacing="12">
+  <!-- 4.0: sending what waits before a sign-out, drawn as the 3.6 panel's dialogs. -->
+  <Grid RowDefinitions="*,Auto">
+    <StackPanel Margin="20,26,20,20" Spacing="10">
       <StackPanel Orientation="Horizontal" Spacing="10">
-        <PathIcon Classes="spinner" Width="20" Height="20" VerticalAlignment="Center" />
+        <PathIcon Classes="spinner" Width="18" Height="18" VerticalAlignment="Center" />
         <TextBlock Classes="h2" Text="{Binding Heading}" VerticalAlignment="Center" />
       </StackPanel>
-      <TextBlock Classes="body" Text="{Binding Message}" />
+      <TextBlock Classes="lead" Text="{Binding Message}" />
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <UniformGrid Rows="1" Margin="-4,0">
-        <Button Classes="secondary" Content="{Binding CancelText}" Command="{Binding CancelCommand}" IsCancel="True" />
-      </UniformGrid>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}" Command="{Binding CancelCommand}" IsCancel="True" />
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

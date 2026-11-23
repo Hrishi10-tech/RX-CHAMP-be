@@ -44,9 +44,8 @@
   <ItemGroup>
     <!-- Embedded for the views (avares://RXVision/Assets/...). -->
     <AvaloniaResource Include="Assets/agent-badge.png;Assets/rxvision.ico;Assets/rxvision-256.png;Assets/tray.ico;Assets/tray.png;Assets/tray-template.png" />
-    <!-- Beside the app for the platform code and installers: the chime is played
-         from Assets/chime.wav in the app folder; the icons are for packaging. -->
-    <Content Include="Assets/chime.wav;Assets/rxvision.ico;Assets/rxvision-256.png;Assets/tray-template.png">
+    <!-- Beside the app for the installers: the icons are for packaging. -->
+    <Content Include="Assets/rxvision.ico;Assets/rxvision-256.png;Assets/tray-template.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

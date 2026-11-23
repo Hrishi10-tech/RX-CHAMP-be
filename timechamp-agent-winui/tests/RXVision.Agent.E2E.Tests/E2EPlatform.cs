@@ -30,11 +30,11 @@ public sealed class E2EPlatform : IPlatform, IScreenCapture
     public ILockProbe Lock => Dev.Lock;
     public ISleepClock SleepClock => Dev.SleepClock;
     public IForegroundProbe Foreground => Dev.Foreground;
+    public ICallWindowProbe CallWindows => Dev.CallWindows;
     public IScreenCapture Screen => this;
     ISecretStore IPlatform.Secrets => Secrets;
     public IAutostart Autostart => Dev.Autostart;
     public IPermissions Permissions => Dev.Permissions;
-    public ISoundPlayer Sound => Dev.Sound;
     public IScreenInfo ScreenInfo => Dev.ScreenInfo;
     public IUpdateInstaller Updater => Dev.Updater;
     public IShell Shell => Dev.Shell;

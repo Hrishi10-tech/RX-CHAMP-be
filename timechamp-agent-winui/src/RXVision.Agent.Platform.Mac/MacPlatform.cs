@@ -19,11 +19,11 @@ public sealed class MacPlatform : IPlatform
     private readonly MacLockProbe _lock;
     private readonly MacSleepClock _sleep;
     private readonly MacForegroundProbe _foreground;
+    private readonly MacCallWindowProbe _callWindows;
     private readonly MacScreenCapture _screen;
     private readonly MacSecretStore _secrets;
     private readonly MacAutostart _autostart;
     private readonly MacPermissions _permissions;
-    private readonly MacSoundPlayer _sound;
     private readonly MacScreenInfo _screenInfo;
     private readonly MacUpdateInstaller _updater;
     private readonly MacShell _shell;
@@ -42,11 +42,11 @@ public sealed class MacPlatform : IPlatform
         _lock = new MacLockProbe(_log);
         _sleep = new MacSleepClock();
         _foreground = new MacForegroundProbe(_log);
+        _callWindows = new MacCallWindowProbe(_log);
         _screen = new MacScreenCapture(_paths.TempDir, _log);
         _secrets = new MacSecretStore(_paths.DataDir, _log);
         _autostart = new MacAutostart(_paths.AppDir, _log);
         _permissions = new MacPermissions(_paths.DataDir, _log);
-        _sound = new MacSoundPlayer(_paths.AppDir, _log);
         _screenInfo = new MacScreenInfo();
         _updater = new MacUpdateInstaller(_paths.AppDir, _paths.TempDir, _paths.LogDir, _paths.DataDir, _log);
         _shell = new MacShell(_log);
@@ -66,11 +66,11 @@ public sealed class MacPlatform : IPlatform
     public ILockProbe Lock => _lock;
     public ISleepClock SleepClock => _sleep;
     public IForegroundProbe Foreground => _foreground;
+    public ICallWindowProbe CallWindows => _callWindows;
     public IScreenCapture Screen => _screen;
     public ISecretStore Secrets => _secrets;
     public IAutostart Autostart => _autostart;
     public IPermissions Permissions => _permissions;
-    public ISoundPlayer Sound => _sound;
     public IScreenInfo ScreenInfo => _screenInfo;
     public IUpdateInstaller Updater => _updater;
     public IShell Shell => _shell;

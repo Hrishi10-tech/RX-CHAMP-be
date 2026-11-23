@@ -8,15 +8,11 @@ namespace RXVision.Agent.Converters;
 
 internal static class Palette
 {
-    public static readonly IBrush NeutralBg = Brush("#EEF0F4"), NeutralFg = Brush("#4B5368");
-    public static readonly IBrush AmberSoft = Brush("#FEF3E0"), AmberInk = Brush("#7A4306");
-    public static readonly IBrush Amber = Brush("#F59E0B"), AmberDeep = Brush("#2E1A02");
-    public static readonly IBrush RedBg = Brush("#FDECEC"), RedInk = Brush("#B42318");
-    public static readonly IBrush GreenBg = Brush("#E8F7EE"), GreenInk = Brush("#166534");
-    public static readonly IBrush Green = Brush("#22C55E"), Violet = Brush("#8B5CF6"), Grey = Brush("#9AA2B4");
-    public static readonly IBrush Brand = Brush("#4F46E5"), Red = Brush("#E5484D");
-    public static readonly IBrush VioletBg = Brush("#F1ECFD"), VioletInk = Brush("#5B21B6");
-    public static readonly IBrush Teal = Brush("#14B8A6");
+    // The panel's tokens (be/docs/3.6/AGENT.md section 4): neutral, the brand colour, amber for attention. No red.
+    public static readonly IBrush NeutralBg = Brush("#2B3343"), NeutralFg = Brush("#9AA3B2");
+    public static readonly IBrush AmberWash = Brush("#1FF2A93B"), Amber = Brush("#F2A93B"), AmberLabel = Brush("#141920");
+    public static readonly IBrush BrandWash = Brush("#1A6FC9B6"), Brand = Brush("#6FC9B6");
+    public static readonly IBrush Working = Brush("#34D27A"), Meeting = Brush("#A78BFA"), Grey = Brush("#8A93A3");
 
     public static IBrush Brush(string hex) => new SolidColorBrush(Color.Parse(hex)).ToImmutable();
 }
@@ -28,11 +24,9 @@ public sealed class ToneBackgroundConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        Tone.Open or Tone.Active or Tone.Warn => Palette.AmberSoft,
+        Tone.Open or Tone.Active or Tone.Warn or Tone.Over or Tone.Bad => Palette.AmberWash,
         Tone.Due => Palette.Amber,
-        Tone.Over or Tone.Bad => Palette.RedBg,
-        Tone.Good => Palette.GreenBg,
-        Tone.Skip => Palette.VioletBg,
+        Tone.Good => Palette.BrandWash,
         _ => Palette.NeutralBg,
     };
 
@@ -46,29 +40,26 @@ public sealed class ToneForegroundConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        Tone.Open or Tone.Active or Tone.Warn => Palette.AmberInk,
-        Tone.Due => Palette.AmberDeep,
-        Tone.Over or Tone.Bad => Palette.RedInk,
-        Tone.Good => Palette.GreenInk,
-        Tone.Skip => Palette.VioletInk,
+        Tone.Open or Tone.Active or Tone.Warn or Tone.Over or Tone.Bad => Palette.Amber,
+        Tone.Due => Palette.AmberLabel,
+        Tone.Good => Palette.Brand,
         _ => Palette.NeutralFg,
     };
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>The dot beside a status: green working, amber away, violet meeting, red over time, grey otherwise.</summary>
+/// <summary>The dot beside a status: green working, amber on a break (extended too), violet meeting, grey otherwise.</summary>
 public sealed class StatusBrushConverter : IValueConverter
 {
     public static readonly StatusBrushConverter Instance = new();
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        BubbleStatus.Working => Palette.Green,
-        BubbleStatus.Away => Palette.Amber,
-        BubbleStatus.Meeting => Palette.Violet,
-        BubbleStatus.Overrun => Palette.Red,
-        SyncTone.Ok => Palette.Green,
+        BubbleStatus.Working => Palette.Working,
+        BubbleStatus.Away or BubbleStatus.Overrun => Palette.Amber,
+        BubbleStatus.Meeting => Palette.Meeting,
+        SyncTone.Ok => Palette.Working,
         SyncTone.Pending => Palette.Amber,
         _ => Palette.Grey,
     };
@@ -76,39 +67,16 @@ public sealed class StatusBrushConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>One value for true, another for false (History's "behind" chip, muted days).</summary>
-public sealed class BoolBrushConverter : IValueConverter
-{
-    private readonly object _whenTrue;
-    private readonly object _whenFalse;
-
-    private BoolBrushConverter(object whenTrue, object whenFalse)
-    {
-        _whenTrue = whenTrue;
-        _whenFalse = whenFalse;
-    }
-
-    public static readonly BoolBrushConverter BehindBackground = new(Palette.AmberSoft, Palette.GreenBg);
-    public static readonly BoolBrushConverter BehindForeground = new(Palette.AmberInk, Palette.GreenInk);
-    public static readonly BoolBrushConverter MutedOpacity = new(0.6, 1.0);
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is true ? _whenTrue : _whenFalse;
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
-}
-
-/// <summary>The dot before a waiting item: amber break, teal lunch, red minutes over, violet meeting.</summary>
+/// <summary>The dot before a waiting item: amber a break or minutes over, teal lunch, violet meeting.</summary>
 public sealed class WaitingDotConverter : IValueConverter
 {
     public static readonly WaitingDotConverter Instance = new();
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        WaitingKind.Break => Palette.Amber,
-        WaitingKind.Lunch => Palette.Teal,
-        WaitingKind.Overrun => Palette.Red,
-        WaitingKind.Meeting => Palette.Violet,
+        WaitingKind.Break or WaitingKind.Overrun => Palette.Amber,
+        WaitingKind.Lunch => Palette.Brand,
+        WaitingKind.Meeting => Palette.Meeting,
         _ => Palette.Grey,
     };
 
@@ -130,29 +98,25 @@ public sealed class IconConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-/// <summary>Fraction (0..1) to a width, given the full width as the parameter.</summary>
-public sealed class FractionToWidthConverter : IMultiValueConverter
+/// <summary>4.0 History: amber when the month is behind its target, the brand colour on track; a muted day at 0.6.</summary>
+public sealed class BoolBrushConverter : IValueConverter
 {
-    public static readonly FractionToWidthConverter Instance = new();
+    private readonly object _whenTrue;
+    private readonly object _whenFalse;
 
-    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    private BoolBrushConverter(object whenTrue, object whenFalse)
     {
-        if (values.Count < 2 || values[0] is not double fraction || values[1] is not double width) return 0.0;
-        return Math.Max(0, Math.Clamp(fraction, 0, 1) * width);
+        _whenTrue = whenTrue;
+        _whenFalse = whenFalse;
     }
-}
 
-/// <summary>Adds a fixed amount to a number (e.g. a viewport height less the content margins).</summary>
-public sealed class OffsetConverter : IValueConverter
-{
-    public static readonly OffsetConverter Minus32 = new(-32);
-
-    private readonly double _offset;
-
-    public OffsetConverter(double offset) => _offset = offset;
+    public static readonly BoolBrushConverter BehindBackground = new(Palette.AmberWash, Palette.BrandWash);
+    public static readonly BoolBrushConverter BehindForeground = new(Palette.Amber, Palette.Brand);
+    public static readonly BoolBrushConverter BarBrush = new(Palette.Amber, Palette.Brand);
+    public static readonly BoolBrushConverter MutedOpacity = new(0.6, 1.0);
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is double d ? Math.Max(0, d + _offset) : 0.0;
+        value is true ? _whenTrue : _whenFalse;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }

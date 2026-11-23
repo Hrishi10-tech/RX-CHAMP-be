@@ -123,3 +123,9 @@ public partial class ProgressDialogView : UserControl
 {
     public ProgressDialogView() => InitializeComponent();
 }
+
+/// <summary>Apply for leave (3.4).</summary>
+public partial class LeaveDialogView : UserControl
+{
+    public LeaveDialogView() => InitializeComponent();
+}

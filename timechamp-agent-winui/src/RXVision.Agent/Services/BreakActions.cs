@@ -58,15 +58,18 @@ public sealed class BreakActions
 
     private bool IsSuperAdmin => _agent.User?.Role == "SUPER_ADMIN";
 
+    /// <summary>Where the flows ask their questions (the Leave page asks there too).</summary>
+    public IDialogService Dialogs => _dialogs;
+
     /// <summary>An Admin or Super Admin may quit (with a key); staff and managers cannot quit at all (SPEC 2.8).</summary>
     public bool CanQuit => _agent.User?.Role is "ADMIN" or "SUPER_ADMIN";
 
-    /// <summary>Who decides the person's items, mid-sentence: "your manager" (staff) or "your admin" (managers).</summary>
+    /// <summary>Who decides the person's items, mid-sentence: "a manager" (staff: any of the department's managers) or "your admin" (managers).</summary>
     public string Approver => _agent.User?.Role switch
     {
         "MANAGER" => "your admin",
         "ADMIN" or "SUPER_ADMIN" => "an admin",
-        _ => "your manager",
+        _ => "a manager",
     };
 
     public string ApproverCapital => Capital(Approver);
@@ -77,7 +80,7 @@ public sealed class BreakActions
     /// Takes the break the tile points at (presenceType BREAK or LUNCH), or a
     /// specific scheduled kind (from the ring toast). <paramref name="confirm"/>
     /// asks before an on-time start; a reason is always asked for when needed.
-    /// The start dialog offers Skip break when the shift allows it.
+    /// The start card offers Skip break when the shift allows it.
     /// </summary>
     public Task TakeAsync(string presenceType, string? kind = null, bool confirm = true) =>
         RunFlowAsync(() => TakeCoreAsync(presenceType, kind, confirm));
@@ -88,12 +91,12 @@ public sealed class BreakActions
         var panel = _agent.BreakPanel;
         if (panel.Active is not null || IsAway(_agent.Presence.Status))
         {
-            await _dialogs.AlertAsync("You're on a break", "End this break first, then start the next one.");
+            await _dialogs.AlertAsync("You're on break", "Tap Resume work first, then start the next one.");
             return;
         }
         if (_agent.Presence.Status == PresenceStatus.Meeting)
         {
-            await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then start your break.");
+            await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start your break.");
             return;
         }
         if (!panel.Scheduled)
@@ -109,11 +112,11 @@ public sealed class BreakActions
         {
             await _dialogs.AlertAsync(
                 presenceType == PresenceStatus.Lunch ? "No lunch in your shift today" : "No breaks in your shift today",
-                "Your shift doesn't have one scheduled today. Ask your manager if that looks wrong.");
+                "Your shift doesn't have one scheduled today. Ask your managers if that looks wrong.");
             return;
         }
 
-        // The start dialog, with Skip break beside Start break; Back from the skip dialog returns here.
+        // The start card, with Skip break beside Start break; Keep my break on the skip card returns here.
         var slotKind = slot.Kind;
         for (var round = 0; round < MaxAttempts; round++)
         {
@@ -183,7 +186,7 @@ public sealed class BreakActions
         var lunch = presenceType == PresenceStatus.Lunch;
         if (confirm && !await _dialogs.ConfirmAsync(
                 lunch ? "Go to lunch?" : "Take a break?",
-                "Your focus time pauses until you tap End break.",
+                "Your ring pauses until you resume.",
                 lunch ? "Start lunch" : "Start break"))
         {
             return;
@@ -213,7 +216,7 @@ public sealed class BreakActions
             var panel = _agent.BreakPanel;
             if (!panel.Scheduled)
             {
-                var choice = new MessageDialogViewModel("Take a break?", "There's no break schedule today. Your focus time pauses until you tap End break.")
+                var choice = new MessageDialogViewModel("Take a break?", "There's no break schedule today. Your ring pauses until you resume.")
                 {
                     PrimaryText = "Start lunch",
                     AltText = "Start break",
@@ -254,7 +257,7 @@ public sealed class BreakActions
             }
             if (_agent.Presence.Status == PresenceStatus.Meeting)
             {
-                await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then take your break.");
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then take your break.");
                 return;
             }
             var dialog = QuickDialog();
@@ -300,7 +303,7 @@ public sealed class BreakActions
 
     // ---- Skipping a break ---------------------------------------------------------------
 
-    /// <summary>Skip break (from the ring toast or a menu): the reason dialog, then it is saved.</summary>
+    /// <summary>Skip this break (from its card or a toast): screen D, then it is saved.</summary>
     public Task SkipAsync(string kind) =>
         RunFlowAsync(async () =>
         {
@@ -309,14 +312,14 @@ public sealed class BreakActions
             var slot = panel.Slots.FirstOrDefault(s => s.Kind == kind);
             if (slot is null)
             {
-                await _dialogs.AlertAsync("No such break today", "Your shift doesn't have that break today.");
+                await _dialogs.AlertAsync("That break isn't in your shift today", "Your shift doesn't have that break today.");
                 return;
             }
             if (!slot.CanSkip)
             {
                 var (title, message) = slot.PendingAutoSkip is not null
                     ? ($"{slot.Label} is already skipped",
-                        $"End Day skipped it while it was still open. You can still take it until {slot.LocalWindowClose}; if you don't, add a comment when you end the day.")
+                        $"You can still take it until {slot.LocalWindowClose}. If you don't, add a comment when you end the day.")
                     : slot.CanStart && !slot.AllowSkip
                     ? ($"{slot.Label} can't be skipped", "Your shift doesn't allow skipping this break.")
                     : BlockedText(slot, panel);
@@ -327,13 +330,15 @@ public sealed class BreakActions
         });
 
     /// <summary>
-    /// The skip reason dialog (none for a Super Admin), then the skip is saved.
-    /// Returns true when the person chose Back (to the start dialog).
+    /// Screen D, then the skip is saved. A Super Admin's skip goes to nobody: the same
+    /// question with no pay line and no reason (BF-19).
+    /// Returns true when the person chose Keep my break from the start card (back to it).
     /// </summary>
     private async Task<bool> SkipFlowAsync(SlotView slot, bool offerBack)
     {
         if (IsSuperAdmin)
         {
+            if (!await _dialogs.ShowAsync(SkipDialog(slot, _agent.BreakPanel.MinChars))) return offerBack;
             await SendSkipAsync(slot, null);
             return false;
         }
@@ -342,7 +347,7 @@ public sealed class BreakActions
         string? error = null;
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
-            var dialog = SkipDialog(slot, minChars, offerBack);
+            var dialog = SkipDialog(slot, minChars);
             dialog.Text = text;
             dialog.Error = error;
             if (!await _dialogs.ShowAsync(dialog)) return offerBack;
@@ -370,31 +375,45 @@ public sealed class BreakActions
                 RaiseCue(SkipCues, ref _skipCue);
                 return outcome;
             case SkipOutcome.NeedsReason needs when IsSuperAdmin:
-                await _dialogs.AlertAsync("Couldn't skip the break", needs.Message);
+                await _dialogs.AlertAsync("Try skipping again", needs.Message);
                 return outcome;
             case SkipOutcome.Refused refused:
-                await _dialogs.AlertAsync("Couldn't skip the break", refused.Message);
+                await _dialogs.AlertAsync("Try skipping again", refused.Message);
                 return outcome;
             default:
                 return outcome;
         }
     }
 
-    /// <summary>The skip reason dialog: quick chips, the shift's minimum, and what a rejection costs.</summary>
-    public ReasonDialogViewModel SkipDialog(SlotView slot, int minChars, bool offerBack) =>
-        new($"Skip {Fmt.Lower(slot.Label)}?",
-            $"Your focus time keeps running. If {Approver} rejects the skip, the {Fmt.Minutes(slot.DurationMin)} come off it.",
-            minChars, SkipChips)
+    /// <summary>
+    /// Screen D: "Skip this break? Your next one is at 4:30 PM.", what a rejection costs when
+    /// someone decides it, and the reason on the same screen when the server asks for one.
+    /// </summary>
+    public ReasonDialogViewModel SkipDialog(SlotView slot, int minChars)
+    {
+        var decided = !IsSuperAdmin;
+        return new ReasonDialogViewModel("Skip this break?",
+            decided ? $"Your focus time keeps running. If {Approver} rejects the skip, the {Fmt.Minutes(slot.DurationMin)} come off it." : "",
+            minChars, PresetsOr(PresetKinds.BreakSkip, SkipChips))
         {
-            TagText = "Skip",
-            TagTone = Tone.Skip,
-            TagDetail = $"Due {slot.LocalStart} · open until {slot.LocalWindowClose}",
+            Lead = NextBreakLine(slot, _agent.BreakPanel),
+            AsksReason = decided,
             Label = "Why are you skipping it?",
-            Placeholder = "For example: on a client call until 11:40 AM",
-            Hint = $"Required. {minChars} characters or more.",
+            Placeholder = "For example: on a client call until 11:40",
+            Hint = $"{minChars} characters or more, please.",
             PrimaryText = "Skip break",
-            CancelText = offerBack ? "Back" : "Cancel",
+            CancelText = "Keep my break",
         };
+    }
+
+    /// <summary>"Your next one is at 4:30 PM.", or "This is your last break today."</summary>
+    private static string NextBreakLine(SlotView slot, BreakPanel panel)
+    {
+        var index = panel.Slots.ToList().FindIndex(s => s.Kind == slot.Kind);
+        var next = panel.Slots.Skip(index + 1).FirstOrDefault(s =>
+            s.State is SlotState.Upcoming or SlotState.OpenEarly or SlotState.Due or SlotState.OpenLate);
+        return next is null ? "This is your last break today." : $"Your next one is at {next.LocalStart}.";
+    }
 
     // ---- Comments on skipped breaks --------------------------------------------------------
 
@@ -438,7 +457,7 @@ public sealed class BreakActions
                 await _dialogs.AlertAsync("No comment needed", notNeeded.Message);
                 return outcome;
             case CommentOutcome.Refused refused:
-                await _dialogs.AlertAsync("Couldn't add the comment", refused.Message);
+                await _dialogs.AlertAsync("Try adding the comment again", refused.Message);
                 return outcome;
             default:
                 return outcome;
@@ -448,15 +467,15 @@ public sealed class BreakActions
     /// <summary>The comment dialog for a skipped break.</summary>
     public ReasonDialogViewModel CommentDialog(string label, string closedText, int minChars) =>
         new("Add a comment",
-            $"This skip goes to {Approver} either way. A comment is needed before you end the day.",
-            minChars, SkipChips)
+            $"Add a comment before you end the day. This skip goes to {Approver} either way.",
+            minChars, PresetsOr(PresetKinds.SkipComment, SkipChips))
         {
-            TagText = "Auto-skipped",
+            TagText = "Skipped for you",
             TagTone = Tone.Neutral,
             TagDetail = $"{label} · {closedText}",
             Label = "Why was it skipped?",
-            Placeholder = "For example: the client demo ran until 12:15 PM",
-            Hint = $"Required. {minChars} characters or more.",
+            Placeholder = "For example: the client demo ran until 12:15",
+            Hint = $"{minChars} characters or more, please.",
             PrimaryText = "Send comment",
         };
 
@@ -475,7 +494,7 @@ public sealed class BreakActions
     private string SkippedWhen(SkipNeedingComment skip)
     {
         var at = _agent.BusinessTime(skip.SkippedAt);
-        var verb = skip.Outcome == BreakOutcomes.AutoSkipped ? "Auto-skipped" : "Skipped";
+        var verb = skip.Outcome == BreakOutcomes.AutoSkipped ? "Skipped for you" : "Skipped";
         var today = _agent.Workday?.Date;
         return today is not null && skip.Date != today && !string.IsNullOrEmpty(skip.Date)
             ? $"{verb} at {at} on {DayLabel(skip.Date)}"
@@ -490,8 +509,8 @@ public sealed class BreakActions
     // ---- End break / back to work -----------------------------------------------------------
 
     /// <summary>
-    /// Back to work (the tray, the button's menu): a meeting ends at once; a break,
-    /// like every End break, asks first (SPEC 2.3).
+    /// Resume work (the panel's foot, the tray, the icon's menu): a meeting ends at once; a break,
+    /// like every End break in 4.0, asks first (SPEC 2.3). Minutes over come out of the paid buffer.
     /// </summary>
     public Task BackToWorkAsync() =>
         RunFlowAsync(async () =>
@@ -574,8 +593,72 @@ public sealed class BreakActions
 
     // ---- Meetings ---------------------------------------------------------------------
 
-    /// <summary>The meeting dialog: Starting now, or Already happened. Cancel starts nothing.</summary>
-    public Task StartMeetingAsync() =>
+    /// <summary>
+    /// Start meeting (3.6), from the button or a suggestion the person tapped: In a meeting at
+    /// once, no form, no approval. It needs the server; with no answer nothing starts and the
+    /// person may try again (or record the meeting with its details, which works offline).
+    /// </summary>
+    public Task StartMeetingAsync(string source = MeetingSources.Button) =>
+        RunFlowAsync(async () =>
+        {
+            if (!await EnsureWorkingDayAsync()) return;
+            if (_agent.BreakPanel.Active is not null || IsAway(_agent.Presence.Status))
+            {
+                await _dialogs.AlertAsync("You're on break", "Tap Resume work first, then start the meeting.");
+                return;
+            }
+            if (Status == DayStatus.InMeeting)
+            {
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start the next one.");
+                return;
+            }
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var outcome = await Busy(() => _agent.StartMeetingStatusAsync(source));
+                switch (outcome)
+                {
+                    case MeetingStatusOutcome.Offline offline:
+                        if (!await _dialogs.ConfirmAsync("The meeting isn't started yet", offline.Message, "Try again", "Cancel")) return;
+                        continue;
+                    case MeetingStatusOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Couldn't start the meeting", MeetingMessage(refused.Code, refused.Message, null));
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>Still in it, on the 2 hour check. A tap that lost the race reads Working, with its card.</summary>
+    public Task ConfirmMeetingAsync() =>
+        RunFlowAsync(async () =>
+        {
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var outcome = await Busy(_agent.ConfirmMeetingAsync);
+                switch (outcome)
+                {
+                    case MeetingStatusOutcome.Offline offline:
+                        if (!await _dialogs.ConfirmAsync("Couldn't reach RX Vision", offline.Message, "Try again", "Cancel")) return;
+                        continue;
+                    case MeetingStatusOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Try again in a moment", refused.Message);
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>The person's status as the icon, the panel and the menus read it (3.6).</summary>
+    private DayStatus Status => DayStatusReader.Of(_agent.State, _agent.DayProgress, _agent.Presence.Status, _agent.BreakPanel.Active is not null);
+
+    /// <summary>
+    /// The 4.0 meeting dialog: Starting now (a meeting with its agenda, people and who mails the
+    /// minutes, journaled so it works offline, and approved after) or Already happened. Cancel
+    /// starts nothing.
+    /// </summary>
+    public Task RecordMeetingAsync() =>
         RunFlowAsync(async () =>
         {
             if (!await EnsureWorkingDayAsync()) return;
@@ -584,9 +667,9 @@ public sealed class BreakActions
                 await _dialogs.AlertAsync("You're on a break", "End your break first, then start the meeting.");
                 return;
             }
-            if (_agent.Presence.Status == PresenceStatus.Meeting)
+            if (Status == DayStatus.InMeeting)
             {
-                await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then start the next one.");
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start the next one.");
                 return;
             }
 
@@ -607,7 +690,7 @@ public sealed class BreakActions
                         error = MeetingMessage(invalid.Code, invalid.Message, invalid.With);
                         continue;
                     case MeetingOutcome.Refused refused:
-                        await _dialogs.AlertAsync(draft.IsPast ? "Couldn't log the meeting" : "Couldn't start the meeting",
+                        await _dialogs.AlertAsync(draft.IsPast ? "Try logging the meeting again" : "Couldn't start the meeting",
                             MeetingMessage(refused.Code, refused.Message, null));
                         return;
                     default:
@@ -633,26 +716,40 @@ public sealed class BreakActions
             : "";
         return code switch
         {
-            "MEETING_OUTSIDE_DAY" => "That time is outside your working day. Pick a time between Start Day and now.",
-            "MEETING_IN_FUTURE" => "That runs past now. Pick an earlier start or fewer minutes.",
-            "MEETING_OVERLAPS_BREAK" => $"That overlaps your {(with?.Kind == "LUNCH" ? "lunch" : "break")}{Span()}. Pick another time.",
-            "MEETING_OVERLAPS_MEETING" => $"That overlaps another meeting{Span()}. Pick another time.",
+            "MEETING_OUTSIDE_DAY" => "Pick a time between Start day and now.",
+            "MEETING_IN_FUTURE" => "Pick an earlier start or fewer minutes. That runs past now.",
+            "MEETING_OVERLAPS_BREAK" => $"Pick another time. That overlaps your {(with?.Kind == "LUNCH" ? "lunch" : "break")}{Span()}.",
+            "MEETING_OVERLAPS_MEETING" => $"Pick another time. That overlaps another meeting{Span()}.",
             "MOM_SENDER_REQUIRED" => "Add who will mail the minutes.",
             "DAY_NOT_STARTED" => "Start your day first.",
             "DAY_ENDED" => "Your working day has ended.",
             "ON_BREAK" => "End your break first.",
-            "MEETING_IN_PROGRESS" => "You're already in a meeting. Tap Meeting ended first.",
-            _ => string.IsNullOrWhiteSpace(message) ? "That meeting couldn't be saved." : message,
+            "MEETING_IN_PROGRESS" => "You're already in a meeting. Tap End meeting first.",
+            _ => string.IsNullOrWhiteSpace(message) ? "Try saving that meeting again." : message,
         };
     }
 
-    /// <summary>Meeting ended.</summary>
+    /// <summary>End meeting: back to Working.</summary>
     public Task EndMeetingAsync() => RunFlowAsync(EndMeetingCoreAsync);
 
     private async Task EndMeetingCoreAsync()
     {
-        var outcome = await Busy(_agent.EndMeetingAsync);
-        if (outcome is EndOutcome.Refused refused) await _dialogs.AlertAsync("Couldn't end the meeting", refused.Message);
+        for (var attempt = 0; attempt < MaxAttempts; attempt++)
+        {
+            var outcome = await Busy(_agent.EndMeetingAsync);
+            switch (outcome)
+            {
+                case EndOutcome.Offline offline:
+                    // In a meeting (3.6) ends only with the server's answer: it still runs.
+                    if (!await _dialogs.ConfirmAsync("Your meeting is still running", offline.Message, "Try again", "Cancel")) return;
+                    continue;
+                case EndOutcome.Refused refused:
+                    await _dialogs.AlertAsync("Couldn't end the meeting", refused.Message);
+                    return;
+                default:
+                    return;
+            }
+        }
     }
 
     // ---- The working day --------------------------------------------------------------------
@@ -662,8 +759,108 @@ public sealed class BreakActions
         RunFlowAsync(async () =>
         {
             if (_agent.State is not (AgentState.NotStarted or AgentState.DayEnded)) return;
-            var outcome = await Busy(_agent.StartDayAsync);
-            if (outcome is StartDayOutcome.Refused refused) await _dialogs.AlertAsync("Couldn't start your day", refused.Message);
+            // A full day of leave (3.4): asked first, it would count as an extra day.
+            if (_agent.State == AgentState.NotStarted && _agent.Workday?.Leave is { Full: true } leave
+                && !await _dialogs.ConfirmAsync("You're on leave today",
+                    $"You are on leave today ({leave.Categories}). Start your day anyway? It will count as an extra day.",
+                    "Start day", "Cancel"))
+            {
+                return;
+            }
+            // Past the grace (3.2): the note, with the quick answers, then the press again.
+            // Cancel leaves the day not started (nothing was recorded).
+            string? reason = null;
+            string? error = null;
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var sending = reason;
+                var outcome = await Busy(() => _agent.StartDayAsync(sending));
+                switch (outcome)
+                {
+                    case StartDayOutcome.NeedsLateReason needs:
+                        var dialog = LateStartDialog(needs);
+                        dialog.Text = reason ?? "";
+                        dialog.Error = reason is null ? error : needs.Message;
+                        if (!await _dialogs.ShowAsync(dialog)) return;
+                        reason = dialog.Reason;
+                        continue;
+                    case StartDayOutcome.Refused { Code: "REASON_TOO_LONG" } tooLong:
+                        error = tooLong.Message;
+                        reason = null;
+                        continue;
+                    case StartDayOutcome.Refused { Code: "ATTENDANCE_BY_BIOMETRIC" } biometric:
+                        await _dialogs.AlertAsync("Your attendance", biometric.Message);
+                        return;
+                    case StartDayOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Try starting your day again", refused.Message);
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>Past the grace: why, with the server's words and the organisation's quick answers (3.2).</summary>
+    public ReasonDialogViewModel LateStartDialog(StartDayOutcome.NeedsLateReason needs) =>
+        new("Add a short note", needs.Message, needs.MinChars, needs.Presets)
+        {
+            TagText = needs.ShiftStart is null ? null : "Your shift start",
+            TagTone = Tone.Neutral,
+            TagDetail = needs.ShiftStart is { } start ? _agent.BusinessTime(start) : null,
+            Label = "What came up?",
+            Placeholder = "For example: a morning appointment ran over",
+            Hint = $"Required. {needs.MinChars} characters or more, or pick a quick answer.",
+            PrimaryText = "Start day",
+            CancelText = "Cancel",
+            PresetsPassAnyLength = true,
+        };
+
+    /// <summary>"Add a note": a late start made by another computer or an older agent still wants its note (lateStart.needsReason).</summary>
+    public Task AddLateReasonAsync() =>
+        RunFlowAsync(async () =>
+        {
+            if (_agent.Workday?.LateStart is not { NeedsReason: true } late) return;
+            var minChars = _agent.Workday?.Settings.ReasonMinChars ?? 10;
+            var text = "";
+            string? error = null;
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var dialog = new ReasonDialogViewModel("Add a short note",
+                    $"Your day started {Fmt.Minutes(late.Minutes)} after your shift start. Add a short note for {Approver}.",
+                    minChars, _agent.Presets(PresetKinds.LateDayStart))
+                {
+                    Label = "What came up?",
+                    Placeholder = "For example: a morning appointment ran over",
+                    Hint = $"Required. {minChars} characters or more, or pick a quick answer.",
+                    PrimaryText = "Add note",
+                    Text = text,
+                    Error = error,
+                    PresetsPassAnyLength = true,
+                };
+                if (!await _dialogs.ShowAsync(dialog)) return;
+                text = dialog.Reason;
+                var result = await Busy(() => _agent.AddLateReasonAsync(text));
+                if (result.Ok)
+                {
+                    // Until the day is read again, the banner goes.
+                    late.NeedsReason = false;
+                    late.Reason = text;
+                    return;
+                }
+                if (result.Transient)
+                {
+                    error = "Can't reach RX Vision, so the note isn't saved. Try again.";
+                    continue;
+                }
+                if (result.Code is "REASON_REQUIRED" or "REASON_TOO_LONG")
+                {
+                    if (result.DetailInt("minChars") is { } min) minChars = Math.Max(minChars, min);
+                    error = result.Message;
+                    continue;
+                }
+                await _dialogs.AlertAsync("Try adding the note again", result.Message ?? "Try again in a moment.");
+                return;
+            }
         });
 
     /// <summary>
@@ -677,12 +874,12 @@ public sealed class BreakActions
             if (_agent.State != AgentState.Running) return;
             if (_agent.BreakPanel.Active is not null || IsAway(_agent.Presence.Status))
             {
-                await _dialogs.AlertAsync("Finish this first", "End your break, then end your day.");
+                await _dialogs.AlertAsync("Finish this first", "Tap Resume work, then end your day.");
                 return;
             }
             if (_agent.Presence.Status == PresenceStatus.Meeting)
             {
-                await _dialogs.AlertAsync("Finish this first", "Tap Meeting ended, then end your day.");
+                await _dialogs.AlertAsync("Finish this first", "Tap End meeting, then end your day.");
                 return;
             }
 
@@ -704,11 +901,11 @@ public sealed class BreakActions
                 if (comments is null) return;
             }
             else if (!await _dialogs.ConfirmAsync(
-                         "End your working day?",
+                         "End your day?",
                          _agent.AwaySince is not null
-                             ? "Your focus time stops now and today's day is saved as it is. The away time you haven't explained stays out of your focus time."
-                             : "Your focus time stops now and today's day is saved as it is. If you need to, you can start your day again from here.",
-                         "End Day", "Keep working", danger: true))
+                             ? "Your focus time stops now and today is saved as it is. The away time you haven't explained stays out of your focus time."
+                             : "Your focus time stops now and today is saved as it is. You can start your day again from here if you need to.",
+                         "End day", "Keep working"))
             {
                 return;
             }
@@ -728,7 +925,7 @@ public sealed class BreakActions
                         if (comments is null) return;
                         continue;
                     case EndDayOutcome.CommentsRequired required:
-                        await _dialogs.AlertAsync("Couldn't end your day", required.Message);
+                        await _dialogs.AlertAsync("Try ending your day again", required.Message);
                         return;
                     case EndDayOutcome.CommentInvalid { FixableByEditing: false, BreakId: { } bad } invalid
                         when comments?.Any(c => c.BreakId == bad) == true:
@@ -746,7 +943,7 @@ public sealed class BreakActions
                         var list = _agent.Workday?.SkipsNeedingComment is { Count: > 0 } current ? current : needed;
                         if (list.Count == 0)
                         {
-                            await _dialogs.AlertAsync("Couldn't end your day", invalid.Message);
+                            await _dialogs.AlertAsync("Try ending your day again", invalid.Message);
                             return;
                         }
                         comments = await AskCommentsAsync(list, drafts, invalid, intro);
@@ -756,10 +953,10 @@ public sealed class BreakActions
                         await ShowOverdueAsync(overdue.Count);
                         return;
                     case EndDayOutcome.NotStarted notStarted:
-                        await _dialogs.AlertAsync("Your day isn't running", notStarted.Message);
+                        await _dialogs.AlertAsync("Your day hasn't started", notStarted.Message);
                         return;
                     case EndDayOutcome.Refused refused:
-                        await _dialogs.AlertAsync("Couldn't end your day", refused.Message);
+                        await _dialogs.AlertAsync("Try ending your day again", refused.Message);
                         return;
                     default:
                         return;
@@ -800,7 +997,7 @@ public sealed class BreakActions
             }).ToList();
         if (items.Count == 0)
         {
-            await _dialogs.AlertAsync("Couldn't end your day", invalid?.Message ?? "Some skipped breaks need a comment. Try again in a moment.");
+            await _dialogs.AlertAsync("Try ending your day again", invalid?.Message ?? "Try again in a moment. Some skipped breaks still need a comment.");
             return null;
         }
         var dialog = new EndDayDialogViewModel(items, Approver, ApproverCapital, intro);
@@ -811,21 +1008,24 @@ public sealed class BreakActions
         return ok ? dialog.Comments : null;
     }
 
-    /// <summary>"3 approvals are past 48 hours. Decide them in the portal to end your day."</summary>
+    /// <summary>"Decide 3 approvals in the portal to end your day. They are past 48 hours."</summary>
     public async Task ShowOverdueAsync(int count)
     {
         var sla = _agent.Workday?.Settings.ApprovalSlaHours is { } h and > 0 ? h : 48;
-        var what = count <= 0 ? $"Approvals are past {sla} hours."
-            : count == 1 ? $"1 approval is past {sla} hours."
-            : $"{count} approvals are past {sla} hours.";
+        var what = count switch
+        {
+            <= 0 => $"Decide your approvals in the portal to end your day. They are past {sla} hours.",
+            1 => $"Decide 1 approval in the portal to end your day. It is past {sla} hours.",
+            _ => $"Decide {count} approvals in the portal to end your day. They are past {sla} hours.",
+        };
         var portal = ApprovalsUrl(_agent.Workday?.PortalUrl);
-        var title = $"Approvals are past {sla} hours";
+        var title = $"Approvals waiting past {sla} hours";
         if (portal is null)
         {
-            await _dialogs.AlertAsync(title, $"{what} Open the RX Vision portal and decide them to end your day.");
+            await _dialogs.AlertAsync(title, what);
             return;
         }
-        var open = await _dialogs.ShowAsync(new MessageDialogViewModel(title, $"{what} Decide them in the portal to end your day.")
+        var open = await _dialogs.ShowAsync(new MessageDialogViewModel(title, what)
         {
             PrimaryText = "Open approvals",
             CancelText = "Close",
@@ -898,9 +1098,11 @@ public sealed class BreakActions
         progress.Finish();
         await shown;
         if (left == 0) return true;
-        await _dialogs.AlertAsync("Can't sign out yet", _agent.Online
-            ? $"{Fmt.Count(left, "action is", "actions are")} still on the way to RX Vision. Try again in a moment."
-            : $"You're offline. Signing out needs the internet: {Fmt.Count(left, "action", "actions")} must reach RX Vision first.");
+        var waiting = Fmt.Count(left, "action is", "actions are");
+        var queued = Fmt.Count(left, "action", "actions");
+        await _dialogs.AlertAsync("Try signing out in a moment", _agent.Online
+            ? $"Try again in a moment. {waiting} still on the way to RX Vision."
+            : $"Connect to the internet to sign out. {queued} must reach RX Vision first.");
         return false;
     }
 
@@ -943,52 +1145,58 @@ public sealed class BreakActions
     // ---- Dialog content ------------------------------------------------------------------
 
     private static string StartFailedTitle(string presenceType) =>
-        presenceType == PresenceStatus.Lunch ? "Couldn't start your lunch" : "Couldn't start your break";
+        presenceType == PresenceStatus.Lunch ? "Try starting your lunch again" : "Try starting your break again";
 
     private static string PrimaryFor(string presenceType) =>
         presenceType == PresenceStatus.Lunch ? "Start lunch" : "Start break";
 
-    /// <summary>The on-time start dialog: Start break, Skip break (when allowed), Cancel.</summary>
+    /// <summary>Screen G: Take your lunch break? Skip break beside Start break where the slot allows it; closing the card changes nothing.</summary>
     public MessageDialogViewModel ConfirmStart(SlotView slot)
     {
-        var back = _agent.BusinessTime(_agent.Now.AddMinutes(slot.DurationMin));
+        var ends = _agent.BusinessTime(_agent.Now.AddMinutes(slot.DurationMin));
         return new MessageDialogViewModel(
-            $"Start {Fmt.Lower(slot.Label)}?",
-            $"{Fmt.Minutes(slot.DurationMin)}. Back by {back}. Your focus time pauses until you tap End break.")
+            $"Take your {Fmt.Lower(slot.Label)}?",
+            $"{Fmt.Length(slot.DurationMin)}, ends at {ends}. Your ring pauses until you resume.")
         {
             PrimaryText = PrimaryFor(slot.PresenceType),
-            CancelText = "Cancel",
             AltText = slot.CanSkip ? "Skip break" : null,
+            ShowClose = true,
         };
     }
 
-    /// <summary>The reason dialog for a slot the panel says needs one.</summary>
+    /// <summary>The note screen for a slot the panel says needs one.</summary>
     public ReasonDialogViewModel ReasonFor(SlotView slot, BreakPanel panel)
     {
         var early = slot.TimingIfStartedNow == "EARLY";
         var minutes = Math.Max(1, slot.MinutesOffIfStartedNow);
-        return BuildReason(slot, early, minutes, panel.Rules.ReasonMinChars,
-            $"You're starting your {Fmt.Lower(slot.Label)} {Fmt.Minutes(minutes)} {(early ? "early" : "late")}. Tell your manager why.");
+        return BuildReason(slot, early, minutes, panel.Rules.ReasonMinChars, PresetsFor(early), NoteAsk(slot, early));
     }
 
-    /// <summary>The reason dialog after the server judged the start early or late.</summary>
+    /// <summary>The note screen after the server judged the start early or late: its words when it sent any.</summary>
     public ReasonDialogViewModel ReasonFromServer(SlotView slot, StartOutcome.NeedsReason needs)
     {
         var early = needs.Timing == "EARLY";
         var minutes = Math.Max(1, needs.MinutesOff);
-        var message = string.IsNullOrWhiteSpace(needs.Message)
-            ? $"You're starting your {Fmt.Lower(slot.Label)} {Fmt.Minutes(minutes)} {(early ? "early" : "late")}. Tell your manager why."
-            : needs.Message;
-        // Asked again by the server: Skip is still offered from the tile's first dialog, not here.
-        return BuildReason(slot with { CanSkip = false }, early, minutes, needs.MinChars, message);
+        var message = string.IsNullOrWhiteSpace(needs.Message) ? NoteAsk(slot, early) : needs.Message;
+        // Asked again by the server: Skip is still offered from the first screen, not here.
+        return BuildReason(slot with { CanSkip = false }, early, minutes, needs.MinChars, PresetsFor(early), message);
     }
 
-    private static ReasonDialogViewModel BuildReason(SlotView slot, bool early, int minutes, int minChars, string message) =>
-        new($"{slot.Label}, {Fmt.Minutes(minutes)} {(early ? "early" : "late")}", message, minChars)
+    private string NoteAsk(SlotView slot, bool early) =>
+        $"Your {Fmt.Lower(slot.Label)} {(early ? "is" : "was")} due at {slot.LocalStart}. Add a short note for {Approver}.";
+
+    private IReadOnlyList<string> PresetsFor(bool early) => _agent.Presets(early ? PresetKinds.BreakEarly : PresetKinds.BreakLate);
+
+    /// <summary>The organisation's quick answers (3.6), or 4.0's own chips when it set none.</summary>
+    private IReadOnlyList<string> PresetsOr(string kind, IReadOnlyList<string> fallback) =>
+        _agent.Presets(kind) is { Count: > 0 } presets ? presets : fallback;
+
+    private static ReasonDialogViewModel BuildReason(SlotView slot, bool early, int minutes, int minChars, IReadOnlyList<string> chips, string message) =>
+        new($"{slot.Label}, {Fmt.Minutes(minutes)} {(early ? "early" : "after its time")}", message, minChars, chips)
         {
-            TagText = early ? "Early start" : "Late start",
+            TagText = early ? "Starting before its time" : "Starting after its time",
             TagDetail = $"Due {slot.LocalStart} · window {slot.LocalWindowOpen} to {slot.LocalWindowClose}",
-            Label = early ? "Why are you starting early?" : "Why are you starting late?",
+            Label = early ? "What is coming up?" : "What came up?",
             Placeholder = early ? "For example: a client call starts in 15 min" : "For example: on a customer call until now",
             PrimaryText = PrimaryFor(slot.PresenceType),
             AltText = slot.CanSkip ? "Skip break" : null,
@@ -1017,15 +1225,15 @@ public sealed class BreakActions
                 $"It could be started between {slot.LocalWindowOpen} and {slot.LocalWindowClose}.{Prefix(next)}"),
             SlotState.Skipped => ($"{slot.Label} was skipped",
                 next ?? "Your focus time kept counting through it."),
-            SlotState.AutoSkipped => ($"{slot.Label} was auto-skipped",
+            SlotState.AutoSkipped => ($"{slot.Label} was skipped for you",
                 slot.Record is { NeedsComment: true }
-                    ? "Its window closed before it was taken. Add a comment before you end the day."
+                    ? "Add a comment before you end the day. Its window closed before it was taken."
                     : next ?? "Its window closed before it was taken."),
             SlotState.Taken => ($"{slot.Label} already taken",
                 next ?? (slot.PresenceType == PresenceStatus.Lunch ? "There's no more lunch today." : "There are no more breaks today.")),
             SlotState.Unavailable => ($"{slot.Label} isn't available",
                 $"A later break was already taken today, so this one can't start.{Prefix(next)}"),
-            SlotState.InProgress => ("You're on this break now", "Tap End break when you're back."),
+            SlotState.InProgress => ("You're on this break now", "Tap Resume work when you're back."),
             SlotState.Paused => ($"{slot.Label} is paused", $"Resume it before {slot.LocalWindowClose}, or end it."),
             _ => ("No more breaks today", "Every break in your shift is done or closed."),
         };
@@ -1069,10 +1277,10 @@ public sealed class BreakActions
                 await _dialogs.AlertAsync("Your day has ended", "Start your day again first if you're still working.");
                 return false;
             case AgentState.NotStarted:
-                await _dialogs.AlertAsync("Start your day first", "Press Start Day when you begin work. Breaks and meetings follow from there.");
+                await _dialogs.AlertAsync("Start your day first", "Tap Start day when you begin work. Breaks and meetings follow from there.");
                 return false;
             default:
-                await _dialogs.AlertAsync("Not tracking yet", "Sign in and finish setting up RX Vision first.");
+                await _dialogs.AlertAsync("Not started", "Sign in and finish setting up RX Vision first.");
                 return false;
         }
     }
@@ -1088,7 +1296,7 @@ public sealed class BreakActions
         catch (Exception ex)
         {
             _log.Error("ui", "action failed", ex);
-            try { await _dialogs.AlertAsync("Something went wrong", "That didn't work. Try again in a moment."); }
+            try { await _dialogs.AlertAsync("Try that again", "Try again in a moment."); }
             catch { /* the dialog itself failed; the log has it */ }
         }
         finally

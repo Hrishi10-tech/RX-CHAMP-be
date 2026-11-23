@@ -35,6 +35,16 @@ public interface IAgent
     string? UnsignedUpdatesNote { get; }
     /// <summary>The meeting in progress, if it has a record.</summary>
     MeetingRecord? LiveMeeting { get; }
+    /// <summary>The server's last word on the status and the ring (GET /me/day-progress, 3.6), or null before the first answer.</summary>
+    DayProgress? DayProgress { get; }
+    /// <summary>The cards the meeting feature wants shown (3.6), what needs an answer first.</summary>
+    IReadOnlyList<MeetingAlert> MeetingAlerts { get; }
+    /// <summary>Time since the last input, restarted at a meeting's 2 hour fallback.</summary>
+    TimeSpan IdleFor { get; }
+    /// <summary>The monitoring notice waits for an answer; it can sit over a day already running (core review C-R11).</summary>
+    bool NoticePending { get; }
+    /// <summary>A release flag from GET /features (off until the server says on).</summary>
+    bool FeatureOn(string name);
     /// <summary>The person's own items with their approver, pending first.</summary>
     IReadOnlyList<ApprovalItem> MyApprovals { get; }
     string ApiBaseUrl { get; }
@@ -48,6 +58,8 @@ public interface IAgent
     BreakPanel BreakPanel { get; }
     /// <summary>Now, on the server's clock (what breaks and focus time are judged by).</summary>
     DateTimeOffset Now { get; }
+    /// <summary>The computer's own clock, for the icon's rhythm and timers (its monotonic time never jumps).</summary>
+    Core.Util.IClock Clock { get; }
     UpdateOffer? PendingUpdate { get; }
     int PendingSamples { get; }
     DateTimeOffset LastSampleSent { get; }
@@ -68,6 +80,12 @@ public interface IAgent
     /// <summary>The away settings for this person (null: none yet).</summary>
     IdleConfig? IdleConfig { get; }
 
+    // ---- 3.2 to 3.5 ----
+    /// <summary>The biometric device takes this person's attendance: no day, break or meeting buttons.</summary>
+    bool IsBiometric { get; }
+    /// <summary>The organisation's quick answers for a comment box (<see cref="PresetKinds"/>); empty when none.</summary>
+    IReadOnlyList<string> Presets(string kind);
+
     /// <summary>"9:05 AM" (12-hour) of an instant in the business time zone (the one the schedule's times are in).</summary>
     string BusinessTime(DateTimeOffset instant);
 
@@ -81,6 +99,12 @@ public interface IAgent
     event Action<CurrentPresence>? PresenceChanged;
     event Action? BreaksChanged;
     event Action? WorkdayChanged;
+    /// <summary>A new day progress: the status, the ring and the 2 hour check's times.</summary>
+    event Action? DayProgressChanged;
+    /// <summary>The meeting cards changed.</summary>
+    event Action? MeetingAlertsChanged;
+    /// <summary><see cref="NoticePending"/> changed (UI thread).</summary>
+    event Action? NoticePendingChanged;
     event Action? MeetingsChanged;
     event Action? ApprovalsChanged;
     event Action<ChatMessage>? ChatMessageReceived;
@@ -102,6 +126,8 @@ public interface IAgent
     event Action? AwayChanged;
     /// <summary>History may have changed (a decision, the calendar).</summary>
     event Action? HistoryChanged;
+    /// <summary>The person's leave may have changed (a decision, comp off, a request made here).</summary>
+    event Action? LeaveChanged;
     event Action<UpdateOffer>? UpdateAvailable;
     event Action? ExitRequested;
     event Action<string>? SignedOutUnexpectedly;
@@ -114,7 +140,18 @@ public interface IAgent
     Task<string?> SignInAsync(string email, string password, string? server);
     Task<string?> SignInWithCodeAsync(string code);
     Task AcknowledgeNoticeAsync();
-    Task<StartDayOutcome> StartDayAsync();
+    /// <param name="lateReason">The note for a late first start (after <see cref="StartDayOutcome.NeedsLateReason"/>).</param>
+    Task<StartDayOutcome> StartDayAsync(string? lateReason = null);
+    /// <summary>"Add a note" for a late start made without one.</summary>
+    Task<ApiResult<System.Text.Json.JsonElement>> AddLateReasonAsync(string reason);
+    /// <summary>The staff guide, and whether it is fresh from the server (false: the last saved copy, or none).</summary>
+    Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync();
+    /// <summary>The person's own year for My calendar.</summary>
+    Task<ApiResult<CalendarYear>> GetCalendarAsync(int year);
+    Task<ApiResult<MyLeave>> GetMyLeaveAsync();
+    Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body);
+    Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body);
+    Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId);
     /// <param name="at">A held End Day's time: the day ends then. Null: now.</param>
     Task<EndDayOutcome> EndDayAsync(IReadOnlyList<SkipComment>? comments, DateTimeOffset? at = null);
     Task<StartOutcome> TakeBreakAsync(string kind, string? reason);
@@ -126,7 +163,17 @@ public interface IAgent
     Task<CommentOutcome> CommentBreakAsync(string breakId, string comment);
     /// <summary>End break (or Meeting ended when no break runs). Confirmed in the UI first.</summary>
     Task<EndOutcome> BackToWorkAsync();
+    /// <summary>End meeting: a status meeting through its route (online), a meeting with an agenda through the journal.</summary>
     Task<EndOutcome> EndMeetingAsync();
+    /// <summary>Start meeting (3.6): <paramref name="source"/> (<see cref="MeetingSources"/>) is all that travels.</summary>
+    Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source);
+    /// <summary>Still in it, on the 2 hour check: the 2 hours start again from now.</summary>
+    Task<MeetingStatusOutcome> ConfirmMeetingAsync();
+    /// <summary>Not now on a suggestion, or the Back to Working card once read.</summary>
+    void DismissMeetingAlert(MeetingAlertKind kind);
+    /// <summary>The panel closed: the card that only informs has been read.</summary>
+    void MeetingPanelClosed();
+    /// <summary>A meeting with its agenda, people and minutes sender (4.0, journaled: works offline; goes to the approver).</summary>
     Task<MeetingOutcome> StartMeetingAsync(string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender);
     Task<MeetingOutcome> LogPastMeetingAsync(DateTimeOffset startedAt, int durationMin, string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender);
     Task<AwayOutcome> AnswerAwayAsync(AwayAnswer answer);
@@ -149,7 +196,6 @@ public interface IAgent
     Task<bool> ContinueShiftAsync();
     /// <summary>4.1 shared computer: "No": signed out at the shift end.</summary>
     void DeclineShift();
-    void AcknowledgeRing();
     void Shutdown();
 }
 

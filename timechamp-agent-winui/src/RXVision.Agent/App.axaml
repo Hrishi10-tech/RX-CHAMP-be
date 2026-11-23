@@ -4,7 +4,7 @@
              xmlns:views="using:RXVision.Agent.Views"
              x:Class="RXVision.Agent.App"
              Name="RX Vision"
-             RequestedThemeVariant="Light">
+             RequestedThemeVariant="Dark">
 
   <Application.Resources>
     <ResourceDictionary>
@@ -17,7 +17,7 @@
   <Application.Styles>
     <FluentTheme>
       <FluentTheme.Palettes>
-        <ColorPaletteResources x:Key="Light" Accent="#4F46E5" ErrorText="#B42318" />
+        <ColorPaletteResources x:Key="Dark" Accent="#6FC9B6" ErrorText="#F2A93B" />
       </FluentTheme.Palettes>
     </FluentTheme>
     <StyleInclude Source="avares://RXVision/Styles/Controls.axaml" />
@@ -47,6 +47,9 @@
     </DataTemplate>
     <DataTemplate DataType="dlg:ProgressDialogViewModel">
       <views:ProgressDialogView />
+    </DataTemplate>
+    <DataTemplate DataType="dlg:LeaveDialogViewModel">
+      <views:LeaveDialogView />
     </DataTemplate>
   </Application.DataTemplates>
 

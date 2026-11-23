@@ -67,6 +67,66 @@ public class ScreenshotTests
     [AvaloniaFact]
     public Task Dashboard_free_mode() => Shoot("dashboard-free", Agent("10:47", a => a.Day = Days.Free()));
 
+    // ---- 3.2 to 3.5: biometric days, the day's notes and the staff pages -----------------------
+
+    [AvaloniaFact]
+    public Task Dashboard_biometric() => Shoot("dashboard-biometric", Agent("10:20", a =>
+    {
+        a.IsBiometric = true;
+        a.Day = Days.Free();
+    }));
+
+    [AvaloniaFact]
+    public Task Dashboard_biometric_not_started() => Shoot("dashboard-biometric-not-started", Agent("09:02", a =>
+    {
+        a.State = AgentState.NotStarted;
+        a.Workday = Days.NotStarted("09:02");
+        a.Presence = new CurrentPresence { Status = PresenceStatus.NotStarted };
+        a.IsBiometric = true;
+        a.Day = Days.Free();
+    }));
+
+    [AvaloniaFact]
+    public Task Dashboard_day_notes() => Shoot("dashboard-day-notes", Agent("10:20", a =>
+    {
+        a.Workday!.DayOff = new DayOffView { Kind = "HOLIDAY", Name = "Diwali" };
+        a.Workday.Leave = new LeaveTodayView { Days = 0.5, Label = "Half day (first half)", Categories = "CL/SL" };
+        a.Workday.Wfh = new WfhTodayView { Label = "Full day" };
+        a.Workday.LateStart = new LateStartView { Minutes = 35, NeedsReason = true };
+    }), height: 820);
+
+    [AvaloniaFact]
+    public Task Page_leave() => Shoot("page-leave", Agent("10:20", a => a.LeaveResult = ApiResult<MyLeave>.Success(LeavePageTests.Leave())), vm =>
+        vm.ShowLeaveCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_leave_with_no_connection() => Shoot("page-leave-offline", Agent("10:20"), vm =>
+        vm.ShowLeaveCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_calendar() => Shoot("page-calendar", Agent("10:20", a => a.CalendarFor = y => ApiResult<CalendarYear>.Success(PagesData.Calendar(y))), vm =>
+        vm.ShowCalendarCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_instructions_with_the_organisations_guide() => Shoot("page-instructions-guide", Agent("10:20", a => a.GuideResult = (PagesData.Guide(), true)), vm =>
+        vm.ShowInstructionsCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Menu_open_with_the_pages() => Shoot("menu-open-pages", Agent("10:20"), vm => vm.ShowProfileCommand.Execute(null));
+
+    [AvaloniaFact]
+    public Task Dialog_apply_for_leave() => Shoot("dialog-apply-for-leave", Agent("10:20"), vm =>
+    {
+        var context = new LeaveDialogContext(LeavePageTests.Leave().Policy, new DateTime(2026, 10, 13), new[] { "Unwell", "Family function", "Personal work" },
+            new HashSet<DateTime>(), _ => Task.FromResult(ApiResult<LeavePreview>.Success(new LeavePreview { Ok = true })),
+            (_, ct) => Task.Delay(Timeout.Infinite, ct)); // the lines below are the preview drawn
+        var dialog = new LeaveDialogViewModel(context) { Reason = "Unwell" };
+        dialog.PreviewLines.Add("Charges 1 day of CL/SL");
+        dialog.PreviewLines.Add("Left after: 9.5 (now 10.5)");
+        dialog.PreviewLines.Add("Goes to Maya Reddy for approval");
+        vm.Overlay = dialog;
+    }, height: 760);
+
     [AvaloniaFact]
     public Task Dashboard_upcoming() => Shoot("dashboard-upcoming", Agent("10:20"));
 
@@ -163,12 +223,12 @@ public class ScreenshotTests
             new SkipCommentItemViewModel("evening-auto", "Evening break", "Auto-skipped at 17:00", 10, BreakActions.SkipChips),
             new SkipCommentItemViewModel("lunch-auto", "Lunch break", "Auto-skipped at 14:00 on 12 Oct", 10, BreakActions.SkipChips, kind: "LUNCH"),
         };
-        vm.Overlay = new EndDayDialogViewModel(items, "your manager", "Your manager");
+        vm.Overlay = new EndDayDialogViewModel(items, "a manager", "A manager");
     }, width: 1040, height: 650);
 
     [AvaloniaFact]
     public Task Dashboard_end_day_three_comments_default_size() => Shoot("dialog-end-day-three-comments-1080x700", Agent("18:32"), vm =>
-        vm.Overlay = new EndDayDialogViewModel(EndDayFit.Items(3), "your manager", "Your manager"));
+        vm.Overlay = new EndDayDialogViewModel(EndDayFit.Items(3), "a manager", "A manager"));
 
     [AvaloniaFact]
     public Task Dashboard_not_started_offline() => Shoot("dashboard-not-started-offline", Agent("09:02", a =>
@@ -283,9 +343,9 @@ public class ScreenshotTests
 
     [AvaloniaFact]
     public Task Dashboard_confirm_dialog() => Shoot("dialog-end-day", Agent("17:30"), vm =>
-        vm.Overlay = new MessageDialogViewModel("End your working day?",
-            "Your focus time stops now and today's day is saved as it is. If you need to, you can start your day again from here.")
-        { PrimaryText = "End Day", CancelText = "Keep working", IsDanger = true });
+        vm.Overlay = new MessageDialogViewModel("End your day?",
+            "Your focus time stops now and today is saved as it is. You can start your day again from here if you need to.")
+        { PrimaryText = "End day", CancelText = "Keep working" });
 
     [AvaloniaFact]
     public Task Dashboard_meeting_dialog_now() => Shoot("dialog-meeting-now", Agent("10:20"), vm =>
@@ -343,7 +403,7 @@ public class ScreenshotTests
     {
         var agent = new FakeAgent("10:59:30");
         var actions = new BreakActions(agent, new FakeDialogs(), NullLog.Instance);
-        var dialog = actions.SkipDialog(agent.BreakPanel.Slots[0], 10, offerBack: true);
+        var dialog = actions.SkipDialog(agent.BreakPanel.Slots[0], 10);
         dialog.Chips[0].PickCommand.Execute(null);
         vm.Overlay = dialog;
     });
@@ -364,7 +424,7 @@ public class ScreenshotTests
             new SkipCommentItemViewModel("evening-auto", "Evening break", "Auto-skipped at 17:00", 10, BreakActions.SkipChips, "Deadline"),
             new SkipCommentItemViewModel("lunch-auto", "Lunch break", "Auto-skipped at 14:00 on 12 Oct", 10, BreakActions.SkipChips),
         };
-        vm.Overlay = new EndDayDialogViewModel(items, "your manager", "Your manager");
+        vm.Overlay = new EndDayDialogViewModel(items, "a manager", "A manager");
     }, height: 760);
 
     [AvaloniaFact]
@@ -416,7 +476,7 @@ public class ScreenshotTests
         var window = new SignInWindow { DataContext = vm };
         ShootWindow(window, "signin-connecting");
         var lost = new SignInViewModel(new FakeAgent(), null, NullLog.Instance) { Email = "asha@timechamp.test" };
-        lost.SetSessionLost("Your session has ended. Please sign in again.");
+        lost.SetSessionLost("Sign in again to carry on.");
         window.DataContext = lost;
         Shots.Save(window, "signin-session-lost");
         window.AllowClose = true;
@@ -465,63 +525,24 @@ public class ScreenshotTests
     }, "toast-message");
 
     [AvaloniaFact]
-    public void Toast_ring()
-    {
-        var agent = new FakeAgent("10:59:30");
-        ShootToast(Toasts.Ring(agent, agent.Ring!, () => { }, () => { }, () => { }), "toast-ring");
-    }
-
-    [AvaloniaFact]
-    public void Toast_auto_skipped()
-    {
-        var agent = new FakeAgent("12:02");
-        ShootToast(Toasts.AutoSkipped(agent, Days.Skip("MORNING", "12:00", auto: true), () => { }, () => { }), "toast-auto-skipped");
-    }
-
-    [AvaloniaFact]
-    public void Toast_good_morning()
-    {
-        var agent = new FakeAgent("08:55") { State = AgentState.NotStarted };
-        ShootToast(Toasts.Nudge(agent, new AgentNudge(NudgeKind.Greeting, "2026-10-13"), () => { }, () => { }), "toast-good-morning");
-    }
-
-    [AvaloniaFact]
-    public void Toast_at_your_desk()
-    {
-        var agent = new FakeAgent("09:12") { State = AgentState.NotStarted };
-        ShootToast(Toasts.Nudge(agent, new AgentNudge(NudgeKind.AtDesk, "2026-10-13"), () => { }, () => { }), "toast-at-desk");
-    }
-
-    [AvaloniaFact]
     public void Toast_cue() => ShootToast(Toasts.Cue("Skipped and noted. Keep it steady."), "toast-cue", minBytes: 1_500);
 
-    [AvaloniaFact]
-    public void Toast_decision() => ShootToast(new ToastViewModel(ToastKind.BreakDecision, "note:1")
-    {
-        Heading = "Break update", Title = "Your morning break on 13 Oct was rejected", Stamp = "16:05",
-        Body = "Maya Reddy: Please plan calls around breaks", IsRejected = true,
-    }, "toast-decision");
-
-    [AvaloniaFact]
-    public void Toast_approval_request() => ShootToast(new ToastViewModel(ToastKind.Approval, "note:2")
-    {
-        Heading = "Approval needed", Title = "Asha Kumar started the morning break 12 min late", Stamp = "11:12",
-        Body = "On a customer call until now",
-    }, "toast-approval");
-
-    // ---- The floating button ------------------------------------------------------------------------
+    // ---- The floating icon ------------------------------------------------------------------------
 
     private static void ShootBubble(FakeAgent agent, string name, int unread = 0)
     {
-        agent.ChatUnread = unread;
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var window = new BubbleWindow { DataContext = vm };
+        var rig = new IconRig(agent);
+        rig.Vm.MessageCount = unread; // 4.0: the manager chat's unread count, under any alert
+        rig.DayAlerts.Sync();
+        rig.Vm.Update();
+        rig.Run(1.5); // The badge's pop, the crossfade: to rest.
+        var window = rig.Window();
         window.Show();
         window.Background = Desktop;
         var path = Shots.Save(window, name);
         Assert.True(new FileInfo(path).Length > 2_000);
         window.Close();
+        rig.Dispose();
     }
 
     [AvaloniaFact]

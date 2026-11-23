@@ -7,16 +7,19 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,18" Spacing="12">
+  <!-- Screen D and the note screens: the question, what it costs, then the reason when one is asked for. -->
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,26,20,20" Spacing="10">
       <TextBlock Classes="h2" Text="{Binding Title}" />
+      <TextBlock Classes="lead" Text="{Binding Lead}" IsVisible="{Binding HasLead}" />
       <WrapPanel IsVisible="{Binding HasTag}">
         <Border Classes="pill" Background="{Binding TagTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}" Margin="0,0,8,0">
           <TextBlock Text="{Binding TagText}" Foreground="{Binding TagTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
         </Border>
-        <TextBlock Classes="muted" Text="{Binding TagDetail}" VerticalAlignment="Center" />
+        <TextBlock Classes="small" Text="{Binding TagDetail}" VerticalAlignment="Center" TextWrapping="Wrap" />
       </WrapPanel>
-      <TextBlock Classes="body" Text="{Binding Message}" />
+      <TextBlock Classes="body" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
       <ItemsControl Name="ChipList" ItemsSource="{Binding Chips}" IsVisible="{Binding HasChips}" AutomationProperties.Name="Quick reasons">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -25,11 +28,11 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="dlg:ChipViewModel">
-            <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,8,8" />
+            <Button Classes="chip small" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,6,6" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <StackPanel Spacing="6" Margin="0,2,0,0">
+      <StackPanel Spacing="6" IsVisible="{Binding AsksReason}">
         <TextBlock Classes="label" Text="{Binding Label}" />
         <TextBox Name="ReasonBox"
                  Classes="field"
@@ -38,36 +41,31 @@
                  MaxLength="{Binding MaxLength}"
                  TextWrapping="Wrap"
                  AcceptsReturn="False"
-                 Height="84"
+                 Height="64"
                  VerticalContentAlignment="Top" />
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Classes="small" Text="{Binding Hint}" TextWrapping="Wrap" />
-          <TextBlock Grid.Column="1" Classes="count" Classes.ok="{Binding CountOk}" Text="{Binding CountText}" Margin="12,0,0,0" />
+          <TextBlock Grid.Column="1" Classes="count" Classes.ok="{Binding CountOk}" Text="{Binding CountText}" Margin="10,0,0,0" />
         </Grid>
-        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
       </StackPanel>
+      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <Panel>
-        <UniformGrid Rows="1" Margin="-4,0" IsVisible="{Binding HasNoAlt}">
-          <Button Classes="primary"
-                  Content="{Binding PrimaryText}"
-                  Command="{Binding SubmitCommand}"
-                  IsDefault="{Binding HasNoAlt}" />
-          <Button Classes="secondary"
-                  Content="{Binding CancelText}"
-                  Command="{Binding CancelCommand}"
-                  IsCancel="True" />
-        </UniformGrid>
-        <!-- Start break · Skip break · Cancel, or Ask manager · Leave them out · Stay on break -->
-        <Grid ColumnDefinitions="1.2*,8,*,8,Auto" IsVisible="{Binding HasAlt}">
-          <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
-                  Command="{Binding SubmitCommand}" IsDefault="{Binding HasAlt}" />
-          <Button Grid.Column="2" Classes="skip" HorizontalAlignment="Stretch" Content="{Binding AltText}"
-                  Command="{Binding AlternativeCommand}" />
-          <Button Grid.Column="4" Classes="plain" Content="{Binding CancelText}" Command="{Binding CancelCommand}" />
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <StackPanel Spacing="10">
+        <!-- Ask manager, then Leave them out and Stay on break; or Start break, then Skip break and Cancel -->
+        <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
+                Command="{Binding SubmitCommand}" IsDefault="{Binding HasAlt}" IsVisible="{Binding HasAlt}" />
+        <Grid ColumnDefinitions="*,11,*" IsVisible="{Binding HasAlt}">
+          <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding AltText}" Command="{Binding AlternativeCommand}" />
+          <Button Grid.Column="2" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}" Command="{Binding CancelCommand}" />
         </Grid>
-      </Panel>
+        <Grid ColumnDefinitions="*,11,*" IsVisible="{Binding HasNoAlt}">
+          <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}" Command="{Binding CancelCommand}" IsCancel="True" />
+          <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
+                  Command="{Binding SubmitCommand}" IsDefault="{Binding HasNoAlt}" />
+        </Grid>
+      </StackPanel>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

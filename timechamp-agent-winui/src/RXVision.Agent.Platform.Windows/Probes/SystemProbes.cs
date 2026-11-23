@@ -74,38 +74,6 @@ internal sealed class WindowsScreenInfo : IScreenInfo
     }
 }
 
-/// <summary>Plays the break chime from Assets\chime.wav in the app folder, asynchronously.</summary>
-[SupportedOSPlatform("windows")]
-internal sealed class WindowsSoundPlayer : ISoundPlayer
-{
-    private readonly string _appDir;
-    private readonly Action<string>? _log;
-
-    public WindowsSoundPlayer(string appDir, Action<string>? log)
-    {
-        _appDir = appDir;
-        _log = log;
-    }
-
-    public void PlayChime()
-    {
-        try
-        {
-            var wav = Path.Combine(_appDir, "Assets", "chime.wav");
-            if (File.Exists(wav) &&
-                NativeMethods.PlaySoundW(wav, IntPtr.Zero, NativeMethods.SND_ASYNC | NativeMethods.SND_FILENAME | NativeMethods.SND_NODEFAULT))
-            {
-                return;
-            }
-            NativeMethods.MessageBeep(NativeMethods.MB_OK);
-        }
-        catch (Exception ex)
-        {
-            _log?.Invoke($"sound: chime failed: {ex.Message}");
-        }
-    }
-}
-
 /// <summary>
 /// Hands the verified installer to the OS to replace this install. A version already
 /// handed over in the last day is not run again (see <see cref="UpdateAttempt"/>):

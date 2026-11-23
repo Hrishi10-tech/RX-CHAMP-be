@@ -12,12 +12,11 @@ public interface IDialogService
 public static class DialogServiceExtensions
 {
     public static Task<bool> ConfirmAsync(this IDialogService dialogs, string title, string message,
-        string primary, string cancel = "Cancel", bool danger = false) =>
+        string primary, string cancel = "Cancel") =>
         dialogs.ShowAsync(new MessageDialogViewModel(title, message)
         {
             PrimaryText = primary,
             CancelText = cancel,
-            IsDanger = danger,
         });
 
     public static Task AlertAsync(this IDialogService dialogs, string title, string message) =>

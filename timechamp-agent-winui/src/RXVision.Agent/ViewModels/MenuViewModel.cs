@@ -17,17 +17,18 @@ public sealed record MenuState(
     bool ShowQuit,
     string Status)
 {
-    public static MenuState For(AgentState state, string presenceStatus, bool onBreak, bool canQuit = false)
+    /// <param name="biometric">The biometric device takes this person's attendance (3.5): no day or break items.</param>
+    public static MenuState For(AgentState state, string presenceStatus, bool onBreak, bool canQuit = false, bool biometric = false)
     {
         var running = state == AgentState.Running;
         var away = onBreak || presenceStatus is PresenceStatus.Break or PresenceStatus.Lunch;
         var meeting = presenceStatus == PresenceStatus.Meeting;
         return new MenuState(
-            CanQuickBreak: running && !away && !meeting,
-            CanNextBreak: running && !away && !meeting,
+            CanQuickBreak: running && !away && !meeting && !biometric,
+            CanNextBreak: running && !away && !meeting && !biometric,
             CanBackToWork: running && (away || meeting),
-            CanEndDay: running,
-            CanStartDay: state is AgentState.DayEnded or AgentState.NotStarted,
+            CanEndDay: running && !biometric,
+            CanStartDay: state is AgentState.DayEnded or AgentState.NotStarted && !biometric,
             CanSignOut: state is AgentState.NeedsNotice or AgentState.NotStarted or AgentState.Running or AgentState.DayEnded or AgentState.Connecting,
             ShowQuit: canQuit,
             Status: StatusText(state, presenceStatus, onBreak));
@@ -35,13 +36,12 @@ public sealed record MenuState(
 
     public static string StatusText(AgentState state, string presenceStatus, bool onBreak) => state switch
     {
-        AgentState.Running when presenceStatus == PresenceStatus.Lunch => "At lunch",
-        AgentState.Running when onBreak || presenceStatus == PresenceStatus.Break => "On a break",
+        AgentState.Running when onBreak || presenceStatus is PresenceStatus.Break or PresenceStatus.Lunch => "On break",
         AgentState.Running when presenceStatus == PresenceStatus.Meeting => "In a meeting",
         AgentState.Running => "Working",
-        AgentState.NotStarted => "Day not started",
+        AgentState.NotStarted => "Not started",
         AgentState.DayEnded => "Day ended",
-        AgentState.NeedsNotice => "Not tracking yet",
+        AgentState.NeedsNotice => "Not started",
         AgentState.Connecting => "Reconnecting",
         AgentState.SignIn => "Signed out",
         _ => "Starting",
@@ -88,9 +88,9 @@ public sealed partial class AgentMenuViewModel : ObservableObject
         Open = new MenuItemViewModel("Open RX Vision", open);
         QuickBreak = new MenuItemViewModel("Quick break…", quickBreak);
         NextBreak = new MenuItemViewModel("Next break", nextBreak);
-        BackToWork = new MenuItemViewModel("Back to work", backToWork);
-        EndDay = new MenuItemViewModel("End Day", endDay);
-        StartDay = new MenuItemViewModel("Start Day", startDay);
+        BackToWork = new MenuItemViewModel("Resume work", backToWork);
+        EndDay = new MenuItemViewModel("End day", endDay);
+        StartDay = new MenuItemViewModel("Start day", startDay);
         SignOut = new MenuItemViewModel("Sign out…", signOut);
         Quit = new MenuItemViewModel("Quit RX Vision…", quit);
         Items = new[]

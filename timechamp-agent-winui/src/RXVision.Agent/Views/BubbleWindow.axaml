@@ -1,9 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RXVision.Agent.ViewModels"
+        xmlns:views="using:RXVision.Agent.Views"
         x:Class="RXVision.Agent.Views.BubbleWindow"
         x:DataType="vm:BubbleViewModel"
-        Title="RX Vision"
+        Title="{Binding AccessibleName}"
+        AutomationProperties.Name="{Binding AccessibleName}"
         SystemDecorations="None"
         Background="Transparent"
         Topmost="True"
@@ -12,171 +14,21 @@
         CanResize="False"
         SizeToContent="Manual"
         WindowStartupLocation="Manual"
-        Width="88" Height="88">
+        Width="72" Height="72">
 
   <Window.Styles>
-    <!-- Status ring: green working, amber away, violet meeting, red over time, grey idle -->
-    <Style Selector="Ellipse.status">
-      <Setter Property="Width" Value="68" />
-      <Setter Property="Height" Value="68" />
-      <Setter Property="StrokeThickness" Value="3.5" />
-      <Setter Property="Stroke" Value="#9AA2B4" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Ellipse.status.working"><Setter Property="Stroke" Value="#22C55E" /></Style>
-    <Style Selector="Ellipse.status.away"><Setter Property="Stroke" Value="#F59E0B" /></Style>
-    <Style Selector="Ellipse.status.meeting"><Setter Property="Stroke" Value="#8B5CF6" /></Style>
-    <Style Selector="Ellipse.status.overrun"><Setter Property="Stroke" Value="#E5484D" /></Style>
-    <Style Selector="Ellipse.status.ringing"><Setter Property="Stroke" Value="#F59E0B" /></Style>
-
-    <!-- The face's wash: clear while working, amber away, red over time, dim when idle -->
-    <Style Selector="Ellipse.wash">
-      <Setter Property="Fill" Value="#0B1220" />
-      <Setter Property="Opacity" Value="0" />
-    </Style>
-    <Style Selector="Ellipse.wash.idle"><Setter Property="Opacity" Value="0.55" /></Style>
-    <Style Selector="Ellipse.wash.away">
-      <Setter Property="Fill" Value="#F59E0B" />
-      <Setter Property="Opacity" Value="0.32" />
-    </Style>
-    <Style Selector="Ellipse.wash.overrun">
-      <Setter Property="Fill" Value="#E5484D" />
-      <Setter Property="Opacity" Value="0.5" />
-    </Style>
-    <Style Selector="Ellipse.wash.ringing">
-      <Setter Property="Fill" Value="#F59E0B" />
-      <Style.Animations>
-        <Animation Duration="0:0:1.1" IterationCount="Infinite" PlaybackDirection="Alternate">
-          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.1" /></KeyFrame>
-          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.5" /></KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-
-    <!-- The ring for a break that is due: a pulse spreading out, and a small wobble -->
-    <Style Selector="Ellipse.pulse">
-      <Setter Property="Width" Value="68" />
-      <Setter Property="Height" Value="68" />
-      <Setter Property="Stroke" Value="#F59E0B" />
-      <Setter Property="StrokeThickness" Value="3" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Opacity" Value="0" />
-    </Style>
-    <Style Selector="Ellipse.pulse.on">
-      <Style.Animations>
-        <Animation Duration="0:0:1.6" IterationCount="Infinite">
-          <KeyFrame Cue="0%">
-            <Setter Property="ScaleTransform.ScaleX" Value="1.0" />
-            <Setter Property="ScaleTransform.ScaleY" Value="1.0" />
-            <Setter Property="Opacity" Value="0.9" />
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="ScaleTransform.ScaleX" Value="1.24" />
-            <Setter Property="ScaleTransform.ScaleY" Value="1.24" />
-            <Setter Property="Opacity" Value="0" />
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-    <Style Selector="Border.face.ringing">
-      <Style.Animations>
-        <Animation Duration="0:0:2.4" IterationCount="Infinite">
-          <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
-          <KeyFrame Cue="4%"><Setter Property="RotateTransform.Angle" Value="-9" /></KeyFrame>
-          <KeyFrame Cue="9%"><Setter Property="RotateTransform.Angle" Value="9" /></KeyFrame>
-          <KeyFrame Cue="14%"><Setter Property="RotateTransform.Angle" Value="-6" /></KeyFrame>
-          <KeyFrame Cue="19%"><Setter Property="RotateTransform.Angle" Value="4" /></KeyFrame>
-          <KeyFrame Cue="24%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
-          <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-
-    <Style Selector="Panel#FaceArea:pointerover Ellipse.hover">
-      <Setter Property="Opacity" Value="0.12" />
-    </Style>
-
-    <!-- Unread messages, on the rim -->
-    <Style Selector="Border.badge">
-      <Setter Property="Width" Value="22" />
-      <Setter Property="Height" Value="22" />
-      <Setter Property="CornerRadius" Value="11" />
-      <Setter Property="Background" Value="#FFFFFF" />
-    </Style>
-    <Style Selector="Border.badge > Border">
-      <Setter Property="Margin" Value="1.5" />
-      <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Background" Value="#E5484D" />
-    </Style>
-    <Style Selector="Border.badge TextBlock">
-      <Setter Property="Foreground" Value="#FFFFFF" />
-      <Setter Property="FontSize" Value="10.5" />
-      <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <!-- "Morning break due" under the button -->
-    <Style Selector="Border.ringlabel">
-      <Setter Property="Background" Value="#FEF3E0" />
-      <Setter Property="BorderBrush" Value="#F5C67A" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="9" />
-      <Setter Property="Padding" Value="8,3" />
-      <Setter Property="MaxWidth" Value="134" />
-    </Style>
-    <Style Selector="Border.ringlabel TextBlock">
-      <Setter Property="Foreground" Value="#7A4306" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    </Style>
-
     <Style Selector="MenuItem" x:DataType="vm:MenuItemViewModel">
       <Setter Property="Header" Value="{Binding Header}" />
       <Setter Property="Command" Value="{Binding Command}" />
+      <!-- 4.0: Quit is in the menu for admins only. -->
       <Setter Property="IsVisible" Value="{Binding IsVisible}" />
     </Style>
   </Window.Styles>
 
-  <Grid Name="Root" RowDefinitions="88,*" Background="Transparent">
+  <Grid Name="Root">
     <Grid.ContextMenu>
       <ContextMenu Name="BubbleMenu" ItemsSource="{Binding Menu.Items}" />
     </Grid.ContextMenu>
-
-    <Panel Name="FaceArea" Width="88" Height="88" HorizontalAlignment="Center" VerticalAlignment="Top"
-           Background="Transparent" Cursor="Hand" ToolTip.Tip="{Binding ToolTip}">
-      <Ellipse Classes="pulse" Classes.on="{Binding IsRinging}" IsVisible="{Binding IsRinging}" />
-      <Ellipse Classes="status"
-               Classes.working="{Binding IsWorking}"
-               Classes.away="{Binding IsAway}"
-               Classes.meeting="{Binding IsMeeting}"
-               Classes.overrun="{Binding IsOverrun}"
-               Classes.ringing="{Binding IsRinging}" />
-      <Border Name="Face" Classes="face" Classes.ringing="{Binding IsRinging}"
-              Width="60" Height="60" CornerRadius="30" ClipToBounds="True" Background="#04070E">
-        <Panel>
-          <Image Source="avares://RXVision/Assets/agent-badge.png" Stretch="UniformToFill" />
-          <Ellipse Classes="wash"
-                   Classes.idle="{Binding IsIdle}"
-                   Classes.away="{Binding IsAway}"
-                   Classes.overrun="{Binding IsOverrun}"
-                   Classes.ringing="{Binding IsRinging}" />
-          <Ellipse Classes="hover" Fill="#FFFFFF" Opacity="0" />
-        </Panel>
-      </Border>
-      <Border Classes="badge" IsVisible="{Binding HasUnread}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0">
-        <Border>
-          <TextBlock Text="{Binding UnreadText}" />
-        </Border>
-      </Border>
-    </Panel>
-
-    <Border Grid.Row="1" Classes="ringlabel" IsVisible="{Binding HasRingLabel}"
-            HorizontalAlignment="Center" VerticalAlignment="Top">
-      <TextBlock Text="{Binding RingLabel}" />
-    </Border>
+    <views:FloatingIconView Name="IconView" Cursor="Hand" AutomationProperties.Name="{Binding AccessibleName}" />
   </Grid>
 </Window>

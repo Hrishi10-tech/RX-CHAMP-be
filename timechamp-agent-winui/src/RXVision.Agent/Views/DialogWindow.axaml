@@ -9,6 +9,6 @@
         CanResize="False"
         Topmost="True"
         WindowStartupLocation="CenterScreen"
-        Background="#FFFFFF">
+        Background="{StaticResource Brush.Panel}">
   <ContentControl Content="{Binding}" />
 </Window>

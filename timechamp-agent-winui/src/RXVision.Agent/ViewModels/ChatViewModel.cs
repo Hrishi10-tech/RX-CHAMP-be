@@ -105,7 +105,7 @@ public sealed partial class ChatViewModel : ObservableObject
     public bool IsEmpty => Messages.Count == 0;
     public bool HasContact => SelectedContact is not null;
     public bool CanType => !IsSending;
-    public string HeaderText => SelectedContact is { } c ? $"Chat · {c.Name}" : "Chat";
+    public string HeaderText => SelectedContact is { } c ? c.Name : "Messages";
     public bool HasCounter => CounterText is not null;
     public string? CounterText => Draft.Length >= MaxLength - 200 ? $"{Draft.Length} / {MaxLength}" : null;
 
@@ -129,7 +129,7 @@ public sealed partial class ChatViewModel : ObservableObject
         var chat = _agent.Chat;
         if (chat is null)
         {
-            EmptyText = "Chat isn't available right now.";
+            EmptyText = "Messages aren't available right now. Try again in a moment.";
             return;
         }
         if (!chat.ContactsLoaded || chat.Contacts.Count == 0) await chat.LoadContactsAsync();
@@ -137,8 +137,8 @@ public sealed partial class ChatViewModel : ObservableObject
         if (SelectedContact is null)
         {
             EmptyText = chat.ContactsLoaded
-                ? "No one to chat with yet. Your manager appears here once you're on a team."
-                : "Can't reach RX Vision. Messages appear when you're back online.";
+                ? "No one to chat with yet. Your department's managers appear here once you're in a department."
+                : "Messages appear when you're back online.";
             return;
         }
         await LoadConversationAsync();
@@ -192,7 +192,7 @@ public sealed partial class ChatViewModel : ObservableObject
         IsLoading = false;
         if (list is null)
         {
-            if (Messages.Count == 0) EmptyText = "Couldn't load messages. They appear when you're back online.";
+            if (Messages.Count == 0) EmptyText = "Messages appear when you're back online.";
             return;
         }
         var added = false;
@@ -238,14 +238,14 @@ public sealed partial class ChatViewModel : ObservableObject
             else
             {
                 SendError = result.Transient
-                    ? "Couldn't send. Check your connection and try again."
-                    : result.Message ?? "Couldn't send the message.";
+                    ? "Check your connection and try sending again."
+                    : result.Message ?? "Try sending that again.";
             }
         }
         catch (Exception ex)
         {
             _log.Warn("ui", "chat send failed", ex);
-            SendError = "Couldn't send the message. Try again.";
+            SendError = "Try sending that again.";
         }
         finally
         {

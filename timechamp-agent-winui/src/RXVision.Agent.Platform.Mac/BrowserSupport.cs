@@ -103,6 +103,30 @@ internal static class BrowserSupport
     }
 
     /// <summary>
+    /// The AppleScript to read a browser's tab titles, or null for a browser we do not script
+    /// (Firefox). Every window: the one a call was last seen in may not be the front one. Guarded
+    /// by "is running", as <see cref="AppleScriptFor"/> is.
+    /// </summary>
+    internal static string? TabTitlesScriptFor(BrowserKind kind, string appName)
+    {
+        if (appName.Contains('"') || appName.Contains('\\')) return null;
+        var guard = $"if application \"{appName}\" is running then ";
+        return kind switch
+        {
+            BrowserKind.Safari => guard + $"tell application \"{appName}\" to get name of every tab of every window",
+            BrowserKind.Chromium => guard + $"tell application \"{appName}\" to get title of every tab of every window",
+            _ => null,
+        };
+    }
+
+    /// <summary>osascript prints a list as "a, b, c". A title with a comma comes apart, and its start still reads.</summary>
+    internal static IReadOnlyList<string> TabTitlesFrom(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw.Trim().Equals("missing value", StringComparison.OrdinalIgnoreCase)) return Array.Empty<string>();
+        return raw.Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    /// <summary>
     /// Reduces osascript output (a URL, or a blank/error line) to a bare lowercase
     /// host, or null. Only http/https produce a host; app and internal schemes
     /// (chrome://, about:, file://, blank) return null so nothing private leaks.

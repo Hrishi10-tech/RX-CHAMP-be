@@ -7,7 +7,7 @@ namespace RXVision.Agent.Platform.Windows;
 /// <summary>
 /// Windows implementation of <see cref="IPlatform"/>: idle, lock, sleep, the
 /// foreground window and browser host, screen capture, DPAPI secrets,
-/// start-at-login, the chime, full-screen detection, self-update, and migration
+/// start-at-login, full-screen detection, self-update, and migration
 /// from the 2.x agent.
 ///
 /// The UI constructs this with <c>new WindowsPlatform()</c> on Windows. An optional
@@ -27,11 +27,11 @@ public sealed class WindowsPlatform : IPlatform
         Lock = new WindowsLockProbe(log);
         SleepClock = new WindowsSleepClock(new WindowsSleepSource());
         Foreground = new WindowsForegroundProbe(log);
+        CallWindows = new WindowsCallWindowProbe(log);
         Screen = new WindowsScreenCapture(log);
         Secrets = new WindowsSecretStore(paths.DataDir, log);
         Autostart = new WindowsAutostart(log);
         Permissions = new WindowsPermissions();
-        Sound = new WindowsSoundPlayer(paths.AppDir, log);
         ScreenInfo = new WindowsScreenInfo();
         Updater = new WindowsUpdateInstaller(Path.GetDirectoryName(paths.TempDir) ?? paths.TempDir, paths.TempDir, log);
         Shell = new WindowsShell(log);
@@ -46,11 +46,11 @@ public sealed class WindowsPlatform : IPlatform
     public ILockProbe Lock { get; }
     public ISleepClock SleepClock { get; }
     public IForegroundProbe Foreground { get; }
+    public ICallWindowProbe CallWindows { get; }
     public IScreenCapture Screen { get; }
     public ISecretStore Secrets { get; }
     public IAutostart Autostart { get; }
     public IPermissions Permissions { get; }
-    public ISoundPlayer Sound { get; }
     public IScreenInfo ScreenInfo { get; }
     public IUpdateInstaller Updater { get; }
     public IShell Shell { get; }

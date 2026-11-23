@@ -4,223 +4,236 @@
              xmlns:conv="using:RXVision.Agent.Converters"
              x:Class="RXVision.Agent.Views.HistoryView"
              x:DataType="vm:HistoryViewModel">
-  <!-- History (SPEC 8.2): the month's focus against its target, then the days, meetings and away time. -->
-  <Grid ColumnDefinitions="330,*">
+  <!-- History (4.0 SPEC 8.2, drawn as the 3.6 panel's D-86 page): the month's focus time against
+       its target, its figures, then every day, the meetings and the away time, one column. -->
+  <UserControl.Styles>
+    <Style Selector="Border.stat">
+      <Setter Property="Background" Value="{StaticResource Brush.Field}" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="Margin" Value="3" />
+    </Style>
+    <Style Selector="Border.bar">
+      <Setter Property="Height" Value="4" />
+      <Setter Property="CornerRadius" Value="2" />
+    </Style>
+    <Style Selector="Border.dayrow">
+      <Setter Property="Padding" Value="0,10" />
+      <Setter Property="BorderBrush" Value="{StaticResource Brush.PanelBorder}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+    </Style>
+  </UserControl.Styles>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="14">
 
-    <!-- Left: the month, the ring, the totals (scrolls on a short window) -->
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <Border Classes="card" Padding="18,14" CornerRadius="20" VerticalAlignment="Top">
-      <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <Button Classes="ghost" Command="{Binding PreviousMonthCommand}" ToolTip.Tip="Previous month" AutomationProperties.Name="Previous month">
-            <PathIcon Classes="i" Data="{StaticResource Icon.ChevronLeft}" Width="16" Height="16" />
-          </Button>
-          <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="1">
-            <TextBlock Classes="title" FontSize="15" Text="{Binding MonthTitle}" HorizontalAlignment="Center" />
-            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding IsLoading}">
-              <PathIcon Classes="spinner" Width="11" Height="11" />
-              <TextBlock Classes="small" FontSize="11" Text="Loading" />
+      <!-- The month: focus time against the target -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Classes="ghost" Command="{Binding PreviousMonthCommand}" ToolTip.Tip="Previous month" AutomationProperties.Name="Previous month" VerticalAlignment="Center">
+              <PathIcon Classes="i" Data="{StaticResource Icon.ChevronLeft}" Width="16" Height="16" />
+            </Button>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="1">
+              <TextBlock Classes="h2" HorizontalAlignment="Center" Text="{Binding MonthTitle}" />
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding IsLoading}">
+                <PathIcon Classes="spinner" Width="11" Height="11" />
+                <TextBlock Classes="small" Text="Loading" />
+              </StackPanel>
             </StackPanel>
-          </StackPanel>
-          <Button Grid.Column="2" Classes="ghost" Command="{Binding NextMonthCommand}" ToolTip.Tip="Next month" AutomationProperties.Name="Next month">
-            <PathIcon Classes="i" Data="{StaticResource Icon.ChevronRight}" Width="16" Height="16" />
-          </Button>
-        </Grid>
-
-        <!-- The ring: focus against the monthly target -->
-        <Panel Width="176" Height="176" HorizontalAlignment="Center" IsVisible="{Binding HasData}">
-          <Ellipse Stroke="{StaticResource Brush.IndigoIcon}" StrokeThickness="14" Margin="7" />
-          <Arc Stroke="{StaticResource Brush.Brand}" StrokeThickness="14" Margin="7" StartAngle="-90"
-               SweepAngle="{Binding RingSweep}" StrokeLineCap="Round" />
-          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="0">
-            <TextBlock Classes="num" Text="{Binding FocusText}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"
-                       Foreground="{StaticResource Brush.Ink}" />
-            <TextBlock Classes="small" Text="{Binding TargetText}" HorizontalAlignment="Center" />
-            <TextBlock Classes="small" FontSize="11" Text="focus time" HorizontalAlignment="Center" />
-          </StackPanel>
-        </Panel>
-
-        <StackPanel Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding HasData}">
-          <Border Classes="pill" HorizontalAlignment="Center" Padding="12,4"
-                  Background="{Binding IsBehind, Converter={x:Static conv:BoolBrushConverter.BehindBackground}}">
-            <TextBlock Text="{Binding TrackText}" FontSize="12.5"
-                       Foreground="{Binding IsBehind, Converter={x:Static conv:BoolBrushConverter.BehindForeground}}" />
-          </Border>
-          <TextBlock Classes="small" Text="{Binding ProjectedText}" TextWrapping="Wrap" TextAlignment="Center"
-                     IsVisible="{Binding ProjectedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-        </StackPanel>
-
-        <Border Classes="note" IsVisible="{Binding IsStale}">
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <PathIcon Classes="i" Data="{StaticResource Icon.CloudOff}" Width="14" Height="14" Foreground="{StaticResource Brush.Muted}" />
-            <TextBlock Text="{Binding StaleText}" FontSize="12" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-        <Border Classes="note warn" IsVisible="{Binding HasProblem}">
-          <StackPanel Spacing="6">
-            <TextBlock Text="{Binding Problem}" FontSize="12.5" TextWrapping="Wrap" />
-            <Button Classes="link" Content="Try again" Command="{Binding ReloadCommand}" HorizontalAlignment="Left" />
-          </StackPanel>
-        </Border>
-
-        <ItemsControl ItemsSource="{Binding Chips}" IsVisible="{Binding HasData}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <WrapPanel />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:HistoryChipViewModel">
-              <Border Classes="stat" MinWidth="136" Padding="12,7">
-                <StackPanel Spacing="1">
-                  <TextBlock Classes="small" FontSize="11" Text="{Binding Label}" />
-                  <TextBlock Classes="num" FontSize="15" FontWeight="Bold" Text="{Binding Value}"
-                             Foreground="{Binding Tone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                </StackPanel>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <!-- The month's offline time with no activity data, and what it means (only when there is some) -->
-        <Border Classes="note warn" Padding="10,7" Margin="0,-10,0,0" IsVisible="{Binding HasUnverified}">
-          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
-            <PathIcon Classes="i" Data="{StaticResource Icon.CloudOff}" Width="14" Height="14" Foreground="{StaticResource Brush.AmberStrong}"
-                      VerticalAlignment="Center" Margin="0,0,8,0" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <TextBlock FontSize="12" Text="Offline, no activity data" />
-              <TextBlock Classes="num" FontSize="12.5" FontWeight="SemiBold" Text="{Binding UnverifiedText}" />
-            </StackPanel>
-            <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{Binding UnverifiedNote}" />
+            <Button Grid.Column="2" Classes="ghost" Command="{Binding NextMonthCommand}" ToolTip.Tip="Next month" AutomationProperties.Name="Next month" VerticalAlignment="Center">
+              <PathIcon Classes="i" Data="{StaticResource Icon.ChevronRight}" Width="16" Height="16" />
+            </Button>
           </Grid>
-        </Border>
-      </StackPanel>
-    </Border>
-    </ScrollViewer>
 
-    <!-- Right: days, meetings, away -->
-    <ScrollViewer Grid.Column="1" Margin="14,0,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="14">
-        <Border Classes="card" Padding="18,14" CornerRadius="20">
-          <StackPanel Spacing="6">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Classes="title" FontSize="14" Text="Days" />
-              <TextBlock Grid.Column="1" Classes="small" Text="Focus time against each day's target" VerticalAlignment="Center" />
-            </Grid>
-            <TextBlock Classes="muted" Text="No working days yet this month." IsVisible="{Binding !HasDays}" />
-            <ItemsControl ItemsSource="{Binding Days}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:HistoryDayViewModel">
-                  <Border Classes="row" Classes.hl="{Binding IsToday}" Margin="-8,0,-8,0" Opacity="{Binding IsMuted, Converter={x:Static conv:BoolBrushConverter.MutedOpacity}}">
-                    <Grid ColumnDefinitions="104,*">
-                      <StackPanel Spacing="1" VerticalAlignment="Top">
-                        <TextBlock Classes="title" Text="{Binding DateText}" />
-                        <TextBlock Classes="small" FontSize="11" Text="{Binding Times}" IsVisible="{Binding Times, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <Panel Width="164" Height="164" HorizontalAlignment="Center" IsVisible="{Binding HasData}">
+            <Ellipse Stroke="{StaticResource Brush.NeutralFill}" StrokeThickness="10" Margin="5" />
+            <Arc Name="MonthRing" Stroke="{StaticResource Brush.Brand}" StrokeThickness="10" Margin="5" StartAngle="-90"
+                 SweepAngle="{Binding RingSweep}" StrokeLineCap="Round" />
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="1">
+              <TextBlock Classes="num" Text="{Binding FocusText}" FontSize="21" FontWeight="Bold" HorizontalAlignment="Center" />
+              <TextBlock Classes="small" Text="focus time" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Panel>
+
+          <StackPanel Spacing="7" HorizontalAlignment="Center" IsVisible="{Binding HasData}">
+            <TextBlock Classes="title" FontSize="14" Text="{Binding TargetText}" HorizontalAlignment="Center" />
+            <Border Classes="pill" HorizontalAlignment="Center" Padding="10,3"
+                    Background="{Binding IsBehind, Converter={x:Static conv:BoolBrushConverter.BehindBackground}}">
+              <TextBlock Text="{Binding TrackText}" FontSize="12"
+                         Foreground="{Binding IsBehind, Converter={x:Static conv:BoolBrushConverter.BehindForeground}}" />
+            </Border>
+            <TextBlock Classes="small" Text="{Binding ProjectedText}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                       IsVisible="{Binding ProjectedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="note" IsVisible="{Binding IsStale}">
+        <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
+      </Border>
+      <Border Classes="problem" IsVisible="{Binding HasProblem}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" />
+          <Button Classes="link" Content="Try again" Command="{Binding ReloadCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
+      </Border>
+
+      <!-- The month's figures: focus, paid time, breaks, meetings, waiting -->
+      <Border Classes="card" Padding="11" IsVisible="{Binding HasData}">
+        <StackPanel Spacing="6">
+          <ItemsControl ItemsSource="{Binding Chips}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HistoryChipViewModel">
+                <Border Classes="stat">
+                  <StackPanel Spacing="1">
+                    <TextBlock Classes="small" FontSize="11" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="num" FontSize="16" FontWeight="Bold" Text="{Binding Value}"
+                               Foreground="{Binding Tone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <!-- The month's offline time with no activity data, and what it means (only when there is some) -->
+          <Border Classes="note" IsVisible="{Binding HasUnverified}">
+            <StackPanel Spacing="2">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Offline, no activity data" />
+                <TextBlock Classes="num" FontWeight="SemiBold" Text="{Binding UnverifiedText}" />
+              </StackPanel>
+              <TextBlock Classes="small" TextWrapping="Wrap" Text="{Binding UnverifiedNote}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- Every day so far -->
+      <Border Classes="card" IsVisible="{Binding HasData}">
+        <StackPanel>
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+            <TextBlock Classes="title" FontSize="14" Text="Days" />
+            <TextBlock Grid.Column="1" Classes="small" Text="Focus of target" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock Classes="muted" Text="No working days yet this month." IsVisible="{Binding !HasDays}" Margin="0,4" />
+          <ItemsControl ItemsSource="{Binding Days}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HistoryDayViewModel">
+                <Border Classes="dayrow" Opacity="{Binding IsMuted, Converter={x:Static conv:BoolBrushConverter.MutedOpacity}}">
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Classes="title" Text="{Binding DateText}" VerticalAlignment="Center" />
+                        <Border Classes="pill" Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
+                          <TextBlock Text="{Binding StatusText}" MaxWidth="110" TextTrimming="CharacterEllipsis"
+                                     Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                        </Border>
                       </StackPanel>
-                      <StackPanel Grid.Column="1" Spacing="4">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                          <Border Classes="pill" Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                          </Border>
-                          <!-- MinWidth: the theme's 200 would push the figures off a narrow window -->
-                          <ProgressBar Grid.Column="1" Classes="focusbar" Minimum="0" Maximum="1" Value="{Binding Progress}" Height="7" MinHeight="7"
-                                       MinWidth="40" CornerRadius="4" Margin="10,0" VerticalAlignment="Center" />
-                          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <TextBlock Classes="num" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FocusText}" />
-                            <TextBlock Classes="small" Text="{Binding TargetText}" />
-                          </StackPanel>
-                        </Grid>
-                        <WrapPanel>
-                          <TextBlock Classes="small" Text="{Binding Label}" Margin="0,0,12,0" FontStyle="Italic"
-                                     IsVisible="{Binding Label, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          <TextBlock Classes="small" Text="{Binding PaidText}" Margin="0,0,12,0" Foreground="{StaticResource Brush.InkSoft}"
-                                     ToolTip.Tip="{x:Static vm:TodayViewModel.PaidTimeToolTip}"
-                                     IsVisible="{Binding PaidText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          <TextBlock Classes="small" Text="{Binding BreaksText}" Margin="0,0,12,0"
-                                     IsVisible="{Binding BreaksText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          <TextBlock Classes="small" Text="{Binding MeetingsText}" Margin="0,0,12,0"
-                                     IsVisible="{Binding MeetingsText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          <TextBlock Classes="small" Text="{Binding ApprovedAwayText}" Margin="0,0,12,0"
-                                     IsVisible="{Binding ApprovedAwayText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                          <Border Classes="pill" Background="{StaticResource Brush.GreenBg}" Margin="0,0,8,0" IsVisible="{Binding PendingText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <TextBlock Text="{Binding PendingText}" Foreground="{StaticResource Brush.GreenInk}" />
-                          </Border>
-                          <Border Classes="pill" Background="{StaticResource Brush.AmberSoft}" ToolTip.Tip="{Binding UnverifiedToolTip}"
-                                  IsVisible="{Binding UnverifiedText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <TextBlock Text="{Binding UnverifiedText}" Foreground="{StaticResource Brush.AmberInk}" />
-                          </Border>
-                        </WrapPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <TextBlock Classes="num" FontSize="13" FontWeight="SemiBold" Text="{Binding FocusText}" />
+                        <TextBlock Classes="small" Text="{Binding TargetText}" />
                       </StackPanel>
                     </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </Border>
+                    <Panel>
+                      <Border Classes="bar" Background="{StaticResource Brush.NeutralFill}" />
+                      <Border Classes="bar" HorizontalAlignment="Stretch" RenderTransformOrigin="0%,50%"
+                              Background="{Binding IsShort, Converter={x:Static conv:BoolBrushConverter.BarBrush}}">
+                        <Border.RenderTransform>
+                          <ScaleTransform ScaleX="{Binding Progress}" ScaleY="1" />
+                        </Border.RenderTransform>
+                      </Border>
+                    </Panel>
+                    <TextBlock Classes="small" Text="{Binding Times}" IsVisible="{Binding Times, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding Label}" FontStyle="Italic" TextWrapping="Wrap"
+                               IsVisible="{Binding Label, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding PaidText}" ToolTip.Tip="{x:Static vm:TodayViewModel.PaidTimeToolTip}"
+                               IsVisible="{Binding PaidText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding BreaksText}" TextWrapping="Wrap"
+                               IsVisible="{Binding BreaksText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding MeetingsText}" TextWrapping="Wrap"
+                               IsVisible="{Binding MeetingsText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding ApprovedAwayText}" TextWrapping="Wrap"
+                               IsVisible="{Binding ApprovedAwayText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <WrapPanel>
+                      <Border Classes="pill" Background="{StaticResource Brush.BrandWash}" Margin="0,0,8,4"
+                              IsVisible="{Binding PendingText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="{Binding PendingText}" Foreground="{StaticResource Brush.Brand}" />
+                      </Border>
+                      <Border Classes="pill" Background="{StaticResource Brush.AmberWash}" Margin="0,0,8,4" ToolTip.Tip="{Binding UnverifiedToolTip}"
+                              IsVisible="{Binding UnverifiedText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="{Binding UnverifiedText}" Foreground="{StaticResource Brush.Amber}" />
+                      </Border>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
 
-        <Grid ColumnDefinitions="*,14,*">
-          <Border Classes="card" Padding="18,14" CornerRadius="20" VerticalAlignment="Top">
-            <StackPanel Spacing="6">
-              <TextBlock Classes="title" FontSize="14" Text="Meetings" />
-              <TextBlock Classes="muted" Text="No meetings this month." IsVisible="{Binding !HasMeetings}" />
-              <ItemsControl ItemsSource="{Binding Meetings}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:HistoryMeetingViewModel">
-                    <Border Classes="row" Margin="-8,0,-8,0">
-                      <StackPanel Spacing="2">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <TextBlock Classes="title" Text="{Binding Agenda}" TextTrimming="CharacterEllipsis" />
-                          <Border Grid.Column="1" Classes="pill" Margin="6,0,0,0"
-                                  Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}"
-                                  IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                          </Border>
-                        </Grid>
-                        <TextBlock Classes="small" Text="{Binding When}" />
-                        <TextBlock Classes="small" Text="{Binding People}" TextWrapping="Wrap"
-                                   IsVisible="{Binding People, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Mom, Converter={x:Static ObjectConverters.IsNotNull}}">
-                          <PathIcon Classes="i" Data="{StaticResource Icon.Mail}" Width="13" Height="13" Foreground="{StaticResource Brush.Violet}" />
-                          <TextBlock Classes="small" Text="{Binding Mom}" />
-                        </StackPanel>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Border>
+      <!-- Meetings -->
+      <Border Classes="card" IsVisible="{Binding HasData}">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="Meetings" />
+          <TextBlock Classes="muted" Text="No meetings this month." IsVisible="{Binding !HasMeetings}" />
+          <ItemsControl ItemsSource="{Binding Meetings}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HistoryMeetingViewModel">
+                <Border Classes="dayrow">
+                  <StackPanel Spacing="2">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="title" Text="{Binding Agenda}" TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="1" Classes="pill" Margin="6,0,0,0"
+                              Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}"
+                              IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                      </Border>
+                    </Grid>
+                    <TextBlock Classes="small" Text="{Binding When}" />
+                    <TextBlock Classes="small" Text="{Binding People}" TextWrapping="Wrap"
+                               IsVisible="{Binding People, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <TextBlock Classes="small" Text="{Binding Mom}" IsVisible="{Binding Mom, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
 
-          <Border Grid.Column="2" Classes="card" Padding="18,14" CornerRadius="20" VerticalAlignment="Top">
-            <StackPanel Spacing="6">
-              <TextBlock Classes="title" FontSize="14" Text="Away time" />
-              <TextBlock Classes="muted" Text="No away time this month." IsVisible="{Binding !HasAway}" />
-              <ItemsControl ItemsSource="{Binding Away}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:HistoryAwayViewModel">
-                    <Border Classes="row" Margin="-8,0,-8,0">
-                      <StackPanel Spacing="2">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <TextBlock Classes="title" Text="{Binding Reason}" TextTrimming="CharacterEllipsis" />
-                          <Border Grid.Column="1" Classes="pill" Margin="6,0,0,0"
-                                  Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}"
-                                  IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                          </Border>
-                        </Grid>
-                        <TextBlock Classes="small" Text="{Binding When}" />
-                        <TextBlock Classes="small" Text="{Binding Comment}" TextWrapping="Wrap" FontStyle="Italic"
-                                   IsVisible="{Binding Comment, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </Border>
-        </Grid>
-      </StackPanel>
-    </ScrollViewer>
-  </Grid>
+      <!-- Away time (4.0) -->
+      <Border Classes="card" IsVisible="{Binding HasData}">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="Away time" />
+          <TextBlock Classes="muted" Text="No away time this month." IsVisible="{Binding !HasAway}" />
+          <ItemsControl ItemsSource="{Binding Away}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:HistoryAwayViewModel">
+                <Border Classes="dayrow">
+                  <StackPanel Spacing="2">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="title" Text="{Binding Reason}" TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="1" Classes="pill" Margin="6,0,0,0"
+                              Background="{Binding StatusTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}"
+                              IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                      </Border>
+                    </Grid>
+                    <TextBlock Classes="small" Text="{Binding When}" />
+                    <TextBlock Classes="small" Text="{Binding Comment}" TextWrapping="Wrap" FontStyle="Italic"
+                               IsVisible="{Binding Comment, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

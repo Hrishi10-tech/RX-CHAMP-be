@@ -66,7 +66,7 @@ public class BreakViewModelTests
         Assert.NotNull(agent.Ring);
 
         var row = Row(vm, "MORNING");
-        Assert.True(row.IsHighlighted);
+        Assert.True(row.IsCurrent);
         Assert.Equal("Due now", row.PillText);
         Assert.Equal(Tone.Due, row.PillTone);
         Assert.Equal("Take it now · on time until 11:04 AM", row.Detail);
@@ -77,17 +77,17 @@ public class BreakViewModelTests
     {
         var (vm, _) = Dashboard(Days.General(), "11:08");
         Assert.Equal("Morning break", vm.NextTile.Value);
-        Assert.Equal("Open now · 8 min late, reason needed", vm.NextTile.Caption);
+        Assert.Equal("Open now · 8 min after its time, reason needed", vm.NextTile.Caption);
         Assert.Equal(TileLook.Open, vm.NextTile.Look);
-        Assert.Equal("Take it now · 8 min late, reason needed", Row(vm, "MORNING").Detail);
+        Assert.Equal("Take it now · a short note is needed", Row(vm, "MORNING").Detail);
     }
 
     [Fact]
     public void Late_without_a_reason_rule_says_so()
     {
         var (vm, _) = Dashboard(Days.General(new ShiftRules { ReasonOnLate = false }), "11:08");
-        Assert.Equal("Open now · 8 min late", vm.NextTile.Caption);
-        Assert.Equal("Take it now · 8 min late", Row(vm, "MORNING").Detail);
+        Assert.Equal("Open now · 8 min after its time", vm.NextTile.Caption);
+        Assert.Equal("Take it now · 8 min after its time", Row(vm, "MORNING").Detail);
     }
 
     [Fact]
@@ -102,6 +102,10 @@ public class BreakViewModelTests
         Assert.Equal("Back by 11:16 AM. Your focus time is paused. Pause it if you need to step back in.", vm.ActiveBreak.Note);
         Assert.True(vm.ActiveBreak.CanPause);
         Assert.True(vm.PauseBreakCommand.CanExecute(null));
+        Assert.Equal("On break", vm.ActiveBreak.StatusText);
+        Assert.Equal("07:40", vm.ActiveBreak.Timer);
+        Assert.Equal("left of your 15 min morning break", vm.ActiveBreak.TimerLine);
+        Assert.Equal("Ends at 11:16 AM", vm.ActiveBreak.EndLine);
         Assert.False(vm.ShowTiles);
 
         var row = Row(vm, "MORNING");
@@ -118,11 +122,12 @@ public class BreakViewModelTests
         var (vm, _) = Dashboard(day, "12:10");
         var row = Row(vm, "MORNING");
         Assert.Equal(SlotState.Taken, row.State);
-        Assert.Equal("Late", row.PillText);
+        Assert.Equal("After its time", row.PillText);
         Assert.Equal(Tone.Warn, row.PillTone);
         Assert.Equal("Approved", row.ApprovalText);
         Assert.Equal(Tone.Good, row.ApprovalTone);
-        Assert.Equal("11:42 AM - 12:01 PM · 19 min, 4 min over", row.Detail);
+        Assert.Equal("11:42 AM · Taken", row.RightText);
+        Assert.Equal("11:42 AM to 12:01 PM · 19 min, 4 min extended", row.Detail);
         Assert.True(row.DetailIsAlert);
         Assert.Equal("Maya Reddy: OK this time", row.Note);
 
@@ -133,8 +138,8 @@ public class BreakViewModelTests
 
     [Theory]
     [InlineData("ON_TIME", "NOT_REQUIRED", "On time", null)]
-    [InlineData("EARLY", "PENDING", "Early", "Pending")]
-    [InlineData("LATE", "REJECTED", "Late", "Rejected")]
+    [InlineData("EARLY", "PENDING", "Before its time", "Pending")]
+    [InlineData("LATE", "REJECTED", "After its time", "Not approved")]
     public void Taken_chips(string timing, string approval, string pill, string? chip)
     {
         var day = Days.General().WithRecord(Days.Taken("MORNING", "11:00", "11:14", timing, approval));
@@ -142,7 +147,7 @@ public class BreakViewModelTests
         var row = Row(vm, "MORNING");
         Assert.Equal(pill, row.PillText);
         Assert.Equal(chip, row.ApprovalText);
-        Assert.Equal("11:00 AM - 11:14 AM · 14 min", row.Detail);
+        Assert.Equal("11:00 AM to 11:14 AM · 14 min", row.Detail);
     }
 
     [Fact]
@@ -179,9 +184,9 @@ public class BreakViewModelTests
         var (vm, agent) = Dashboard(day, "12:10");
         var row = Row(vm, "MORNING");
         Assert.Equal(SlotState.AutoSkipped, row.State);
-        Assert.Equal("Auto-skipped", row.PillText);
+        Assert.Equal("Skipped for you", row.PillText);
         Assert.Equal(Tone.Warn, row.PillTone);
-        Assert.Equal("Auto-skipped at 12:00 PM · add a comment", row.Detail);
+        Assert.Equal("Add a comment · skipped for you at 12:00 PM", row.Detail);
         Assert.True(row.CanComment);
         Assert.True(row.CommentCommand!.CanExecute(null));
 
@@ -193,7 +198,7 @@ public class BreakViewModelTests
         agent.Day = Days.General().WithRecord(commented);
         vm.Refresh();
         Assert.False(row.CanComment);
-        Assert.Equal("Auto-skipped at 12:00 PM", row.Detail);
+        Assert.Equal("Skipped for you at 12:00 PM", row.Detail);
         Assert.Equal("Approved", row.ApprovalText);
         Assert.Equal("“Demo ran long” · Maya Reddy: Fine", row.Note);
     }
@@ -271,7 +276,7 @@ public class BreakViewModelTests
         var vm = new DashboardViewModel(agent, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), NullLog.Instance);
         vm.Refresh();
         Assert.Equal("Your day ended at 6:31 PM.", vm.EndedTitle);
-        Assert.Equal("Focus time today: 7h 41m. Nothing is recorded now. Still working? Start Day again.", vm.EndedDetail);
+        Assert.Equal("Focus time today: 7h 41m. Nothing is recorded now. Still working? Tap Start day.", vm.EndedDetail);
         Assert.Equal("7h 41m", vm.Today.FocusText);
         Assert.Equal("Day ended at 6:31 PM", vm.Today.FocusStatus);
         Assert.Equal("Day started 9:24 AM", vm.DayStartedText);
@@ -280,7 +285,7 @@ public class BreakViewModelTests
         ended.AutoClosed = true;
         vm.Refresh();
         Assert.Equal("Your day was closed at 6:31 PM.", vm.EndedTitle);
-        Assert.Equal("Closed at 6:31 PM, no End Day", vm.Today.FocusStatus);
+        Assert.Equal("Closed for you at 6:31 PM", vm.Today.FocusStatus);
     }
 
     [Fact]
@@ -311,7 +316,7 @@ public class BreakViewModelTests
         Assert.Equal("1h 00m today", vm.FocusTile.Value); // the day's focus time, not activity
         Assert.True(vm.MeetingTile.CanClick);
         Assert.Equal("30m today", vm.MeetingTile.Value);
-        Assert.Equal("Start one, or log an earlier one", vm.MeetingTile.Caption);
+        Assert.Equal("Tap to start one", vm.MeetingTile.Caption);
         Assert.True(vm.ShowTiles);
         Assert.False(vm.IsInMeeting);
     }
@@ -413,10 +418,10 @@ public class BreakViewModelTests
     {
         var (vm, agent) = Dashboard(Days.General(), "10:47");
         agent.PendingUpdate = new Core.Update.UpdateOffer("3.1.0", 1000, CanInstall: false);
-        agent.DownloadResult = new Core.Update.ManualDownload(null, "Can't reach RX Vision. Try again in a moment.");
+        agent.DownloadResult = new Core.Update.ManualDownload(null, "Try again in a moment.");
         vm.Refresh();
         vm.DownloadUpdateCommand.Execute(null);
-        Assert.Equal("Can't reach RX Vision. Try again in a moment.", vm.UpdateText);
+        Assert.Equal("Try again in a moment.", vm.UpdateText);
         Assert.Equal("Try again", vm.DownloadLabel);
         Assert.Empty(agent.Dev.RevealedFiles);
         Assert.True(vm.DownloadUpdateCommand.CanExecute(null));
@@ -431,14 +436,14 @@ public class BreakViewModelTests
     }
 }
 
-/// <summary>The countdown on the break panel, then negative and red.</summary>
+/// <summary>Screens B, C and F: the countdown, then the timer counting up from zero in amber, and a break with no length.</summary>
 public class ActiveBreakTests
 {
-    private static ActiveBreakViewModel At(string now, BreakDay day)
+    private static ActiveBreakViewModel At(string now, BreakDay day, int workedSec = 0, string? approver = "a manager")
     {
         var view = BreakSchedule.Compute(day, Ist.At(now)).Active!;
         var vm = new ActiveBreakViewModel();
-        vm.Update(view, t => Core.Util.Clock12.Format(t.ToOffset(Ist.Offset)), "your manager", Ist.At(now));
+        vm.Update(view, t => Core.Util.Clock12.Format(t.ToOffset(Ist.Offset)), approver, workedSec, 8 * 3600, Ist.At(now));
         return vm;
     }
 
@@ -447,59 +452,76 @@ public class ActiveBreakTests
     {
         var day = Days.General().WithActive(Days.Running("MORNING", "11:00"));
         var start = At("11:00", day);
-        Assert.Equal("15:00", start.Countdown);
-        Assert.Equal("left", start.Unit);
+        Assert.Equal("15:00", start.Timer);
+        Assert.Equal("left of your 15 min morning break", start.TimerLine);
         Assert.Equal(0, start.Progress, 3);
         Assert.False(start.IsOverrun);
 
         var mid = At("11:05", day);
-        Assert.Equal("10:00", mid.Countdown);
+        Assert.Equal("10:00", mid.Timer);
         Assert.Equal(1 / 3.0, mid.Progress, 3);
-        Assert.Null(mid.OverText);
+        Assert.Equal("Ends at 11:15 AM", mid.EndLine);
+        Assert.Null(mid.ExtraMinutes);
     }
 
     [Fact]
-    public void Goes_negative_and_says_by_how_much()
+    public void Past_its_length_it_counts_up_from_zero_and_says_when_it_ended()
     {
         var day = Days.General().WithActive(Days.Running("MORNING", "11:00"));
+        Assert.Equal("00:00", At("11:15", day).Timer);
         var over = At("11:17:10", day);
         Assert.True(over.IsOverrun);
-        Assert.Equal("−02:10", over.Countdown); // a minus sign, not a hyphen
-        Assert.Equal("over", over.Unit);
-        Assert.Equal("Over by 2 min", over.OverText);
+        Assert.Equal("Break extended", over.StatusText);
+        Assert.Equal("02:10", over.Timer); // up from zero: no minus sign, no red
+        Assert.Equal("Break extended · 02:10", over.OneLine);
+        Assert.Equal("Your morning break ended at 11:15 AM.", over.TimerLine);
+        Assert.Equal("Resume work to start your ring again.", over.EndLine);
         Assert.Equal(1, over.Progress);
         // 4.0: no "ask your manager to count them"; the buffer takes the minutes over.
         Assert.Equal("Minutes over come out of your paid buffer first, then count as unpaid break.", over.Note);
     }
 
     [Fact]
-    public void Late_start_is_labelled_and_pending()
+    public void A_start_after_its_time_is_labelled_and_pending()
     {
         var day = Days.General().WithActive(Days.Running("MORNING", "11:42", timing: "LATE", approval: "PENDING"));
         var vm = At("11:45", day);
-        Assert.Equal("Started 11:42 AM · late", vm.Started);
-        Assert.Equal("Sent to your manager for approval", vm.Approval);
+        Assert.Equal("Morning break · after its time", vm.TimingLine);
+        Assert.Equal("Sent to a manager for approval", vm.Approval);
     }
 
     [Fact]
-    public void Lunch_uses_its_own_colours()
+    public void An_early_start_says_so_and_on_time_says_nothing()
     {
-        var day = Days.General().WithActive(Days.Running("LUNCH", "13:00", duration: 30));
-        var vm = At("13:10", day);
-        Assert.True(vm.IsLunch);
-        Assert.Equal("LUNCH BREAK", vm.Eyebrow);
-        Assert.Equal("20:00", vm.Countdown);
+        Assert.Equal("Morning break · early", At("10:50", Days.General().WithActive(Days.Running("MORNING", "10:45", timing: "EARLY"))).TimingLine);
+        Assert.Null(At("11:05", Days.General().WithActive(Days.Running("MORNING", "11:00"))).TimingLine);
     }
 
     [Fact]
-    public void A_plain_break_counts_up()
+    public void Lunch_names_itself_and_counts_down_the_same_way()
+    {
+        var day = Days.General().WithActive(Days.Running("LUNCH", "13:00", duration: 45));
+        var vm = At("13:12:42", day, 3 * 3600 + 30 * 60);
+        Assert.Equal("32:18", vm.Timer);
+        Assert.Equal("left of your 45 min lunch break", vm.TimerLine);
+        Assert.Equal("Ends at 1:45 PM", vm.EndLine);
+        Assert.Equal("Ring paused at 3h 30m", vm.RingPaused);
+        Assert.Equal("It starts again when you resume.", vm.RingLine);
+    }
+
+    [Fact]
+    public void A_break_with_no_length_has_no_countdown_end_or_extension()
     {
         var day = Days.Free();
         day.ActiveBreak = new BreakRecord { Id = "x", Label = "Break", PresenceType = "BREAK", StartedAt = Ist.At("10:00").ToUniversalTime(), InProgress = true, Timing = "UNSCHEDULED" };
-        var vm = At("10:34:10", day);
-        Assert.Equal("34:10", vm.Countdown);
-        Assert.Equal("so far", vm.Unit);
-        Assert.False(vm.HasProgress);
+        var vm = At("10:34:10", day, 3600);
+        Assert.False(vm.HasLength);
+        Assert.False(vm.IsOverrun);
+        Assert.False(vm.EndsSoon);
+        Assert.Equal("34 min so far", vm.SoFar);
+        Assert.Equal("On break", vm.StatusText);
+        Assert.Equal("Ring paused at 1h 00m", vm.RingPaused);
+        Assert.Equal("1h 05m so far", At("11:05:40", day).SoFar);
     }
 }
 

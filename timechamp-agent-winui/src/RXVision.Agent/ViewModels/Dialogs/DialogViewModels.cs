@@ -16,8 +16,9 @@ public abstract partial class DialogViewModel : ObservableObject
     private readonly TaskCompletionSource<bool> _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public abstract string Title { get; }
-    /// <summary>The card's width, in DIPs.</summary>
-    public virtual double Width => 452;
+    /// <summary>The card's width, in DIPs: the panel's.</summary>
+    public const double CardWidth = 340;
+    public double Width => CardWidth;
     public Task<bool> Completion => _done.Task;
     public bool IsCompleted => _done.Task.IsCompleted;
 
@@ -70,9 +71,10 @@ public sealed partial class MessageDialogViewModel : DialogViewModel
     public string PrimaryText { get; init; } = "OK";
     /// <summary>Null for a notice with a single button.</summary>
     public string? CancelText { get; init; }
-    /// <summary>A third button (e.g. "Skip break"), or null.</summary>
+    /// <summary>A quieter button beside the primary (e.g. "Skip break"), or null.</summary>
     public string? AltText { get; init; }
-    public bool IsDanger { get; init; }
+    /// <summary>A close control on the card, for a question with no Cancel (closing it changes nothing).</summary>
+    public bool ShowClose { get; init; }
     public string? TagText { get; init; }
     public string? TagDetail { get; init; }
     public Tone TagTone { get; init; } = Tone.Warn;
@@ -81,8 +83,10 @@ public sealed partial class MessageDialogViewModel : DialogViewModel
     public bool HasAlt => AltText is not null;
     public bool HasNoAlt => AltText is null;
     public bool HasTag => TagText is not null;
-    /// <summary>A little wider with three buttons, so none is cut.</summary>
-    public override double Width => HasAlt ? 484 : base.Width;
+    public string? SecondText => AltText ?? CancelText;
+    public bool HasSecond => SecondText is not null;
+    /// <summary>The quieter button: the third way when there is one, else Cancel.</summary>
+    public System.Windows.Input.ICommand SecondCommand => HasAlt ? AlternativeCommand : CancelCommand;
 }
 
 /// <summary>A quick answer that fills the text box with one tap.</summary>
@@ -102,9 +106,10 @@ public sealed partial class ChipViewModel : ObservableObject
 }
 
 /// <summary>
-/// A required reason: for starting a break early or late, for skipping one, for a
-/// skipped break's comment, or for counting the minutes over a break. Has a minimum
-/// length, and optionally quick chips and a third button.
+/// A reason: for starting a break early or late, for skipping one, for a skipped
+/// break's comment, or for counting the minutes over a break. Has a minimum length,
+/// and optionally quick chips and a third button. With <see cref="AsksReason"/> false
+/// it is only the question (a Super Admin's skip: nobody decides it, nothing to explain).
 /// </summary>
 public sealed partial class ReasonDialogViewModel : DialogViewModel
 {
@@ -124,19 +129,23 @@ public sealed partial class ReasonDialogViewModel : DialogViewModel
     public string? TagText { get; init; }
     public string? TagDetail { get; init; }
     public Tone TagTone { get; init; } = Tone.Warn;
+    /// <summary>The line under the title, 15 px quiet ("Your next one is at 4:30 PM.").</summary>
+    public string? Lead { get; init; }
+    public bool HasLead => Lead is not null;
+    public bool HasMessage => !string.IsNullOrEmpty(Message);
+    /// <summary>False: no box, no quick answers, the primary button is always ready.</summary>
+    public bool AsksReason { get; init; } = true;
     public string Label { get; init; } = "Reason";
     public string Placeholder { get; init; } = "";
     public string PrimaryText { get; init; } = "Start break";
     public string CancelText { get; init; } = "Cancel";
     /// <summary>A third button that goes ahead without the reason (e.g. "Skip break", "Leave them out"), or null.</summary>
     public string? AltText { get; init; }
-    public string Hint { get; init; } = "Required. Your manager reviews it today.";
+    public string Hint { get; init; } = "Your managers read this today.";
     public bool HasTag => TagText is not null;
     public bool HasAlt => AltText is not null;
     public bool HasNoAlt => AltText is null;
-    /// <summary>A little wider with three buttons, so none is cut.</summary>
-    public override double Width => HasAlt ? 484 : base.Width;
-    public bool HasChips => Chips.Count > 0;
+    public bool HasChips => AsksReason && Chips.Count > 0;
     public int MaxLength => MaxChars;
     public ObservableCollection<ChipViewModel> Chips { get; } = new();
 
@@ -165,13 +174,21 @@ public sealed partial class ReasonDialogViewModel : DialogViewModel
 
     /// <summary>Characters that count, as the server counts them: the ends trimmed, a run of spaces as one.</summary>
     public int Length => Reason.Length;
-    public bool CountOk => Length >= MinChars && Length <= MaxChars;
+    public bool CountOk => (Length >= MinChars || IsPickedPreset) && Length <= MaxChars;
 
-    public string CountText => ReasonCount.Text(Length, MinChars, MaxChars);
+    /// <summary>
+    /// The chips are the organisation's quick answers (3.2): the server takes one as it is,
+    /// whatever its length. Off for the agent's own chips, which must meet the minimum.
+    /// </summary>
+    public bool PresetsPassAnyLength { get; init; }
+
+    private bool IsPickedPreset => PresetsPassAnyLength && Length > 0 && Chips.Any(c => c.Label == Reason);
+
+    public string CountText => IsPickedPreset ? "Looks good" : ReasonCount.Text(Length, MinChars, MaxChars);
 
     public string Reason => ReasonText.Clean(Text);
 
-    protected override bool CanSubmit() => CountOk;
+    protected override bool CanSubmit() => !AsksReason || CountOk;
 }
 
 /// <summary>The little counter under a reason box.</summary>
@@ -287,7 +304,7 @@ public sealed partial class SkipCommentItemViewModel : ObservableObject
     public string Help => Error
         ?? (CountOk ? "Looks good"
             : Comment.Length > ReasonDialogViewModel.MaxChars ? ReasonCount.Text(Comment.Length, MinChars, ReasonDialogViewModel.MaxChars)
-            : $"Required. {MinChars} characters or more.");
+            : $"{MinChars} characters or more, please.");
 }
 
 /// <summary>
@@ -306,24 +323,19 @@ public sealed partial class EndDayDialogViewModel : DialogViewModel
         }
         var n = Items.Count;
         Message = intro ?? (n == 1
-            ? $"1 skipped break needs a comment. It goes to {approver} with your comment."
-            : $"{n} skipped breaks need a comment. Each goes to {approver} with your comment.");
+            ? $"Add a comment to your skipped break. It goes to {approver}."
+            : $"Add a comment to each of your {n} skipped breaks. Each goes to {approver}.");
         Note = n == 1
             ? $"Your focus time kept counting through this break. {approverCapital} approves or rejects it; a rejection takes its minutes off."
             : $"Your focus time kept counting through these breaks. {approverCapital} approves or rejects each one; a rejection takes that break's minutes off.";
     }
 
     public override string Title => "Before you end the day";
-    public override double Width => 600;
     public string Message { get; }
     public string Note { get; }
-    public string PrimaryText => "End Day";
+    public string PrimaryText => "End day";
     public string CancelText => "Not now";
     public ObservableCollection<SkipCommentItemViewModel> Items { get; } = new();
-    /// <summary>The height of three comment boxes (the compact card, see EndDayDialogView): up to three show whole.</summary>
-    public const double ThreeBoxes = 372;
-    /// <summary>Up to three boxes show at once (they fit the dashboard at its default size); more scroll inside the dialog.</summary>
-    public double ListMaxHeight => Items.Count > 3 ? ThreeBoxes : double.PositiveInfinity;
 
     public IReadOnlyList<Core.Api.SkipComment> Comments =>
         Items.Select(i => new Core.Api.SkipComment(i.Id, i.Comment)).ToList();

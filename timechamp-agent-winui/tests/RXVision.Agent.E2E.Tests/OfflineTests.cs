@@ -56,7 +56,7 @@ public sealed class OfflineTests : E2ETest
 
         rig.Dialogs.Answer(MeetingTests.Fill("Offline planning", "Asha", "Asha Rao"));
         pressed["meeting"] = DateTimeOffset.UtcNow;
-        await rig.Ui.RunAsync(() => Tap(rig.Dashboard.MeetingTile));
+        await rig.Ui.RunAsync(() => rig.Dashboard.RecordMeetingCommand.ExecuteAsync(null)); // offline: the 4.0 meeting with its details, journaled
         Assert.NotNull(rig.Host.LiveMeeting);
         await Task.Delay(65_000);
         pressed["meetingEnd"] = DateTimeOffset.UtcNow;

@@ -59,7 +59,7 @@ public sealed class MeetingTests : E2ETest
             Assert.Equal("Add who will mail the minutes.", ((MeetingDialogViewModel)d).Problem);
             return false;   // Cancel
         });
-        await rig.Ui.RunAsync(() => Tap(rig.Dashboard.MeetingTile));
+        await rig.Ui.RunAsync(() => rig.Dashboard.RecordMeetingCommand.ExecuteAsync(null)); // 4.0: the meeting with its details (the tile starts In a meeting, 3.6)
         Assert.Null(rig.Host.LiveMeeting);
         // ...nor does the agent itself, and the server refuses a 4.0 agent that tries.
         var invalid = Assert.IsType<MeetingOutcome.Invalid>(await rig.Host.StartMeetingAsync("Release planning", new[] { new MeetingParticipant(null, "Asha") }));
@@ -71,7 +71,7 @@ public sealed class MeetingTests : E2ETest
         // With the minutes sender: a live meeting, on the server at once with its sender.
         rig.Dialogs.Answer(Fill("Release planning", "Asha", mom: "Asha Rao"));
         var startedAt = DateTimeOffset.UtcNow;
-        await rig.Ui.RunAsync(() => Tap(rig.Dashboard.MeetingTile));
+        await rig.Ui.RunAsync(() => rig.Dashboard.RecordMeetingCommand.ExecuteAsync(null)); // 4.0: the meeting with its details (the tile starts In a meeting, 3.6)
         Assert.NotNull(rig.Host.LiveMeeting);
         await rig.WaitSyncedAsync();
         var items = (await server.GetAsync("meetings/me/today")).Data.GetProperty("items");
@@ -97,7 +97,7 @@ public sealed class MeetingTests : E2ETest
 
         // An earlier meeting, logged from the same dialog (Already happened), 5 minutes.
         rig.Dialogs.Answer(Fill("Client call", "Vikram", mom: "Neha", past: true, minutes: 5));
-        await rig.Ui.RunAsync(() => Tap(rig.Dashboard.MeetingTile));
+        await rig.Ui.RunAsync(() => rig.Dashboard.RecordMeetingCommand.ExecuteAsync(null)); // 4.0: the meeting with its details (the tile starts In a meeting, 3.6)
         await rig.WaitSyncedAsync();
         items = (await server.GetAsync("meetings/me/today")).Data.GetProperty("items");
         var past = items.EnumerateArray().Single(m => m.GetProperty("mode").GetString() == "PAST");

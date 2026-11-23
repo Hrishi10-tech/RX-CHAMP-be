@@ -128,7 +128,6 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
     }
 
     public override string Title => IsPast ? "Log an earlier meeting" : "Start a meeting";
-    public override double Width => 484;
 
     public ObservableCollection<ParticipantChipViewModel> Chosen { get; } = new();
     public ObservableCollection<ParticipantSuggestionViewModel> Suggestions { get; } = new();
@@ -149,7 +148,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
 
     public string Note => IsPast
         ? $"This time is already in your focus time. {Capital(_context.Approver)} approves or rejects it; a rejection takes these minutes off."
-        : $"Your focus time keeps counting while you are in it. Tap Meeting ended when you are back. {Capital(_context.Approver)} approves or rejects it after.";
+        : $"Your focus time keeps counting while you are in it. Tap End meeting when you are back. {Capital(_context.Approver)} approves or rejects it after.";
 
     public string NoStartOptionsText => _context.DayStartedAt is { } started
         ? $"Your day started at {_context.Hm(started)}. A meeting can be logged once it has run for 5 minutes."
@@ -265,7 +264,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         if (version != Volatile.Read(ref _searchVersion)) return; // a newer search is on its way
         if (found is null)
         {
-            SearchProblem = "Can't search the directory right now. You can still type names.";
+            SearchProblem = "Type names for now. Search isn't available right now.";
             return;
         }
         SearchProblem = null;
@@ -295,7 +294,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         }
         catch (Exception)
         {
-            SearchProblem = "Can't search the directory right now. You can still type names.";
+            SearchProblem = "Type names for now. Search isn't available right now.";
         }
     }
 
@@ -370,8 +369,8 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         if (!IsPast) return null;
         if (StartAt is null) return HasStartOptions ? "Pick when it started." : NoStartOptionsText;
         if (Minutes is not { } m) return "Enter how long it ran, in minutes.";
-        if (m < MinMinutes || m > MaxMinutes) return $"How long must be {MinMinutes} to {MaxMinutes} minutes.";
-        if (StartAt.At.AddMinutes(m) > _context.Now) return "That runs past now. Pick an earlier start or fewer minutes.";
+        if (m < MinMinutes || m > MaxMinutes) return $"Enter {MinMinutes} to {MaxMinutes} minutes.";
+        if (StartAt.At.AddMinutes(m) > _context.Now) return "Pick an earlier start or fewer minutes. That runs past now.";
         return null;
     }
 

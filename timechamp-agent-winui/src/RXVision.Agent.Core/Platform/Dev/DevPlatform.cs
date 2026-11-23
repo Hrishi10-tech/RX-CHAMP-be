@@ -6,8 +6,8 @@ namespace RXVision.Agent.Core.Platform.Dev;
 /// A stand-in OS for tests and for running the app on a developer box (Linux):
 /// everything works, nothing is real. Values can be steered from tests.
 /// </summary>
-public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISleepClock, IForegroundProbe,
-    IScreenCapture, ISecretStore, IAutostart, IPermissions, ISoundPlayer, IScreenInfo, IUpdateInstaller, IShell, ILegacyMigration
+public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISleepClock, IForegroundProbe, ICallWindowProbe,
+    IScreenCapture, ISecretStore, IAutostart, IPermissions, IScreenInfo, IUpdateInstaller, IShell, ILegacyMigration
 {
     private readonly ConcurrentDictionary<string, byte[]> _secrets = new();
     private bool _locked;
@@ -29,13 +29,13 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     public ILockProbe Lock => this;
     public ISleepClock SleepClock => this;
     public IForegroundProbe Foreground => this;
+    public ICallWindowProbe CallWindows => this;
     public IScreenCapture Screen => this;
     public ISecretStore Secrets => SecretsOverride ?? this;
     /// <summary>Tests: another secret store in place of the in-memory one (a Keychain that hangs).</summary>
     public ISecretStore? SecretsOverride { get; set; }
     public IAutostart Autostart => this;
     public IPermissions Permissions => this;
-    public ISoundPlayer Sound => this;
     public IScreenInfo ScreenInfo => this;
     public IUpdateInstaller Updater => this;
     public IShell Shell => this;
@@ -50,10 +50,16 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     // Steering for tests
     public TimeSpan IdleFor { get; set; } = TimeSpan.Zero;
     public ForegroundInfo Front { get; set; } = new("Visual Studio Code", "AgentHost.cs - rxvision", null);
+    /// <summary>The windows the call detectors read.</summary>
+    public List<CallWindow> Windows { get; set; } = new();
+    /// <summary>Every browser's tab titles, for a call whose tab is behind another.</summary>
+    public List<string> Tabs { get; set; } = new();
+    /// <summary>The owners the call detectors asked about, each read.</summary>
+    public List<IReadOnlyCollection<string>> WindowReads { get; } = new();
+    public int TabReads { get; private set; }
     public TimeSpan? NextSleep { get; set; }
     public TimeSpan ProbeDelay { get; set; } = TimeSpan.Zero;
     public bool AutostartOn { get; private set; }
-    public int Chimes { get; private set; }
     public List<string> OpenedUrls { get; } = new();
     public List<string> RevealedFiles { get; } = new();
 
@@ -84,6 +90,22 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
         return includeUrl ? Front : Front with { Url = null };
     }
 
+    /// <summary>Tests: while set and not signalled, window reads block (a hung browser).</summary>
+    public ManualResetEventSlim? WindowGate { get; set; }
+
+    public IReadOnlyList<CallWindow> WindowsOf(IReadOnlyCollection<string> owners)
+    {
+        lock (WindowReads) WindowReads.Add(owners);
+        WindowGate?.Wait();
+        return Windows.Where(w => owners.Contains(w.Owner, StringComparer.OrdinalIgnoreCase)).ToList();
+    }
+
+    public IReadOnlyList<string> TabTitlesOf(string browserOwner)
+    {
+        TabReads++;
+        return Tabs;
+    }
+
     /// <summary>A tiny valid JPEG (1x1), enough for the server's type check.</summary>
     public static readonly byte[] TinyJpeg = Convert.FromBase64String(
         "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=");
@@ -110,7 +132,6 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     public void OpenScreenRecordingSettings() { }
     public void OpenAccessibilitySettings() { }
 
-    public void PlayChime() => Chimes++;
 
     public bool IsFullScreenAppInFront() => false;
 

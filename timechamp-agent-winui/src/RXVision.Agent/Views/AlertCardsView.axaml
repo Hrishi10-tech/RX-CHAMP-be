@@ -1,0 +1,103 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RXVision.Agent.ViewModels"
+             x:Class="RXVision.Agent.Views.AlertCardsView"
+             x:DataType="vm:DashboardViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="Border.alertcard">
+      <Setter Property="Background" Value="#222937" />
+      <Setter Property="BorderBrush" Value="#3A4356" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="17" />
+    </Style>
+    <Style Selector="Border.alerticon">
+      <Setter Property="Width" Value="40" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="Background" Value="#1A6FC9B6" />
+    </Style>
+    <Style Selector="Border.alerticon TextBlock">
+      <Setter Property="Foreground" Value="#6FC9B6" />
+    </Style>
+    <Style Selector="Border.alerticon.action">
+      <Setter Property="Background" Value="#1FF2A93B" />
+    </Style>
+    <Style Selector="Border.alerticon.action TextBlock">
+      <Setter Property="Foreground" Value="#F2A93B" />
+    </Style>
+    <Style Selector="Button.alertprimary">
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="#6FC9B6" />
+      <Setter Property="Foreground" Value="#0E1B18" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.alertprimary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#7FD3C1" />
+      <Setter Property="Foreground" Value="#0E1B18" />
+    </Style>
+    <Style Selector="Button.alertprimary:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="#63B8A6" />
+      <Setter Property="Foreground" Value="#0E1B18" />
+    </Style>
+    <Style Selector="Button.alertoutlined">
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#3A4356" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#E8EBF0" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.alertoutlined:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2B3343" />
+      <Setter Property="BorderBrush" Value="#3A4356" />
+      <Setter Property="Foreground" Value="#E8EBF0" />
+    </Style>
+    <Style Selector="Button.alertquiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="#9AA3B2" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.alertquiet:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#E8EBF0" />
+    </Style>
+  </UserControl.Styles>
+
+  <ItemsControl Name="Cards" ItemsSource="{Binding Alerts.Cards}">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:AlertCard">
+        <Border Classes="alertcard" Margin="0,0,0,12" AutomationProperties.Name="{Binding Title}" IsVisible="{Binding !DrawnByPanel}">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="Auto,*">
+              <Border Classes="alerticon" Classes.action="{Binding IsAction}" VerticalAlignment="Top">
+                <TextBlock Text="{Binding Glyph}" FontSize="17" FontWeight="ExtraBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="3" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" Foreground="#E8EBF0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Body}" FontSize="13" Foreground="#9AA3B2" TextWrapping="Wrap" IsVisible="{Binding HasBody}" />
+              </StackPanel>
+            </Grid>
+            <Button Name="Primary" Classes="alertprimary" Content="{Binding PrimaryText}" Command="{Binding PrimaryCommand}" IsVisible="{Binding HasPrimary}" />
+            <Button Classes="alertoutlined" Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}" IsVisible="{Binding HasOutlinedSecondary}" />
+            <Button Classes="alertquiet" Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}" IsVisible="{Binding HasQuietSecondary}" />
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

@@ -2,7 +2,7 @@
 
   <!-- Windows implementations of the platform seam (IPlatform): idle, lock,
        sleep, foreground window and browser URL, screen capture, DPAPI secrets,
-       start-at-login, chime, full-screen detection, self-update, and migration
+       start-at-login, full-screen detection, self-update, and migration
        from the 2.x agent. Plain net8.0 so it builds on any OS; every OS call is
        guarded with [SupportedOSPlatform("windows")] and only runs on Windows. -->
   <PropertyGroup>

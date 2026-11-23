@@ -17,6 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The call detectors' table: a data file, because client titles change between versions. -->
+    <EmbeddedResource Include="Meetings/call-detection.json" LogicalName="RXVision.Agent.Core.Meetings.call-detection.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Security review S-01: the owner's update-signing public key, when it is set up (build/signing/README.md). -->
     <EmbeddedResource Include="Update/update-public-key.pem" LogicalName="RXVision.Agent.Core.Update.update-public-key.pem" Condition="Exists('$(RxvUpdatePublicKeyFile)')" />
   </ItemGroup>

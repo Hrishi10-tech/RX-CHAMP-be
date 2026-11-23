@@ -37,6 +37,9 @@ public sealed class AgentFacade : IAgent, IDisposable
         host.PresenceChanged += p => Raise(() => PresenceChanged?.Invoke(p));
         host.BreaksChanged += () => Raise(() => BreaksChanged?.Invoke());
         host.WorkdayChanged += () => Raise(() => WorkdayChanged?.Invoke());
+        host.DayProgressChanged += () => Raise(() => DayProgressChanged?.Invoke());
+        host.MeetingAlertsChanged += () => Raise(() => MeetingAlertsChanged?.Invoke());
+        host.NoticePendingChanged += () => Raise(() => NoticePendingChanged?.Invoke());
         host.MeetingsChanged += () => Raise(() => MeetingsChanged?.Invoke());
         host.ApprovalsChanged += () => Raise(() => ApprovalsChanged?.Invoke());
         host.ChatMessageReceived += m => Raise(() => ChatMessageReceived?.Invoke(m));
@@ -49,6 +52,7 @@ public sealed class AgentFacade : IAgent, IDisposable
         host.EndDayHeld += h => Raise(() => EndDayHeld?.Invoke(h));
         host.AwayChanged += () => Raise(() => AwayChanged?.Invoke());
         host.HistoryChanged += () => Raise(() => HistoryChanged?.Invoke());
+        host.LeaveChanged += () => Raise(() => LeaveChanged?.Invoke());
         host.UpdateAvailable += o => Raise(() => UpdateAvailable?.Invoke(o));
         host.ExitRequested += () => Raise(() => ExitRequested?.Invoke());
         host.SignedOutUnexpectedly += r => Raise(() => SignedOutUnexpectedly?.Invoke(r));
@@ -73,6 +77,11 @@ public sealed class AgentFacade : IAgent, IDisposable
     public string? BuiltForHosts => AgentOptions.BuiltForProductionOnly ? null : string.Join(", ", AgentOptions.BuiltInHosts);
     public string? UnsignedUpdatesNote => UpdateSignature.UnsignedBuildNote;
     public MeetingRecord? LiveMeeting => _host.LiveMeeting;
+    public DayProgress? DayProgress => _host.DayProgress;
+    public IReadOnlyList<MeetingAlert> MeetingAlerts => _host.MeetingAlerts;
+    public TimeSpan IdleFor => _host.IdleFor;
+    public bool NoticePending => _host.NoticePending;
+    public bool FeatureOn(string name) => _host.Features.On(name);
     public IReadOnlyList<ApprovalItem> MyApprovals => _host.MyApprovals;
     public string ApiBaseUrl => _host.ApiBaseUrl;
     public string Version => _host.Version;
@@ -82,6 +91,7 @@ public sealed class AgentFacade : IAgent, IDisposable
     public int ChatUnread => _host.ChatUnread;
     public BreakPanel BreakPanel => _host.BreakPanel;
     public DateTimeOffset Now => _host.Clock.UtcNow;
+    public IClock Clock => _host.Clock.Local;
     public UpdateOffer? PendingUpdate => _host.PendingUpdate;
     public int PendingSamples => _host.PendingSamples;
     public DateTimeOffset LastSampleSent => _host.LastSampleSent;
@@ -92,6 +102,8 @@ public sealed class AgentFacade : IAgent, IDisposable
     public DateTimeOffset? LastSyncAt => _host.LastSyncAt;
     public DateTimeOffset? AwaySince => _host.AwaySince;
     public IdleConfig? IdleConfig => _host.IdleConfig;
+    public bool IsBiometric => _host.IsBiometric;
+    public IReadOnlyList<string> Presets(string kind) => _host.Presets(kind);
 
     public IChat? Chat
     {
@@ -120,6 +132,9 @@ public sealed class AgentFacade : IAgent, IDisposable
     public event Action<CurrentPresence>? PresenceChanged;
     public event Action? BreaksChanged;
     public event Action? WorkdayChanged;
+    public event Action? DayProgressChanged;
+    public event Action? MeetingAlertsChanged;
+    public event Action? NoticePendingChanged;
     public event Action? MeetingsChanged;
     public event Action? ApprovalsChanged;
     public event Action<ChatMessage>? ChatMessageReceived;
@@ -133,6 +148,7 @@ public sealed class AgentFacade : IAgent, IDisposable
     public HeldEndDay? HeldEndDay => _host.HeldEndDay;
     public event Action? AwayChanged;
     public event Action? HistoryChanged;
+    public event Action? LeaveChanged;
     public event Action<UpdateOffer>? UpdateAvailable;
     public event Action? ExitRequested;
     public event Action<string>? SignedOutUnexpectedly;
@@ -143,7 +159,14 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<string?> SignInAsync(string email, string password, string? server) => Task.Run(() => _host.SignInAsync(email, password, server));
     public Task<string?> SignInWithCodeAsync(string code) => Task.Run(() => _host.SignInWithCodeAsync(code));
     public Task AcknowledgeNoticeAsync() => Task.Run(_host.AcknowledgeNoticeAsync);
-    public Task<StartDayOutcome> StartDayAsync() => Task.Run(_host.StartDayAsync);
+    public Task<StartDayOutcome> StartDayAsync(string? lateReason = null) => Task.Run(() => _host.StartDayAsync(lateReason));
+    public Task<ApiResult<System.Text.Json.JsonElement>> AddLateReasonAsync(string reason) => Task.Run(() => _host.AddLateReasonAsync(reason));
+    public Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync() => Task.Run(_host.GetGuideAsync);
+    public Task<ApiResult<CalendarYear>> GetCalendarAsync(int year) => Task.Run(() => _host.GetCalendarAsync(year));
+    public Task<ApiResult<MyLeave>> GetMyLeaveAsync() => Task.Run(_host.GetMyLeaveAsync);
+    public Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body) => Task.Run(() => _host.PreviewLeaveAsync(body));
+    public Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body) => Task.Run(() => _host.RequestLeaveAsync(body));
+    public Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId) => Task.Run(() => _host.CancelLeaveAsync(requestId));
     public Task<EndDayOutcome> EndDayAsync(IReadOnlyList<SkipComment>? comments, DateTimeOffset? at = null) => Task.Run(() => _host.EndDayAsync(comments, at));
     public Task<StartOutcome> TakeBreakAsync(string kind, string? reason) => Task.Run(() => _host.TakeBreakAsync(kind, reason));
     public Task<StartOutcome> TakeFreeBreakAsync(string presenceType) => Task.Run(() => _host.TakeFreeBreakAsync(presenceType));
@@ -154,6 +177,10 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<CommentOutcome> CommentBreakAsync(string breakId, string comment) => Task.Run(() => _host.CommentBreakAsync(breakId, comment));
     public Task<EndOutcome> BackToWorkAsync() => Task.Run(() => _host.BackToWorkAsync());
     public Task<EndOutcome> EndMeetingAsync() => Task.Run(_host.EndMeetingAsync);
+    public Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source) => Task.Run(() => _host.StartMeetingStatusAsync(source));
+    public Task<MeetingStatusOutcome> ConfirmMeetingAsync() => Task.Run(_host.ConfirmMeetingAsync);
+    public void DismissMeetingAlert(MeetingAlertKind kind) => _host.DismissMeetingAlert(kind);
+    public void MeetingPanelClosed() => _host.MeetingPanelClosed();
     public Task<MeetingOutcome> StartMeetingAsync(string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender) =>
         Task.Run(() => _host.StartMeetingAsync(agenda, participants, momSender));
     public Task<MeetingOutcome> LogPastMeetingAsync(DateTimeOffset startedAt, int durationMin, string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender) =>
@@ -169,7 +196,6 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<KeyOutcome> QuitCheckAsync(string key) => Task.Run(() => _host.QuitCheckAsync(key));
     public Task<bool> ContinueShiftAsync() => Task.Run(_host.ContinueShiftAsync);
     public void DeclineShift() => _host.DeclineShift();
-    public void AcknowledgeRing() => _host.AcknowledgeRing();
     public void Shutdown() => _host.Shutdown();
 
     public void Dispose() => _host.Dispose();

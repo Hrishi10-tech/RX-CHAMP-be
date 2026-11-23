@@ -96,7 +96,7 @@ public sealed record ActiveBreakView(
     /// <summary>When this stretch began (after a resume, later than <see cref="StartedAt"/>).</summary>
     DateTimeOffset? SegmentStartedAt = null);
 
-public sealed record RingView(string Kind, string Label, DateTimeOffset RingEnd, bool Sound);
+public sealed record RingView(string Kind, string Label, DateTimeOffset RingEnd);
 
 public sealed record BreakPanel(
     bool Scheduled,
@@ -115,7 +115,10 @@ public sealed record BreakPanel(
     SlotView? LunchTile,
     RingView? Ring,
     /// <summary>The shift's minimum length for a reason or a comment.</summary>
-    int MinChars = 10)
+    int MinChars = 10,
+    /// <summary>Today's shift as instants, for the panel's ring; null with no schedule.</summary>
+    DateTimeOffset? ShiftStartAt = null,
+    DateTimeOffset? ShiftEndAt = null)
 {
     public static readonly BreakPanel Free = new(false, false, false, null, null, new ShiftRules(),
         Array.Empty<SlotView>(), Array.Empty<BreakRecord>(), null, null, null, null);
@@ -246,7 +249,7 @@ public static class BreakSchedule
         {
             // Not for a break End Day just skipped (the person was asked about it there).
             var ringing = slots.FirstOrDefault(s => s.State == SlotState.Due && s.PendingAutoSkip is null);
-            if (ringing is not null) ring = new RingView(ringing.Kind, ringing.Label, ringing.RingEnd, rules.RingSound);
+            if (ringing is not null) ring = new RingView(ringing.Kind, ringing.Label, ringing.RingEnd);
         }
 
         SlotView? Tile(Func<SlotView, bool> match)
@@ -276,13 +279,34 @@ public static class BreakSchedule
             BreakTile: Tile(v => v.PresenceType == "BREAK"),
             LunchTile: Tile(v => v.PresenceType == "LUNCH"),
             Ring: ring,
-            MinChars: MinCharsOf(day))
+            MinChars: MinCharsOf(day),
+            ShiftStartAt: ShiftBounds(day)?.Start,
+            ShiftEndAt: ShiftBounds(day)?.End)
         {
             Next = day.DayEnded ? null : next,
             Paused = pausedSlot,
             Quick = day.Quick,
             QuickTakenSec = quickTaken,
         };
+    }
+
+    /// <summary>
+    /// Today's shift as instants, from its "HH:MM" times and the first break's own instant and local
+    /// start (the same zone, so no zone rules here). A break never comes before its shift starts,
+    /// so a night shift's start falls back across midnight.
+    /// </summary>
+    public static (DateTimeOffset Start, DateTimeOffset End)? ShiftBounds(BreakDay day)
+    {
+        if (day.Shift is not { } shift || day.Breaks.Count == 0) return null;
+        static TimeSpan? Hm(string value) => TimeSpan.TryParseExact(value, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+        var slot = day.Breaks.OrderBy(b => b.ScheduledStart).First();
+        if (Hm(shift.Start) is not { } start || Hm(shift.End) is not { } end || Hm(slot.Local.Start) is not { } local) return null;
+        var back = start - local;
+        if (back > TimeSpan.Zero) back -= TimeSpan.FromDays(1);
+        var length = end - start;
+        if (length <= TimeSpan.Zero) length += TimeSpan.FromDays(1);
+        var from = slot.ScheduledStart + back;
+        return (from, from + length);
     }
 
     private static int QuickTaken(QuickBreakView q, DateTimeOffset now) =>

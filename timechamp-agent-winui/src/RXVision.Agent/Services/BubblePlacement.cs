@@ -1,17 +1,18 @@
 using Avalonia;
 using Avalonia.Platform;
+using RXVision.Agent.Icon;
 
 namespace RXVision.Agent.Services;
 
 /// <summary>
-/// Where the floating button goes: remembered per screen (by the face's centre),
-/// right edge of the primary screen by default, and always kept inside a
-/// screen's work area so it can't be lost off the edge or under the taskbar.
+/// Where the floating icon goes: remembered per screen (by its centre), bottom right
+/// of the primary screen's work area by default, and always kept inside a screen's
+/// work area so it can't be lost off the edge or under the taskbar.
 /// </summary>
 public sealed class BubblePlacement
 {
-    /// <summary>Default distance from the face centre to the right edge, in DIPs.</summary>
-    public const double EdgeOffset = 72;
+    /// <summary>The 56 px box's default distance from the right and bottom edges, in DIPs.</summary>
+    public const double EdgeInset = 28;
 
     private readonly UiSettingsStore? _store;
 
@@ -47,10 +48,12 @@ public sealed class BubblePlacement
     {
         if (screen is null) return new PixelPoint(200, 200);
         var area = screen.WorkingArea;
-        return new PixelPoint(
-            area.X + area.Width - (int)Math.Round(EdgeOffset * screen.Scaling),
-            area.Y + area.Height / 2);
+        var fromEdge = (int)Math.Round((EdgeInset + IconGeometry.Box / 2) * DesktopPixelsPerDip(screen));
+        return new PixelPoint(area.Right - fromEdge, area.Bottom - fromEdge);
     }
+
+    /// <summary>A screen's area is in physical pixels on Windows and in points on macOS, whatever its backing scale.</summary>
+    private static double DesktopPixelsPerDip(Screen screen) => OperatingSystem.IsMacOS() ? 1 : screen.Scaling;
 
     /// <summary>
     /// The window's top-left for a face centre, kept inside the work area of the

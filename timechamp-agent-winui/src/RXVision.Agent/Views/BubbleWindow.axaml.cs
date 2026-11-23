@@ -2,9 +2,9 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using RXVision.Agent.Icon;
 using RXVision.Agent.Interop;
 using RXVision.Agent.Services;
 using RXVision.Agent.ViewModels;
@@ -12,21 +12,20 @@ using RXVision.Agent.ViewModels;
 namespace RXVision.Agent.Views;
 
 /// <summary>
-/// The round button near the right edge: always on top, never takes focus,
-/// click to open or hide the dashboard, drag to move (remembered per screen),
-/// right-click for the menu. It grows a little while a break is due, to fit the
-/// "Morning break due" label under the face; the face itself never moves.
+/// The floating icon's window: 72 px at 1x, per-pixel alpha, always on top, never takes focus,
+/// click to open or hide the panel, drag to move (remembered per screen), right-click for the menu.
+/// Clicks land only on the bezel circle and the badge; the margin passes them through. The 56 px
+/// box keeps its place on screen.
 /// </summary>
 public partial class BubbleWindow : Window
 {
-    /// <summary>Face centre inside the window, in DIPs (the face area is 88x88 at the top, centred).</summary>
-    private const double FaceTop = 44;
-    private static readonly Size Compact = new(88, 88);
-    private static readonly Size Expanded = new(140, 116);
     private const double DragThreshold = 4;
+    private static readonly Size Canvas = new(IconGeometry.Canvas, IconGeometry.Canvas);
 
+    private readonly HoverLabelWindow _label = new();
     private BubblePlacement? _placement;
     private BubbleViewModel? _vm;
+    private IconClickThrough? _clickThrough;
     private PixelPoint _anchor;
     private bool _placed;
     private bool _pressed;
@@ -42,24 +41,34 @@ public partial class BubbleWindow : Window
         Root.PointerMoved += OnPointerMoved;
         Root.PointerReleased += OnPointerReleased;
         Root.PointerCaptureLost += (_, _) => OnCaptureLost();
+        IconView.PointerEntered += (_, _) => _vm?.PointerOn();
+        IconView.PointerExited += (_, _) => { if (!_pressed) _vm?.PointerOff(); };
         BubbleMenu.Opening += (_, _) => Activate();
         Opened += (_, _) => OnOpened();
+        Closed += (_, _) => OnClosedWindow();
+        ScalingChanged += (_, _) => Place();
+        PointerMoved += OnWindowPointerMoved;
         DataContextChanged += (_, _) => Attach(DataContext as BubbleViewModel);
     }
 
-    /// <summary>A click (not a drag) on the button.</summary>
+    /// <summary>A click (not a drag) on the icon.</summary>
     public event Action? Clicked;
 
-    /// <summary>The button was dragged to a new place (and the place saved).</summary>
+    /// <summary>The icon was dragged to a new place (and the place saved).</summary>
     public event Action? DragEnded;
 
-    /// <summary>The face's centre on screen, in physical pixels.</summary>
+    /// <summary>The icon's centre on screen, in physical pixels.</summary>
     public PixelPoint Anchor => _anchor;
 
+    /// <summary>The icon's view, for the tests.</summary>
+    internal FloatingIconView View => IconView;
+
+    /// <summary>The label's window, for the tests.</summary>
+    internal HoverLabelWindow LabelWindow => _label;
+
     /// <summary>
-    /// The window's area on screen in physical pixels, for its current size (the
-    /// toast goes beside it, never over it). Worked out the way <see cref="Place"/>
-    /// places it, so it is right even before the OS has applied a resize.
+    /// The window's area on screen in physical pixels (the toast goes beside it, never over it).
+    /// Worked out the way <see cref="Place"/> places it, so it is right before the OS has moved it.
     /// </summary>
     public PixelRect Footprint
     {
@@ -75,11 +84,6 @@ public partial class BubbleWindow : Window
     private void OnOpened()
     {
         NativeWindow.MakeNonActivating(this);
-        if (ActualTransparencyLevel == WindowTransparencyLevel.None)
-        {
-            // No compositor (some Linux desktops): a soft square beats a black one.
-            Background = new SolidColorBrush(Color.Parse("#EEF0FB"));
-        }
         if (!_placed)
         {
             _placed = true;
@@ -91,7 +95,23 @@ public partial class BubbleWindow : Window
         Dispatcher.UIThread.Post(Place, DispatcherPriority.Background);
     }
 
-    /// <summary>Shows the button where it was left, without taking focus.</summary>
+    private void OnClosedWindow()
+    {
+        _clickThrough?.Dispose();
+        _clickThrough = null;
+        _label.Close();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != IsVisibleProperty || change.GetNewValue<bool>()) return;
+        // Hidden with the pointer on it (a full-screen app came up): nothing is left behind.
+        _vm?.PointerOff();
+        _label.Hide();
+    }
+
+    /// <summary>Shows the icon where it was left, without taking focus.</summary>
     public void ShowQuietly()
     {
         if (IsVisible) return;
@@ -104,32 +124,72 @@ public partial class BubbleWindow : Window
     {
         if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
         _vm = vm;
-        if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
+        IconView.Attach(vm);
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged += OnVmChanged;
+            _clickThrough ??= new IconClickThrough(new NativeIconPointer(this), _vm.Clock, new AvaloniaDispatcher());
+        }
         Place();
     }
 
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BubbleViewModel.HasRingLabel)) Place();
+        if (_vm is null) return;
+        switch (e.PropertyName)
+        {
+            case nameof(BubbleViewModel.IsLabelVisible):
+                if (_vm.IsLabelVisible) ShowLabel();
+                else _label.Hide();
+                break;
+            case nameof(BubbleViewModel.Label):
+                _label.SetText(_vm.Label);
+                if (_vm.IsLabelVisible) ShowLabel();
+                break;
+        }
     }
 
-    /// <summary>Sizes the window for the current mode and puts the face on its anchor, inside the screen.</summary>
+    private void ShowLabel()
+    {
+        if (_vm is null) return;
+        _label.SetText(_vm.Label);
+        var scale = DesktopScaling;
+        var (position, _) = Layout();
+        var margin = (int)Math.Round(IconGeometry.Margin * scale);
+        var side = (int)Math.Round(IconGeometry.Box * scale);
+        var box = new PixelRect(position.X + margin, position.Y + margin, side, side);
+        var area = BubblePlacement.ScreenFor(_anchor, Screens.All)?.WorkingArea ?? box;
+        _label.ShowNear(box, area, scale);
+    }
+
+    /// <summary>Sizes the window for this scale and puts the icon on its anchor, inside the screen.</summary>
     private void Place()
     {
-        var size = _vm?.HasRingLabel == true ? Expanded : Compact;
-        Width = size.Width;
-        Height = size.Height;
+        Width = Canvas.Width;
+        Height = Canvas.Height;
         if (!_placed) return;
         Position = Layout().Position;
+        if (_vm?.IsLabelVisible == true) ShowLabel();
     }
 
     private (PixelPoint Position, PixelSize Size) Layout()
     {
-        var size = _vm?.HasRingLabel == true ? Expanded : Compact;
         var scale = DesktopScaling;
-        var pixels = new PixelSize((int)Math.Ceiling(size.Width * scale), (int)Math.Ceiling(size.Height * scale));
-        var faceInWindow = new PixelPoint((int)Math.Round(size.Width / 2 * scale), (int)Math.Round(FaceTop * scale));
-        return (BubblePlacement.WindowPosition(_anchor, pixels, faceInWindow, Screens.All), pixels);
+        var pixels = new PixelSize((int)Math.Ceiling(Canvas.Width * scale), (int)Math.Ceiling(Canvas.Height * scale));
+        return (BubblePlacement.WindowPosition(_anchor, pixels, CentreInWindow(scale), Screens.All), pixels);
+    }
+
+    private static PixelPoint CentreInWindow(double scale)
+    {
+        var centre = (int)Math.Round(Canvas.Width / 2 * scale);
+        return new PixelPoint(centre, centre);
+    }
+
+    /// <summary>The pointer on the window but off the icon: hand the margin's clicks to what is underneath.</summary>
+    private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_pressed || _clickThrough is null || _vm is null) return;
+        if (!IconGeometry.IsOnIcon(e.GetPosition(this), _vm.HasBadge)) _clickThrough.PointerOnMargin();
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -169,10 +229,11 @@ public partial class BubbleWindow : Window
         var wasDrag = _dragging;
         if (wasDrag) EndDrag();
         e.Pointer.Capture(null);
+        _vm?.Interaction();
         if (!wasDrag && e.InitialPressMouseButton == MouseButton.Left) Clicked?.Invoke();
     }
 
-    /// <summary>The OS took the pointer away mid-drag: keep the button where it got to.</summary>
+    /// <summary>The OS took the pointer away mid-drag: keep the icon where it got to.</summary>
     private void OnCaptureLost()
     {
         if (_dragging) EndDrag();
@@ -188,13 +249,32 @@ public partial class BubbleWindow : Window
         DragEnded?.Invoke();
     }
 
-    /// <summary>After a drag, the anchor follows the clamped face so it is saved where it is drawn.</summary>
+    /// <summary>After a drag, the anchor follows the clamped icon so it is saved where it is drawn.</summary>
     private void KeepAnchorOnScreen()
     {
-        var scale = DesktopScaling;
-        var size = _vm?.HasRingLabel == true ? Expanded : Compact;
-        var faceInWindow = new PixelPoint((int)Math.Round(size.Width / 2 * scale), (int)Math.Round(FaceTop * scale));
+        var centre = CentreInWindow(DesktopScaling);
         var position = Position;
-        _anchor = new PixelPoint(position.X + faceInWindow.X, position.Y + faceInWindow.Y);
+        _anchor = new PixelPoint(position.X + centre.X, position.Y + centre.Y);
+    }
+
+    /// <summary>The native side of <see cref="IconClickThrough"/> for this window.</summary>
+    private sealed class NativeIconPointer : IIconPointer
+    {
+        private readonly BubbleWindow _window;
+
+        public NativeIconPointer(BubbleWindow window) => _window = window;
+
+        public bool? IsOnIcon()
+        {
+            if (NativeWindow.CursorPosition(_window) is not { } cursor) return null;
+            var scale = _window.DesktopScaling;
+            var position = _window.Position;
+            var onCanvas = new Point((cursor.X - position.X) / scale, (cursor.Y - position.Y) / scale);
+            var inWindow = onCanvas.X >= 0 && onCanvas.Y >= 0 && onCanvas.X < Canvas.Width && onCanvas.Y < Canvas.Height;
+            if (!inWindow) return null;
+            return IconGeometry.IsOnIcon(onCanvas, _window._vm?.HasBadge == true);
+        }
+
+        public void SetPassThrough(bool passThrough) => NativeWindow.SetClickThrough(_window, passThrough);
     }
 }

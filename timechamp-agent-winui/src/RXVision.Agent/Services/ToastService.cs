@@ -11,10 +11,9 @@ public interface IToastPresenter
 
 /// <summary>
 /// One toast at a time, in order. A burst from one sender is one card with a
-/// count; the break ring jumps the queue and stays until it is dismissed or
-/// withdrawn; nothing shows while a full-screen app is in front (it waits, and
-/// anything that waited more than half an hour is dropped: the badge still
-/// counts it). Driven by <see cref="Tick"/> once a second.
+/// count; nothing shows while a full-screen app is in front (it waits, and
+/// anything that waited more than half an hour is dropped). Driven by
+/// <see cref="Tick"/> once a second.
 /// </summary>
 public sealed class ToastService
 {
@@ -63,32 +62,8 @@ public sealed class ToastService
             return;
         }
 
-        if (toast.Sticky)
-        {
-            // The ring is time-critical: it goes first, and an ordinary card makes way.
-            _queue.Insert(0, toast);
-            if (Current is { Sticky: false } current)
-            {
-                HideCurrent();
-                _queue.Insert(1, current);
-            }
-        }
-        else
-        {
-            _queue.Add(toast);
-        }
+        _queue.Add(toast);
         Pump();
-    }
-
-    /// <summary>Takes back a toast that no longer applies (the ring ended, the break started).</summary>
-    public void Withdraw(string key)
-    {
-        _queue.RemoveAll(t => t.Key == key);
-        if (Current?.Key == key)
-        {
-            HideCurrent();
-            Pump();
-        }
     }
 
     /// <summary>Takes back every toast of a kind (opening the dashboard answers all messages).</summary>
@@ -150,7 +125,7 @@ public sealed class ToastService
     {
         var now = _now();
         _queue.RemoveAll(t => Expired(t, now));
-        if (Current is { Sticky: false } current && !_hovered && now - _shownAt >= current.Lifetime)
+        if (Current is { } current && !_hovered && now - _shownAt >= current.Lifetime)
         {
             HideCurrent();
         }
@@ -176,7 +151,7 @@ public sealed class ToastService
 
     /// <summary>Waited too long to be worth showing (half an hour, or a cue's few seconds).</summary>
     private static bool Expired(ToastViewModel toast, DateTimeOffset now) =>
-        !toast.Sticky && (now - toast.QueuedAt > Stale || (toast.MaxWait is { } wait && now - toast.QueuedAt > wait));
+        now - toast.QueuedAt > Stale || (toast.MaxWait is { } wait && now - toast.QueuedAt > wait);
 
     private void Pump()
     {

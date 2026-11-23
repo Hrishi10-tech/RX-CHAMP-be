@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             x:Class="RXVision.Agent.Views.LeaveDialogView"
+             x:DataType="dlg:LeaveDialogViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </UserControl.KeyBindings>
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,24,20,16" Spacing="12">
+      <TextBlock Classes="h2" Text="{Binding Title}" />
+      <Grid ColumnDefinitions="*,12,*">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="Leave type" />
+          <ComboBox ItemsSource="{Binding Categories}" SelectedItem="{Binding Category}" HorizontalAlignment="Stretch" AutomationProperties.Name="Leave type" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="6">
+          <TextBlock Classes="label" Text="How long" />
+          <ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" AutomationProperties.Name="How long" />
+        </StackPanel>
+      </Grid>
+      <TextBlock Classes="small" Text="{Binding RuleText}" TextWrapping="Wrap" IsVisible="{Binding RuleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <StackPanel Spacing="6" IsVisible="{Binding HasParts}">
+        <TextBlock Classes="label" Text="Which part" />
+        <ComboBox ItemsSource="{Binding Parts}" SelectedItem="{Binding Part}" HorizontalAlignment="Stretch" AutomationProperties.Name="Which part" />
+      </StackPanel>
+      <Grid ColumnDefinitions="*,12,*">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="First day" />
+          <CalendarDatePicker SelectedDate="{Binding FirstDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="d MMM yyyy" AutomationProperties.Name="First day" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="6" IsVisible="{Binding LastDayVisible}">
+          <TextBlock Classes="label" Text="Last day (optional)" />
+          <CalendarDatePicker SelectedDate="{Binding LastDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="d MMM yyyy" Watermark="Same day" AutomationProperties.Name="Last day" />
+        </StackPanel>
+      </Grid>
+      <!-- What it costs and who decides, next to the dates that change it, before the reason -->
+      <Border Classes="note" IsVisible="{Binding HasPreviewLines}" AutomationProperties.Name="What this leave charges">
+        <ItemsControl ItemsSource="{Binding PreviewLines}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="13" Margin="0,1" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+      <Border Classes="problem" IsVisible="{Binding HasPreviewProblem}">
+        <TextBlock Text="{Binding PreviewProblem}" TextWrapping="Wrap" />
+      </Border>
+      <ItemsControl ItemsSource="{Binding Chips}" IsVisible="{Binding HasChips}" AutomationProperties.Name="Quick reasons">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="dlg:ChipViewModel">
+            <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,8,8" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="Reason" />
+        <TextBox Classes="field" Text="{Binding Reason}" MaxLength="300" TextWrapping="Wrap" Height="64" VerticalContentAlignment="Top"
+                 Watermark="3 to 300 characters" AutomationProperties.Name="Reason" />
+      </StackPanel>
+      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+    </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

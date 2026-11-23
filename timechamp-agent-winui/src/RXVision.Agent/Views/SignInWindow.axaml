@@ -8,8 +8,8 @@
         Width="460" SizeToContent="Height" MinHeight="420"
         CanResize="False"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource Brush.WindowBg}">
-  <Border Classes="card" Margin="20" Padding="28,26,28,22" CornerRadius="20">
+        Background="{StaticResource Brush.Panel}">
+  <Border Margin="20" Padding="28,26,28,22">
     <StackPanel Spacing="14">
 
       <!-- Brand -->
@@ -25,9 +25,9 @@
       <!-- Why you are here again -->
       <Border Classes="banner warn" IsVisible="{Binding HasSessionLost}">
         <Grid ColumnDefinitions="Auto,*">
-          <PathIcon Classes="i" Data="{StaticResource Icon.Info}" Width="18" Height="18" Foreground="{StaticResource Brush.AmberStrong}" VerticalAlignment="Top" />
+          <PathIcon Classes="i" Data="{StaticResource Icon.Info}" Width="18" Height="18" Foreground="{StaticResource Brush.Amber}" VerticalAlignment="Top" />
           <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding SessionLostReason}" FontSize="13" TextWrapping="Wrap"
-                     Foreground="{StaticResource Brush.AmberInk}" />
+                     Foreground="{StaticResource Brush.Amber}" />
         </Grid>
       </Border>
 
@@ -38,7 +38,7 @@
           <TextBlock Text="Reconnecting to RX Vision..." FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
         <TextBlock Classes="body" TextAlignment="Center"
-                   Text="You're still signed in. RX Vision can't reach the server right now and keeps trying in the background. Check your internet connection." />
+                   Text="Check your internet connection. You're still signed in, and RX Vision keeps trying in the background." />
         <Button Classes="link" HorizontalAlignment="Center" Command="{Binding ShowSignInFormCommand}">
           <TextBlock Text="Sign in with a different account" />
         </Button>
@@ -65,7 +65,7 @@
           <TextBox Name="CodeBox" Classes="field" Text="{Binding SetupCode}" Watermark="RXV1..." TextWrapping="Wrap"
                    AcceptsReturn="False" Height="88" VerticalContentAlignment="Top" FontSize="12.5"
                    AutomationProperties.Name="Setup code" />
-          <TextBlock Classes="small" Text="Your manager can create one in the portal, under your profile." TextWrapping="Wrap" />
+          <TextBlock Classes="small" Text="Your organisation's admin can create one in the portal, under your profile." TextWrapping="Wrap" />
         </StackPanel>
 
         <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
@@ -75,7 +75,7 @@
           <Panel>
             <TextBlock Text="Sign in" IsVisible="{Binding !IsBusy}" />
             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsBusy}">
-              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="#FFFFFF" />
+              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="{StaticResource Brush.BrandLabel}" />
               <TextBlock Text="Signing in..." />
             </StackPanel>
           </Panel>
@@ -85,7 +85,7 @@
           <Panel>
             <TextBlock Text="Connect" IsVisible="{Binding !IsBusy}" />
             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsBusy}">
-              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="#FFFFFF" />
+              <PathIcon Classes="spinner" Width="15" Height="15" Foreground="{StaticResource Brush.BrandLabel}" />
               <TextBlock Text="Connecting..." />
             </StackPanel>
           </Panel>
@@ -115,11 +115,11 @@
         </StackPanel>
       </StackPanel>
 
-      <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,4,0,0" />
+      <Border Height="1" Background="{StaticResource Brush.PanelBorder}" Margin="0,4,0,0" />
       <StackPanel Spacing="3">
         <TextBlock Classes="small" TextAlignment="Center" TextWrapping="Wrap"
                    Text="Your company uses RX Vision to record attendance and work activity." />
-        <TextBlock Classes="small" FontSize="10.5" TextAlignment="Center" Text="{Binding VersionText}" Foreground="{StaticResource Brush.Subtle}" />
+        <TextBlock Classes="small" FontSize="10.5" TextAlignment="Center" Text="{Binding VersionText}" Foreground="{StaticResource Brush.Neutral}" />
       </StackPanel>
     </StackPanel>
   </Border>

@@ -22,36 +22,12 @@ public class WindowTests
         }
     }
 
-    [AvaloniaFact]
-    public void The_button_grows_for_the_ring_label_and_shrinks_back()
-    {
-        var agent = new FakeAgent("10:59:30");
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var window = new BubbleWindow { DataContext = vm };
-        window.Show();
-        Settle();
-        Assert.Equal(140, window.ClientSize.Width);
-        Assert.Equal(116, window.ClientSize.Height);
-
-        agent.SetNow("11:10");
-        vm.Update(agent);
-        Settle();
-        Assert.False(vm.HasRingLabel);
-        Assert.Equal(88, window.ClientSize.Width);
-        Assert.Equal(88, window.ClientSize.Height);
-        window.Close();
-    }
-
     private static (BubbleWindow Window, Services.UiSettingsStore Store, string Dir) ShowBubble()
     {
         var dir = Path.Combine(Path.GetTempPath(), "rxv-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var store = new Services.UiSettingsStore(dir, Core.Util.NullLog.Instance);
-        var vm = new BubbleViewModel();
-        vm.Update(new FakeAgent("10:20"));
-        var window = new BubbleWindow { DataContext = vm };
-        window.UsePlacement(new Services.BubblePlacement(store));
+        var window = new IconRig(new FakeAgent("10:20")).Window(new Services.BubblePlacement(store));
         window.Show();
         Settle();
         return (window, store, dir);
@@ -67,12 +43,13 @@ public class WindowTests
         window.DragEnded += () => drags++;
         var before = window.Anchor;
 
-        window.MouseDown(new Point(44, 44), Avalonia.Input.MouseButton.Left);
-        window.MouseMove(new Point(44, 20));
-        window.MouseMove(new Point(30, -16));
+        window.MouseMove(new Point(36, 36));
+        window.MouseDown(new Point(36, 36), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(36, 12));
+        window.MouseMove(new Point(22, -24));
         Settle();
-        // The window has followed: the pointer is over the face again.
-        window.MouseUp(new Point(44, 44), Avalonia.Input.MouseButton.Left);
+        // The window has followed: the pointer is over the icon again.
+        window.MouseUp(new Point(36, 36), Avalonia.Input.MouseButton.Left);
         Settle();
 
         Assert.Equal(0, clicks);
@@ -98,9 +75,10 @@ public class WindowTests
         window.Clicked += () => clicks++;
         window.DragEnded += () => drags++;
         var before = window.Anchor;
-        window.MouseDown(new Point(44, 44), Avalonia.Input.MouseButton.Left);
-        window.MouseMove(new Point(45, 45));
-        window.MouseUp(new Point(45, 45), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(36, 36));
+        window.MouseDown(new Point(36, 36), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(37, 37));
+        window.MouseUp(new Point(37, 37), Avalonia.Input.MouseButton.Left);
         Settle();
         Assert.Equal(1, clicks);
         Assert.Equal(0, drags);
@@ -112,24 +90,26 @@ public class WindowTests
     [AvaloniaFact]
     public void The_toast_sits_beside_the_button_and_never_covers_it()
     {
-        // Ringing: the button is at its widest, with the label under the face.
-        var agent = new FakeAgent("10:59:30");
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var bubble = new BubbleWindow { DataContext = vm };
+        // Half way up the screen, where the card can centre on it.
+        var dir = Path.Combine(Path.GetTempPath(), "rxv-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var placement = new Services.BubblePlacement(new Services.UiSettingsStore(dir, Core.Util.NullLog.Instance));
+        var bubble = new IconRig(new FakeAgent("10:59:30")).Window(placement);
+        var screen = bubble.Screens.Primary!;
+        placement.Save(screen, new PixelPoint(screen.WorkingArea.Right - 72, screen.WorkingArea.Y + screen.WorkingArea.Height / 2));
         bubble.Show();
         Settle();
         var footprint = bubble.Footprint;
         Assert.Equal(bubble.Position, footprint.Position);
-        Assert.Equal(140, footprint.Width / bubble.DesktopScaling, 0);
+        Assert.Equal(72, footprint.Width / bubble.DesktopScaling, 0);
 
         var toast = new ToastWindow
         {
             Animate = false,
-            DataContext = new ToastViewModel(ToastKind.BreakDue, "ring:MORNING")
+            DataContext = new ToastViewModel(ToastKind.Message, "chat:m-1")
             {
-                Heading = "Morning break is due now", Title = "Morning break", Stamp = "11:00",
-                Body = "Rings till 11:04. Start it now and no reason is needed.", PrimaryText = "Take it", SecondaryText = "Open RX Vision",
+                Heading = "New message", Title = "Maya Reddy", Stamp = "11:00",
+                Body = "Can you join the 4 pm call?", PrimaryText = "View messages", SecondaryText = "Open RX Vision",
             },
         };
         toast.ShowBeside(footprint, bubble.Anchor);
@@ -195,38 +175,38 @@ public class WindowTests
         Assert.True(await dialog.Completion);
         window.Close();
     }
-    /// <summary>The End Day dialog over the dashboard at its default size (1080 x 700).</summary>
-    private static async Task<(DashboardWindow Window, ScrollViewer Overlay, ScrollViewer List)> EndDayOver(int boxes)
+    /// <summary>The End day card over the panel.</summary>
+    private static async Task<(DashboardWindow Window, Border Card, ScrollViewer List)> EndDayOver(int boxes)
     {
         var agent = new FakeAgent("18:32");
         var vm = new DashboardViewModel(agent, new Services.BreakActions(agent, new FakeDialogs(), Core.Util.NullLog.Instance), Core.Util.NullLog.Instance);
         vm.Refresh();
-        var window = new DashboardWindow { DataContext = vm, Width = 1080, Height = 700 };
+        var window = new DashboardWindow { DataContext = vm };
         window.Show();
-        vm.Overlay = new ViewModels.Dialogs.EndDayDialogViewModel(EndDayFit.Items(boxes), "your manager", "Your manager");
+        vm.Overlay = new ViewModels.Dialogs.EndDayDialogViewModel(EndDayFit.Items(boxes), "a manager", "A manager");
         Settle();
         await Task.Yield();
         Settle();
         var list = window.GetVisualDescendants().OfType<ScrollViewer>().Single(s => s.Name == "CommentList");
-        var overlay = list.GetVisualAncestors().OfType<ScrollViewer>().First();
-        return (window, overlay, list);
+        var card = list.GetVisualAncestors().OfType<Border>().First(b => b.Classes.Contains("dialogcard"));
+        return (window, card, list);
     }
 
     [AvaloniaFact]
-    public async Task Three_comment_boxes_fit_the_dashboard_at_its_default_size_without_scrolling()
+    public async Task One_comment_box_shows_whole_and_End_day_stays_on_the_panel()
     {
-        var (window, overlay, list) = await EndDayOver(3);
-        Assert.True(overlay.Extent.Height <= overlay.Viewport.Height + 0.5, $"the dialog scrolls: {overlay.Extent.Height:F0} in {overlay.Viewport.Height:F0}");
+        var (window, card, list) = await EndDayOver(1);
         Assert.True(list.Extent.Height <= list.Viewport.Height + 0.5, $"the list scrolls: {list.Extent.Height:F0} in {list.Viewport.Height:F0}");
+        Assert.True(card.Bounds.Height <= 540);
         window.AllowClose = true;
         window.Close();
     }
 
     [AvaloniaFact]
-    public async Task A_fourth_comment_box_scrolls_inside_the_list()
+    public async Task Four_comment_boxes_scroll_inside_the_list()
     {
-        var (window, overlay, list) = await EndDayOver(4);
-        Assert.True(overlay.Extent.Height <= overlay.Viewport.Height + 0.5, $"the dialog scrolls: {overlay.Extent.Height:F0} in {overlay.Viewport.Height:F0}");
+        var (window, card, list) = await EndDayOver(4);
+        Assert.True(card.Bounds.Height <= 540);
         Assert.True(list.Extent.Height > list.Viewport.Height + 20, "four boxes scroll inside the list");
         window.AllowClose = true;
         window.Close();

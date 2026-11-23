@@ -33,7 +33,8 @@ public sealed class HistoryDayViewModel
                 ? $"Breaks {Fmt.Duration(day.BreakSec)} ({Fmt.Duration(day.UnpaidBreakSec)} unpaid)"
                 : $"Breaks {Fmt.Duration(day.BreakSec)}"
             : null;
-        MeetingsText = day.Meetings > 0 ? $"{Fmt.Count(day.Meetings, "meeting", "meetings")} · {Fmt.Duration(day.MeetingsSec)}" : null;
+        var meetings = Fmt.Count(day.Meetings, "meeting", "meetings");
+        MeetingsText = day.Meetings > 0 ? $"{meetings} · {Fmt.Duration(day.MeetingsSec)}" : null;
         PendingText = Fmt.EffectMinutes(day.PendingSec) > 0 ? $"{Fmt.PlusMinutes(Fmt.EffectMinutes(day.PendingSec))} if approved" : null;
         ApprovedAwayText = Fmt.EffectMinutes(day.ApprovedAwaySec) > 0 ? $"{Fmt.PlusMinutes(Fmt.EffectMinutes(day.ApprovedAwaySec))} away approved" : null;
         // Paid time (focus + paid breaks) on any day with time in it; the offline figure only when there is some.

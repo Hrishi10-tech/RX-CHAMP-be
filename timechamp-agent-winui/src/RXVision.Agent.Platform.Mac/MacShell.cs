@@ -4,35 +4,6 @@ using RXVision.Agent.Core.Util;
 
 namespace RXVision.Agent.Platform.Mac;
 
-/// <summary>Plays the break chime with afplay (non-blocking), falling back to a system sound.</summary>
-[SupportedOSPlatform("macos")]
-internal sealed class MacSoundPlayer : ISoundPlayer
-{
-    private const string SystemFallback = "/System/Library/Sounds/Glass.aiff";
-    private readonly string _appDir;
-    private readonly ILog _log;
-
-    public MacSoundPlayer(string appDir, ILog log)
-    {
-        _appDir = appDir;
-        _log = log;
-    }
-
-    public void PlayChime()
-    {
-        try
-        {
-            var chime = Path.Combine(_appDir, "Assets", "chime.wav");
-            var file = File.Exists(chime) ? chime : SystemFallback;
-            ProcessRunner.Launch("/usr/bin/afplay", new[] { file });
-        }
-        catch (Exception ex)
-        {
-            _log.Warn("sound", "chime failed", ex);
-        }
-    }
-}
-
 /// <summary>Opens URLs with the system <c>open</c> command.</summary>
 [SupportedOSPlatform("macos")]
 internal sealed class MacShell : IShell

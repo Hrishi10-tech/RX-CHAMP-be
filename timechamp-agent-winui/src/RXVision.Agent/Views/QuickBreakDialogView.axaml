@@ -6,42 +6,40 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,20" Spacing="14">
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <Border Width="32" Height="32" CornerRadius="10" Background="{StaticResource Brush.AmberIcon}">
-          <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="18" Height="18" Foreground="{StaticResource Brush.AmberStrong}" />
-        </Border>
-        <TextBlock Classes="h2" Text="{Binding Title}" VerticalAlignment="Center" />
+  <!-- 4.0: a quick break of 5, 10 or 15 minutes, drawn as the 3.6 panel's dialogs. -->
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="20,26,20,20" Spacing="12">
+        <TextBlock Classes="h2" Text="{Binding Title}" />
+        <TextBlock Classes="lead" Text="{Binding Message}" />
+        <TextBlock Classes="label" Text="How long?" />
+        <ItemsControl ItemsSource="{Binding Choices}" AutomationProperties.Name="How long">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Rows="1" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="dlg:MinutesChoiceViewModel">
+              <Button Classes="chip" Classes.on="{Binding IsOn}" Command="{Binding PickCommand}" Margin="0,0,8,0" HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center" AutomationProperties.Name="{Binding Label}">
+                <StackPanel HorizontalAlignment="Center" Spacing="0">
+                  <TextBlock Text="{Binding Minutes}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                  <TextBlock Text="minutes" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="small" Text="{Binding Summary}" TextWrapping="Wrap" />
+        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
       </StackPanel>
-      <TextBlock Classes="body" Text="{Binding Message}" />
-      <TextBlock Classes="label" Text="How long?" />
-      <ItemsControl ItemsSource="{Binding Choices}" AutomationProperties.Name="How long">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid Rows="1" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="dlg:MinutesChoiceViewModel">
-            <Button Classes="minutes" Classes.on="{Binding IsOn}" Command="{Binding PickCommand}" Margin="0,0,8,0"
-                    AutomationProperties.Name="{Binding Label}">
-              <StackPanel HorizontalAlignment="Center" Spacing="0">
-                <TextBlock Text="{Binding Minutes}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" />
-                <TextBlock Text="minutes" FontSize="11.5" HorizontalAlignment="Center" />
-              </StackPanel>
-            </Button>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-      <TextBlock Classes="small" Text="{Binding Summary}" TextWrapping="Wrap" />
-      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
-    </StackPanel>
-    <Border Classes="dialogfooter">
-      <UniformGrid Rows="1" Margin="-4,0">
-        <Button Name="Primary" Classes="primary" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
-        <Button Classes="secondary" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
-      </UniformGrid>
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Name="Primary" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+      </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

@@ -4,9 +4,11 @@ using CommunityToolkit.Mvvm.Input;
 using RXVision.Agent.Core;
 using RXVision.Agent.Core.Api;
 using RXVision.Agent.Core.Breaks;
+using RXVision.Agent.Core.Meetings;
 using RXVision.Agent.Core.Platform;
 using RXVision.Agent.Core.Util;
 using RXVision.Agent.Core.Workday;
+using RXVision.Agent.Icon;
 using RXVision.Agent.Services;
 using RXVision.Agent.ViewModels.Dialogs;
 
@@ -14,14 +16,23 @@ namespace RXVision.Agent.ViewModels;
 
 public enum SyncTone { Ok, Pending, Off }
 
-/// <summary>The pages of the main window (the hamburger menu, SPEC 8.1).</summary>
-public enum DashboardPage { Dashboard, History, Instructions }
+/// <summary>The panel's tabs (be/docs/3.6/AGENT.md section 4).</summary>
+public enum PanelTab { Today, Messages, Profile }
+
+/// <summary>A page opened from the Profile tab; Dashboard when none is.</summary>
+public enum DashboardPage { Dashboard, History, Leave, Calendar, Instructions }
+
+/// <summary>What the 64 px icon in the panel draws: the floating icon's frame, with the badge the screen below it asks for.</summary>
+public sealed record PanelIconState(IconFrame Frame, bool PastTarget, string Initials, BreakSpan? Break = null, DayRing? Day = null)
+{
+    public string? Badge => Frame.Glyph;
+}
 
 /// <summary>Someone in the running meeting, as a small round avatar.</summary>
 public sealed record MeetingPersonViewModel(string Initials, string Name);
 
 /// <summary>
-/// The main screen. Everything is recomputed from the agent by <see cref="Refresh"/>
+/// The panel. Everything is recomputed from the agent by <see cref="Refresh"/>
 /// (every second while the window is visible, and on every change the agent
 /// reports); the commands hand over to <see cref="BreakActions"/>.
 /// </summary>
@@ -30,38 +41,83 @@ public sealed partial class DashboardViewModel : ObservableObject
     private readonly IAgent _agent;
     private readonly BreakActions _actions;
     private readonly ILog _log;
+    private readonly DayMeter? _meter;
     private DateTimeOffset _permissionCheckedAt = DateTimeOffset.MinValue;
     private bool _screenRecordingDismissed;
     private string _peopleKey = "";
 
-    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log)
+    /// <summary>The foot of the Profile tab: which build this is, for a support call.</summary>
+    public string VersionText => $"RX Vision {_agent.Version}";
+
+    /// <param name="alerts">The cards on top of the panel, shared with the icon's badge (3.6).</param>
+    /// <param name="meter">The one value the ring and these progress lines both read (3.6). With no icon beside it, the panel reads the day view.</param>
+    /// <param name="avatars">The person's picture for the panel's icon, the same as the floating icon's.</param>
+    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log, AlertCenter? alerts = null, DayMeter? meter = null,
+        IIconAvatarSource? avatars = null)
     {
         _agent = agent;
         _actions = actions;
         _log = log;
+        Alerts = alerts ?? new AlertCenter();
+        Alerts.Changed += () =>
+        {
+            OnPropertyChanged(nameof(ShowStartDayButton));
+            OnPropertyChanged(nameof(ShowGreeting));
+        };
+        _meter = meter;
+        IconAvatars = avatars ?? new InitialsAvatarSource(agent);
 
+        // Today's actions (4.0's, drawn as the 3.6 panel's outlined buttons): Next break, Quick break, Start meeting.
         QuickTile = new TileViewModel("Quick break", "amber", "Icon.Coffee");
         QuickTile.Command = new AsyncRelayCommand(_actions.QuickBreakAsync, () => QuickTile.CanClick && !IsBusy);
         NextTile = new TileViewModel("Next break", "teal", "Icon.Lunch");
         NextTile.Command = new AsyncRelayCommand(_actions.NextBreakAsync, () => NextTile.CanClick && !IsBusy);
         FocusTile = new TileViewModel("Focus work", "indigo", "Icon.Focus");
         FocusTile.Command = new AsyncRelayCommand(_actions.BackToWorkAsync, () => FocusTile.CanClick && !IsBusy);
-        MeetingTile = new TileViewModel("Meeting", "violet", "Icon.Meeting");
-        MeetingTile.Command = new AsyncRelayCommand(_actions.StartMeetingAsync, () => MeetingTile.CanClick && !IsBusy);
+        MeetingTile = new TileViewModel("Start meeting", "violet", "Icon.Meeting");
+        MeetingTile.Command = new AsyncRelayCommand(() => _actions.StartMeetingAsync(), () => MeetingTile.CanClick && !IsBusy);
+        WatchEndsSoon();
+        BreakDue.TakeCommand = new AsyncRelayCommand(
+            () => BreakDue.Kind is { } kind ? _actions.TakeAsync(BreakDue.PresenceType, kind) : Task.CompletedTask, () => !IsBusy);
+        BreakDue.SkipCommand = new AsyncRelayCommand(
+            () => BreakDue.Kind is { } kind ? _actions.SkipAsync(kind) : Task.CompletedTask, () => !IsBusy);
 
         Chat = new ChatViewModel(agent, log);
         History = new HistoryViewModel(agent, log);
+        Leave = new LeaveViewModel(agent, actions.Dialogs, log);
+        Calendar = new CalendarViewModel(agent, log);
+        Instructions = new InstructionsViewModel(agent, log);
         _actions.BusyChanged += () => IsBusy = _actions.IsBusy;
     }
 
     public TileViewModel QuickTile { get; }
     public TileViewModel NextTile { get; }
+    /// <summary>4.0's Focus work tile: today's focus time (the panel shows it in the ring's lines instead).</summary>
     public TileViewModel FocusTile { get; }
     public TileViewModel MeetingTile { get; }
+    /// <summary>
+    /// The alerts (3.6): newest on top, their actions ready. The meeting cards (Start meeting?,
+    /// End meeting?, Still in a meeting?, You're back to Working) come through here too.
+    /// </summary>
+    public AlertCenter Alerts { get; }
+    public IIconAvatarSource IconAvatars { get; }
+    /// <summary>Screen A: the break that is due, drawn on top of Today.</summary>
+    public BreakDueViewModel BreakDue { get; } = new();
     public ActiveBreakViewModel ActiveBreak { get; } = new();
+
+    private void WatchEndsSoon() => ActiveBreak.PropertyChanged += (_, e) =>
+    {
+        if (e.PropertyName == nameof(ActiveBreakViewModel.EndsSoon)) OnPropertyChanged(nameof(ShowResume));
+    };
     public TodayViewModel Today { get; } = new();
     public ChatViewModel Chat { get; }
     public HistoryViewModel History { get; }
+    /// <summary>Leave and comp off (3.4, 3.5).</summary>
+    public LeaveViewModel Leave { get; }
+    /// <summary>My calendar (3.2, the 4.0 organisation calendar).</summary>
+    public CalendarViewModel Calendar { get; }
+    /// <summary>The organisation's guide under the Instructions page (3.2).</summary>
+    public InstructionsViewModel Instructions { get; }
     public ObservableCollection<BreakRowViewModel> Rows { get; } = new();
     public ObservableCollection<MeetingPersonViewModel> MeetingPeople { get; } = new();
 
@@ -74,103 +130,211 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty] private string _displayName = "";
     [ObservableProperty] private string _initials = "";
+    /// <summary>The person's department (4.0), under their name on the Profile tab; null when none.</summary>
+    [ObservableProperty] private string? _departmentText;
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private BubbleStatus _statusKind;
     /// <summary>"Day started 9:24 AM", or null before Start Day.</summary>
     [ObservableProperty] private string? _dayStartedText;
     [ObservableProperty] private string _syncText = "";
+    /// <summary>"3h 30m of 8h", or "Target reached · 8h 00m today". The same value as the ring (3.6).</summary>
+    [ObservableProperty] private string _progressLine = "";
+    /// <summary>"4h 30m to go", or "+15 min over target".</summary>
+    [ObservableProperty] private string _progressNote = "";
+    /// <summary>The day has a total to show.</summary>
+    [ObservableProperty] private bool _showProgress;
     [ObservableProperty] private SyncTone _syncTone;
     [ObservableProperty] private string _syncToolTip = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDashboardPage), nameof(IsHistoryPage), nameof(IsInstructionsPage))]
+    [NotifyPropertyChangedFor(nameof(IsTodayTab), nameof(IsMessagesTab), nameof(IsProfileTab), nameof(ShowProfileList), nameof(ShowResume))]
+    private PanelTab _tab = PanelTab.Today;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDashboardPage), nameof(IsHistoryPage), nameof(IsLeavePage), nameof(IsCalendarPage), nameof(IsInstructionsPage), nameof(ShowProfileList))]
     private DashboardPage _page = DashboardPage.Dashboard;
 
+    public bool IsTodayTab => Tab == PanelTab.Today;
+    public bool IsMessagesTab => Tab == PanelTab.Messages;
+    public bool IsProfileTab => Tab == PanelTab.Profile;
+    /// <summary>The Profile tab's own list, under any page opened from it.</summary>
+    public bool ShowProfileList => IsProfileTab && IsDashboardPage;
     public bool IsDashboardPage => Page == DashboardPage.Dashboard;
     public bool IsHistoryPage => Page == DashboardPage.History;
+    public bool IsLeavePage => Page == DashboardPage.Leave;
+    public bool IsCalendarPage => Page == DashboardPage.Calendar;
     public bool IsInstructionsPage => Page == DashboardPage.Instructions;
 
-    /// <summary>The hamburger menu is open.</summary>
-    [ObservableProperty] private bool _isMenuOpen;
-
-    /// <summary>An Admin or Super Admin: the menu offers Quit RX Vision… (with a key).</summary>
+    /// <summary>An Admin or Super Admin: the Profile tab offers Quit RX Vision… (with a key).</summary>
     [ObservableProperty] private bool _canQuit;
 
-    [RelayCommand]
-    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
-
-    [RelayCommand]
-    private void CloseMenu() => IsMenuOpen = false;
-
+    /// <summary>Today: where the panel always opens, with the newest card on top.</summary>
     [RelayCommand]
     private void ShowDashboard()
     {
-        IsMenuOpen = false;
         Page = DashboardPage.Dashboard;
+        Tab = PanelTab.Today;
         Refresh();
+    }
+
+    /// <summary>The conversation loads as it comes on screen, which is what marks it read.</summary>
+    [RelayCommand]
+    private async Task ShowMessagesAsync()
+    {
+        Page = DashboardPage.Dashboard;
+        Tab = PanelTab.Messages;
+        try { await Chat.ActivateAsync(); }
+        catch (Exception ex) { _log.Warn("ui", "messages could not load", ex); }
+    }
+
+    [RelayCommand]
+    private void ShowProfile()
+    {
+        Page = DashboardPage.Dashboard;
+        Tab = PanelTab.Profile;
     }
 
     [RelayCommand]
     private Task ShowHistoryAsync()
     {
-        IsMenuOpen = false;
+        Tab = PanelTab.Profile;
         Page = DashboardPage.History;
         return History.OpenAsync();
     }
 
     [RelayCommand]
-    private void ShowInstructions()
+    private Task ShowLeaveAsync()
     {
-        IsMenuOpen = false;
-        Page = DashboardPage.Instructions;
+        Tab = PanelTab.Profile;
+        Page = DashboardPage.Leave;
+        return Leave.LoadAsync();
     }
 
     [RelayCommand]
-    private Task SignOutAsync()
+    private Task ShowCalendarAsync()
     {
-        IsMenuOpen = false;
-        return SignOutRequested?.Invoke() ?? Task.CompletedTask;
+        Tab = PanelTab.Profile;
+        Page = DashboardPage.Calendar;
+        return Calendar.OpenAsync();
     }
+
+    /// <summary>Instructions: how the agent works (4.0), then the organisation's guide from the server (3.2).</summary>
+    [RelayCommand]
+    private Task ShowInstructionsAsync()
+    {
+        Tab = PanelTab.Profile;
+        Page = DashboardPage.Instructions;
+        return Instructions.LoadAsync();
+    }
+
+    [RelayCommand]
+    private Task SignOutAsync() => SignOutRequested?.Invoke() ?? Task.CompletedTask;
 
     [RelayCommand]
     private Task QuitAsync()
     {
-        IsMenuOpen = false;
         return QuitRequested?.Invoke() ?? Task.CompletedTask;
     }
 
     // ---- The day's state --------------------------------------------------------------------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TilesOpacity), nameof(ShowTiles))]
     [NotifyCanExecuteChangedFor(nameof(EndDayCommand), nameof(StartDayCommand))]
     private bool _isDayEnded;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTiles))]
     [NotifyCanExecuteChangedFor(nameof(EndDayCommand), nameof(StartDayCommand))]
     private bool _isNotStarted;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowTiles), nameof(ShowActionsAbove), nameof(ShowActionsBelow), nameof(ShowEndDay))]
     [NotifyCanExecuteChangedFor(nameof(EndDayCommand))]
     private bool _isRunning;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUpdate))]
+    [NotifyPropertyChangedFor(nameof(HasUpdate), nameof(HasNotes))]
     private string? _updateText;
 
-    [ObservableProperty] private bool _showScreenRecordingBanner;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private bool _showScreenRecordingBanner;
 
-    /// <summary>An End Day done offline waiting for comments (a banner with "Add comments"); null when none.</summary>
+    /// <summary>An End Day done offline waiting for comments (4.0; its alert card offers "Add comments"); null when none.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasHeldEndDay))]
     private string? _heldEndDayText;
 
     public bool HasHeldEndDay => HeldEndDayText is not null;
-    public bool HasUpdate => UpdateText is not null;
+    /// <summary>4.0: the day has ended, so its actions read dimmed.</summary>
     public double TilesOpacity => IsDayEnded ? 0.45 : 1.0;
-    /// <summary>The four tiles: while the day runs (not on a break or in a meeting) and after it ended.</summary>
-    public bool ShowTiles => !IsNotStarted && !IsOnBreak && !IsInMeeting;
+
+    // ---- What the day view says about today (3.2 to 3.5) -------------------------------------
+
+    /// <summary>"Today is Diwali", or a day off with no name (3.2); null on a working day.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private string? _dayOffText;
+    /// <summary>"On leave today · Half day (first half) · CL/SL" (3.4), or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private string? _leaveText;
+    /// <summary>"Work from home (full day)", from wfh.label on the day view (3.5), or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private string? _wfhText;
+    /// <summary>The late start still wants its note (a day started by another computer or an older agent): the banner's words, or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLateReason), nameof(HasNotes))]
+    private string? _lateReasonText;
+
+    public bool HasLateReason => LateReasonText is not null;
+
+    /// <summary>The biometric device takes this person's attendance (3.5): no day, break or meeting buttons.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDayButtons), nameof(ShowStartDayButton), nameof(ShowBreakTiles), nameof(ShowBreakActions), nameof(BiometricText),
+        nameof(ShowBreakList), nameof(ShowEndDay), nameof(ShowTiles), nameof(ShowActionsAbove), nameof(ShowActionsBelow))]
+    private bool _isBiometric;
+
+    /// <summary>What a biometric person reads instead of Start Day.</summary>
+    public string? BiometricText => IsBiometric ? BiometricLine : null;
+    public const string BiometricLine = "Your attendance is recorded by the biometric device: your day starts with your first punch there.";
+    /// <summary>A biometric day closed without a check-out punch (3.5), or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private string? _checkoutMissingText;
+    public bool ShowDayButtons => !IsBiometric;
+    /// <summary>One filled button on the screen: the Start your day card brings its own.</summary>
+    public bool ShowStartDayButton => ShowDayButtons && !Alerts.Has(DayAlerts.StartDayKey);
+    /// <summary>The same card already says good morning.</summary>
+    public bool ShowGreeting => !Alerts.Has(DayAlerts.StartDayKey);
+    public bool ShowBreakTiles => !IsBiometric;
+    /// <summary>Breaks are not tracked for biometric staff, whatever the shift says.</summary>
+    public bool ShowBreakList => !IsBiometric;
+
+    /// <summary>"Add a note" on the late start's banner.</summary>
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private Task AddLateReasonAsync() => _actions.AddLateReasonAsync();
+
+    public bool HasUpdate => UpdateText is not null;
+    public bool HasNotes => DayOffText is not null || LeaveText is not null || WfhText is not null || CheckoutMissingText is not null
+        || LateReasonText is not null || ShowScreenRecordingBanner || HasUpdate;
+    /// <summary>Today's actions: while the day runs, not on a break or in a meeting; never for biometric staff.</summary>
+    public bool ShowTiles => IsRunning && !IsOnBreak && !IsInMeeting && !IsBiometric;
+    public bool ShowActionsAbove => ShowTiles && !BreakDue.IsShown;
+    public bool ShowActionsBelow => ShowTiles && BreakDue.IsShown;
+    /// <summary>Windows never overlap (BF-04), so nothing else can start while a card offers its break: Start meeting alone stays under it.</summary>
+    public bool ShowBreakActions => ShowBreakTiles && !BreakDue.IsShown;
+    /// <summary>The status line: on the plain screen; a card on top already says what matters.</summary>
+    public bool ShowStatusLine => !BreakDue.IsShown && !IsOnBreak && !IsInMeeting;
+    /// <summary>Everything under the status block; the on-break screens are only the break.</summary>
+    public bool ShowDayDetails => !IsOnBreak;
+    public bool ShowEndDay => IsRunning && ShowDayButtons && !IsOnBreak;
+    /// <summary>Resume work, at the foot of the panel: Today's one primary action on a break.</summary>
+    /// <summary>
+    /// The pinned Resume work. G5 (owner's choice, 18 Nov): while the two-minute card offers
+    /// Resume now, this copy is hidden, so the one action has one button.
+    /// </summary>
+    public bool ShowResume => IsOnBreak && IsTodayTab && !ActiveBreak.EndsSoon;
 
     // ---- Not started ------------------------------------------------------------------------
 
@@ -178,6 +342,8 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string? _shiftLine;
     /// <summary>Said while the day's state could not be read from the server.</summary>
     [ObservableProperty] private string? _dayCheckText;
+    /// <summary>4.0 records Start Day on this computer at once, so it never waits for the server.</summary>
+    public string StartDayLabel => "Start day";
     /// <summary>The working day that ended within the last hours (a night shift, End Day after midnight), in words; else null.</summary>
     [ObservableProperty] private string? _lastEndedText;
 
@@ -189,12 +355,40 @@ public sealed partial class DashboardViewModel : ObservableObject
     // ---- On a break, in a meeting ---------------------------------------------------------------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTiles))]
+    [NotifyPropertyChangedFor(nameof(ShowTiles), nameof(ShowActionsAbove), nameof(ShowActionsBelow), nameof(ShowStatusLine), nameof(ShowDayDetails), nameof(ShowEndDay), nameof(ShowResume))]
     private bool _isOnBreak;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTiles))]
+    [NotifyPropertyChangedFor(nameof(ShowTiles), nameof(ShowActionsAbove), nameof(ShowActionsBelow), nameof(ShowStatusLine))]
     private bool _isInMeeting;
+
+    /// <summary>The floating icon's face, at 64 px in the panel.</summary>
+    [ObservableProperty] private PanelIconState? _icon;
+    /// <summary>
+    /// The ring on a break: the same face, the day's arc held in soft amber, then the break's own
+    /// section filling in amber (see <see cref="BreakSpan"/>). Null off a break. Resume work brings
+    /// the green ring back where it stood.
+    /// </summary>
+    [ObservableProperty] private PanelIconState? _breakIcon;
+    /// <summary>The ring's spoken name with a shift: the shift and the next break.</summary>
+    [ObservableProperty] private string? _ringName;
+    /// <summary>The break the ring is drawing, this refresh.</summary>
+    private ActiveBreakView? _active;
+
+    /// <summary>What a break asks for now: the card on top, and the badge on the icon.</summary>
+    [ObservableProperty] private BreakAlertKind _breakAlert;
+
+    /// <summary>"Morning break skipped for you." while today's auto-skip waits for its comment; null otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCommentCard))]
+    private string? _commentCardTitle;
+
+    public bool HasCommentCard => CommentCardTitle is not null;
+    private string? _commentCardRecord;
+
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private Task AddCommentFromCardAsync() =>
+        _commentCardRecord is { } id ? _actions.CommentAsync(id) : Task.CompletedTask;
 
     [ObservableProperty] private string _meetingTimer = "00:00";
     [ObservableProperty] private string _meetingStarted = "";
@@ -204,6 +398,12 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     // ---- Body -------------------------------------------------------------------------------
 
+    // G5 (UI review, 18 Nov; owner's choice): while a meeting card offers an action, the panel
+    // hides its own copy, so one action has one button. Start meeting? and Back to Working carry
+    // Start meeting; Still in a meeting? and End meeting? carry End meeting.
+    [ObservableProperty] private bool _showPanelStartMeeting = true;
+    [ObservableProperty] private bool _showPanelEndMeeting = true;
+
     [ObservableProperty] private bool _isScheduled;
     [ObservableProperty] private string _shiftText = "";
     [ObservableProperty] private string _freeText = "";
@@ -212,12 +412,15 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(BackToWorkCommand), nameof(EndBreakCommand), nameof(PauseBreakCommand),
-        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand))]
+        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand), nameof(AddLateReasonCommand), nameof(RecordMeetingCommand),
+        nameof(AddCommentFromCardCommand))]
     private bool _isBusy;
 
     partial void OnIsBusyChanged(bool value)
     {
         foreach (var tile in new[] { QuickTile, NextTile, FocusTile, MeetingTile }) tile.Command?.NotifyCanExecuteChanged();
+        BreakDue.TakeCommand?.NotifyCanExecuteChanged();
+        BreakDue.SkipCommand?.NotifyCanExecuteChanged();
         foreach (var row in Rows)
         {
             row.CommentCommand?.NotifyCanExecuteChanged();
@@ -231,14 +434,14 @@ public sealed partial class DashboardViewModel : ObservableObject
     private DialogViewModel? _overlay;
 
     public bool HasOverlay => Overlay is not null;
-    public double OverlayWidth => Overlay?.Width ?? 452;
+    public double OverlayWidth => Overlay?.Width ?? DialogViewModel.CardWidth;
 
     /// <summary>The window is visible and in front (set by the app).</summary>
     [ObservableProperty] private bool _isOnScreen;
 
     // ---- Commands -----------------------------------------------------------------------------
 
-    /// <summary>Back to work (the tray, the menus): ends a meeting, or a break after asking.</summary>
+    /// <summary>Resume work (the panel's foot, the tray, the menus): ends a meeting, or a break after asking.</summary>
     [RelayCommand(CanExecute = nameof(NotBusy))]
     private Task BackToWorkAsync() => _actions.BackToWorkAsync();
 
@@ -253,15 +456,19 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(NotBusy))]
     private Task EndMeetingAsync() => _actions.EndMeetingAsync();
 
+    /// <summary>The 4.0 meeting dialog: a meeting with its agenda, people and minutes (works offline), or an earlier one.</summary>
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private Task RecordMeetingAsync() => _actions.RecordMeetingAsync();
+
     private bool NotBusy() => !IsBusy;
 
     [RelayCommand(CanExecute = nameof(CanEndDay))]
     private Task EndDayAsync() => _actions.EndDayAsync();
-    private bool CanEndDay() => IsRunning && !IsBusy && _agent.State == AgentState.Running;
+    private bool CanEndDay() => IsRunning && !IsBusy && !IsBiometric && _agent.State == AgentState.Running;
 
     [RelayCommand(CanExecute = nameof(CanStartDay))]
     private Task StartDayAsync() => _actions.StartDayAsync();
-    private bool CanStartDay() => (IsDayEnded || IsNotStarted) && !IsBusy;
+    private bool CanStartDay() => (IsDayEnded || IsNotStarted) && !IsBusy && !IsBiometric;
 
     /// <summary>The update banner's button: "Download", then "Show file" once it is saved.</summary>
     [ObservableProperty] private string _downloadLabel = "Download";
@@ -303,14 +510,14 @@ public sealed partial class DashboardViewModel : ObservableObject
             else
             {
                 DownloadLabel = "Try again";
-                UpdateText = result.Error ?? "Couldn't download the update. Try again in a moment.";
+                UpdateText = result.Error ?? "Try the download again in a moment.";
             }
         }
         catch (Exception ex)
         {
             _log.Warn("ui", "update download failed", ex);
             DownloadLabel = "Try again";
-            UpdateText = "Couldn't download the update. Try again in a moment.";
+            UpdateText = "Try the download again in a moment.";
         }
         finally
         {
@@ -371,6 +578,9 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     private void RefreshCore()
     {
+        var alerts = _agent.MeetingAlerts;
+        ShowPanelStartMeeting = !alerts.Any(a => a.Kind is MeetingAlertKind.StartMeeting or MeetingAlertKind.BackToWorking);
+        ShowPanelEndMeeting = !alerts.Any(a => a.Kind is MeetingAlertKind.EndMeeting or MeetingAlertKind.StillInMeeting);
         var state = _agent.State;
         var now = _agent.Now;
         var panel = _agent.BreakPanel;
@@ -380,6 +590,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         DisplayName = _agent.User?.DisplayName ?? "";
         Initials = Fmt.Initials(DisplayName);
+        DepartmentText = string.IsNullOrWhiteSpace(_agent.User?.Department) ? null : _agent.User!.Department!.Trim();
         CanQuit = _actions.CanQuit;
         StatusText = _agent.AwaySince is not null && running && panel.Active is null && presence.Status == PresenceStatus.Working
             ? "Away"
@@ -406,17 +617,29 @@ public sealed partial class DashboardViewModel : ObservableObject
             ? FromPresence(presence, now)
             : null);
         IsOnBreak = running && active is not null;
-        if (IsOnBreak) ActiveBreak.Update(active!, _agent.BusinessTime, _actions.Approver, now);
-        else ActiveBreak.CanPause = false;
-        PauseBreakCommand.NotifyCanExecuteChanged();
-        IsInMeeting = running && !IsOnBreak && presence.Status == PresenceStatus.Meeting;
+        _active = IsOnBreak ? active : null;
+        IsInMeeting = running && !IsOnBreak
+            && DayStatusReader.Of(state, _agent.DayProgress, presence.Status, panel.Active is not null) == DayStatus.InMeeting;
         if (IsInMeeting) UpdateMeeting(presence, now);
 
+        // 4.0: focus time comes from this computer's own day (the journal), not the server's clock.
         var focus = _agent.FocusSec;
+        var expected = FocusTarget(workday);
+        var reading = ReadDay(focus, expected);
+        if (IsOnBreak)
+            ActiveBreak.Update(active!, _agent.BusinessTime, _agent.User?.Role == "SUPER_ADMIN" ? null : _actions.Approver,
+                reading.WorkedSec, reading.TargetSec, now);
+        else ActiveBreak.CanPause = false;
+        PauseBreakCommand.NotifyCanExecuteChanged();
+        IsBiometric = _agent.IsBiometric;
         UpdateFocus(state, workday, focus, presence);
+        Today.ShowReading(reading);
+        UpdateProgress(reading);
         var allowance = _agent.Allowance;
         Today.UpdateAllowance(allowance);
         UpdatePaid(state, workday, focus, allowance);
+        UpdateCards(state, panel, workday, reading, now);
+        UpdateDayNotes(workday);
         UpdateNotStarted(state, workday, panel, now);
         UpdateEnded(state, workday, focus, now);
         UpdateTiles(state, panel, focus);
@@ -424,17 +647,106 @@ public sealed partial class DashboardViewModel : ObservableObject
         // "Decided today": the business date of the decision against the business date now
         // (a night shift's day keeps its start date past midnight, the clock does not).
         Today.UpdateWaiting(_agent.MyApprovals, _agent.BusinessDate(now), _agent.BusinessDate,
-            _actions.Approver == "your manager" ? "Waiting for your manager" : _actions.Approver == "your admin" ? "Waiting for your admin" : "Waiting for an admin");
+            _actions.Approver == "a manager" ? "Waiting for a manager" : _actions.Approver == "your admin" ? "Waiting for your admin" : "Waiting for an admin");
         UpdateBanners(now);
         if (IsHistoryPage) History.Tick(DateTimeOffset.UtcNow);
         EndDayCommand.NotifyCanExecuteChanged();
         StartDayCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>Today's focus target: 4.0's (the shift less the paid allowance), else the expected time.</summary>
+    private static int FocusTarget(WorkdayToday? workday) =>
+        workday?.TargetSec is { } t and > 0 ? t : workday?.ExpectedSec ?? 0;
+
+    /// <summary>The one value the ring reads; with no icon beside this panel, the day view's.</summary>
+    private DayReading ReadDay(int focus, int expected)
+    {
+        if (_meter is null)
+        {
+            var progress = _agent.DayProgress;
+            return new DayReading(DayMeter.StatusOf(_agent), progress?.WorkedSec ?? focus, DayProgressLines.TargetOf(progress?.TargetSec ?? expected));
+        }
+        _meter.Follow();
+        return _meter.Reading;
+    }
+
+    /// <summary>What sits on top of Today, and the icon the status block draws.</summary>
+    private void UpdateCards(AgentState state, BreakPanel panel, WorkdayToday? workday, DayReading reading, DateTimeOffset now)
+    {
+        var wasShown = BreakDue.IsShown;
+        BreakDue.Show(IsBiometric ? null : BreakAlerts.DueSlot(state, panel, workday));
+        if (wasShown != BreakDue.IsShown)
+        {
+            OnPropertyChanged(nameof(ShowActionsAbove));
+            OnPropertyChanged(nameof(ShowActionsBelow));
+            OnPropertyChanged(nameof(ShowBreakActions));
+            OnPropertyChanged(nameof(ShowStatusLine));
+        }
+        BreakDue.SkipCommand?.NotifyCanExecuteChanged();
+        BreakAlert = BreakAlerts.For(state, panel, workday, IsBiometric);
+
+        var waiting = BreakAlert == BreakAlertKind.CommentNeeded ? BreakAlerts.CommentWaiting(panel) : null;
+        _commentCardRecord = waiting?.Id;
+        CommentCardTitle = waiting is null ? null : $"{(string.IsNullOrWhiteSpace(waiting.Label) ? "Break" : waiting.Label)} skipped for you.";
+
+        var frame = new IconFrame(IconLook.For(reading.Status, reading.Reached), reading.SweepDegrees, BreakAlerts.Badge(BreakAlert), 1);
+        var day = DayRingOf(panel, workday, now);
+        Icon = new PanelIconState(frame, reading.Reached, Initials, Day: day);
+        RingName = day is null ? null : RingNameOf(panel, day);
+        if (!IsOnBreak || _active is not { } active) BreakIcon = null;
+        // With a shift the ring stays as it is and its clock carries the break; the badge stays
+        // off it, where it would sit on the sections (the floating icon keeps it).
+        else if (day is not null) BreakIcon = Icon;
+        else
+        {
+            var paused = frame.Look with { RingColor = IconColors.OnBreak, RingOpacity = IconLook.RingWorking };
+            BreakIcon = new PanelIconState(frame with { Look = paused, Glyph = null }, reading.Reached, Initials, new BreakSpan(active.DurationMin, active.Elapsed.TotalMinutes));
+        }
+    }
+
+    /// <summary>The panel's ring as the shift's clock, with today's breaks on it; null with no schedule.</summary>
+    private DayRing? DayRingOf(BreakPanel panel, WorkdayToday? workday, DateTimeOffset now)
+    {
+        if (!panel.Scheduled || panel.ShiftStartAt is not { } shiftStart || panel.ShiftEndAt is not { } shiftEnd) return null;
+        var breaks = new List<DayRingBreak>();
+        var next = panel.Slots
+            .Where(v => v.State is SlotState.Upcoming or SlotState.OpenEarly or SlotState.Due or SlotState.OpenLate)
+            .OrderBy(v => v.ScheduledStart).FirstOrDefault();
+        foreach (var slot in panel.Slots)
+        {
+            switch (slot.State)
+            {
+                case SlotState.Taken or SlotState.InProgress when slot.Record is { } taken:
+                    breaks.Add(new DayRingBreak(taken.StartedAt, taken.DurationMin ?? slot.DurationMin, taken.StartedAt,
+                        slot.State == SlotState.InProgress ? null : taken.EndedAt ?? taken.StartedAt.AddSeconds(taken.TookSec)));
+                    break;
+                case SlotState.Upcoming or SlotState.OpenEarly or SlotState.Due or SlotState.OpenLate when _active?.Kind != slot.Kind:
+                    breaks.Add(new DayRingBreak(slot.ScheduledStart, slot.DurationMin, Next: slot == next));
+                    break;
+            }
+        }
+        foreach (var record in panel.Unscheduled.Where(r => !BreakOutcomes.IsSkip(r.Outcome)))
+            breaks.Add(new DayRingBreak(record.StartedAt, 0, record.StartedAt, record.InProgress ? null : record.EndedAt ?? record.StartedAt.AddSeconds(record.TookSec)));
+        // A break the schedule has no slot for (or known only from presence) still runs amber.
+        if (_active is { } active && !breaks.Any(b => b.TakenFrom is not null && b.TakenTo is null))
+            breaks.Add(new DayRingBreak(active.StartedAt, active.DurationMin ?? 0, active.StartedAt));
+        var started = workday?.StartedAt is { } at && workday.State != WorkdayStates.NotStarted ? at : (DateTimeOffset?)null;
+        return new DayRing(shiftStart, shiftEnd, now, started, IsDayEnded ? workday?.EndedAt ?? now : null, breaks);
+    }
+
+    /// <summary>"Shift 9:30 AM to 6:30 PM. Next: Lunch break at 1:00 PM.": the ring's spoken name.</summary>
+    private string RingNameOf(BreakPanel panel, DayRing day)
+    {
+        var next = panel.Slots.Where(v => v.State is SlotState.Upcoming or SlotState.OpenEarly or SlotState.Due or SlotState.OpenLate)
+            .OrderBy(v => v.ScheduledStart).FirstOrDefault();
+        var shift = $"Shift {_agent.BusinessTime(day.ShiftStart)} to {_agent.BusinessTime(day.ShiftEnd)}.";
+        return next is null ? shift : $"{shift} Next: {next.Label} at {next.LocalStart}.";
+    }
+
     private void UpdateFocus(AgentState state, WorkdayToday? workday, int focus, CurrentPresence presence)
     {
         string status;
-        var target = workday?.TargetSec is { } t and > 0 ? t : workday?.ExpectedSec ?? 0;
+        var target = FocusTarget(workday);
         if (state == AgentState.Running)
         {
             var activeType = _agent.BreakPanel.Active?.PresenceType;
@@ -447,7 +759,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         {
             status = workday?.EndedAt is { } ended
                 ? workday.AutoClosed
-                    ? $"Closed at {_agent.BusinessTime(ended)}, no End Day"
+                    ? $"Closed for you at {_agent.BusinessTime(ended)}"
                     : $"Day ended at {_agent.BusinessTime(ended)}"
                 : "Day ended";
         }
@@ -461,11 +773,11 @@ public sealed partial class DashboardViewModel : ObservableObject
         else
         {
             status = workday?.IsWorkingDay == false
-                ? $"{(string.IsNullOrWhiteSpace(workday.DayLabel) ? "Not a working day" : workday.DayLabel)} · starts when you press Start Day"
-                : "Starts when you press Start Day";
+                ? $"{(string.IsNullOrWhiteSpace(workday.DayLabel) ? "Not a working day" : workday.DayLabel)} · starts when you tap Start day"
+                : "Starts when you tap Start day";
         }
         Today.UpdateFocus(focus, status, DayStartedText,
-            workday?.Focus.PendingPlusSec ?? 0, workday?.Focus.PendingMinusSec ?? 0, target, workday?.Focus.AdjustedSec ?? 0);
+            workday?.Focus.PendingPlusSec ?? 0, workday?.Focus.PendingMinusSec ?? 0, target, workday?.Focus.AdjustedSec ?? 0, state == AgentState.DayEnded);
     }
 
     /// <summary>
@@ -478,6 +790,24 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         var today = state is AgentState.Running or AgentState.DayEnded;
         Today.UpdatePaid(today ? focus + allowance.PaidUsedSec : null, today ? workday?.Focus.UnverifiedSec ?? 0 : 0);
+    }
+
+    /// <summary>What the day view says about today: off, on leave, at home, and a late start's missing note.</summary>
+    private void UpdateDayNotes(WorkdayToday? workday)
+    {
+        DayOffText = workday?.DayOff is { } off
+            ? string.IsNullOrWhiteSpace(off.Name) ? "Today is a day off" : $"Today is {off.Name!.Trim()}"
+            : null;
+        LeaveText = workday?.Leave is { } leave
+            ? string.IsNullOrWhiteSpace(leave.Categories) ? $"On leave today · {leave.Label}" : $"On leave today · {leave.Label} · {leave.Categories}"
+            : null;
+        WfhText = workday?.Wfh is { Label: { Length: > 0 } wfh } ? $"Work from home ({Fmt.Lower(wfh)})" : null;
+        LateReasonText = workday?.LateStart is { NeedsReason: true } late
+            ? $"Your day started {Fmt.Minutes(late.Minutes)} after your shift start. Add a short note for {_actions.Approver}."
+            : null;
+        CheckoutMissingText = IsBiometric && workday?.CheckoutMissing == true
+            ? $"Your day was closed with no check-out punch. Ask {_actions.Approver} if the time is wrong."
+            : null;
     }
 
     private void UpdateNotStarted(AgentState state, WorkdayToday? workday, BreakPanel panel, DateTimeOffset now)
@@ -501,7 +831,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             ? "Can't reach RX Vision to check your day. You can still start it: it is sent as soon as the connection is back."
             : null;
         LastEndedText = workday?.LastEnded is { } last && last.EndedAt != default
-            ? $"Your day of {Fmt.DayLabel(last.Date)} ended at {_agent.BusinessTime(last.EndedAt)} with {Fmt.Focus(last.FocusSec)} of focus time. Start Day when your next one begins."
+            ? $"Your day of {Fmt.DayLabel(last.Date)} ended at {_agent.BusinessTime(last.EndedAt)} with {Fmt.Focus(last.FocusSec)} focused. Tap Start day when your next one begins."
             : null;
     }
 
@@ -517,15 +847,18 @@ public sealed partial class DashboardViewModel : ObservableObject
         var which = workday is { Date.Length: > 0 } && workday.Date != _agent.BusinessDate(now)
             ? $"Focus time on {Fmt.DayLabel(workday.Date)}"
             : "Focus time today";
-        EndedDetail = $"{which}: {Fmt.Focus(focus)}. Nothing is recorded now. Still working? Start Day again.";
+        EndedDetail = $"{which}: {Fmt.Focus(focus)}. Nothing is recorded now. Still working? Tap Start day.";
     }
 
     private void UpdateMeeting(CurrentPresence presence, DateTimeOffset now)
     {
         var live = _agent.LiveMeeting;
-        var since = live?.StartedAt is { } s && s != default ? s : presence.Since ?? now - TimeSpan.FromSeconds(presence.ElapsedSec);
+        var since = live?.StartedAt is { } s && s != default ? s
+            : _agent.DayProgress?.MeetingStartedAt
+            ?? presence.Since ?? now - TimeSpan.FromSeconds(presence.ElapsedSec);
         MeetingTimer = Fmt.Clock(now - since);
         MeetingStarted = $"Started {_agent.BusinessTime(since)}";
+        // In a meeting (3.6) has no agenda and no people; a meeting recorded with its details has both.
         MeetingAgenda = live?.Agenda is { Length: > 0 } agenda ? agenda
             : string.IsNullOrWhiteSpace(presence.Note) ? "In a meeting" : presence.Note!.Trim();
         var people = live?.Participants ?? new List<MeetingParticipant>();
@@ -633,8 +966,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         else FocusTile.Set(total, "Working now", TileLook.Active, false);
 
         var meetingSec = _agent.Totals.MeetingSec;
-        if (!running) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", ended, TileLook.Disabled, false);
-        else MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Start one, or log an earlier one", TileLook.Idle, true);
+        if (IsBiometric) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Your day is on the biometric device", TileLook.Disabled, false);
+        else if (!running) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", ended, TileLook.Disabled, false);
+        else MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Tap to start one", TileLook.Idle, true);
     }
 
     private void UpdateSchedule(BreakPanel panel, DateTimeOffset now)
@@ -673,6 +1007,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             fill(row);
             row.ResumeCommand?.NotifyCanExecuteChanged();
             row.EndCommand?.NotifyCanExecuteChanged();
+            row.IsCurrent = row.Kind == BreakDue.Kind || row.State == SlotState.InProgress;
         }
     }
 
@@ -680,12 +1015,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         // An End Day done offline waiting for comments (the toast may have been missed).
         HeldEndDayText = _agent.HeldEndDay is { } held && _agent.State == AgentState.Running
-            ? $"Your End Day at {_agent.BusinessTime(held.At)} needs {(held.Breaks.Count == 1 ? "a comment on a skipped break" : $"comments on {held.Breaks.Count} skipped breaks")}. Until then your day stays open."
+            ? $"Your End day at {_agent.BusinessTime(held.At)} needs {(held.Breaks.Count == 1 ? "a comment on a skipped break" : $"comments on {held.Breaks.Count} skipped breaks")}. Until then your day stays open."
             : null;
 
         var offer = _agent.PendingUpdate;
         if (offer is { CanInstall: false } && UpdateText is null && !_updateDismissed.Contains(offer.Version))
-            UpdateText = $"RX Vision {offer.Version} is available. Download it and replace this app to update.";
+            UpdateText = $"Download RX Vision {offer.Version} and replace this app to update.";
 
         if (now - _permissionCheckedAt < TimeSpan.FromSeconds(5)) return;
         _permissionCheckedAt = now;
@@ -719,11 +1054,28 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (IsHistoryPage) _ = History.LoadAsync();
     }
 
+    /// <summary>The person's leave changed (a decision, comp off): read it again if its page is open.</summary>
+    public void OnLeaveChanged()
+    {
+        if (IsLeavePage) _ = Leave.LoadAsync();
+    }
+
+    /// <summary>The ring's value in words: the same reading as the icon (3.6).</summary>
+    private void UpdateProgress(DayReading reading)
+    {
+        ProgressLine = reading.PanelLine;
+        ProgressNote = reading.PanelNote;
+        ShowProgress = reading.Status != IconStatus.NotStarted;
+    }
+
     /// <summary>Clears what belonged to the person who signed out.</summary>
     public void Reset()
     {
         Overlay?.Cancel();
         Chat.Reset();
+        Leave.Reset();
+        Calendar.Reset();
+        Instructions.Reset();
         Rows.Clear();
         MeetingPeople.Clear();
         _peopleKey = "";
@@ -731,7 +1083,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         UpdateText = null;
         _downloadedPath = null;
         DownloadLabel = "Download";
-        IsMenuOpen = false;
         Page = DashboardPage.Dashboard;
+        Tab = PanelTab.Today;
     }
 }

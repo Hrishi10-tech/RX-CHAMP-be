@@ -177,7 +177,6 @@ public sealed class ShiftRules
 {
     public int RingLeadMin { get; set; } = 1;
     public int RingDurationMin { get; set; } = 5;
-    public bool RingSound { get; set; } = true;
     public bool ReasonOnEarly { get; set; } = true;
     public bool ReasonOnLate { get; set; } = true;
     public int ReasonMinChars { get; set; } = 10;
@@ -352,6 +351,8 @@ public sealed class BreakDay
     public List<int>? QuickBreakMinutes { get; set; }
     /// <summary>Worked out here from the cached shift for a new day while offline (never from the server).</summary>
     public bool Estimated { get; set; }
+    /// <summary>The quick answers per comment box, by kind (3.2; see <see cref="PresetKinds"/>), or null from an older server.</summary>
+    public Dictionary<string, List<string>>? ReasonPresets { get; set; }
 
     [JsonIgnore] public bool Scheduled => Mode == "SCHEDULED";
 }
@@ -452,9 +453,65 @@ public sealed class FocusView
     public int AdjustedSec { get; set; }
 }
 
+/// <summary>A first Start Day after the grace (3.2): how far past it, and whether a reason is still wanted.</summary>
 public sealed class LateStartView
 {
     public int Minutes { get; set; }
+    public int GraceMin { get; set; }
+    public string? Reason { get; set; }
+    /// <summary>A reason is asked for and none was given: offer "Add a note".</summary>
+    public bool NeedsReason { get; set; }
+}
+
+/// <summary>A day off by the calendar (3.2): HOLIDAY (with its name) or WEEKLY_OFF.</summary>
+public sealed class DayOffView
+{
+    public string Kind { get; set; } = "";
+    public string? Name { get; set; }
+}
+
+/// <summary>Today's leave on the day view (3.4), or null.</summary>
+public sealed class LeaveTodayView
+{
+    public double Days { get; set; }
+    public bool Full { get; set; }
+    /// <summary>"Half day (first half)".</summary>
+    public string Label { get; set; } = "";
+    /// <summary>"CL/SL".</summary>
+    public string Categories { get; set; } = "";
+}
+
+/// <summary>Work from home on the day view (3.5), or null. Agent staff only read the label.</summary>
+public sealed class WfhTodayView
+{
+    /// <summary>"Full day", "Half day (first half)" or "Waiting for approval".</summary>
+    public string Label { get; set; } = "";
+}
+
+/// <summary>How the person's attendance is taken (3.5).</summary>
+public static class AttendanceSources
+{
+    public const string Agent = "AGENT";
+    public const string Biometric = "BIOMETRIC";
+}
+
+public sealed class AttendanceView
+{
+    /// <summary>AGENT or BIOMETRIC.</summary>
+    public string Source { get; set; } = AttendanceSources.Agent;
+}
+
+/// <summary>The kinds of quick answers (reasonPresets on GET /breaks/me/today, 3.2).</summary>
+public static class PresetKinds
+{
+    public const string LateDayStart = "LATE_DAY_START";
+    public const string BreakEarly = "BREAK_EARLY";
+    public const string BreakLate = "BREAK_LATE";
+    public const string BreakSkip = "BREAK_SKIP";
+    public const string SkipComment = "SKIP_COMMENT";
+    public const string BreakOverrun = "BREAK_OVERRUN";
+    public const string MeetingAgenda = "MEETING_AGENDA";
+    public const string LeaveReason = "LEAVE_REASON";
 }
 
 public sealed class ShiftRef
@@ -484,6 +541,10 @@ public sealed class WorkdaySettings
 {
     public int ApprovalSlaHours { get; set; } = 48;
     public int ReasonMinChars { get; set; } = 10;
+    /// <summary>Minutes after the shift start before a first Start Day is late (3.2).</summary>
+    public int LateStartGraceMin { get; set; }
+    /// <summary>A late first start asks why (3.2; the organisation's setting).</summary>
+    public bool RequireLateStartReason { get; set; }
 }
 
 /// <summary>GET /workday/me/today: the day's state, focus time and what End Day will ask for.</summary>
@@ -528,7 +589,20 @@ public sealed class WorkdayToday
     public string? DayLabel { get; set; }
     /// <summary>4.0: away time waiting for approval and away time never explained.</summary>
     public AwayTotals? Away { get; set; }
+    /// <summary>A day off by the calendar (3.2), or null on a working day.</summary>
+    public DayOffView? DayOff { get; set; }
+    /// <summary>Approved leave today (3.4), or null.</summary>
+    public LeaveTodayView? Leave { get; set; }
+    /// <summary>Part-day leave: when the working part starts (the late-start mark moves to it), else null.</summary>
+    public DateTimeOffset? WorkingFrom { get; set; }
+    /// <summary>How attendance is taken (3.5): the agent, or the biometric device.</summary>
+    public AttendanceView? Attendance { get; set; }
+    /// <summary>Work from home today (3.5), or null.</summary>
+    public WfhTodayView? Wfh { get; set; }
+    /// <summary>Biometric staff: the day was closed with no check-out punch (3.5).</summary>
+    public bool CheckoutMissing { get; set; }
 
+    [JsonIgnore] public bool IsBiometric => Attendance?.Source == AttendanceSources.Biometric;
     [JsonIgnore] public bool IsOpen => State == WorkdayStates.Open;
     [JsonIgnore] public bool IsEnded => State == WorkdayStates.Ended;
     [JsonIgnore] public bool IsNotStarted => State is not (WorkdayStates.Open or WorkdayStates.Ended);
@@ -616,6 +690,14 @@ public sealed class LastEndedView
 public sealed class StartDayRequest
 {
     public string? StartedAt { get; set; }
+    /// <summary>Why the first start comes after the shift start plus the grace (3.2; 4.1 agents send it).</summary>
+    public string? LateReason { get; set; }
+}
+
+/// <summary>POST /workday/me/late-reason: the note for a late start already made.</summary>
+public sealed class LateReasonRequest
+{
+    public string Reason { get; set; } = "";
 }
 
 public sealed class StartDayResult
@@ -699,6 +781,17 @@ public sealed class MeetingRecord
     public string? DecidedByName { get; set; }
     /// <summary>Who will mail the minutes (4.0).</summary>
     public string? MomSender { get; set; }
+    /// <summary>STATUS for In a meeting (3.6); anything else was declared with an agenda.</summary>
+    public string? Kind { get; set; }
+    /// <summary>Why a status meeting ended: USER, BREAK, END_DAY, NO_ANSWER or AUTO_CLOSED.</summary>
+    public string? EndReason { get; set; }
+    public bool IsStatus => Kind == MeetingKinds.Status;
+}
+
+/// <summary>What a meeting is: In a meeting from the status routes (3.6), or declared with an agenda.</summary>
+public static class MeetingKinds
+{
+    public const string Status = "STATUS";
 }
 
 public sealed class StartMeetingRequest
@@ -915,6 +1008,25 @@ public sealed class AwayUnexplainedRequest
 public sealed class SignOutKeyRequest
 {
     public string Key { get; set; } = "";
+}
+
+/// <summary>GET /features: each release flag, true or false. A flag reads off until the server says it is on.</summary>
+public sealed class FeatureFlags
+{
+    public Dictionary<string, bool> Flags { get; set; } = new();
+
+    public bool On(string name) => Flags.TryGetValue(name, out var on) && on;
+}
+
+/// <summary>The release flags the agent reads (src/shared/features/feature-flags.ts on the API).</summary>
+public static class FeatureNames
+{
+    /// <summary>2.7 Data handling: the monitoring notice adds its sentence about retention and AI exclusions.</summary>
+    public const string DataHandling = "dataHandling";
+    /// <summary>The redesigned (calm) desktop agent.</summary>
+    public const string AgentCalmUi = "agentCalmUi";
+    /// <summary>2.1 Messaging.</summary>
+    public const string Messaging = "messaging";
 }
 
 /// <summary>GET /workday/me/history?month=YYYY-MM (SPEC 5.6).</summary>

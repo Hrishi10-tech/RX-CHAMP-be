@@ -16,7 +16,7 @@ public class ShiftHandoverToastTests
         var no = 0;
         var card = Toasts.ShiftQuestion(agent, new ShiftQuestion(end, end, Last: false), () => yes++, () => no++, () => { });
 
-        Assert.False(card.Sticky);
+        // 3.6: no sticky toasts any more; the question still lasts its minute.
         Assert.Equal(TimeSpan.FromMinutes(1), card.Lifetime);
         Assert.True(card.KeepOnOpen);
         Assert.Contains("Are you extending your shift?", card.Title);
@@ -34,7 +34,7 @@ public class ShiftHandoverToastTests
     {
         var agent = new FakeAgent();
         var end = agent.Now.AddMinutes(5);
-        Assert.Contains("Press End Day when you finish", Toasts.ShiftAnswer(agent, true, end));
+        Assert.Contains("Tap End day when you finish", Toasts.ShiftAnswer(agent, true, end));
         Assert.Equal($"You'll be signed out at {agent.BusinessTime(end)}.", Toasts.ShiftAnswer(agent, false, end));
     }
 }

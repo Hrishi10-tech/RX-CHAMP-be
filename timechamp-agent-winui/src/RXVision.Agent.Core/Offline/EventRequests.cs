@@ -29,7 +29,9 @@ public static class EventRequests
             case EventKinds.StartDay:
                 // The press time goes in the body too: a 3.1 server takes it (within 10 minutes);
                 // a 4.0 server reads X-Event-At.
-                return new EventRequest(HttpMethod.Post, "activity/start-day", new StartDayRequest { StartedAt = ApiClient.Iso(e.At) });
+                // A late first start carries its note (3.2; a 4.1 server asks for it with 422 LATE_REASON_REQUIRED).
+                return new EventRequest(HttpMethod.Post, "activity/start-day",
+                    new StartDayRequest { StartedAt = ApiClient.Iso(e.At), LateReason = OrNull(p.Reason) });
             case EventKinds.EndDay:
                 return new EventRequest(HttpMethod.Post, "activity/end-day", new EndDayRequest
                 {

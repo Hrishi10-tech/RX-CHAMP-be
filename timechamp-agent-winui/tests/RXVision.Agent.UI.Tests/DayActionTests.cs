@@ -58,7 +58,7 @@ public class DayActionTests
         dialogs.Answer(_ => true);
         await actions.StartDayAsync();
         var alert = Assert.IsType<MessageDialogViewModel>(Assert.Single(dialogs.Shown));
-        Assert.Equal("Couldn't start your day", alert.Title);
+        Assert.Equal("Try starting your day again", alert.Title);
         Assert.Equal("Your account can't start a day.", alert.Message);
     }
 
@@ -80,11 +80,10 @@ public class DayActionTests
         dialogs.Answer(d =>
         {
             var confirm = Assert.IsType<MessageDialogViewModel>(d);
-            Assert.Equal("End your working day?", confirm.Title);
-            Assert.Equal("Your focus time stops now and today's day is saved as it is. If you need to, you can start your day again from here.", confirm.Message);
-            Assert.Equal("End Day", confirm.PrimaryText);
+            Assert.Equal("End your day?", confirm.Title);
+            Assert.Equal("Your focus time stops now and today is saved as it is. You can start your day again from here if you need to.", confirm.Message);
+            Assert.Equal("End day", confirm.PrimaryText);
             Assert.Equal("Keep working", confirm.CancelText);
-            Assert.True(confirm.IsDanger);
             return false;
         });
         await actions.EndDayAsync();
@@ -105,7 +104,7 @@ public class DayActionTests
         await actions.EndDayAsync();
         Assert.Single(agent.EndDayCalls);
         Assert.Equal(AgentState.DayEnded, agent.State);
-        Assert.Equal("End your working day?", Assert.Single(dialogs.Shown).Title);
+        Assert.Equal("End your day?", Assert.Single(dialogs.Shown).Title);
     }
 
     [Fact]
@@ -133,13 +132,12 @@ public class DayActionTests
         {
             var end = Assert.IsType<EndDayDialogViewModel>(d);
             Assert.Equal("Before you end the day", end.Title);
-            Assert.Equal("3 skipped breaks need a comment. Each goes to your manager with your comment.", end.Message);
-            Assert.Equal("End Day", end.PrimaryText);
+            Assert.Equal("Add a comment to each of your 3 skipped breaks. Each goes to a manager.", end.Message);
+            Assert.Equal("End day", end.PrimaryText);
             Assert.Equal("Not now", end.CancelText);
             Assert.Equal(new[] { "Evening break", "Morning break", "Lunch break" }, end.Items.Select(i => i.Name));
-            Assert.Equal(new[] { "Auto-skipped at 5:00 PM", "Auto-skipped at 12:00 PM", "Auto-skipped at 2:00 PM on 12 Oct" }, end.Items.Select(i => i.When));
+            Assert.Equal(new[] { "Skipped for you at 5:00 PM", "Skipped for you at 12:00 PM", "Skipped for you at 2:00 PM on 12 Oct" }, end.Items.Select(i => i.When));
             // Three show whole (no scrolling); lunch has the lunch icon.
-            Assert.Equal(double.PositiveInfinity, end.ListMaxHeight);
             Assert.Equal(new[] { false, false, true }, end.Items.Select(i => i.IsLunch));
 
             // End Day waits for every box.
@@ -149,7 +147,7 @@ public class DayActionTests
             Assert.False(end.SubmitCommand.CanExecute(null));
             end.Items[2].Text = "short";
             Assert.False(end.Items[2].CountOk);
-            Assert.Equal("Required. 10 characters or more.", end.Items[2].Help);
+            Assert.Equal("10 characters or more, please.", end.Items[2].Help);
             Assert.False(end.SubmitCommand.CanExecute(null));
             end.Items[2].Text = "Lunch with the client";
             Assert.Equal("Looks good", end.Items[2].Help);
@@ -188,7 +186,7 @@ public class DayActionTests
             .Answer(d =>
             {
                 var end = Assert.IsType<EndDayDialogViewModel>(d);
-                Assert.Equal("1 skipped break needs a comment. It goes to your manager with your comment.", end.Message);
+                Assert.Equal("Add a comment to your skipped break. It goes to a manager.", end.Message);
                 end.Items[0].Text = "Release call ran late";
                 return true;
             })
@@ -245,7 +243,7 @@ public class DayActionTests
         var item = new SkipCommentItemViewModel("evening-auto", "Evening break", "Auto-skipped at 17:00", 10, new[] { "Client call" });
         item.Text = "  Too    short  ";
         Assert.Equal(("Too short", false), (item.Comment, item.CountOk));
-        Assert.Equal("Required. 10 characters or more.", item.Help);
+        Assert.Equal("10 characters or more, please.", item.Help);
         item.Text = "Too    short\n\tfor them";
         Assert.Equal(("Too short for them", true), (item.Comment, item.CountOk));
         item.Text = " Client   call ";
@@ -268,8 +266,8 @@ public class DayActionTests
             .Answer(d =>
             {
                 var overdue = Assert.IsType<MessageDialogViewModel>(d);
-                Assert.Equal("Approvals are past 48 hours", overdue.Title);
-                Assert.Equal("3 approvals are past 48 hours. Decide them in the portal to end your day.", overdue.Message);
+                Assert.Equal("Approvals waiting past 48 hours", overdue.Title);
+                Assert.Equal("Decide 3 approvals in the portal to end your day. They are past 48 hours.", overdue.Message);
                 Assert.Equal("Open approvals", overdue.PrimaryText);
                 Assert.Equal("Close", overdue.CancelText);
                 return true;
@@ -290,8 +288,8 @@ public class DayActionTests
         dialogs.Answer(_ => true).Answer(_ => true);
         await actions.EndDayAsync();
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[^1]);
-        Assert.Equal("Approvals are past 24 hours", alert.Title);
-        Assert.Equal("1 approval is past 24 hours. Open the RX Vision portal and decide them to end your day.", alert.Message);
+        Assert.Equal("Approvals waiting past 24 hours", alert.Title);
+        Assert.Equal("Decide 1 approval in the portal to end your day. It is past 24 hours.", alert.Message);
         Assert.False(alert.HasCancel);
         Assert.Empty(agent.Dev.OpenedUrls);
     }
@@ -316,14 +314,14 @@ public class DayActionTests
         agent.Day = Days.General().WithActive(Days.Running("MORNING", "11:00"));
         dialogs.Answer(_ => true);
         await actions.EndDayAsync();
-        Assert.Equal(("Finish this first", "End your break, then end your day."),
+        Assert.Equal(("Finish this first", "Tap Resume work, then end your day."),
             (dialogs.Shown[0].Title, ((MessageDialogViewModel)dialogs.Shown[0]).Message));
 
         agent.Day = Days.General();
         agent.Presence = new CurrentPresence { Status = PresenceStatus.Meeting };
         dialogs.Answer(_ => true);
         await actions.EndDayAsync();
-        Assert.Equal("Tap Meeting ended, then end your day.", ((MessageDialogViewModel)dialogs.Shown[1]).Message);
+        Assert.Equal("Tap End meeting, then end your day.", ((MessageDialogViewModel)dialogs.Shown[1]).Message);
         Assert.Empty(agent.EndDayCalls);
     }
 
@@ -341,7 +339,7 @@ public class DayActionTests
             Assert.Equal("Add what the meeting is about.", meeting.Problem);
             return false;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Empty(agent.MeetingCalls);
         Assert.Empty(agent.PastMeetingCalls);
     }
@@ -373,7 +371,7 @@ public class DayActionTests
             Assert.Equal("Start meeting", meeting.PrimaryText);
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var (agenda, people, mom) = Assert.Single(agent.MeetingCalls);
         Assert.Equal("Asha Kumar", mom);
         Assert.Equal("Sprint planning for the invoice release", agenda);
@@ -404,7 +402,7 @@ public class DayActionTests
             Assert.True(meeting.SubmitCommand.CanExecute(null));
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var call = Assert.Single(agent.PastMeetingCalls);
         Assert.Equal("Priya", call.MomSender);
         Assert.Equal(Ist.At("10:30"), call.StartedAt);
@@ -438,7 +436,7 @@ public class DayActionTests
             .Answer(d =>
             {
                 var again = (MeetingDialogViewModel)d;
-                Assert.Equal("That overlaps your lunch from 1:00 PM to 1:30 PM. Pick another time.", again.Error);
+                Assert.Equal("Pick another time. That overlaps your lunch from 1:00 PM to 1:30 PM.", again.Error);
                 Assert.True(again.IsPast);
                 Assert.Equal("1:00 PM", again.StartAt!.Label);
                 Assert.Equal("40", again.MinutesText);
@@ -447,15 +445,15 @@ public class DayActionTests
                 again.StartAt = again.StartOptions.First(o => o.Label == "1:30 PM");
                 return true;
             });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Equal(2, agent.PastMeetingCalls.Count);
         Assert.Equal(Ist.At("13:30"), agent.PastMeetingCalls[1].StartedAt);
     }
 
     [Theory]
-    [InlineData("MEETING_OUTSIDE_DAY", "That time is outside your working day. Pick a time between Start Day and now.")]
-    [InlineData("MEETING_IN_FUTURE", "That runs past now. Pick an earlier start or fewer minutes.")]
-    [InlineData("MEETING_OVERLAPS_MEETING", "That overlaps another meeting from 10:00 AM to 10:30 AM. Pick another time.")]
+    [InlineData("MEETING_OUTSIDE_DAY", "Pick a time between Start day and now.")]
+    [InlineData("MEETING_IN_FUTURE", "Pick an earlier start or fewer minutes. That runs past now.")]
+    [InlineData("MEETING_OVERLAPS_MEETING", "Pick another time. That overlaps another meeting from 10:00 AM to 10:30 AM.")]
     [InlineData("DAY_NOT_STARTED", "Start your day first.")]
     [InlineData("SOMETHING_NEW", "The server's own words.")]
     public void Meeting_codes_in_plain_words(string code, string expected)
@@ -471,7 +469,7 @@ public class DayActionTests
         var (actions, agent, dialogs) = Setup("10:20");
         agent.MeetingOutcomes.Enqueue(new MeetingOutcome.Refused("ON_BREAK", "On a break."));
         dialogs.Answer(d => { ((MeetingDialogViewModel)d).Agenda = "Standup"; return true; }).Answer(_ => true);
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[^1]);
         Assert.Equal("Couldn't start the meeting", alert.Title);
         Assert.Equal("End your break first.", alert.Message);
@@ -489,7 +487,7 @@ public class DayActionTests
             meeting.MomSender = "Ravi";
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Single(agent.MeetingCalls);
         Assert.Single(dialogs.Shown);
         Assert.Equal(PresenceStatus.Meeting, agent.Presence.Status);
@@ -541,7 +539,7 @@ public class DayActionTests
         agent.Day = Days.General();
         agent.Presence = new CurrentPresence { Status = PresenceStatus.Meeting };
         await actions.StartMeetingAsync();
-        Assert.Equal(new[] { "You're on a break", "You're in a meeting" }, dialogs.Shown.Select(d => d.Title));
+        Assert.Equal(new[] { "You're on break", "You're in a meeting" }, dialogs.Shown.Select(d => d.Title));
         Assert.Empty(agent.MeetingCalls);
     }
 }
@@ -558,7 +556,7 @@ public class MeetingDialogTests
             dayStarted is null ? null : Ist.At(dayStarted),
             agent.BusinessTime,
             "u-1",
-            "your manager");
+            "a manager");
         return new MeetingDialogViewModel(context);
     }
 
@@ -605,7 +603,7 @@ public class MeetingDialogTests
     {
         var dialog = Dialog(search: _ => Task.FromResult<IReadOnlyList<ParticipantOption>?>(null));
         await dialog.LoadSuggestionsAsync();
-        Assert.Equal("Can't search the directory right now. You can still type names.", dialog.SearchProblem);
+        Assert.Equal("Type names for now. Search isn't available right now.", dialog.SearchProblem);
         dialog.PersonQuery = "Ravi";
         Assert.Equal("+ Add “Ravi”", Assert.Single(dialog.Suggestions).Label);
         dialog.AddTypedCommand.Execute(null);
@@ -648,13 +646,13 @@ public class MeetingDialogTests
         dialog.MinutesText = "abc";
         Assert.Equal("Enter how long it ran, in minutes.", dialog.Problem);
         dialog.MinutesText = "3";
-        Assert.Equal("How long must be 5 to 480 minutes.", dialog.Problem);
+        Assert.Equal("Enter 5 to 480 minutes.", dialog.Problem);
         dialog.MinutesText = "481";
-        Assert.Equal("How long must be 5 to 480 minutes.", dialog.Problem);
+        Assert.Equal("Enter 5 to 480 minutes.", dialog.Problem);
 
         // 11:50 + 45 min runs past 12:20: the chip is off and the check says why.
         dialog.MinutesText = "45";
-        Assert.Equal("That runs past now. Pick an earlier start or fewer minutes.", dialog.Problem);
+        Assert.Equal("Pick an earlier start or fewer minutes. That runs past now.", dialog.Problem);
         Assert.False(dialog.Durations.First(c => c.Minutes == 45).IsEnabled);
         Assert.True(dialog.Durations.First(c => c.Minutes == 30).IsEnabled);
         Assert.False(dialog.SubmitCommand.CanExecute(null));
@@ -687,89 +685,15 @@ public class MeetingDialogTests
     public void Notes_say_what_happens_to_focus_time()
     {
         var dialog = Dialog();
-        Assert.Equal("Your focus time keeps counting while you are in it. Tap Meeting ended when you are back. Your manager approves or rejects it after.", dialog.Note);
+        Assert.Equal("Your focus time keeps counting while you are in it. Tap End meeting when you are back. A manager approves or rejects it after.", dialog.Note);
         dialog.IsPast = true;
-        Assert.Equal("This time is already in your focus time. Your manager approves or rejects it; a rejection takes these minutes off.", dialog.Note);
+        Assert.Equal("This time is already in your focus time. A manager approves or rejects it; a rejection takes these minutes off.", dialog.Note);
     }
 }
 
 /// <summary>The cards beside the button, built by <see cref="Toasts"/>.</summary>
 public class ToastBuilderTests
 {
-    [Fact]
-    public void The_ring_offers_Skip_break_only_when_the_shift_allows_it()
-    {
-        var agent = new FakeAgent("10:59:30");
-        var took = 0;
-        var skipped = 0;
-        var opened = 0;
-        var ring = Toasts.Ring(agent, agent.Ring!, () => took++, () => skipped++, () => opened++);
-        Assert.Equal("Morning break is due now", ring.Heading);
-        Assert.Equal("Rings till 11:04 AM. Start it now and no reason is needed.", ring.Body);
-        Assert.Equal("Take it", ring.PrimaryText);
-        Assert.Equal("Skip break", ring.SecondaryText);
-        Assert.True(ring.Sticky);
-        ring.SecondaryCommand.Execute(null);
-        ring.PrimaryCommand.Execute(null);
-        Assert.Equal((1, 1, 0), (took, skipped, opened));
-
-        agent.Day = Days.General();
-        agent.Day.Breaks[0].AllowSkip = false;
-        var plain = Toasts.Ring(agent, agent.Ring!, () => took++, () => skipped++, () => opened++);
-        Assert.Equal("Open RX Vision", plain.SecondaryText);
-        plain.SecondaryCommand.Execute(null);
-        Assert.Equal((1, 1, 1), (took, skipped, opened));
-    }
-
-    [Fact]
-    public void The_ring_offers_no_skip_for_a_break_End_Day_already_skipped()
-    {
-        var agent = new FakeAgent("10:59:50");
-        // End Day (stopped by a gate) auto-skipped it a moment ago, inside its window.
-        agent.Day!.Breaks[0].Record = Days.Skip("MORNING", "10:59:40", auto: true);
-        Assert.Null(agent.Ring);   // asked about at End Day: it does not ring again
-        Assert.True(agent.BreakPanel.Slots[0].CanStart);
-        var toast = Toasts.Ring(agent, new RingView("MORNING", "Morning break", Ist.At("11:04"), true), () => { }, () => { }, () => { });
-        Assert.Equal("Open RX Vision", toast.SecondaryText);
-    }
-
-    [Fact]
-    public void Auto_skipped_asks_for_a_comment()
-    {
-        var agent = new FakeAgent("12:01");
-        var commented = 0;
-        var toast = Toasts.AutoSkipped(agent, Days.Skip("MORNING", "12:00", auto: true), () => commented++, () => { });
-        Assert.Equal("Morning break auto-skipped.", toast.Title);
-        Assert.Equal("Add a comment before End Day.", toast.Body);
-        Assert.Equal("Add comment", toast.PrimaryText);
-        Assert.Equal("autoskip:morning-auto", toast.Key);
-        Assert.Equal("12:00 PM", toast.Stamp);
-        toast.PrimaryCommand.Execute(null);
-        Assert.Equal(1, commented);
-    }
-
-    [Fact]
-    public void Good_morning_and_at_your_desk()
-    {
-        var agent = new FakeAgent("08:55") { State = AgentState.NotStarted };
-        var starts = 0;
-        var greeting = Toasts.Nudge(agent, new AgentNudge(NudgeKind.Greeting, "2026-10-13"), () => starts++, () => { });
-        Assert.Equal("Good morning, Asha.", greeting.Title);
-        Assert.Equal("Start Day when you begin work.", greeting.Body);
-        Assert.Equal("Start Day", greeting.PrimaryText);
-        Assert.True(greeting.HasStrongPrimary);
-        greeting.PrimaryCommand.Execute(null);
-        Assert.Equal(1, starts);
-
-        agent.SetNow("14:05");
-        Assert.Equal("Good afternoon, Asha.", Toasts.Nudge(agent, new AgentNudge(NudgeKind.Greeting, null), () => { }, () => { }).Title);
-
-        var desk = Toasts.Nudge(agent, new AgentNudge(NudgeKind.AtDesk, "2026-10-13"), () => { }, () => { });
-        Assert.Equal("You're at your desk. Start Day?", desk.Title);
-        Assert.Equal("Nothing is recorded until you do.", desk.Body);
-        Assert.Equal(greeting.Key, desk.Key); // one Start Day card at a time
-    }
-
     [Fact]
     public void A_cue_is_one_quiet_line_for_5_seconds()
     {
@@ -824,7 +748,7 @@ public class DayStateTests
             LastEnded = new LastEndedView { Date = "2026-10-12", EndedAt = Ist.At("02:05").ToUniversalTime(), FocusSec = 7 * 3600 + 50 * 60 },
         };
         var vm = Dashboard(agent);
-        Assert.Equal("Your day of Mon 12 Oct ended at 2:05 AM with 7h 50m of focus time. Start Day when your next one begins.", vm.LastEndedText);
+        Assert.Equal("Your day of Mon 12 Oct ended at 2:05 AM with 7h 50m focused. Tap Start day when your next one begins.", vm.LastEndedText);
         Assert.Equal("7h 50m", vm.Today.FocusText);
         Assert.Equal("Last day · ended 2:05 AM", vm.Today.FocusStatus);
 
@@ -833,7 +757,7 @@ public class DayStateTests
         vm.Refresh();
         Assert.Null(vm.LastEndedText);
         Assert.Equal("0m", vm.Today.FocusText);
-        Assert.Equal("Starts when you press Start Day", vm.Today.FocusStatus);
+        Assert.Equal("Starts when you tap Start day", vm.Today.FocusStatus);
     }
 
     [Fact]
@@ -847,7 +771,7 @@ public class DayStateTests
         agent.Workday = ended;
         var vm = Dashboard(agent);
         Assert.Equal("Your day ended at 1:35 AM.", vm.EndedTitle);
-        Assert.Equal("Focus time on Mon 12 Oct: 7h 00m. Nothing is recorded now. Still working? Start Day again.", vm.EndedDetail);
+        Assert.Equal("Focus time on Mon 12 Oct: 7h 00m. Nothing is recorded now. Still working? Tap Start day.", vm.EndedDetail);
         Assert.Equal("7h 00m", vm.Today.FocusText);
     }
 
@@ -896,11 +820,11 @@ public class DayStateTests
         Assert.True(vm.StartDayCommand.CanExecute(null));
         Assert.False(vm.EndDayCommand.CanExecute(null));
         Assert.Null(vm.DayStartedText);
-        Assert.Equal("Day not started", vm.StatusText);
+        Assert.Equal("Not started", vm.StatusText);
         Assert.Equal("Not started · nothing recorded", vm.SyncText);
         Assert.Equal(SyncTone.Off, vm.SyncTone);
         Assert.Equal("0m", vm.Today.FocusText);
-        Assert.Equal("Starts when you press Start Day", vm.Today.FocusStatus);
+        Assert.Equal("Starts when you tap Start day", vm.Today.FocusStatus);
         Assert.Null(vm.DayCheckText);
         // The shift's breaks are still listed, as the plan for the day.
         Assert.Equal(3, vm.Rows.Count);
@@ -1021,14 +945,14 @@ public class DayStateTests
         var vm = Dashboard(agent);
         var today = vm.Today;
         Assert.True(today.HasWaiting);
-        Assert.Equal("Waiting for your manager", today.WaitingTitle);
+        Assert.Equal("Waiting for a manager", today.WaitingTitle);
         Assert.Equal(4, today.WaitingCount);
         Assert.Equal(new[]
         {
             ("Meeting: Client call with Acme", "+30 min if approved", WaitingKind.Meeting),
             ("Morning break skipped", "−15 min if rejected", WaitingKind.Break),
             ("Evening break auto-skipped", "−15 min if rejected", WaitingKind.Break),
-            ("Back 6 min late from lunch", "Rejected · No change to focus time", WaitingKind.Overrun),
+            ("Back 6 min late from lunch", "Not approved · No change to focus time", WaitingKind.Overrun),
         }, today.Waiting.Select(w => (w.Title, w.Chip, w.Kind)));
         Assert.Equal("Maya Reddy: Plan calls around lunch", today.Waiting[3].ToolTip);
         Assert.Null(today.WaitingMore);

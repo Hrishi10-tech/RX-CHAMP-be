@@ -19,6 +19,9 @@ internal static class CoreGraphics
     /// <summary>kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements.</summary>
     internal const uint WindowListOnScreenNoDesktop = 0x1 | 0x10;
 
+    /// <summary>kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements: a call on another Space too.</summary>
+    internal const uint WindowListAllNoDesktop = 0x0 | 0x10;
+
     /// <summary>kCGNullWindowID.</summary>
     internal const uint NullWindowID = 0;
 

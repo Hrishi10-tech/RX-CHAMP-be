@@ -22,6 +22,7 @@ public sealed class AgentServices : IDisposable
 {
     public ApiClient Api { get; }
     public WorkdayService Workday { get; }
+    public DayProgressService DayProgress { get; }
     public BreakService Breaks { get; }
     public MeetingService Meetings { get; }
     public ApprovalService Approvals { get; }
@@ -43,6 +44,7 @@ public sealed class AgentServices : IDisposable
     {
         Api = new ApiClient(apiBaseUrl, identity, sessions, clock, log, handler);
         Workday = new WorkdayService(Api, log);
+        DayProgress = new DayProgressService(Api, log);
         Breaks = new BreakService(Api, clock, log);
         Meetings = new MeetingService(Api, log);
         Approvals = new ApprovalService(Api, log);

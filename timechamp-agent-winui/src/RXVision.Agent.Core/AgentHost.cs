@@ -147,9 +147,8 @@ public sealed class AgentHost : IDisposable
     private readonly SemaphoreSlim _dayGate = new(1, 1);
     private CancellationTokenSource _lifetime = new();
     private string? _ringKey;
-    private DateTimeOffset _lastChime = DateTimeOffset.MinValue;
-    private readonly HashSet<string> _acknowledgedRings = new();
-    private DateTime _localDate = DateTime.Now.Date;
+    // The business date the minute timer last saw (core review C-R07: business midnight, not the PC's).
+    private string _localDate = "";
 
     // ---- The working day ----
     // Bumped on every sign-in and sign-out: work begun for an earlier session is dropped.
@@ -173,6 +172,17 @@ public sealed class AgentHost : IDisposable
     private int _closedWhileHeld;
     // Away (4.0): the last input seen while the screen was unlocked (server clock, UTC ticks).
     private long _lastActiveTicks;
+    // ---- In a meeting (3.6) ----
+    // The meeting's fallback ran at this moment (server time, UTC ticks; 0: none): idle timers restart there.
+    private long _idleRestartTicks;
+    // When the day progress was last asked for (server clock ticks): at most once a minute from the timer.
+    private static readonly TimeSpan ProgressReadEvery = TimeSpan.FromSeconds(55);
+    private long _progressReadTicks;
+    // When the last day progress was kept (server clock ticks): a status meeting adopted after it is newer.
+    private long _progressKeptTicks;
+    private readonly MeetingMonitor _meetings;
+    private Timer? _callTimer;
+    private Timer? _featuresTimer;
 
     /// <param name="secretStoreLimit">Tests only: the time limit on a secret store call (else <see cref="SecretStoreLimit"/>).</param>
     public AgentHost(IPlatform platform, AgentOptions options, ILog log, HttpMessageHandler? handler = null, IClock? clock = null,
@@ -206,6 +216,18 @@ public sealed class AgentHost : IDisposable
             await DrainSamplesAfterJournalAsync();
             await RefreshAllAsync(greet: false);
         });
+        _meetings = new MeetingMonitor(platform, _clock, log)
+        {
+            Status = MeetingCallStatusNow,
+            FallbackDue = running => _ = SafeAsync("meetings", () => AskAtFallbackAsync(running)),
+        };
+        _meetings.AlertsChanged += () =>
+        {
+            try { MeetingAlertsChanged?.Invoke(); }
+            catch (Exception ex) { _log.Error("meetings", "a meeting-card handler failed", ex); }
+        };
+        _meetings.FellBack += at => Interlocked.Exchange(ref _idleRestartTicks, at.UtcTicks);
+        _meetings.FallbackCardRead += SaveFallbackRead;
     }
 
     // ---- State for the UI -----------------------------------------------------------
@@ -222,6 +244,8 @@ public sealed class AgentHost : IDisposable
     public RingView? Ring { get; private set; }
     public int ChatUnread => _svc?.Chat.Unread ?? 0;
     public ChatService? Chat => _svc?.Chat;
+    /// <summary>Tests: the live notification socket's service.</summary>
+    internal NotificationService? Notifications => _svc?.Notifications;
     public BreakService? Breaks => _svc?.Breaks;
     public UpdateOffer? PendingUpdate { get; private set; }
     public int PendingSamples => _queue?.Count ?? 0;
@@ -245,6 +269,40 @@ public sealed class AgentHost : IDisposable
     public BreakDay? BreakDay => _day.View.Breaks;
     /// <summary>The meeting in progress, if it has a record.</summary>
     public MeetingRecord? LiveMeeting => _day.View.LiveMeeting;
+    /// <summary>The server's last word on the status and the ring (GET /me/day-progress), or null before the first answer.</summary>
+    public DayProgress? DayProgress => _svc?.DayProgress.Current;
+    /// <summary>The person's status: one of five, and only one (3.6).</summary>
+    public DayStatus Status => DayStatusReader.Of(State, DayProgress, Presence.Status, BreakPanel.Active is not null);
+    /// <summary>The cards the meeting feature wants shown (Still in a meeting?, Back to Working, a call's suggestion), what needs an answer first.</summary>
+    public IReadOnlyList<MeetingAlert> MeetingAlerts => _meetings.Alerts;
+    /// <summary>
+    /// The server's release flags (GET /features), all off until read. Read at sign-in and hourly
+    /// (core review C-R04): dataHandling adds the notice's sentence.
+    /// </summary>
+    public FeatureFlags Features { get; private set; } = new();
+
+    /// <summary>
+    /// Time since the last input, for the activity idle flag, the heartbeat and the away pop-up:
+    /// after a meeting's fallback, the smaller of the OS's figure and the time since the switch,
+    /// so nothing reads meeting time as idle (3.6, brief 1.8).
+    /// </summary>
+    public TimeSpan IdleFor
+    {
+        get
+        {
+            try { return RestartedIdle(_platform.Idle.IdleTime()); }
+            catch { return TimeSpan.Zero; }
+        }
+    }
+
+    private TimeSpan RestartedIdle(TimeSpan osIdle)
+    {
+        var ticks = Interlocked.Read(ref _idleRestartTicks);
+        if (ticks == 0) return osIdle;
+        var since = _clock.UtcNow - new DateTimeOffset(ticks, TimeSpan.Zero);
+        if (since < TimeSpan.Zero) since = TimeSpan.Zero;
+        return since < osIdle ? since : osIdle;
+    }
     /// <summary>The person's own items with their approver, pending first (the waiting list).</summary>
     public IReadOnlyList<ApprovalItem> MyApprovals => _svc?.Approvals.Mine ?? Array.Empty<ApprovalItem>();
 
@@ -267,6 +325,21 @@ public sealed class AgentHost : IDisposable
     /// <summary>The effective away settings (4.0), or null before the server sent any.</summary>
     public IdleConfig? IdleConfig => _day.View.Workday?.Config?.Idle ?? _day.Base.Workday?.Config?.Idle;
 
+    // The server answered ATTENDANCE_BY_BIOMETRIC this session: the day buttons stay hidden.
+    private volatile bool _biometricRefused;
+
+    /// <summary>
+    /// The biometric device takes this person's attendance (3.5): no Start Day, End Day,
+    /// break or meeting buttons, and no reminders to start the day.
+    /// </summary>
+    public bool IsBiometric => _biometricRefused || Workday?.IsBiometric == true;
+
+    /// <summary>The organisation's quick answers for a comment box (3.2; empty when none are known).</summary>
+    public IReadOnlyList<string> Presets(string kind) =>
+        (_day.View.Breaks?.ReasonPresets ?? _day.Base.Breaks?.ReasonPresets) is { } all && all.TryGetValue(kind, out var list)
+            ? list.Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
+            : Array.Empty<string>();
+
     /// <summary>The person's status now, from the day (a break, a meeting, working).</summary>
     public CurrentPresence Presence
     {
@@ -287,14 +360,30 @@ public sealed class AgentHost : IDisposable
                     Note = active.Label,
                 };
             }
-            if (view.LiveMeeting is { } meeting)
+            if (view.LiveMeeting is { } meeting && !StatusMeetingOver(meeting))
                 return new CurrentPresence { Status = PresenceStatus.Meeting, Since = meeting.StartedAt, Note = meeting.Agenda };
+            // In a meeting (3.6) before today's meetings were read again: the day progress says so.
+            if (view.LiveMeeting is null && DayProgress is { InMeeting: true } progress)
+                return new CurrentPresence { Status = PresenceStatus.Meeting, Since = progress.MeetingStartedAt };
             // A plain break or a meeting without a record (an older agent or server) shows only in presence.
-            if (view.LocalChanges == 0 && _day.Base.Presence is { Status: PresenceStatus.Break or PresenceStatus.Lunch or PresenceStatus.Meeting } server)
+            if (view.LocalChanges == 0 && _day.Base.Presence is { Status: PresenceStatus.Break or PresenceStatus.Lunch or PresenceStatus.Meeting } server
+                && !(server.Status == PresenceStatus.Meeting && ProgressSaysNoMeetingSince(server.Since)))
                 return server;
             return new CurrentPresence { Status = PresenceStatus.Working, Since = view.Workday?.StartedAt };
         }
     }
+
+    /// <summary>
+    /// A status meeting (3.6) the day progress, read after it started, says is over (ended
+    /// elsewhere, or the 2 hour fallback) while today's meetings have not been read again.
+    /// </summary>
+    private bool StatusMeetingOver(MeetingRecord meeting) =>
+        meeting.IsStatus && ProgressSaysNoMeetingSince(meeting.StartedAt);
+
+    /// <summary>The day progress, kept after <paramref name="since"/>, says no meeting runs (3.6: it decides the meeting state).</summary>
+    private bool ProgressSaysNoMeetingSince(DateTimeOffset? since) =>
+        DayProgress is { InMeeting: false }
+        && Interlocked.Read(ref _progressKeptTicks) > (since?.UtcTicks ?? 0);
 
     /// <summary>Break, lunch and meeting time taken today (worked out from the day; the server's totals as a fallback).</summary>
     public PresenceTotals Totals
@@ -327,6 +416,12 @@ public sealed class AgentHost : IDisposable
     public event Action? BreaksChanged;
     /// <summary>A new view of today (an action, an answer from the server).</summary>
     public event Action? WorkdayChanged;
+    /// <summary>A new day progress: the status, the ring and the 2 hour check's times (3.6).</summary>
+    public event Action? DayProgressChanged;
+    /// <summary>The meeting cards changed (3.6).</summary>
+    public event Action? MeetingAlertsChanged;
+    /// <summary>The monitoring notice now waits, or no longer waits (it may sit over a running day).</summary>
+    public event Action? NoticePendingChanged;
     public event Action? MeetingsChanged;
     public event Action? ApprovalsChanged;
     public event Action<ChatMessage>? ChatMessageReceived;
@@ -344,6 +439,8 @@ public sealed class AgentHost : IDisposable
     public event Action? AwayChanged;
     /// <summary>History may have changed (a decision, a calendar change).</summary>
     public event Action? HistoryChanged;
+    /// <summary>The person's leave may have changed (a decision, comp off, a request made here).</summary>
+    public event Action? LeaveChanged;
     public event Action<UpdateOffer>? UpdateAvailable;
     /// <summary>The app must exit (an update installer is running).</summary>
     public event Action? ExitRequested;
@@ -622,7 +719,7 @@ public sealed class AgentHost : IDisposable
                 UseServer(url);
             }
             var result = await _svc!.Api.LoginAsync(email, password);
-            if (!result.Ok) return result.Message ?? "Sign-in failed.";
+            if (!result.Ok) return result.Message ?? "Try signing in again.";
             await BeginSessionAsync();
             return null;
         }
@@ -649,7 +746,7 @@ public sealed class AgentHost : IDisposable
     public async Task<string?> SignInWithCodeAsync(string code)
     {
         var enrollment = Enrollment.FromSetupCode(code, ApiBaseUrl);
-        if (enrollment is null) return "That setup code isn't valid. Copy it again from the portal.";
+        if (enrollment is null) return "Copy the setup code again from the portal.";
         StopReconnect();
         await _signInGate.WaitAsync();
         try
@@ -657,7 +754,7 @@ public sealed class AgentHost : IDisposable
             if (IsSignedInState(State)) return null;
             UseServer(enrollment.ApiBaseUrl);
             var result = await _svc!.Api.EnrollAsync(enrollment.EnrollmentToken);
-            if (!result.Ok) return result.Outcome == ApiOutcome.Transient ? result.Message : "That setup code was refused. Ask your manager for a new one.";
+            if (!result.Ok) return result.Outcome == ApiOutcome.Transient ? result.Message : "Ask your organisation's admin for a new setup code.";
             _enrollment = enrollment;
             _sessions.SaveEnrollment(enrollment);
             await BeginSessionAsync();
@@ -705,6 +802,19 @@ public sealed class AgentHost : IDisposable
             if (what.StartsWith("WORKDAY", StringComparison.Ordinal) || what == "DECIDED") _ = SafeAsync("breaks", FetchBreaksAsync);
             try { HistoryChanged?.Invoke(); }
             catch (Exception ex) { _log.Error("day", "a history handler failed", ex); }
+            // Leave decided, comp off or a decision elsewhere (3.4: workday:changed LEAVE).
+            if (what is "WORKDAY:LEAVE" or "WORKDAY:COMPOFF" or "WORKDAY:DECISION") RaiseLeaveChanged();
+            // The status and the ring may have moved (3.6): a meeting ended on the phone, a break elsewhere.
+            if (what.StartsWith("WORKDAY", StringComparison.Ordinal)) _ = SafeAsync("day", RefreshDayProgressAsync);
+        };
+        svc.DayProgress.Changed += OnDayProgress;
+        svc.Notifications.Connected += () =>
+        {
+            // Core review C-R06: socket events are not replayed, so a reconnect reads the day
+            // again (a day started or a meeting ended on the phone during the outage shows at once).
+            if (!IsDayState(State)) return;
+            _ = SafeAsync("day", RefreshDayProgressAsync);
+            if (State is AgentState.NotStarted or AgentState.DayEnded) _ = SafeAsync("day", () => DayCheckAsync(greet: false));
         };
         svc.Updates.Available += offer => { PendingUpdate = offer; UpdateAvailable?.Invoke(offer); };
         svc.Updates.ExitForUpdate += () => ExitRequested?.Invoke();
@@ -756,9 +866,39 @@ public sealed class AgentHost : IDisposable
             case "DAY_AUTO_CLOSED":
             case "APPROVALS_OVERDUE":
             case "APPROVALS_ESCALATED":
+            case "BIOMETRIC_NO_CHECKOUT":
+            case "WFH_DECIDED":
+            case "WFH_REVOKED":
                 _ = SafeAsync("day", () => DayCheckAsync(greet: false));
                 break;
+            case "LEAVE_DECIDED":
+            case "LEAVE_REVOKED":
+            case "LEAVE_ADJUSTED":
+            case "LEAVE_UPDATED":
+            case "COMPOFF_DECIDED":
+            case "COMPOFF_CREDITED":
+            case "COMPOFF_EXPIRING":
+                // Leave moves today's target and the Leave page (3.4, 3.5).
+                _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+                RaiseLeaveChanged();
+                break;
         }
+    }
+
+    private void RaiseLeaveChanged()
+    {
+        try { LeaveChanged?.Invoke(); }
+        catch (Exception ex) { _log.Error("leave", "a leave handler failed", ex); }
+    }
+
+    /// <summary>The server said the biometric device takes this person's attendance: the day buttons go for this session.</summary>
+    private void NoteBiometric(string? code)
+    {
+        if (code != "ATTENDANCE_BY_BIOMETRIC" || _biometricRefused) return;
+        _biometricRefused = true;
+        _log.Info("day", "attendance is taken by the biometric device; the day buttons are hidden");
+        try { WorkdayChanged?.Invoke(); }
+        catch (Exception ex) { _log.Error("day", "a workday handler failed", ex); }
     }
 
     private static bool SameServer(string a, string b) =>
@@ -884,17 +1024,57 @@ public sealed class AgentHost : IDisposable
         _ = SafeAsync("session", () => RefreshUserAsync(svc, gen));
         StartBreakTimers();
 
+        // The release flags first (briefly), so the notice knows whether data handling is on;
+        // then hourly (core review C-R04).
+        try { await ReadFeaturesAsync(svc).WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (Exception ex) { _log.Info("session", $"features not read yet: {ex.GetType().Name}"); }
+        lock (_gate)
+        {
+            _featuresTimer?.Dispose();
+            _featuresTimer = new Timer(_ => _ = SafeAsync("features", () => ReadFeaturesAsync(svc)), null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        }
+        if (gen != Gen) return;
+
         if (!NoticeAcknowledged(user.Id))
         {
+            SetNoticePending(true);
+            // Core review C-R11 (AGENT.md section 9): a day already running keeps running while
+            // the notice waits on top; only Start Day waits for the answer.
+            if (_day.View.Workday is not { IsOpen: true }) await FetchWorkdayAsync();
+            if (gen != Gen) return;
+            if (_day.View.Workday is { IsOpen: true })
+            {
+                _log.Info("session", "the day is already open: tracking it while the notice waits");
+                await EnterDayStateAsync();
+                return;
+            }
             SetState(AgentState.NeedsNotice);
             _ = SafeAsync("day", () => RefreshAllAsync(greet: false));
             return;
         }
+        SetNoticePending(false);
         await EnterDayStateAsync();
     }
 
+    private async Task ReadFeaturesAsync(AgentServices svc)
+    {
+        var result = await svc.Api.GetFeaturesAsync();
+        if (result is { Ok: true, Data: { } flags }) Features = flags;
+    }
+
+    /// <summary>The monitoring notice waits for this person's answer (it may sit over a running day, C-R11).</summary>
+    public bool NoticePending { get; private set; }
+
+    private void SetNoticePending(bool pending)
+    {
+        if (NoticePending == pending) return;
+        NoticePending = pending;
+        try { NoticePendingChanged?.Invoke(); }
+        catch (Exception ex) { _log.Error("session", "a notice handler failed", ex); }
+    }
+
     /// <summary>C-966: an https server this build may not use (S-02, AG-2).</summary>
-    public const string ServerNotAllowed = "Check the server address with your manager.";
+    public const string ServerNotAllowed = "Check the server address with your organisation's admin.";
 
     /// <summary>
     /// A line the sign-in window shows once when it opens: set when a saved session or setup was
@@ -930,6 +1110,7 @@ public sealed class AgentHost : IDisposable
         if (user is null) return;
         try { AtomicFile.WriteAllBytes(NoticeFile(user.Id), System.Text.Encoding.UTF8.GetBytes(DateTimeOffset.UtcNow.ToString("o"))); }
         catch { }
+        SetNoticePending(false);
         if (State == AgentState.NeedsNotice) await EnterDayStateAsync();
     }
 
@@ -1027,7 +1208,11 @@ public sealed class AgentHost : IDisposable
         _dayDate = day.Date;
         if (greet && _greetedDate != day.Date)
         {
-            if (RecentlyEnded(out var ago))
+            if (!MayNudge(day))
+            {
+                _log.Info("day", "not greeting: a day off, a full day of leave, or a biometric day");
+            }
+            else if (RecentlyEnded(out var ago))
             {
                 // A day that ended a moment ago (a night shift, End Day after midnight): a
                 // "Good morning" now would invite a stray session. A later unlock greets.
@@ -1041,6 +1226,13 @@ public sealed class AgentHost : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Nothing nags on a day off or a full day of leave (3.2, 3.4; Start Day stays
+    /// available), or for someone whose day the biometric device opens (3.5).
+    /// </summary>
+    private bool MayNudge(WorkdayToday? day) =>
+        !IsBiometric && day?.DayOff is null && day?.Leave is not { Full: true };
 
     /// <summary>Remembers when the last working day ended, from the day.</summary>
     private void NoteDayEnded(WorkdayToday day)
@@ -1096,7 +1288,7 @@ public sealed class AgentHost : IDisposable
 
         _tracker?.Retire();
         EnsureQueue(svc, user.Id);
-        _tracker = new ActivityTracker(svc.Api, _platform, _options, _queue!, _log) { MaySend = SamplesMaySend };
+        _tracker = new ActivityTracker(svc.Api, _platform, _options, _queue!, _log) { MaySend = SamplesMaySend, IdleFilter = RestartedIdle };
         _stuckTickSeen = DateTimeOffset.MinValue;
         _tracker.Acknowledged += OnAck;
         _tracker.BacklogSent += OnBacklogSent;
@@ -1114,8 +1306,13 @@ public sealed class AgentHost : IDisposable
         _watchdog?.Dispose();
         _watchdog = new Timer(_ => Guard("watchdog", Watchdog), null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
 
+        // The call detectors (3.6): while Working or In a meeting and unlocked; they only suggest.
+        _callTimer?.Dispose();
+        _callTimer = new Timer(_ => _ = SafeAsync("meetings", _meetings.CallTickAsync), null, MeetingMonitor.CallTickEvery, MeetingMonitor.CallTickEvery);
+
         SetState(AgentState.Running);
         PresenceChanged?.Invoke(Presence);
+        _ = SafeAsync("day", RefreshDayProgressAsync);
     }
 
     private void StopTracking()
@@ -1126,6 +1323,10 @@ public sealed class AgentHost : IDisposable
         _heartbeat = null;
         _watchdog?.Dispose();
         _watchdog = null;
+        _callTimer?.Dispose();
+        _callTimer = null;
+        // No call carries into the next stretch of work.
+        _meetings.ForgetCalls();
     }
 
     /// <summary>This person's sample queue (kept across sign-outs; another person never sends it).</summary>
@@ -1136,7 +1337,7 @@ public sealed class AgentHost : IDisposable
             _queue = new ActivityQueue(_secrets, _platform.Paths.DataDir, userId, _log);
             _queueUserId = userId;
             _tracker?.Retire();
-            _tracker = new ActivityTracker(svc.Api, _platform, _options, _queue, _log) { MaySend = SamplesMaySend };
+            _tracker = new ActivityTracker(svc.Api, _platform, _options, _queue, _log) { MaySend = SamplesMaySend, IdleFilter = RestartedIdle };
             _tracker.Acknowledged += OnAck;
             _tracker.BacklogSent += OnBacklogSent;
         }
@@ -1266,7 +1467,7 @@ public sealed class AgentHost : IDisposable
         bool idle;
         try
         {
-            idle = _platform.Lock.IsLocked || _platform.Idle.IdleTime() >= TimeSpan.FromSeconds(_options.IdleThresholdSeconds);
+            idle = _platform.Lock.IsLocked || IdleFor >= TimeSpan.FromSeconds(_options.IdleThresholdSeconds);
         }
         catch { idle = false; }
         await svc.Api.HeartbeatAsync(idle);
@@ -1427,6 +1628,7 @@ public sealed class AgentHost : IDisposable
         _sync.Poke();
         _ = SafeAsync("breaks", FetchBreaksAsync);
         _ = SafeAsync("day", () => DayCheckAsync(greet: true));
+        _ = SafeAsync("day", RefreshDayProgressAsync);
     }
 
     // ---- The day from the server ------------------------------------------------------------
@@ -1476,6 +1678,7 @@ public sealed class AgentHost : IDisposable
         var answered = await DayCheckAsync(greet);
         if (!answered && !_dayKnown) SchedulePending();
         await RefreshExtrasAsync();
+        await RefreshDayProgressAsync();
     }
 
     /// <summary>Arms a retry while nothing at all is known about the day.</summary>
@@ -1687,6 +1890,35 @@ public sealed class AgentHost : IDisposable
         if (svc is null || !svc.Api.IsSignedIn || !IsDayState(State)) return;
         await svc.Approvals.RefreshAsync();
         await FetchMeetingsAsync();
+        // Core review C-R08: once a session, the fallback card a restart would have lost.
+        if (!_fallbackRestored && User is { } who)
+        {
+            _fallbackRestored = true;
+            _meetings.RestoreFallback(svc.Meetings.Today, ReadFallbackRead(who.Id));
+        }
+    }
+
+    private volatile bool _fallbackRestored;
+
+    private string FallbackReadFile(string userId) =>
+        Path.Combine(_platform.Paths.DataDir, $"fallback-read-{new string(userId.Where(char.IsLetterOrDigit).ToArray())}.txt");
+
+    /// <summary>The Back to Working card for the fallback at that moment was read: kept on disk, so a restart does not show it again.</summary>
+    private void SaveFallbackRead(DateTimeOffset at)
+    {
+        if (User is not { } who) return;
+        try { AtomicFile.WriteAllBytes(FallbackReadFile(who.Id), System.Text.Encoding.UTF8.GetBytes(at.ToString("o", CultureInfo.InvariantCulture))); }
+        catch (Exception ex) { _log.Debug("meetings", $"fallback card not saved: {ex.GetType().Name}"); }
+    }
+
+    private DateTimeOffset? ReadFallbackRead(string userId)
+    {
+        try
+        {
+            var path = FallbackReadFile(userId);
+            return File.Exists(path) && DateTimeOffset.TryParse(File.ReadAllText(path).Trim(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var at) ? at : null;
+        }
+        catch { return null; }
     }
 
     /// <summary>The day changed: tell the UI, ring if due, and follow the day's state.</summary>
@@ -1729,6 +1961,7 @@ public sealed class AgentHost : IDisposable
         var date = local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var month = date[..7];
         var what = EventRequests.Describe(e);
+        NoteBiometric(result.Code);
 
         // End Day refused for comments on skipped breaks (ones never seen offline, or auto-skips
         // End Day itself would make): held, so the person adds them and End Day goes again with
@@ -1826,6 +2059,7 @@ public sealed class AgentHost : IDisposable
         var e = RecordExpected(kind, payload, at);
         _sync.Poke();
         var fate = await WaitForAsync(e);
+        if (fate is EventFate.Refused refused) NoteBiometric(refused.Result.Code);
         return (e, fate);
     }
 
@@ -1874,8 +2108,13 @@ public sealed class AgentHost : IDisposable
 
     // ---- The working day ----------------------------------------------------------------
 
-    /// <summary>Start Day: the day opens at once (journalled), and goes to the server with its time.</summary>
-    public async Task<StartDayOutcome> StartDayAsync()
+    /// <summary>
+    /// Start Day: the day opens at once (journalled), and goes to the server with its time.
+    /// A late first start (3.2) asks for its note first, by the day as known, before anything
+    /// is recorded; the server's 422 LATE_REASON_REQUIRED, when it answers in time, asks the
+    /// same way. Press again with <paramref name="lateReason"/>.
+    /// </summary>
+    public async Task<StartDayOutcome> StartDayAsync(string? lateReason = null)
     {
         var svc = _svc;
         if (svc?.Api.CurrentUser is null) return new StartDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
@@ -1886,6 +2125,9 @@ public sealed class AgentHost : IDisposable
         try
         {
             if (gen != Gen) return new StartDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
+            // C-R11: a running day carries on under the notice; a new one waits for the answer.
+            if (NoticePending && State != AgentState.Running)
+                return new StartDayOutcome.Refused("NOT_READY", "Finish setting up RX Vision first.");
             switch (State)
             {
                 case AgentState.Running:
@@ -1897,9 +2139,15 @@ public sealed class AgentHost : IDisposable
                     return new StartDayOutcome.Refused("NOT_READY", "Finish signing in first.");
             }
             resumed = State == AgentState.DayEnded;
-            e = RecordExpected(EventKinds.StartDay, new EventPayload());
+            var note = string.IsNullOrWhiteSpace(lateReason) ? null : ReasonText.Clean(lateReason);
+            if (note is null && !resumed && IsLateStart(_clock.UtcNow) is { } needs)
+            {
+                _log.Info("day", $"Start Day {needs.MinutesLate} min after the shift start: asking for the note first");
+                return needs;
+            }
+            e = RecordExpected(EventKinds.StartDay, new EventPayload { Reason = note });
             _sync.Poke();
-            _log.Info("day", $"Start Day{(resumed ? " (again)" : "")}");
+            _log.Info("day", $"Start Day{(resumed ? " (again)" : "")}{(note is null ? "" : ", with the late start's note")}");
             ApplyDayLocked(greet: false);
         }
         finally
@@ -1909,12 +2157,115 @@ public sealed class AgentHost : IDisposable
         var fate = await WaitForAsync(e);
         if (fate is EventFate.Refused refused)
         {
-            var outcome = new StartDayOutcome.Refused(refused.Result.Code ?? "REFUSED", refused.Result.Message ?? "Couldn't start your day.");
+            NoteBiometric(refused.Result.Code);
+            if (LateStartRule.FromRefusal(refused.Result) is { } asked)
+            {
+                // The server judged the start late (its day differs from the one known here):
+                // nothing was recorded, so ask and press again.
+                _log.Info("day", "Start Day refused: the late start needs its note");
+                return asked;
+            }
+            var outcome = new StartDayOutcome.Refused(refused.Result.Code ?? "REFUSED", refused.Result.Message ?? "Try starting your day again.");
             _log.Warn("day", $"Start Day refused: {outcome.Code} {outcome.Message}");
             return outcome;
         }
         _ = SafeAsync("day", FetchBreaksAsync);
         return new StartDayOutcome.Started(Workday, resumed);
+    }
+
+    /// <summary>A first Start Day now would be late and wants a note (by today as known), else null.</summary>
+    internal StartDayOutcome.NeedsLateReason? IsLateStart(DateTimeOffset now) =>
+        LateStartRule.Check(_day.View.Workday ?? _day.Base.Workday, _svc?.Api.CurrentUser?.Role, now, BusinessDate(now), BusinessOffset(now),
+            Presets(PresetKinds.LateDayStart), at => Clock12.Format(at.ToOffset(BusinessOffset(at))));
+
+    // ---- The late start's note, the guide, My calendar, leave (3.2 to 3.5) ---------------------
+
+    /// <summary>"Add a note": a late start made without one (another computer, an older agent).</summary>
+    public async Task<ApiResult<JsonElement>> AddLateReasonAsync(string reason)
+    {
+        var svc = _svc;
+        if (svc is null || !svc.Api.IsSignedIn) return NotSignedIn<JsonElement>();
+        var result = await svc.Api.AddLateReasonAsync(reason);
+        if (result.Ok) _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        return result;
+    }
+
+    private const string GuideFile = "guide.json";
+
+    /// <summary>
+    /// The Instructions page from the server (3.2), or the copy an earlier answer left when it
+    /// can't be asked. <c>Fresh</c> false: that copy, or nothing yet.
+    /// </summary>
+    public async Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync()
+    {
+        var path = Path.Combine(_platform.Paths.DataDir, GuideFile);
+        var svc = _svc;
+        if (svc is not null && svc.Api.IsSignedIn)
+        {
+            var result = await svc.Api.GetGuideAsync();
+            if (result.Ok && result.Data is { } guide)
+            {
+                try { AtomicFile.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(guide, Json.Options)); }
+                catch (Exception ex) { _log.Warn("guide", "could not keep the guide on disk", ex); }
+                return (guide, true);
+            }
+        }
+        try
+        {
+            if (File.Exists(path)) return (JsonSerializer.Deserialize<StaffGuide>(File.ReadAllBytes(path), Json.Options), false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("guide", "the kept guide could not be read", ex);
+        }
+        return (null, false);
+    }
+
+    private static ApiResult<T> NotSignedIn<T>() => new() { Outcome = ApiOutcome.Rejected, Message = "Sign in first." };
+
+    /// <summary>The person's own year (GET /calendar/people/:id/year), as My calendar shows it.</summary>
+    public async Task<ApiResult<CalendarYear>> GetCalendarAsync(int year)
+    {
+        var svc = _svc;
+        if (svc?.Api.CurrentUser is not { } user) return NotSignedIn<CalendarYear>();
+        var result = await svc.Api.GetPersonYearAsync(user.Id, year);
+        return result.Ok && result.Data is { } data
+            ? result.As(CalendarYear.From(data, BusinessDate(_clock.UtcNow)))
+            : result.As<CalendarYear>();
+    }
+
+    /// <summary>Balances, comp off, requests and the policy (3.4, 3.5).</summary>
+    public async Task<ApiResult<MyLeave>> GetMyLeaveAsync() =>
+        _svc is { } svc ? await svc.Api.GetMyLeaveAsync() : NotSignedIn<MyLeave>();
+
+    /// <summary>What a request would charge, or the first thing that stops it. Nothing is made.</summary>
+    public async Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body) =>
+        _svc is { } svc ? await svc.Api.PreviewLeaveAsync(body) : NotSignedIn<LeavePreview>();
+
+    public async Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body)
+    {
+        var svc = _svc;
+        if (svc is null) return NotSignedIn<LeaveRequest>();
+        var result = await svc.Api.RequestLeaveAsync(body);
+        if (result.Ok)
+        {
+            RaiseLeaveChanged();
+            _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        }
+        return result;
+    }
+
+    public async Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId)
+    {
+        var svc = _svc;
+        if (svc is null) return NotSignedIn<LeaveRequest>();
+        var result = await svc.Api.CancelLeaveAsync(requestId);
+        if (result.Ok)
+        {
+            RaiseLeaveChanged();
+            _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        }
+        return result;
     }
 
     /// <summary>
@@ -1960,7 +2311,7 @@ public sealed class AgentHost : IDisposable
         var svc = _svc;
         if (svc is null) return new EndDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
         if (State == AgentState.DayEnded) return new EndDayOutcome.Ended(Workday, Workday?.EndedAt);
-        if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Your day hasn't started, so there is nothing to end.");
+        if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Start your day first. There is nothing to end yet.");
         var gen = Gen;
 
         var day = Workday;
@@ -1981,7 +2332,7 @@ public sealed class AgentHost : IDisposable
         {
             if (gen != Gen) return new EndDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
             if (State == AgentState.DayEnded) return new EndDayOutcome.Ended(Workday, Workday?.EndedAt);
-            if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Your day hasn't started, so there is nothing to end.");
+            if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Start your day first. There is nothing to end yet.");
             var now = _clock.UtcNow;
             // A held End Day ends the day when the person ended it (never later than now).
             var endAt = at is { } held && held < now ? held : now;
@@ -2082,7 +2433,7 @@ public sealed class AgentHost : IDisposable
     {
         // Not within hours of a day ending (after a night shift, or End Day after
         // midnight, sitting on is not a new day).
-        if (State != AgentState.NotStarted || RecentlyEnded(out _))
+        if (State != AgentState.NotStarted || RecentlyEnded(out _) || !MayNudge(Workday))
         {
             lock (_gate) _deskNudge.Reset();
             return;
@@ -2112,7 +2463,8 @@ public sealed class AgentHost : IDisposable
     };
 
     private bool OnABreak => BreakPanel.Active is not null || Presence.Status is PresenceStatus.Break or PresenceStatus.Lunch;
-    private bool InAMeeting => LiveMeeting is not null || Presence.Status == PresenceStatus.Meeting;
+    // Presence covers a live meeting record, a status meeting (3.6) and a meeting only the server knows.
+    private bool InAMeeting => Presence.Status == PresenceStatus.Meeting;
 
     /// <summary>Starts a scheduled break (kind MORNING/LUNCH/EVENING), with a reason when needed.</summary>
     public async Task<StartOutcome> TakeBreakAsync(string kind, string? reason)
@@ -2141,7 +2493,7 @@ public sealed class AgentHost : IDisposable
         {
             var early = slot.TimingIfStartedNow == "EARLY";
             return new StartOutcome.NeedsReason(slot.TimingIfStartedNow ?? "LATE", slot.MinutesOffIfStartedNow, panel.MinChars,
-                $"You're starting it {slot.MinutesOffIfStartedNow} min {(early ? "early" : "late")}. Add a reason for your manager.");
+                $"You're starting it {slot.MinutesOffIfStartedNow} min {(early ? "early" : "late")}. Add a reason for your managers.");
         }
         var localId = OfflineDay.NewLocalId();
         var (_, fate) = await RecordAsync(EventKinds.BreakStart, new EventPayload { BreakKind = kind, Reason = ReasonText.Clean(reason), LocalId = localId });
@@ -2244,7 +2596,7 @@ public sealed class AgentHost : IDisposable
         var listed = Workday?.SkipsNeedingComment.FirstOrDefault(s => s.Id == breakId);
         var minChars = Math.Max(1, listed?.MinChars ?? panel.MinChars);
         if (ReasonText.Clean(comment).Length < minChars)
-            return new CommentOutcome.NeedsReason(minChars, $"Add a little more for your manager ({minChars} characters or more).");
+            return new CommentOutcome.NeedsReason(minChars, $"Add a little more for your managers ({minChars} characters or more).");
         var inSlot = panel.Slots.Any(s => s.Record?.Id == breakId);
         if (listed is null && !inSlot) return new CommentOutcome.NotNeeded("That break already has a comment, or is no longer waiting for one.");
         var (_, fate) = await RecordAsync(EventKinds.BreakComment, new EventPayload { TargetId = breakId, Comment = ReasonText.Clean(comment) });
@@ -2267,23 +2619,200 @@ public sealed class AgentHost : IDisposable
             return new EndOutcome.NothingRunning();
         var id = panel.Active?.Id ?? panel.Paused?.Record?.Id;
         var (_, fate) = await RecordAsync(EventKinds.BreakEnd, new EventPayload { TargetId = id });
-        if (fate is EventFate.Refused r) return new EndOutcome.Refused(r.Result.Message ?? "Couldn't end the break.");
+        if (fate is EventFate.Refused r) return new EndOutcome.Refused(r.Result.Message ?? "Try resuming again.");
         _log.Info("breaks", "break ended");
         return new EndOutcome.Ended(id is null ? null : FindRecord(id));
     }
 
-    /// <summary>Meeting ended.</summary>
+    /// <summary>
+    /// End meeting. In a meeting (3.6, a status meeting) ends through the status route, online:
+    /// no answer leaves it running and the person tries again. A meeting with an agenda (4.0,
+    /// journaled, possibly started offline) ends through the journal as before.
+    /// </summary>
     public async Task<EndOutcome> EndMeetingAsync()
     {
-        if (_svc is null) return new EndOutcome.Refused("Sign in first.");
+        var svc = _svc;
+        if (svc is null) return new EndOutcome.Refused("Sign in first.");
         var live = LiveMeeting;
         if (live is null && Presence.Status != PresenceStatus.Meeting) return new EndOutcome.NothingRunning();
+        if (live?.IsStatus == true || (live is null && DayProgress is { InMeeting: true }))
+            return await EndStatusMeetingAsync(svc);
         var (_, fate) = await RecordAsync(EventKinds.MeetingEnd, new EventPayload { TargetId = live?.Id });
         if (fate is EventFate.Refused r && r.Result.Status != 404) return new EndOutcome.Refused(r.Result.Message ?? "Couldn't end the meeting.");
         var ended = live is null ? null : _day.View.Meetings.FirstOrDefault(m => m.Id == live.Id);
         var discarded = live is not null && ended is null;
         _log.Info("meetings", discarded ? "meeting ended under a minute; not kept" : "meeting ended");
         return new EndOutcome.MeetingEnded(ended ?? live, discarded);
+    }
+
+    private async Task<EndOutcome> EndStatusMeetingAsync(AgentServices svc)
+    {
+        _meetings.EndTapped(true);
+        try
+        {
+            switch (await svc.Meetings.EndStatusAsync())
+            {
+                case MeetingStatusOutcome.Done done:
+                    svc.DayProgress.Accept(done.Progress);
+                    await RefreshPresenceAsync();
+                    await FetchMeetingsAsync();
+                    _log.Info("meetings", "status meeting ended");
+                    return new EndOutcome.MeetingEnded(null, false);
+                case MeetingStatusOutcome.Offline offline:
+                    return new EndOutcome.Offline(offline.Message);
+                case MeetingStatusOutcome.Refused refused:
+                    return new EndOutcome.Refused(refused.Message);
+                default:
+                    return new EndOutcome.NothingRunning();
+            }
+        }
+        finally
+        {
+            _meetings.EndTapped(false);
+        }
+    }
+
+    /// <summary>
+    /// Start meeting (3.6), from the button or a suggestion the person tapped: In a meeting at
+    /// once, no form. Only <paramref name="source"/> (<see cref="MeetingSources"/>) travels,
+    /// nothing from the call detectors. It needs the server: with no answer nothing starts.
+    /// </summary>
+    public async Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source)
+    {
+        var svc = _svc;
+        if (svc is null) return new MeetingStatusOutcome.Refused("SIGNED_OUT", "Sign in first.");
+        if (NotRunning() is { } refused) return new MeetingStatusOutcome.Refused(refused.Code, refused.Message);
+        if (OnABreak) return new MeetingStatusOutcome.Refused("ON_BREAK", "End your break first.");
+        if (InAMeeting) return new MeetingStatusOutcome.Refused("MEETING_IN_PROGRESS", "You're already in a meeting.");
+        // Actions still waiting for the server would land after this one, out of order.
+        if (_day.PendingCount > 0)
+        {
+            _sync.Poke();
+            return new MeetingStatusOutcome.Offline("Try again in a moment. Your earlier actions are still being sent.");
+        }
+        var outcome = await svc.Meetings.StartStatusAsync(source);
+        switch (outcome)
+        {
+            case MeetingStatusOutcome.Done done:
+                svc.DayProgress.Accept(done.Progress);
+                await RefreshPresenceAsync();
+                await FetchMeetingsAsync();
+                PresenceChanged?.Invoke(Presence);
+                break;
+            case MeetingStatusOutcome.Refused no:
+                NoteBiometric(no.Code);
+                if (no.Code is "MEETING_IN_PROGRESS" or "ON_BREAK" or "DAY_NOT_STARTED" or "DAY_ENDED")
+                {
+                    await RefreshDayProgressAsync();
+                    await FetchMeetingsAsync();
+                }
+                break;
+        }
+        return outcome;
+    }
+
+    /// <summary>Still in it, on the 2 hour check: the 2 hours start again from now. At or past the fallback the answer reads Working.</summary>
+    public async Task<MeetingStatusOutcome> ConfirmMeetingAsync()
+    {
+        var svc = _svc;
+        if (svc is null) return new MeetingStatusOutcome.Refused("SIGNED_OUT", "Sign in first.");
+        var outcome = await svc.Meetings.ConfirmStatusAsync();
+        if (outcome is MeetingStatusOutcome.Done done)
+        {
+            svc.DayProgress.Accept(done.Progress);
+            await RefreshPresenceAsync();
+            if (!done.Progress.InMeeting) await FetchMeetingsAsync();
+            PresenceChanged?.Invoke(Presence);
+        }
+        return outcome;
+    }
+
+    /// <summary>Not now on a suggestion, or the Back to Working card once read.</summary>
+    public void DismissMeetingAlert(MeetingAlertKind kind) => _meetings.Dismiss(kind);
+
+    /// <summary>The panel closed: the card that only informs has been read.</summary>
+    public void MeetingPanelClosed() => _meetings.PanelClosed();
+
+    /// <summary>Reads the day progress again (at most once a minute from the timer, and on workday:changed and after a change here).</summary>
+    public async Task RefreshDayProgressAsync()
+    {
+        var svc = _svc;
+        if (svc is null || !svc.Api.IsSignedIn || !IsDayState(State)) return;
+        Interlocked.Exchange(ref _progressReadTicks, _clock.UtcNow.UtcTicks);
+        await svc.DayProgress.RefreshAsync();
+    }
+
+    /// <summary>Runs one tick of the call detectors now instead of at its timer (tests).</summary>
+    internal Task CallTickNowAsync() => _meetings.CallTickWhenFreeAsync();
+
+    /// <summary>Tests: a call detector tick (or its window read) is still running.</summary>
+    internal bool CallTicking => _meetings.CallTicking;
+
+    /// <summary>Tests: one second of the meeting check (the prompt on time, the fallback asked for at its moment).</summary>
+    internal void MeetingTickNow() => _meetings.Tick();
+
+    private MeetingCallStatus MeetingCallStatusNow()
+    {
+        if (IsBiometric) return MeetingCallStatus.Other;
+        return Status switch
+        {
+            DayStatus.Working => MeetingCallStatus.Working,
+            DayStatus.InMeeting => MeetingCallStatus.InMeeting,
+            _ => MeetingCallStatus.Other,
+        };
+    }
+
+    /// <summary>A new day progress: the presence and the cards follow it; a moved status reads today's meetings again.</summary>
+    private void OnDayProgress(DayProgress? before, DayProgress now)
+    {
+        Interlocked.Exchange(ref _progressKeptTicks, _clock.UtcNow.UtcTicks);
+        var moved = before?.Status != now.Status;
+        _meetings.OnProgress(before, now);
+        try
+        {
+            DayProgressChanged?.Invoke();
+            if (moved) PresenceChanged?.Invoke(Presence);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("day", "a day-progress handler failed", ex);
+        }
+        if (moved && before is not null)
+        {
+            _ = SafeAsync("day", RefreshPresenceAsync);
+            _ = SafeAsync("day", RefreshExtrasAsync);
+            if (now.Status == DayProgressStatus.Break || before.Status == DayProgressStatus.Break) _ = SafeAsync("breaks", FetchBreaksAsync);
+        }
+    }
+
+    /// <summary>
+    /// The fallback moment has come: the server applies it on any read, and the read's answer moves
+    /// the status. With no answer the agent moves by itself, since the server runs the same switch at
+    /// the same moment; the server's next answer replaces this one.
+    /// </summary>
+    private async Task AskAtFallbackAsync(DayProgress running)
+    {
+        var svc = _svc;
+        if (svc is null) return;
+        if (await svc.DayProgress.RefreshAsync() is not null) return;
+        if (svc.DayProgress.Current is not { InMeeting: true, MeetingFallbackAt: { } fallback } current || fallback != running.MeetingFallbackAt) return;
+        svc.DayProgress.Accept(new DayProgress
+        {
+            Status = DayProgressStatus.Working,
+            Date = current.Date,
+            WorkedSec = current.WorkedSec,
+            TargetSec = current.TargetSec,
+            TargetFromShift = current.TargetFromShift,
+            OverSec = current.OverSec,
+        });
+    }
+
+    private void ForgetMeetingState()
+    {
+        _fallbackRestored = false;
+        _meetings.Reset();
+        Interlocked.Exchange(ref _idleRestartTicks, 0);
+        Interlocked.Exchange(ref _progressKeptTicks, 0);
     }
 
     /// <summary>Starts a live meeting with its agenda, people and who will mail the minutes (focus time keeps counting).</summary>
@@ -2350,7 +2879,7 @@ public sealed class AgentHost : IDisposable
             Participants = ApiClient.CleanParticipants(participants),
             MomSender = ApiClient.CleanName(momSender),
         });
-        if (fate is EventFate.Refused r) return MeetingService.Failed(r.Result, "Couldn't log the meeting.");
+        if (fate is EventFate.Refused r) return MeetingService.Failed(r.Result, "Try logging the meeting again.");
         _log.Info("meetings", $"logged an earlier meeting of {durationMin} min");
         return new MeetingOutcome.Logged(FindMeeting(localId));
     }
@@ -2451,7 +2980,8 @@ public sealed class AgentHost : IDisposable
         bool locked;
         TimeSpan idle;
         try { locked = _platform.Lock.IsLocked; } catch { locked = false; }
-        try { idle = _platform.Idle.IdleTime(); } catch { idle = TimeSpan.Zero; }
+        // 3.6: after a meeting's 2 hour fallback, idle time restarts at the switch.
+        idle = IdleFor;
         var lastActive = new DateTimeOffset(Interlocked.Read(ref _lastActiveTicks), TimeSpan.Zero);
         lastActive = AwayRule.LastActive(lastActive, now, idle, locked);
         Interlocked.Exchange(ref _lastActiveTicks, lastActive.UtcTicks);
@@ -2562,8 +3092,14 @@ public sealed class AgentHost : IDisposable
             // Every 15 minutes, and straight away when the date changes at midnight.
             var svc = _svc;
             if (svc is null) return;
-            var today = DateTime.Now.Date;
+            // Core review C-R07: the business midnight, not the PC's.
+            var today = BusinessDate(_clock.UtcNow);
+            if (_localDate.Length == 0) _localDate = today;
             var newDate = today != _localDate;
+            // The status and the ring (3.6), at most once a minute: an action may have read it just now.
+            if (State == AgentState.Running
+                && _clock.UtcNow.UtcTicks - Interlocked.Read(ref _progressReadTicks) >= ProgressReadEvery.Ticks)
+                _ = SafeAsync("day", RefreshDayProgressAsync);
             if (newDate || DateTimeOffset.UtcNow - svc.Breaks.LastRefresh > TimeSpan.FromMinutes(15))
             {
                 _localDate = today;
@@ -2579,10 +3115,14 @@ public sealed class AgentHost : IDisposable
 
         MarkAlive();
         _ringTimer?.Dispose();
-        _ringTimer = new Timer(_ => Guard("ring", CheckRing), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        _ringTimer = new Timer(_ => Guard("ring", () =>
+        {
+            CheckRing();
+            _meetings.Tick();
+        }), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>Raises RingChanged on transitions and plays the chime while ringing (until acknowledged).</summary>
+    /// <summary>Raises RingChanged on transitions. No sound (3.6): the icon's badge and the break card say it.</summary>
     private readonly object _ringGate = new();
 
     private void CheckRing()
@@ -2603,15 +3143,7 @@ public sealed class AgentHost : IDisposable
         {
             _ringKey = key;
             Ring = ring;
-            _lastChime = DateTimeOffset.MinValue;
             RingChanged?.Invoke(ring);
-        }
-        bool chime;
-        lock (_acknowledgedRings) chime = ring is { Sound: true } && !_acknowledgedRings.Contains(key!);
-        if (chime && DateTimeOffset.UtcNow - _lastChime >= TimeSpan.FromSeconds(20))
-        {
-            _lastChime = DateTimeOffset.UtcNow;
-            try { _platform.Sound.PlayChime(); } catch { }
         }
         WatchClosedWindows(panel, now);
     }
@@ -2635,14 +3167,6 @@ public sealed class AgentHost : IDisposable
             _closedWindows[key] = (seen.Attempts + 1, now);
             _ = SafeAsync("breaks", FetchBreaksAsync);
         }
-    }
-
-    /// <summary>The person opened the agent while it rang: stop the sound (the ring stays visible).</summary>
-    public void AcknowledgeRing()
-    {
-        if (Ring is not { } r) return;
-        var date = _day.View.Breaks?.Date ?? "";
-        lock (_acknowledgedRings) _acknowledgedRings.Add($"{date}|{r.Kind}");
     }
 
     // ---- Sign-out and quit (4.0: an admin's key) ----------------------------------------
@@ -2745,6 +3269,7 @@ public sealed class AgentHost : IDisposable
             svc.Breaks.Reset();
             svc.Chat.Reset();
             svc.Workday.Reset();
+            svc.DayProgress.Reset();
             svc.Meetings.Reset();
             svc.Approvals.Reset();
             if (callLogout) await svc.Api.LogoutAsync();
@@ -2764,6 +3289,7 @@ public sealed class AgentHost : IDisposable
         _enrollment = null;
         _dayKnown = false;
         _greetedDate = null;
+        _biometricRefused = false;
         // A shared computer stays set up for the next person: the app starts with Windows.
         if (!keepAutostart)
         {
@@ -2776,6 +3302,7 @@ public sealed class AgentHost : IDisposable
     private async Task OnSessionLostAsync(string reason)
     {
         _handover.Reset();
+        _biometricRefused = false;
         Interlocked.Increment(ref _sessionGen);
         StopTracking();
         StopNudges();
@@ -2790,6 +3317,7 @@ public sealed class AgentHost : IDisposable
             svc.Breaks.Reset();
             svc.Chat.Reset();
             svc.Workday.Reset();
+            svc.DayProgress.Reset();
             svc.Meetings.Reset();
             svc.Approvals.Reset();
         }
@@ -2830,9 +3358,12 @@ public sealed class AgentHost : IDisposable
             _drainTimer?.Dispose(); _drainTimer = null;
         }
         _reconnect?.Dispose(); _reconnect = null;
+        _featuresTimer?.Dispose(); _featuresTimer = null;
+        Features = new();
+        ForgetMeetingState();
+        SetNoticePending(false);
         StopStoreRetry();
         lock (_ringGate) _closedWindows.Clear();
-        lock (_acknowledgedRings) _acknowledgedRings.Clear();
         lock (_toldScopes) _toldScopes.Clear();
         _heldEndDay = null;
         if (Ring is not null)

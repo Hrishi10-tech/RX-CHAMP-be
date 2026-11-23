@@ -24,11 +24,11 @@ public interface IPlatform
     ILockProbe Lock { get; }
     ISleepClock SleepClock { get; }
     IForegroundProbe Foreground { get; }
+    ICallWindowProbe CallWindows { get; }
     IScreenCapture Screen { get; }
     ISecretStore Secrets { get; }
     IAutostart Autostart { get; }
     IPermissions Permissions { get; }
-    ISoundPlayer Sound { get; }
     IScreenInfo ScreenInfo { get; }
     IUpdateInstaller Updater { get; }
     IShell Shell { get; }
@@ -88,6 +88,23 @@ public interface IForegroundProbe
     ForegroundInfo Snapshot(bool includeUrl);
 }
 
+/// <summary>A top-level window of a process the call detectors watch. <see cref="ClassName"/> is Windows only.</summary>
+public sealed record CallWindow(string Owner, string? Title, string? ClassName = null);
+
+/// <summary>
+/// The window read behind the call detectors (AGENT.md section 6, O-14): a call is often behind
+/// another window, so the foreground sample alone would miss it. It reads the listed processes'
+/// windows and no others; the caller keeps nothing past its tick and sends nothing.
+/// </summary>
+public interface ICallWindowProbe
+{
+    /// <summary>The visible top-level windows of these processes (Windows) or window owners (macOS).</summary>
+    IReadOnlyList<CallWindow> WindowsOf(IReadOnlyCollection<string> owners);
+
+    /// <summary>The tab titles of a browser, for a call whose tab may be behind another. Empty when it cannot say.</summary>
+    IReadOnlyList<string> TabTitlesOf(string browserOwner);
+}
+
 public sealed record CapturedImage(byte[] Bytes, string ContentType, int Width, int Height);
 
 public interface IScreenCapture
@@ -126,12 +143,6 @@ public interface IPermissions
     void RequestScreenRecording();
     void OpenScreenRecordingSettings();
     void OpenAccessibilitySettings();
-}
-
-public interface ISoundPlayer
-{
-    /// <summary>Plays the break chime once (non-blocking).</summary>
-    void PlayChime();
 }
 
 public interface IScreenInfo

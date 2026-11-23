@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using RXVision.Agent.Core.Activity;
 using RXVision.Agent.Core.Api;
+using RXVision.Agent.Core.Avatars;
 using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Config;
 using RXVision.Agent.Core.Meetings;
@@ -246,6 +247,8 @@ public sealed class AgentHost : IDisposable
     public ChatService? Chat => _svc?.Chat;
     /// <summary>Tests: the live notification socket's service.</summary>
     internal NotificationService? Notifications => _svc?.Notifications;
+    /// <summary>The signed-in person's avatar, by ID.</summary>
+    public AvatarService? Avatars => _svc?.Avatars;
     public BreakService? Breaks => _svc?.Breaks;
     public UpdateOffer? PendingUpdate { get; private set; }
     public int PendingSamples => _queue?.Count ?? 0;
@@ -333,6 +336,10 @@ public sealed class AgentHost : IDisposable
     /// break or meeting buttons, and no reminders to start the day.
     /// </summary>
     public bool IsBiometric => _biometricRefused || Workday?.IsBiometric == true;
+
+    /// <summary>GET /me/day-progress: the status and today's ring, for the avatar's live preview.</summary>
+    public Task<ApiResult<DayProgress>> GetDayProgressAsync() =>
+        _svc?.Api.GetDayProgressAsync() ?? Task.FromResult(ApiResult<DayProgress>.TransientFailure("Sign in again to carry on."));
 
     /// <summary>The organisation's quick answers for a comment box (3.2; empty when none are known).</summary>
     public IReadOnlyList<string> Presets(string kind) =>
@@ -427,6 +434,10 @@ public sealed class AgentHost : IDisposable
     public event Action<ChatMessage>? ChatMessageReceived;
     public event Action<int>? ChatUnreadChanged;
     public event Action<NotificationItem>? NotificationReceived;
+    /// <summary>What this person's icon shows changed: a save, a push, a read, a sign-in.</summary>
+    public event Action? MyAvatarChanged;
+    /// <summary>Someone else's avatar changed: their user ID and avatar ID.</summary>
+    public event Action<string, string?>? PersonAvatarChanged;
     /// <summary>The ring started (non-null) or stopped (null).</summary>
     public event Action<RingView?>? RingChanged;
     /// <summary>A break of today was auto-skipped while the day ran and needs a comment (once per break).</summary>
@@ -457,6 +468,7 @@ public sealed class AgentHost : IDisposable
         // First, before anything that can wait on the person: the Mac update script
         // keeps the previous build until this one has reported itself and stayed up.
         UpdateService.ReportRunning(_platform.Paths.DataDir, AgentOptions.AppVersion, _log);
+        if (AvatarLibrary.Bundled.LoadError is { } broken) _log.Warn("avatar", $"the bundled avatars could not be read, so everyone shows the RX mark: {broken}");
         await _signInGate.WaitAsync();
         try
         {
@@ -510,6 +522,8 @@ public sealed class AgentHost : IDisposable
             saved = null;
         }
         UseServer(baseUrl);
+        // Before any answer: a start with no network still draws the person's own avatar.
+        if (saved is not null) _svc!.Avatars.Seed(saved.AvatarId, saved.DisplayName);
 
         if (saved is not null)
         {
@@ -808,6 +822,9 @@ public sealed class AgentHost : IDisposable
             if (what.StartsWith("WORKDAY", StringComparison.Ordinal)) _ = SafeAsync("day", RefreshDayProgressAsync);
         };
         svc.DayProgress.Changed += OnDayProgress;
+        svc.Avatars.Changed += () => MyAvatarChanged?.Invoke();
+        svc.Notifications.AvatarChanged += OnAvatarChanged;
+        svc.Notifications.Connected += () => _ = SafeAsync("avatar", ReadAvatarsAgainAsync);
         svc.Notifications.Connected += () =>
         {
             // Core review C-R06: socket events are not replayed, so a reconnect reads the day
@@ -882,6 +899,33 @@ public sealed class AgentHost : IDisposable
                 _ = SafeAsync("day", () => DayCheckAsync(greet: false));
                 RaiseLeaveChanged();
                 break;
+        }
+    }
+
+    /// <summary>avatar:changed: this person's own icon, or someone in their chat.</summary>
+    internal void OnAvatarChanged(AvatarChange change)
+    {
+        if (_svc is not { } svc) return;
+        if (change.UserId == svc.Api.CurrentUser?.Id)
+        {
+            svc.Avatars.OnPushed(change.AvatarId);
+            return;
+        }
+        svc.Chat.SetAvatar(change.UserId, change.AvatarId);
+        PersonAvatarChanged?.Invoke(change.UserId, change.AvatarId);
+    }
+
+    /// <summary>The socket is up again: whatever changed while it was down was not replayed.</summary>
+    internal async Task ReadAvatarsAgainAsync()
+    {
+        if (_svc is not { Api.IsSignedIn: true } svc) return;
+        await svc.Avatars.RefreshAsync();
+        var known = svc.Chat.Contacts.ToDictionary(c => c.UserId, c => c.AvatarId);
+        if (!await svc.Chat.LoadContactsAsync()) return;
+        foreach (var contact in svc.Chat.Contacts)
+        {
+            if (known.TryGetValue(contact.UserId, out var was) && was != contact.AvatarId)
+                PersonAvatarChanged?.Invoke(contact.UserId, contact.AvatarId);
         }
     }
 
@@ -1000,6 +1044,7 @@ public sealed class AgentHost : IDisposable
         _dayKnown = false;
         _log.Info("session", $"signed in as {user.Id} ({user.Role}) on {svc.Api.BaseUri.Host}");
         svc.Screenshots.AutoEnabled = user.ScreenshotsEnabled;
+        svc.Avatars.Seed(user.AvatarId, user.DisplayName);
 
         try { _platform.Autostart.Enable(); }
         catch (Exception ex) { _log.Warn("session", "could not enable start at login", ex); }
@@ -1020,6 +1065,7 @@ public sealed class AgentHost : IDisposable
         svc.Updates.Start();
         _ = SafeAsync("chat", () => svc.Chat.LoadContactsAsync());
         _ = SafeAsync("chat", () => svc.Chat.RefreshUnreadAsync());
+        _ = SafeAsync("avatar", () => svc.Avatars.RefreshAsync());
         var gen = Gen;
         _ = SafeAsync("session", () => RefreshUserAsync(svc, gen));
         StartBreakTimers();
@@ -3268,6 +3314,7 @@ public sealed class AgentHost : IDisposable
             svc.StopAll();
             svc.Breaks.Reset();
             svc.Chat.Reset();
+            svc.Avatars.Reset();
             svc.Workday.Reset();
             svc.DayProgress.Reset();
             svc.Meetings.Reset();
@@ -3316,6 +3363,7 @@ public sealed class AgentHost : IDisposable
             // this person's journal and samples stay on disk for their next sign-in.
             svc.Breaks.Reset();
             svc.Chat.Reset();
+            svc.Avatars.Reset();
             svc.Workday.Reset();
             svc.DayProgress.Reset();
             svc.Meetings.Reset();

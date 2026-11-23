@@ -175,8 +175,10 @@ public sealed class ApiClient : IDisposable
             FirstName = saved.DisplayName,
             Role = saved.Role,
             ScreenshotsEnabled = saved.ScreenshotsEnabled,
+            AvatarId = saved.AvatarId,
         };
         CurrentUser = user;
+        Volatile.Write(ref _avatarId, user.AvatarId);
         Interlocked.Exchange(ref _sessionLostRaised, 0);
         SignedIn?.Invoke(user);
         return user;
@@ -199,6 +201,7 @@ public sealed class ApiClient : IDisposable
             FirstName = saved.DisplayName,
             Role = saved.Role,
             ScreenshotsEnabled = saved.ScreenshotsEnabled,
+            AvatarId = saved.AvatarId,
         };
         OnAuthenticated(user);
         return new AuthResult(ApiOutcome.Ok, user, null);
@@ -252,6 +255,7 @@ public sealed class ApiClient : IDisposable
     private void OnAuthenticated(PublicUser user)
     {
         CurrentUser = user;
+        Volatile.Write(ref _avatarId, user.AvatarId);
         Interlocked.Exchange(ref _sessionLostRaised, 0);
         Persist();
         SignedIn?.Invoke(user);
@@ -273,7 +277,16 @@ public sealed class ApiClient : IDisposable
             DisplayName = CurrentUser.DisplayName,
             Role = CurrentUser.Role,
             ScreenshotsEnabled = CurrentUser.ScreenshotsEnabled,
+            AvatarId = Volatile.Read(ref _avatarId),
         });
+    }
+
+    private string? _avatarId;
+
+    /// <summary>Keeps the avatar's ID with the saved session, so the next start can draw it before any answer.</summary>
+    public void RememberAvatar(string? avatarId)
+    {
+        if (Interlocked.Exchange(ref _avatarId, avatarId) != avatarId) Persist();
     }
 
     private void SeedRefreshCookie(string refreshToken)
@@ -417,6 +430,18 @@ public sealed class ApiClient : IDisposable
 
     public Task<ApiResult<object>> HeartbeatAsync(bool idle, CancellationToken ct = default) =>
         SendJsonAsync<object>(HttpMethod.Post, "presence/heartbeat", new { idle }, ct);
+
+    // ---- Avatars and the ring (3.6) -------------------------------------------------------
+
+    public Task<ApiResult<MyAvatar>> GetMyAvatarAsync(CancellationToken ct = default) =>
+        SendJsonAsync<MyAvatar>(HttpMethod.Get, "me/avatar", null, ct);
+
+    /// <summary>PUT /me/avatar: an ID from the manifest, nothing else. The server keeps only the ID.</summary>
+    public Task<ApiResult<MyAvatar>> SetMyAvatarAsync(string avatarId, CancellationToken ct = default) =>
+        SendJsonAsync<MyAvatar>(HttpMethod.Put, "me/avatar", new { avatarId }, ct);
+
+    public Task<ApiResult<MyAvatar>> ResetMyAvatarAsync(CancellationToken ct = default) =>
+        SendJsonAsync<MyAvatar>(HttpMethod.Delete, "me/avatar", null, ct);
 
     // ---- Activity ---------------------------------------------------------------------
 

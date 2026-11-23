@@ -52,6 +52,12 @@ public sealed class ChatService
     public string NameOf(string userId) =>
         _contacts.FirstOrDefault(c => c.UserId == userId)?.Name ?? "Someone";
 
+    /// <summary>A contact's avatar changed (the socket's avatar:changed).</summary>
+    public void SetAvatar(string userId, string? avatarId)
+    {
+        if (_contacts.FirstOrDefault(c => c.UserId == userId) is { } contact) contact.AvatarId = avatarId;
+    }
+
     public async Task<bool> LoadContactsAsync(CancellationToken ct = default)
     {
         var result = await _api.GetChatContactsAsync(ct);

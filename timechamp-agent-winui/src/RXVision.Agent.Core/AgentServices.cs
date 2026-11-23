@@ -1,6 +1,7 @@
 using RXVision.Agent.Core.Activity;
 using RXVision.Agent.Core.Api;
 using RXVision.Agent.Core.Approvals;
+using RXVision.Agent.Core.Avatars;
 using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Config;
 using RXVision.Agent.Core.Meetings;
@@ -28,6 +29,7 @@ public sealed class AgentServices : IDisposable
     public ApprovalService Approvals { get; }
     public ScreenshotService Screenshots { get; }
     public ChatService Chat { get; }
+    public AvatarService Avatars { get; }
     public NotificationService Notifications { get; }
     public UpdateService Updates { get; }
     public SocketChannel ScreenshotSocket { get; }
@@ -50,6 +52,7 @@ public sealed class AgentServices : IDisposable
         Approvals = new ApprovalService(Api, log);
         Screenshots = new ScreenshotService(Api, platform, options, log);
         Chat = new ChatService(Api, new SocketChannel(Api, "/chat", log), log);
+        Avatars = new AvatarService(Api, log);
         Notifications = new NotificationService(new SocketChannel(Api, "/notifications", log), log);
         Updates = new UpdateService(Api, platform, options, log);
         ScreenshotSocket = new SocketChannel(Api, "/screenshots", log);

@@ -123,8 +123,8 @@ export class WfhController {
   @Roles(...OVERSEERS)
   @ApiOperation({
     summary:
-      'Requests in scope (Manager: own team; Super Manager, Super Admin: everyone, one organisation or ' +
-      "one manager's team), waiting first",
+      'Requests in scope (Manager: their departments; Admin: their organisation; Super Manager, Super Admin: one organisation or ' +
+      'All organisations), waiting first',
   })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() q: ListWfhQueryDto) {
     return envelope(await this.requests.list(me, q, new Date()));
@@ -140,7 +140,8 @@ export class WfhController {
   @HttpCode(200)
   @Roles(...OVERSEERS)
   @ApiOperation({
-    summary: 'Approve (the reporting manager, the Super Manager for a Manager, a Super Admin)',
+    summary:
+      "Approve (the department's managers, else the organisation admin; the platform roles in view)",
   })
   async approve(
     @CurrentUser() me: AuthenticatedUser,
@@ -194,7 +195,7 @@ export class WfhController {
   @Roles(...OVERSEERS)
   @ApiOperation({
     summary:
-      'Set a schedule for someone (their Manager, the Super Manager, a Super Admin): weekdays, some weeks ' +
+      "Set a schedule for someone (their department's managers, the organisation admin, the platform roles): weekdays, some weeks " +
       'of the month if wanted, full, half or quarter day, from a date. 409 WFH_SCHEDULE_OVERLAP',
   })
   async createSchedule(@CurrentUser() me: AuthenticatedUser, @Body() body: WfhScheduleDto) {

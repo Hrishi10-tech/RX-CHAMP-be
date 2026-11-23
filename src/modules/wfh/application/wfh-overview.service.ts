@@ -47,7 +47,9 @@ export class WfhOverviewService {
       this.requests.mine(me, now),
       this.schedules.mine(me, now),
       this.days.byDay([me.id], `${month}-01`, monthEnd),
-      this.policies.get(person?.companyId ?? orgOf(me)),
+      // The policy preview and create apply: the person's own organisation's (a platform
+      // role has none, so the platform policy), never the organisation in view.
+      this.policies.get(person ? person.companyId : orgOf(me)),
     ]);
     const mine = byDay.get(me.id) ?? new Map();
     const t = mine.get(today);

@@ -13,9 +13,11 @@ export const APPROVER_ROUTES = ['MANAGER', 'SUPER_MANAGER', 'SUPER_ADMIN'] as co
 export type ApproverRoute = (typeof APPROVER_ROUTES)[number];
 
 export const APPROVER_ROUTE_LABEL: Record<ApproverRoute, string> = {
-  MANAGER: "The person's manager",
+  // 4.0: routing is by department (see routing.ts); SUPER_ADMIN routes to the
+  // organisation admin (the Super Admins for an admin, or without one).
+  MANAGER: "The department's managers",
   SUPER_MANAGER: 'The Super Manager',
-  SUPER_ADMIN: 'The Super Admins',
+  SUPER_ADMIN: 'The organisation admin',
 };
 
 export interface LeavePolicy {

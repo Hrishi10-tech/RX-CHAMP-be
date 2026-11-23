@@ -110,7 +110,7 @@ export class WfhPolicyService {
         ? "Your department's managers approve it (the organisation admin without one)."
         : p.approver === 'SUPER_MANAGER'
           ? 'The Super Manager approves it.'
-          : 'The Super Admins approve it.';
+          : 'The organisation admin approves it.';
     return `${notice}${cap}. ${who}`;
   }
 

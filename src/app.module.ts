@@ -11,6 +11,7 @@ import { WebsocketModule } from '@shared/websocket/websocket.module';
 import { AppLoggerModule } from '@shared/logger/logger.module';
 import { TenancyModule } from '@shared/tenancy/tenancy.module';
 import { AuditModule } from '@shared/audit/audit.module';
+import { FeaturesModule } from '@shared/features/features.module';
 
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from '@modules/users/users.module';
@@ -52,6 +53,7 @@ import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
     SecurityModule,
     EventsModule,
     WebsocketModule,
+    FeaturesModule,
     AuthModule,
     UsersModule,
     RolesModule,

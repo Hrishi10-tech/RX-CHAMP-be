@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { lockMonthExclusive } from '@shared/database/month-lock';
 import {
@@ -172,13 +173,14 @@ export class PrismaReportStore implements ReportStore {
         userId: true,
         date: true,
         startedAt: true,
-        user: { select: { firstName: true, lastName: true } },
+        user: { select: { firstName: true, lastName: true, ...AVATAR_COLUMNS } },
       },
     });
     return rows.map((r) => ({
       userId: r.userId,
       userName:
         [r.user?.firstName, r.user?.lastName].filter(Boolean).join(' ').trim() || 'Former user',
+      avatarId: r.user ? effectiveAvatarId(r.user) : null,
       date: r.date,
       startedAt: r.startedAt.toISOString(),
     }));
@@ -221,18 +223,20 @@ export class PrismaReportStore implements ReportStore {
     const people = rows.length
       ? await this.prisma.user.findMany({
           where: { id: { in: [...new Set(rows.map((r) => r.userId))] } },
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, ...AVATAR_COLUMNS },
         })
       : [];
     const nameOf = new Map(
       people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim() || 'Former user'] as const),
     );
+    const avatarOf = new Map(people.map((p) => [p.id, effectiveAvatarId(p)] as const));
     return {
       count,
       items: rows.map((r) => ({
         id: r.id,
         userId: r.userId,
         userName: nameOf.get(r.userId) ?? 'Former user',
+        avatarId: avatarOf.get(r.userId) ?? null,
         category: r.category,
         startDate: r.startDate,
         endDate: r.endDate,
@@ -265,18 +269,20 @@ export class PrismaReportStore implements ReportStore {
     const people = rows.length
       ? await this.prisma.user.findMany({
           where: { id: { in: [...new Set(rows.map((r) => r.userId))] } },
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, ...AVATAR_COLUMNS },
         })
       : [];
     const nameOf = new Map(
       people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim() || 'Former user'] as const),
     );
+    const avatarOf = new Map(people.map((p) => [p.id, effectiveAvatarId(p)] as const));
     return {
       count,
       items: rows.map((r) => ({
         id: r.id,
         userId: r.userId,
         userName: nameOf.get(r.userId) ?? 'Former user',
+        avatarId: avatarOf.get(r.userId) ?? null,
         startDate: r.startDate,
         endDate: r.endDate,
         days: r.units / 4,

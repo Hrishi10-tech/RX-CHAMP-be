@@ -48,6 +48,8 @@ export interface AgentHealthRow {
   departmentId: string | null;
   companyId: string | null;
   companyName: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
   /** How the person's day is recorded (3.5): BIOMETRIC staff need no agent, so they carry no flags. */
   attendance?: 'AGENT' | 'BIOMETRIC';
   agent: {

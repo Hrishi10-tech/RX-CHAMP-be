@@ -6,6 +6,8 @@ export interface TeamMemberRef {
   lastName: string;
   email: string;
   department: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export interface TeamMemberWithManager extends TeamMemberRef {
@@ -17,6 +19,7 @@ export interface TeamMemberView {
   name: string;
   email: string;
   department: string | null;
+  avatarId: string | null;
 }
 
 export function fullName(member: Pick<TeamMemberRef, 'firstName' | 'lastName'>): string {

@@ -314,6 +314,8 @@ describe('toPerson', () => {
       attendanceSource: 'AGENT',
       biometricCode: null,
       attendanceSourceFrom: null,
+      gender: null,
+      avatarId: null,
     };
     expect(toPerson(row).active).toBe(false);
     expect(toPerson({ ...row, deletedAt: null }).active).toBe(true);

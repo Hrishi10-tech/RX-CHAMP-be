@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { isOrgAdmin } from '@shared/rbac/roles.enum';
 import { seesWholeOrg } from '@shared/tenancy';
 import { UserMapper } from '../mappers/user.mapper';
 import { UserAccessService } from '../../domain/services/user-access.service';
@@ -46,6 +48,10 @@ function endOfDay(date?: string): Date | undefined {
  *  - Manager: the Staff of their departments, name, email, designation and department only.
  *  - Staff: themselves, the same few fields.
  * The caller's scope is applied last, so no filter can reach outside it.
+ *
+ * 3.6: `gender` filters (MALE, FEMALE, UNSET) for those who set it, the organisation
+ * admin and Super Admins (403 GENDER_FORBIDDEN otherwise); rows carry `avatarId`, and
+ * `gender` where the caller may set it (canSetGender).
  */
 @Injectable()
 export class ListUsersUseCase {
@@ -57,6 +63,12 @@ export class ListUsersUseCase {
   ) {}
 
   async execute(me: AuthenticatedUser, query: ListUsersQueryDto = {}): Promise<ListUsersResult> {
+    if (query.gender && !isOrgAdmin(me.role)) {
+      throw new ForbiddenError(
+        'Only the organisation admin or a Super Admin can filter by gender.',
+        'GENDER_FORBIDDEN',
+      );
+    }
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const scope = this.access.listScopeFor(me);
@@ -77,6 +89,7 @@ export class ListUsersUseCase {
       department: query.department,
       joinedFrom: startOfDay(query.joinedFrom),
       joinedTo: endOfDay(query.joinedTo),
+      ...(query.gender ? { gender: query.gender === 'UNSET' ? null : query.gender } : {}),
       ...scope,
       departmentIds,
     };
@@ -94,7 +107,7 @@ export class ListUsersUseCase {
     const now = new Date();
     const presence = await this.presence.presenceFor(list.map((u) => u.id));
     return {
-      users: list.map((u) => UserMapper.toListItem(u, presence.get(u.id), now)),
+      users: list.map((u) => UserMapper.toListItem(u, presence.get(u.id), now, me)),
       total,
       page,
       limit,

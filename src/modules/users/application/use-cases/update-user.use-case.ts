@@ -3,10 +3,12 @@ import { AuditEntry, AuditLogService } from '@shared/audit/audit-log.service';
 import { ConflictError, ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { effectiveAvatarId } from '@shared/avatars/person-avatar';
+import { AvatarChangedEvent } from '@shared/events/avatar-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { requireOrg } from '@shared/tenancy';
 import { User } from '../../domain/entities/user.entity';
-import { UserAccessService } from '../../domain/services/user-access.service';
+import { UserAccessService, canSetGender } from '../../domain/services/user-access.service';
 import {
   FormerPlacement,
   UserAccessChangedEvent,
@@ -34,6 +36,12 @@ import { resolvePlacement, sameGrants, sameIds } from '../people-placement';
  *
  * A change of role, department(s) or grants reconnects the person's live sockets
  * with the right rooms (UserAccessChangedEvent ROLE) and is audited.
+ *
+ * 3.6 gender (the avatar library) is set by whoever edits the person as their
+ * organisation admin or a Super Admin (canSetGender): an Admin for its Managers and
+ * Staff, a Super Admin for anyone but another Super Admin, and for themselves (nobody
+ * else can). The Super Manager, Managers and Staff get 403 GENDER_FORBIDDEN. A changed
+ * gender resets the avatar to the new default and pushes avatar:changed.
  */
 @Injectable()
 export class UpdateUserUseCase {
@@ -48,8 +56,9 @@ export class UpdateUserUseCase {
 
   async execute(me: AuthenticatedUser, targetId: string, dto: UpdateUserDto): Promise<PublicUser> {
     const found = await this.users.findById(targetId);
-    if (found && found.id === me.id) return this.selfRename(found, dto);
+    if (found && found.id === me.id) return this.selfRename(me, found, dto);
     const target = this.access.assertCanEdit(me, found);
+    if (dto.gender !== undefined && !canSetGender(me, target)) throw genderForbidden();
     const placementAsked =
       dto.role !== undefined ||
       dto.departmentId !== undefined ||
@@ -152,7 +161,10 @@ export class UpdateUserUseCase {
       accessChanged = audits.some((a) => a.action !== 'USER_EMAIL_CHANGED');
     }
 
+    const genderChanged = dto.gender !== undefined && target.changeGender(dto.gender);
+
     const saved = await this.users.save(target);
+    if (genderChanged) await this.avatarChanged(saved);
     if (accessChanged) {
       await this.events.publish(
         UserAccessChangedEvent.eventName,
@@ -166,10 +178,21 @@ export class UpdateUserUseCase {
       );
     }
     await this.audit.recordMany(audits);
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 
-  private async selfRename(self: User, dto: UpdateUserDto): Promise<PublicUser> {
+  private async avatarChanged(saved: User): Promise<void> {
+    await this.events.publish(
+      AvatarChangedEvent.eventName,
+      new AvatarChangedEvent(saved.id, effectiveAvatarId(saved), saved.companyId),
+    );
+  }
+
+  private async selfRename(
+    me: AuthenticatedUser,
+    self: User,
+    dto: UpdateUserDto,
+  ): Promise<PublicUser> {
     const restricted =
       dto.email !== undefined ||
       dto.designation !== undefined ||
@@ -182,13 +205,26 @@ export class UpdateUserUseCase {
         'You can change your own name only. Ask your organisation admin to change anything else.',
       );
     }
-    if (dto.firstName !== undefined || dto.lastName !== undefined) {
+    // 3.6: a Super Admin sets their own gender (nobody else can); anyone else, 403.
+    if (dto.gender !== undefined && !canSetGender(me, self)) throw genderForbidden();
+    const renamed = dto.firstName !== undefined || dto.lastName !== undefined;
+    if (renamed) {
       const first = (dto.firstName ?? self.firstName).trim();
       if (!first)
         throw new ValidationError('Enter a first name.').withDetails({ field: 'firstName' });
       self.rename(first, (dto.lastName ?? self.lastName).trim());
-      return UserMapper.toPublic(await this.users.save(self));
     }
-    return UserMapper.toPublic(self);
+    const genderChanged = dto.gender !== undefined && self.changeGender(dto.gender);
+    if (!renamed && !genderChanged) return UserMapper.toPublic(self, me);
+    const saved = await this.users.save(self);
+    if (genderChanged) await this.avatarChanged(saved);
+    return UserMapper.toPublic(saved, me);
   }
+}
+
+function genderForbidden(): ForbiddenError {
+  return new ForbiddenError(
+    'Only the organisation admin or a Super Admin can set gender.',
+    'GENDER_FORBIDDEN',
+  );
 }

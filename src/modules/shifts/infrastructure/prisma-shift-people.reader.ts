@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import {
   DepartmentCount,
@@ -27,6 +28,7 @@ const SELECT = {
   attendanceSource: true,
   biometricCode: true,
   attendanceSourceFrom: true,
+  ...AVATAR_COLUMNS,
 } as const;
 
 /** 3.3: with the organisation's name (combined views show it on every row). */
@@ -60,6 +62,7 @@ export function toPerson(r: Row): ShiftPerson {
     attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
     biometricCode: r.biometricCode ?? null,
     attendanceSourceFrom: r.attendanceSourceFrom ?? null,
+    avatarId: effectiveAvatarId(r),
   };
 }
 

@@ -138,6 +138,8 @@ export interface PendingBlocker {
   category: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId?: string | null;
   approverId: string | null;
   approverName: string | null;
   /** SUPER_ADMIN for the Super Admin pool, else the approver's role. */

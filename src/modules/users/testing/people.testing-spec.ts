@@ -39,6 +39,8 @@ export interface PersonOver {
   managed?: string[];
   status?: UserStatus;
   grants?: { screenshots: boolean; timeline: boolean; activity: boolean };
+  gender?: 'MALE' | 'FEMALE' | null;
+  avatarId?: string | null;
 }
 
 export function person(over: PersonOver = {}): User {
@@ -69,6 +71,8 @@ export function person(over: PersonOver = {}): User {
     grantScreenshots: over.grants?.screenshots ?? false,
     grantTimeline: over.grants?.timeline ?? false,
     grantActivity: over.grants?.activity ?? false,
+    gender: over.gender ?? null,
+    avatarId: over.avatarId ?? null,
   });
 }
 

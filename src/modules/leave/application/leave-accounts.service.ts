@@ -620,6 +620,7 @@ export class LeaveAccountsService {
       id: r.id,
       userId: r.userId,
       userName: fullName(people.get(r.userId)),
+      avatarId: people.get(r.userId)?.avatarId ?? null,
       companyName: people.get(r.userId)?.companyName ?? null,
       year: r.year,
       category: r.category,

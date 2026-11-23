@@ -60,6 +60,7 @@ export class PostgresUserRepository implements UserRepository {
       };
     }
     if (filter.status) where.status = filter.status;
+    if (filter.gender !== undefined) where.gender = filter.gender;
     // Both bounds are whole days, resolved by the caller — see ListUsersUseCase.
     if (filter.joinedFrom || filter.joinedTo) {
       where.createdAt = {
@@ -165,6 +166,8 @@ export class PostgresUserRepository implements UserRepository {
         : {}),
       ...(u.idleEnabled !== undefined ? { idleEnabled: u.idleEnabled } : {}),
       ...(u.idleMinutes !== undefined ? { idleMinutes: u.idleMinutes } : {}),
+      ...(u.gender !== undefined ? { gender: u.gender } : {}),
+      ...(u.avatarId !== undefined ? { avatarId: u.avatarId } : {}),
     };
   }
 

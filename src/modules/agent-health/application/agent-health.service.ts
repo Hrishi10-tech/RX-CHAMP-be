@@ -120,6 +120,7 @@ export class AgentHealthService {
         departmentId: p.departmentId,
         companyId: p.companyId,
         companyName: p.companyName,
+        avatarId: p.avatarId ?? null,
         agent: {
           version,
           signedIn: signIn.signedIn,

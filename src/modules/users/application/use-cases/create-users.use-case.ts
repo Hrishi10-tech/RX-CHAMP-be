@@ -1,8 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuditLogService } from '@shared/audit/audit-log.service';
-import { ConflictError, NotFoundError, ValidationError } from '@shared/exceptions/app.exception';
+import { effectiveAvatarId } from '@shared/avatars/person-avatar';
+import { AvatarChangedEvent } from '@shared/events/avatar-changed.event';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
+import { Role, isOrgAdmin } from '@shared/rbac/roles.enum';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { UserAccessChangedEvent } from '@shared/events/user-access-changed.event';
 import { PASSWORD_HASHER, PasswordHasher } from '@shared/security/password-hasher.port';
@@ -48,6 +55,11 @@ function emailInUse(): ConflictError {
  *
  * Re-adding the email of a blocked account the caller may edit reactivates it with
  * the new details and password, so old credentials never come back.
+ *
+ * Gender (3.6, it picks the avatar library) is optional: the organisation's Admin
+ * or a Super Admin may send it (canSetGender); the Super Manager, who also adds
+ * Staff, may not (403 GENDER_FORBIDDEN), and that person shows initials until an
+ * admin sets it.
  */
 @Injectable()
 export class CreateUsersUseCase {
@@ -68,6 +80,12 @@ export class CreateUsersUseCase {
     single = false,
   ): Promise<CreateUsersResult> {
     const org = this.access.assertCanCreate(me);
+    if (!isOrgAdmin(me.role) && incoming.some((row) => row.gender !== undefined)) {
+      throw new ForbiddenError(
+        'Only the organisation admin or a Super Admin can set gender.',
+        'GENDER_FORBIDDEN',
+      );
+    }
     const created: PublicUser[] = [];
     const errors: CreateUsersResult['errors'] = [];
     for (const row of incoming) {
@@ -143,7 +161,14 @@ export class CreateUsersUseCase {
         existing.role !== Role.SUPER_MANAGER &&
         this.access.ownsTarget(me, existing);
       if (!reusable) throw emailInUse();
-      return this.reactivate(me, existing, firstName, lastName, designation, password, placement);
+      return this.reactivate(me, existing, {
+        firstName,
+        lastName,
+        designation,
+        password,
+        placement,
+        gender: row.gender,
+      });
     }
 
     const user = await this.users.create({
@@ -162,6 +187,7 @@ export class CreateUsersUseCase {
       shiftStart: shift ? shift.start : this.hm(row.shiftStart, '10:00'),
       shiftEnd: shift ? shift.end : this.hm(row.shiftEnd, '19:00'),
       createdById: me.id,
+      gender: row.gender,
     });
 
     await this.events.publish(
@@ -181,25 +207,37 @@ export class CreateUsersUseCase {
         grants: placement.grants,
       },
     });
-    return UserMapper.toPublic(user);
+    return UserMapper.toPublic(user, me);
   }
 
   private async reactivate(
     me: AuthenticatedUser,
     existing: User,
-    firstName: string,
-    lastName: string,
-    designation: string,
-    password: string,
-    placement: Placement,
+    next: {
+      firstName: string;
+      lastName: string;
+      designation: string;
+      password: string;
+      placement: Placement;
+      gender?: CreateUserItemDto['gender'];
+    },
   ): Promise<PublicUser> {
+    const { firstName, lastName, designation, password, placement } = next;
     existing.reactivateWith(firstName, lastName, designation || null);
     existing.changeRole(placement.role);
     existing.assignDepartment(placement.department);
     existing.setManagedDepartments(placement.managed);
     existing.setGrants(placement.grants);
     existing.setPasswordHash(await this.hasher.hash(password));
+    // 3.6: another gender resets the avatar to its default, as an edit does.
+    const genderChanged = !!next.gender && existing.changeGender(next.gender);
     const saved = await this.users.save(existing);
+    if (genderChanged) {
+      await this.events.publish(
+        AvatarChangedEvent.eventName,
+        new AvatarChangedEvent(saved.id, effectiveAvatarId(saved), saved.companyId),
+      );
+    }
     await this.events.publish(
       UserAccessChangedEvent.eventName,
       new UserAccessChangedEvent(saved.id, ['ROLE', 'STATUS', 'PASSWORD'], new Date(), true),
@@ -215,7 +253,7 @@ export class CreateUsersUseCase {
         departmentId: placement.department?.id ?? null,
       },
     });
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 
   /** The organisation's shift, or a shared legacy one (no organisation). */

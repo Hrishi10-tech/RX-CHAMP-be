@@ -91,6 +91,8 @@ export interface PendingWfhBlocker {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId?: string | null;
   startDate: string;
   endDate: string;
   days: number;
@@ -101,6 +103,8 @@ export interface PendingLeaveBlocker {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId?: string | null;
   category: 'CLSL' | 'ELPL' | 'COMPOFF';
   startDate: string;
   endDate: string;
@@ -111,6 +115,8 @@ export interface PendingLeaveBlocker {
 export interface OpenSessionBlocker {
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId?: string | null;
   date: string;
   startedAt: string;
 }

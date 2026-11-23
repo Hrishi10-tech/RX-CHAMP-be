@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogService } from '@shared/audit/audit-log.service';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { lockOrganisation } from '@shared/database/org-lock';
 import { isId } from '@shared/validation/is-id';
@@ -31,6 +32,7 @@ const PERSON_SELECT = {
   companyId: true,
   company: { select: { deletedAt: true } },
   role: { select: { name: true } },
+  ...AVATAR_COLUMNS,
 } as const;
 
 type PersonRow = Prisma.UserGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -44,6 +46,7 @@ function toPerson(r: PersonRow): OrgPerson {
     role: r.role.name,
     status: r.status,
     companyId: r.companyId && r.company && r.company.deletedAt === null ? r.companyId : null,
+    avatarId: effectiveAvatarId(r),
   };
 }
 
@@ -191,6 +194,7 @@ export class PrismaOrganisationStore implements OrganisationStore {
         email: true,
         status: true,
         companyId: true,
+        ...AVATAR_COLUMNS,
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
@@ -201,6 +205,7 @@ export class PrismaOrganisationStore implements OrganisationStore {
         name: `${r.firstName} ${r.lastName}`.trim(),
         email: r.email,
         status: r.status,
+        avatarId: effectiveAvatarId(r),
       });
     }
     return out;

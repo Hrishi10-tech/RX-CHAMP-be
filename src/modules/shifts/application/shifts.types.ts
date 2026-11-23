@@ -95,6 +95,8 @@ export interface PersonShiftView {
   department: string | null;
   designation: string | null;
   managerId: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
   /** The shift that applies today, and why. */
   shift: ShiftRef | null;
   source: ShiftSource;
@@ -295,6 +297,8 @@ export interface ApprovalPersonView {
   /** 3.3: the person's organisation (combined lists show it as a chip). */
   companyId?: string | null;
   companyName?: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface ApprovalItemView extends BreakRecordView {

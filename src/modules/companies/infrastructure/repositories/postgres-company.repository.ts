@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import {
   CompanyRepository,
@@ -50,6 +51,7 @@ export class PostgresCompanyRepository implements CompanyRepository {
             email: true,
             firstName: true,
             lastName: true,
+            ...AVATAR_COLUMNS,
             managedDepartments: {
               where: { department: { deletedAt: null } },
               select: { departmentId: true },
@@ -86,6 +88,7 @@ export class PostgresCompanyRepository implements CompanyRepository {
         id: m.id,
         email: m.email,
         name: `${m.firstName} ${m.lastName}`.trim(),
+        avatarId: effectiveAvatarId(m),
         userCount: m.managedDepartments.reduce((n, d) => n + (staffBy.get(d.departmentId) ?? 0), 0),
       }));
       return {

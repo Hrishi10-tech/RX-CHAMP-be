@@ -39,7 +39,7 @@ export class SetUserGrantsUseCase {
       throw new ValidationError('Grants apply to managers only.', 'NOT_A_MANAGER');
     }
     const before = target.grants;
-    if (sameGrants(before, grants)) return UserMapper.toPublic(target);
+    if (sameGrants(before, grants)) return UserMapper.toPublic(target, me);
     target.setGrants(grants);
     const saved = await this.users.save(target);
     await this.events.publish(
@@ -53,6 +53,6 @@ export class SetUserGrantsUseCase {
       entityId: target.id,
       metadata: { from: before, to: grants },
     });
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -54,6 +55,7 @@ export class GetMeUseCase {
         email: true,
         firstName: true,
         lastName: true,
+        ...AVATAR_COLUMNS,
         role: { select: { name: true } },
         company: { select: { id: true, name: true, deletedAt: true } },
         departmentRef: { select: { id: true, name: true, icon: true, deletedAt: true } },
@@ -92,6 +94,7 @@ export class GetMeUseCase {
       lastName: row.lastName,
       email: row.email,
       role,
+      avatarId: effectiveAvatarId(row),
       organisation,
       department: dept ? { id: dept.id, name: dept.name, icon: dept.icon } : null,
       departments:

@@ -26,6 +26,6 @@ export class AssignCompanyUseCase {
     await this.organisations.assignPerson(me, companyId, userId);
     const saved = await this.users.findById(userId);
     if (!saved) throw new NotFoundError('Unknown user');
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 }

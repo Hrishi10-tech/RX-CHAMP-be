@@ -12,9 +12,11 @@ import { AppLoggerModule } from '@shared/logger/logger.module';
 import { TenancyModule } from '@shared/tenancy/tenancy.module';
 import { AuditModule } from '@shared/audit/audit.module';
 import { FeaturesModule } from '@shared/features/features.module';
+import { AvatarCatalogModule } from '@shared/avatars/avatar-catalog.module';
 
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from '@modules/users/users.module';
+import { AvatarsModule } from '@modules/avatars/avatars.module';
 import { RolesModule } from '@modules/roles/roles.module';
 import { CompaniesModule } from '@modules/companies/companies.module';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
@@ -56,8 +58,10 @@ import { ApprovalSyncModule } from '@modules/approval-sync/approval-sync.module'
     EventsModule,
     WebsocketModule,
     FeaturesModule,
+    AvatarCatalogModule,
     AuthModule,
     UsersModule,
+    AvatarsModule,
     RolesModule,
     CompaniesModule,
     NotificationsModule,

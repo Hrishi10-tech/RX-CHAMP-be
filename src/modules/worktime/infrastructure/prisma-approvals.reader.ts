@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { effectiveAvatarId } from '@shared/avatars/person-avatar';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { PrismaService } from '@shared/database/prisma.service';
 import { ApproverRole } from '@modules/shifts/domain/shift.types';
 import {
@@ -355,6 +357,8 @@ export class PrismaApprovalsReader implements ApprovalsReader {
         user_id: string;
         user_first: string | null;
         user_last: string | null;
+        user_gender: Gender | null;
+        user_avatar: string | null;
         approver_id: string | null;
         approver_role: string | null;
         approver_first: string | null;
@@ -366,6 +370,7 @@ export class PrismaApprovalsReader implements ApprovalsReader {
     >`
       SELECT a.type, a.id::text AS id, a.date, a.category, a.user_id::text AS user_id,
              s.first_name AS user_first, s.last_name AS user_last,
+             s.gender::text AS user_gender, s.avatar_id AS user_avatar,
              a.approver_id::text AS approver_id, a.approver_role,
              ap.first_name AS approver_first, ap.last_name AS approver_last,
              (ap.id IS NOT NULL AND ap.status = 'ACTIVE' AND ap.deleted_at IS NULL) AS approver_active,
@@ -388,6 +393,7 @@ export class PrismaApprovalsReader implements ApprovalsReader {
       category: r.category,
       userId: r.user_id,
       userName: name(r.user_first, r.user_last) || 'Former user',
+      avatarId: effectiveAvatarId({ gender: r.user_gender, avatarId: r.user_avatar }),
       approverId: r.approver_id,
       approverName: r.approver_id ? name(r.approver_first, r.approver_last) || 'Former user' : null,
       approverRole: r.approver_role,

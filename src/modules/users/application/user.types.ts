@@ -1,3 +1,4 @@
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { BulkError } from '@shared/types/common.types';
 import { PaginatedResult } from '@shared/types/pagination.types';
 import { UserStatus } from '@shared/types/user.types';
@@ -32,6 +33,10 @@ export interface PublicUser {
   /** 4.0: the same override, flat (what the portal reads). */
   idleEnabled: boolean | null;
   idleMinutes: number | null;
+  /** 3.6: the effective avatar (a manifest ID); null while the person has no gender. */
+  avatarId: string | null;
+  /** 3.6: only in answers to someone who may set it (canSetGender). */
+  gender?: Gender | null;
 }
 
 export interface DepartmentRefView {
@@ -89,6 +94,10 @@ export interface UserListItem {
   /** 3.3: the organisation's name, for the organisation chip on combined lists. */
   companyName: string | null;
   shiftId: string | null;
+  /** 3.6: the effective avatar (a manifest ID); null while the person has no gender. */
+  avatarId: string | null;
+  /** 3.6: only in answers to someone who may set it (canSetGender). */
+  gender?: Gender | null;
 }
 
 /** 4.0: what a Manager (their departments' Staff) or Staff (themselves) sees in GET /users. */
@@ -100,6 +109,8 @@ export interface UserBriefItem {
   /** The department's name. */
   department: string | null;
   departmentRef: DepartmentRefView | null;
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export type ListUsersResult = PaginatedResult<'users', UserListItem | UserBriefItem>;
@@ -112,6 +123,8 @@ export interface MeView {
   lastName: string;
   email: string;
   role: string;
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
   /** The organisation acted in: own, or the Super Admin's selection (X-Org-Id); null on the platform view. */
   organisation: { id: string; name: string } | null;
   department: DepartmentRefView | null;

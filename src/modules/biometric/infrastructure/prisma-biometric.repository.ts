@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import {
   lockUser,
@@ -8,6 +9,7 @@ import {
 import {
   AttendanceWrite,
   BiometricPerson,
+  PersonName,
   BiometricRepository,
   DeviceSeen,
   KeyRecord,
@@ -64,6 +66,7 @@ const PERSON_SELECT = {
   attendanceSource: true,
   biometricCode: true,
   attendanceSourceFrom: true,
+  ...AVATAR_COLUMNS,
 } as const;
 
 type PersonRow = Prisma.UserGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -82,6 +85,7 @@ function toPerson(r: PersonRow): BiometricPerson {
     attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
     biometricCode: r.biometricCode,
     attendanceSourceFrom: r.attendanceSourceFrom,
+    avatarId: effectiveAvatarId(r),
   };
 }
 
@@ -303,14 +307,22 @@ export class PrismaBiometricRepository implements BiometricRepository {
     return rows.map(toPerson);
   }
 
-  async names(ids: string[]): Promise<Map<string, { firstName: string; lastName: string }>> {
+  async names(ids: string[]): Promise<Map<string, PersonName>> {
     const list = uuids(ids);
     if (!list.length) return new Map();
     const rows = await this.prisma.user.findMany({
       where: { id: { in: list } },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, ...AVATAR_COLUMNS },
     });
-    return new Map(rows.map((r) => [r.id, r] as const));
+    return new Map(
+      rows.map(
+        (r) =>
+          [
+            r.id,
+            { firstName: r.firstName, lastName: r.lastName, avatarId: effectiveAvatarId(r) },
+          ] as const,
+      ),
+    );
   }
 
   async peopleByCodes(

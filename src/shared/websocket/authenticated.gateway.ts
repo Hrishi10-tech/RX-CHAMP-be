@@ -102,6 +102,20 @@ export abstract class AuthenticatedGateway implements OnGatewayInit {
     return this.access.roomsOfUser(userId);
   }
 
+  /**
+   * 3.6 avatars: joins the rooms whose `avatar:changed` this account hears (the
+   * people it is shown; SocketAccessService.avatarRooms). Never rejects.
+   */
+  protected async joinAvatarRooms(client: Socket, userId: string): Promise<void> {
+    const rooms = await this.access.avatarRooms(userId, this.orgHintOf(client));
+    if (rooms.length && !client.disconnected) await client.join(rooms);
+  }
+
+  /** 3.6 avatars: the rooms an `avatar:changed` about this person goes to, read now. */
+  protected avatarAudience(userId: string): Promise<string[]> {
+    return this.access.avatarAudience(userId);
+  }
+
   private tokenFrom(client: Socket): string | null {
     const cookie = client.handshake.headers.cookie;
     if (cookie) {

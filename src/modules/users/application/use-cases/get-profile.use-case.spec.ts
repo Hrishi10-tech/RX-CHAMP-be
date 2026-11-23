@@ -21,7 +21,15 @@ function setup() {
   return new GetProfileUseCase(users as never);
 }
 
-const BRIEF_KEYS = ['department', 'departmentRef', 'designation', 'email', 'id', 'name'];
+const BRIEF_KEYS = [
+  'avatarId',
+  'department',
+  'departmentRef',
+  'designation',
+  'email',
+  'id',
+  'name',
+];
 
 describe('GET /users/:id shape (4.0)', () => {
   it('a Manager gets the brief row for their Staff', async () => {

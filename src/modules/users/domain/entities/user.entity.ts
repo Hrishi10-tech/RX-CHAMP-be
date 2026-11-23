@@ -1,4 +1,5 @@
 import { Role } from '@shared/rbac/roles.enum';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { InvalidUserState } from '@shared/exceptions/domain.exception';
 import { UserStatus } from '@shared/types/user.types';
 import { Email } from '../value-objects/email.vo';
@@ -41,6 +42,10 @@ export interface UserProps {
   departmentRef?: DepartmentRef | null;
   /** 4.0: departments a Manager is assigned to (read side; empty for other roles). */
   managedDepartments?: DepartmentRef[];
+  /** 3.6: picks the avatar library. Null: not set yet. */
+  gender?: Gender | null;
+  /** 3.6: the preset the person chose. Null: the default for their gender. */
+  avatarId?: string | null;
 }
 
 /** A department as people lists show it. */
@@ -149,6 +154,12 @@ export class User {
   get managedDepartmentIds(): string[] {
     return this.pendingManaged ?? this.managedDepartments.map((d) => d.id);
   }
+  get gender(): Gender | null {
+    return this.props.gender ?? null;
+  }
+  get avatarId(): string | null {
+    return this.props.avatarId ?? null;
+  }
   /** The manager departments to write on save, or null when they did not change. */
   get managedDepartmentsToSave(): string[] | null {
     return this.pendingManaged;
@@ -204,6 +215,22 @@ export class User {
   }
   isActive(): boolean {
     return this.props.status === 'ACTIVE';
+  }
+
+  /**
+   * Sets the gender (3.6). A change also drops the chosen avatar, which belongs to the
+   * old library, so the person shows the new default. Returns whether anything changed.
+   */
+  changeGender(next: Gender): boolean {
+    if (this.props.gender === next) return false;
+    this.props.gender = next;
+    this.props.avatarId = null;
+    return true;
+  }
+
+  /** Stores a preset the caller has checked against the manifest; null means the default. */
+  chooseAvatar(avatarId: string | null): void {
+    this.props.avatarId = avatarId;
   }
 
   /**

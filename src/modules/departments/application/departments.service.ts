@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogService } from '@shared/audit/audit-log.service';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { lockOrganisation, orgNotFound } from '@shared/database/org-lock';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
@@ -34,7 +35,8 @@ export interface DepartmentView {
   icon: string;
   /** Active Staff in the department. */
   staffCount: number;
-  managers: { id: string; name: string }[];
+  /** 3.6: each with their effective avatar (null while they have no gender). */
+  managers: { id: string; name: string; avatarId: string | null }[];
   /** The department's input-tracking override (nulls = organisation default). */
   idle: { enabled: boolean | null; minutes: number | null; reasonKeys: string[] | null };
   /** 4.1: one computer shared between shifts (shift-end question, automatic sign-out). */
@@ -337,16 +339,20 @@ export class DepartmentsService {
         },
         select: {
           departmentId: true,
-          manager: { select: { id: true, firstName: true, lastName: true } },
+          manager: { select: { id: true, firstName: true, lastName: true, ...AVATAR_COLUMNS } },
         },
       }),
       this.settings.readRaw(org),
     ]);
     const staffBy = new Map(staff.map((s) => [s.departmentId, s._count._all] as const));
-    const managersBy = new Map<string, { id: string; name: string }[]>();
+    const managersBy = new Map<string, DepartmentView['managers']>();
     for (const l of links) {
       const list = managersBy.get(l.departmentId) ?? [];
-      list.push({ id: l.manager.id, name: `${l.manager.firstName} ${l.manager.lastName}`.trim() });
+      list.push({
+        id: l.manager.id,
+        name: `${l.manager.firstName} ${l.manager.lastName}`.trim(),
+        avatarId: effectiveAvatarId(l.manager),
+      });
       managersBy.set(l.departmentId, list);
     }
     const idle = idleFromStored(raw).departments;

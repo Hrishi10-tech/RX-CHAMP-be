@@ -116,6 +116,8 @@ export interface CreditView {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId: string | null;
   department: string | null;
   companyName: string | null;
   workedDate: string;
@@ -764,6 +766,7 @@ export class CompOffService {
     return {
       userId: target.id,
       userName: fullName(target),
+      avatarId: target.avatarId ?? null,
       balance: {
         availableDays: daysOf(b.availableUnits),
         pendingDays: daysOf(b.pendingUnits),
@@ -858,6 +861,7 @@ export class CompOffService {
         id: r.id,
         userId: r.userId,
         userName: fullName(person),
+        avatarId: person?.avatarId ?? null,
         department: person?.department ?? null,
         companyName: person?.companyName ?? null,
         workedDate: r.workedDate,

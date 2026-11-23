@@ -8,11 +8,16 @@ import { UserAccessChangedEvent, endsCredentials } from '@shared/events/user-acc
 import { parseDurationMs } from '@shared/utils/duration';
 import {
   activityViewRoom,
+  ALL_ORGS_ROOM,
+  avatarRoomsOf,
   deptRoom,
+  deptStaffRoom,
   LiveSection,
   orgRoom,
+  PLATFORM_ROOM,
   RoomSubject,
   roomsOfSubject,
+  userRoom,
 } from './socket-rooms';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -241,6 +246,94 @@ export class SocketAccessService implements OnModuleInit {
       .findFirst({ where: { id: orgHint, deletedAt: null }, select: { id: true } })
       .catch(() => null);
     return org?.id ?? null;
+  }
+
+  /**
+   * 3.6 avatars, 4.0 audience: the /notifications rooms a socket joins to hear the
+   * `avatar:changed` of the people it is shown (see avatarRoomsOf, the sending side):
+   *  - a Super Admin or the Super Manager: the platform room, and the organisation
+   *    picked in the portal (auth.orgId, ?orgId or X-Org-Id) or, with none, every one;
+   *  - an Admin: their organisation;
+   *  - a Manager: the departments they manage, grants or not (approvals and Messages
+   *    show their Staff without one);
+   *  - Staff: their department's Staff room (they are shown its managers).
+   * Called from a handshake, where nothing catches a rejection: a failed read leaves
+   * the socket in its own rooms, and it misses others' avatar pushes until it
+   * reconnects. A change of role or department drops the socket (UserAccessChanged
+   * ROLE), so it comes back with the right rooms.
+   */
+  async avatarRooms(userId: string, orgHint: string | null): Promise<string[]> {
+    try {
+      const row = await this.prisma.user.findFirst({
+        where: { id: userId, deletedAt: null, status: 'ACTIVE' },
+        select: {
+          companyId: true,
+          departmentId: true,
+          role: { select: { name: true } },
+          managedDepartments: {
+            where: { department: { deletedAt: null } },
+            select: { departmentId: true },
+          },
+        },
+      });
+      if (!row) return [];
+      switch (row.role.name) {
+        case 'SUPER_ADMIN':
+        case 'SUPER_MANAGER': {
+          if (!orgHint || !UUID.test(orgHint)) return [PLATFORM_ROOM, ALL_ORGS_ROOM];
+          const org = await this.prisma.company.findFirst({
+            where: { id: orgHint, deletedAt: null },
+            select: { id: true },
+          });
+          return org ? [PLATFORM_ROOM, orgRoom(org.id)] : [PLATFORM_ROOM];
+        }
+        case 'ADMIN':
+          return row.companyId ? [orgRoom(row.companyId)] : [];
+        case 'MANAGER':
+          return row.managedDepartments.map((m) => deptRoom(m.departmentId));
+        case 'USER':
+          return row.departmentId ? [deptStaffRoom(row.departmentId)] : [];
+        default:
+          return [];
+      }
+    } catch (err) {
+      this.logger.warn(`socket avatar rooms for ${userId} failed: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
+   * 3.6 avatars: who `avatar:changed` about this person reaches, read when it is
+   * sent (a person's department or managed departments may have just changed). A
+   * failed read is only a missed push: it answers the person's own devices.
+   */
+  async avatarAudience(userId: string): Promise<string[]> {
+    try {
+      const row = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          companyId: true,
+          departmentId: true,
+          role: { select: { name: true } },
+          managedDepartments: {
+            where: { department: { deletedAt: null } },
+            select: { departmentId: true },
+          },
+        },
+      });
+      if (!row) return [userRoom(userId)];
+      return avatarRoomsOf({
+        id: userId,
+        role: row.role.name,
+        companyId: row.companyId,
+        departmentId: row.departmentId,
+        managedDepartmentIds:
+          row.role.name === 'MANAGER' ? row.managedDepartments.map((m) => m.departmentId) : [],
+      });
+    } catch (err) {
+      this.logger.warn(`avatar audience of ${userId} failed: ${(err as Error).message}`);
+      return [userRoom(userId)];
+    }
   }
 
   private readonly subjects = new Map<string, { s: RoomSubject | null; at: number }>();

@@ -49,7 +49,7 @@ export class SetUserIdleUseCase {
       ).withDetails({ field: 'minutes' });
     }
     if (target.idleEnabled === enabled && target.idleMinutes === minutes) {
-      return UserMapper.toPublic(target);
+      return UserMapper.toPublic(target, me);
     }
     target.setIdle(enabled, minutes);
     const saved = await this.users.save(target);
@@ -57,6 +57,6 @@ export class SetUserIdleUseCase {
       OrgConfigChangedEvent.eventName,
       new OrgConfigChangedEvent(requireOrg(me), 'IDLE', new Date()),
     );
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 }

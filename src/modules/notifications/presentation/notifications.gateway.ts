@@ -28,6 +28,7 @@ export class NotificationsGateway extends AuthenticatedGateway implements OnGate
 
     void client.join(userRoom(userId));
     await this.joinMembersRoom(client, userId);
+    await this.joinAvatarRooms(client, userId);
     this.logger.debug(`socket ${client.id} joined ${userRoom(userId)}`);
   }
 
@@ -66,5 +67,17 @@ export class NotificationsGateway extends AuthenticatedGateway implements OnGate
   ): void {
     if (!userIds.length) return;
     this.server?.to(userIds.map(userRoom)).emit('approvals:changed', change);
+  }
+
+  /**
+   * The person's avatar changed (3.6): their devices and the people shown them update
+   * within seconds. 4.0 audience (avatarRoomsOf), read when sent: the organisation's
+   * admins and the platform roles with it in view, the department's managers (of
+   * Staff), the Staff of the departments they manage (of a Manager), everyone in the
+   * organisation (of an Admin); never another organisation.
+   */
+  async emitAvatar(userId: string, avatarId: string | null): Promise<void> {
+    const rooms = await this.avatarAudience(userId);
+    this.server?.to(rooms).emit('avatar:changed', { userId, avatarId });
   }
 }

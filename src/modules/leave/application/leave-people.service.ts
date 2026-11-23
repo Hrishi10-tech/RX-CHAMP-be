@@ -167,6 +167,7 @@ export class LeavePeopleService {
         // 4.0 routes by department, not by a reporting line.
         managerId: null,
         managerName: null,
+        avatarId: p.avatarId ?? null,
       });
     }
     return out;

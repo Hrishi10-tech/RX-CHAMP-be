@@ -230,6 +230,7 @@ export class FocusAdjustmentsService {
       id: r.id,
       userId: r.userId,
       userName: nameOf(r.userId) ?? 'Former user',
+      avatarId: people.get(r.userId)?.avatarId ?? null,
       companyName: people.get(r.userId)?.companyName ?? null,
       date: r.date,
       deltaSec: r.deltaSec,

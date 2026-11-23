@@ -42,6 +42,13 @@ export interface PunchFilter {
   limit?: number;
 }
 
+/** A name for the punch log, deleted accounts included (3.6: with the avatar). */
+export interface PersonName {
+  firstName: string;
+  lastName: string;
+  avatarId?: string | null;
+}
+
 export interface BiometricPerson {
   id: string;
   firstName: string;
@@ -55,6 +62,8 @@ export interface BiometricPerson {
   attendanceSource: 'AGENT' | 'BIOMETRIC';
   biometricCode: string | null;
   attendanceSourceFrom: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export interface AttendanceWrite {
@@ -144,7 +153,7 @@ export interface BiometricRepository {
     ids?: string[];
   }): Promise<BiometricPerson[]>;
   /** Names of anyone (the punch log: who added or voided a punch), active or not. */
-  names(ids: string[]): Promise<Map<string, { firstName: string; lastName: string }>>;
+  names(ids: string[]): Promise<Map<string, PersonName>>;
   /** The organisation's people holding these codes (a code is unique within one). */
   peopleByCodes(companyId: string, codeKeys: string[]): Promise<Map<string, BiometricPerson>>;
   setAttendance(rows: AttendanceWrite[]): Promise<void>;

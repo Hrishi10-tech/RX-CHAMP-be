@@ -1,4 +1,5 @@
 import { Role } from '@shared/rbac/roles.enum';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { SearchPageFilter } from '@shared/types/pagination.types';
 import { UserStatus } from '@shared/types/user.types';
 import { User } from '../entities/user.entity';
@@ -26,6 +27,8 @@ export interface CreateUserData {
   managedDepartmentIds?: string[];
   /** 4.0: a Manager's view grants. */
   grants?: { screenshots: boolean; timeline: boolean; activity: boolean };
+  /** 3.6: picks the avatar library; unset, the person shows initials. */
+  gender?: Gender;
 }
 
 /**
@@ -72,6 +75,8 @@ export interface ListUsersFilter extends SearchPageFilter {
   excludeRoles?: Role[];
   role?: Role;
   status?: UserStatus;
+  /** 3.6: one gender, or null for people who have none yet. */
+  gender?: Gender | null;
   /** Inclusive lower bound on when the user joined. */
   joinedFrom?: Date;
   /** Inclusive upper bound on when the user joined. */

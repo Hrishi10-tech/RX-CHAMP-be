@@ -31,7 +31,7 @@ export class GetProfileUseCase {
     if (!target || !this.access.canView(me, target)) {
       throw new NotFoundError('Unknown user');
     }
-    if (target.id === me.id || seesWholeOrg(me)) return UserMapper.toPublic(target);
+    if (target.id === me.id || seesWholeOrg(me)) return UserMapper.toPublic(target, me);
     return UserMapper.toBrief(target);
   }
 }

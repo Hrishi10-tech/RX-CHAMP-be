@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AvatarChangedSubscriber } from './application/avatar-changed.subscriber';
 import { WorkdayChangedSubscriber } from './application/workday-changed.subscriber';
 import { WorkdayChangeInterceptor } from './presentation/workday-change.interceptor';
 import { NOTIFICATION_REPOSITORY } from './domain/notification.repository';
@@ -40,6 +41,7 @@ import { NotificationsGateway } from './presentation/notifications.gateway';
     NoticeSubscriber,
     OrgConfigSubscriber,
     WorkdayChangedSubscriber,
+    AvatarChangedSubscriber,
     { provide: APP_INTERCEPTOR, useClass: WorkdayChangeInterceptor },
     ListNotificationsUseCase,
     MarkNotificationReadUseCase,

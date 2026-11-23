@@ -36,6 +36,8 @@ export type TeamStatus = 'WORKING' | 'BREAK' | 'MEETING' | 'AWAY' | 'NOT_STARTED
 export interface TeamPersonView {
   id: string;
   name: string;
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
   role: string;
   designation: string | null;
   department: DepartmentRow | null;
@@ -309,6 +311,7 @@ export class TeamOverviewService {
     return {
       id: l.person.id,
       name: nameOf(l.person),
+      avatarId: l.person.avatarId ?? null,
       role: l.person.role,
       designation: l.person.designation,
       department: l.person.departmentId ? (deptBy.get(l.person.departmentId) ?? null) : null,
@@ -480,8 +483,16 @@ export class TeamOverviewService {
 
     // Needs attention
     const lite = (ls: Live[]) =>
-      ls.slice(0, 20).map((l) => ({ id: l.person.id, name: nameOf(l.person) }));
-    const attention: { kind: string; count: number; people: { id: string; name: string }[] }[] = [];
+      ls.slice(0, 20).map((l) => ({
+        id: l.person.id,
+        name: nameOf(l.person),
+        avatarId: l.person.avatarId ?? null,
+      }));
+    const attention: {
+      kind: string;
+      count: number;
+      people: { id: string; name: string; avatarId: string | null }[];
+    }[] = [];
     const add = (kind: string, ls: Live[]) => {
       if (ls.length) attention.push({ kind, count: ls.length, people: lite(ls) });
     };

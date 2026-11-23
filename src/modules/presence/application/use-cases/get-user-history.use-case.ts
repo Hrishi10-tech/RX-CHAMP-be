@@ -111,6 +111,7 @@ export class GetUserHistoryUseCase {
       name: PresenceMapper.fullName(member),
       email: member.email,
       department: member.department,
+      avatarId: member.avatarId ?? null,
       days: daysView,
     };
   }

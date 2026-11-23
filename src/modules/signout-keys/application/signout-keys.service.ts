@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogService } from '@shared/audit/audit-log.service';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import {
@@ -36,12 +37,19 @@ import {
 } from '../domain/signout-key.rules';
 
 /** GET /signout-keys item (docs/4.0/SPEC.md 5.5). */
+export interface KeyPersonView {
+  id: string;
+  name: string;
+  avatarId: string | null;
+}
+
 export interface SignOutKeyView {
   id: string;
   scope: SignOutScopeName;
-  users: { id: string; name: string }[];
+  /** 3.6: each person with their effective avatar (null: no gender, or removed). */
+  users: KeyPersonView[];
   departments: { id: string; name: string }[];
-  createdBy: { id: string; name: string } | null;
+  createdBy: KeyPersonView | null;
   createdAt: string;
   expiresAt: string;
   revokedAt: string | null;
@@ -260,7 +268,7 @@ export class SignOutKeysService {
       personIds.length
         ? this.prisma.user.findMany({
             where: { id: { in: personIds } },
-            select: { id: true, firstName: true, lastName: true },
+            select: { id: true, firstName: true, lastName: true, ...AVATAR_COLUMNS },
           })
         : [],
       deptIds.length
@@ -271,17 +279,27 @@ export class SignOutKeysService {
         : [],
     ]);
     const personName = new Map(people.map((p) => [p.id, nameOf(p)] as const));
+    const personAvatar = new Map(people.map((p) => [p.id, effectiveAvatarId(p)] as const));
+    const avatarOf = (id: string) => personAvatar.get(id) ?? null;
     const deptName = new Map(depts.map((d) => [d.id, d.name] as const));
     return keys.map((k) => ({
       id: k.id,
       scope: k.scope as SignOutScopeName,
-      users: k.userIds.map((id) => ({ id, name: personName.get(id) ?? 'Removed person' })),
+      users: k.userIds.map((id) => ({
+        id,
+        name: personName.get(id) ?? 'Removed person',
+        avatarId: avatarOf(id),
+      })),
       departments: k.departmentIds.map((id) => ({
         id,
         name: deptName.get(id) ?? 'Removed department',
       })),
       createdBy: personName.has(k.createdById)
-        ? { id: k.createdById, name: personName.get(k.createdById)! }
+        ? {
+            id: k.createdById,
+            name: personName.get(k.createdById)!,
+            avatarId: avatarOf(k.createdById),
+          }
         : null,
       createdAt: k.createdAt.toISOString(),
       expiresAt: k.expiresAt.toISOString(),

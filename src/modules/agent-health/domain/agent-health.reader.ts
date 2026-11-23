@@ -13,6 +13,8 @@ export interface AgentHealthPerson {
   companyName: string | null;
   /** How the day is recorded (3.5). */
   attendanceSource?: 'AGENT' | 'BIOMETRIC';
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export interface SampleStats {

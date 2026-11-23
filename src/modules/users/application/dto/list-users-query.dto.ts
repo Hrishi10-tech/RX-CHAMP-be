@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { Role } from '@shared/rbac/roles.enum';
 import { UserStatus } from '@shared/types/user.types';
 import {
@@ -21,6 +22,7 @@ import {
 import { IsId } from '@shared/validation/is-id';
 
 const USER_STATUSES: UserStatus[] = ['ACTIVE', 'DISABLED'];
+const GENDER_FILTERS: (Gender | 'UNSET')[] = ['MALE', 'FEMALE', 'UNSET'];
 
 /**
  * GET /users (docs/4.0/SPEC.md 5.3). Filters combine; the caller's scope always
@@ -106,4 +108,13 @@ export class ListUsersQueryDto {
   @IsOptional()
   @IsIn(USER_SORT_OPTIONS)
   sort?: UserSortOption;
+
+  @ApiPropertyOptional({
+    enum: GENDER_FILTERS,
+    description:
+      'The organisation admin or a Super Admin only. UNSET lists the people whose gender is not set yet.',
+  })
+  @IsOptional()
+  @IsIn(GENDER_FILTERS)
+  gender?: Gender | 'UNSET';
 }

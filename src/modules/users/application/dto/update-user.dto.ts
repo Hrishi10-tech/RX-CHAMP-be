@@ -17,9 +17,10 @@ import {
 } from 'class-validator';
 import { Role } from '@shared/rbac/roles.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { UserStatus } from '@shared/types/user.types';
 import { IsId } from '@shared/validation/is-id';
-import { GrantsInputDto } from './create-user.dto';
+import { GENDERS, GrantsInputDto } from './create-user.dto';
 
 const USER_STATUSES: UserStatus[] = ['ACTIVE', 'DISABLED'];
 
@@ -86,6 +87,15 @@ export class UpdateUserDto {
   @ValidateNested()
   @Type(() => GrantsInputDto)
   grants?: GrantsInputDto;
+
+  @ApiPropertyOptional({
+    enum: GENDERS,
+    description:
+      'The organisation admin or a Super Admin only. A change resets the avatar to the new default.',
+  })
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsIn(GENDERS)
+  gender?: Gender;
 }
 
 export class SetUserStatusDto {

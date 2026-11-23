@@ -271,13 +271,16 @@ export class MeetingsService {
   async participants(
     me: AuthenticatedUser,
     q: string | undefined,
-  ): Promise<{ items: { id: string; name: string; department: string | null }[] }> {
+  ): Promise<{
+    items: { id: string; name: string; department: string | null; avatarId: string | null }[];
+  }> {
     const rows = await this.reader.searchParticipants(me.companyId, cleanText(q), me.id, 50);
     return {
       items: rows.map((r) => ({
         id: r.id,
         name: `${r.firstName} ${r.lastName}`.trim(),
         department: r.department,
+        avatarId: r.avatarId ?? null,
       })),
     };
   }

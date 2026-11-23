@@ -237,6 +237,8 @@ export interface ApprovalPersonLite {
   /** 3.3: the person's organisation (combined lists show it as a chip). */
   companyId: string | null;
   companyName: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
 }
 
 /** 4.0: an away stretch as an approval item. */
@@ -346,6 +348,8 @@ export interface TeamTodayRow {
     /** 3.3: the person's organisation (combined lists show it as a chip). */
     companyId?: string | null;
     companyName?: string | null;
+    /** The effective avatar (3.6); null while the person has no gender. */
+    avatarId: string | null;
   };
   status: TeamRowStatus;
   statusSince: string | null;
@@ -422,6 +426,8 @@ export interface FocusAdjustmentView {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId: string | null;
   companyName: string | null;
   date: string;
   /** Signed seconds. */

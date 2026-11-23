@@ -5,6 +5,8 @@ export interface ChatMessageView {
   fromUserId: string;
   toUserId: string;
   body: string;
+  /** The sender's effective avatar (3.6); null while they have no gender. */
+  avatarId: string | null;
   mine: boolean;
   read: boolean;
   createdAt: string;

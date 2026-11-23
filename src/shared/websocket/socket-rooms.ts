@@ -58,3 +58,50 @@ export function roomsOfSubject(s: RoomSubject): string[] {
 export function membersRoom(companyId: string): string {
   return `members:${companyId}`;
 }
+
+/**
+ * 3.6 avatars, on /notifications: the Super Admins and the Super Manager on the
+ * "All organisations" view (no organisation picked), who see people of every one.
+ */
+export const ALL_ORGS_ROOM = 'org:*';
+
+/** 3.6 avatars, on /notifications: every Super Admin and Super Manager socket. */
+export const PLATFORM_ROOM = 'platform';
+
+/** 3.6 avatars, on /notifications: the Staff of a department (they see its managers). */
+export function deptStaffRoom(departmentId: string): string {
+  return `dept-staff:${departmentId}`;
+}
+
+export interface AvatarSubject {
+  id: string;
+  role: string;
+  companyId: string | null;
+  departmentId: string | null;
+  /** The departments a Manager manages (empty for other roles). */
+  managedDepartmentIds: string[];
+}
+
+/**
+ * 4.0: the /notifications rooms an `avatar:changed` about `s` goes to: the people
+ * who are shown that person, and nobody across organisations.
+ *  - the person's own devices;
+ *  - in an organisation: its admins and the Super Admins or Super Manager who have
+ *    it in view (orgRoom), or who are on "All organisations" (ALL_ORGS_ROOM);
+ *  - Staff: the managers of their department (deptRoom);
+ *  - a Manager: the Staff of the departments they manage (deptStaffRoom);
+ *  - an Admin: everyone in the organisation (membersRoom), who all have them in Messages;
+ *  - no organisation (a Super Admin or the Super Manager): the platform roles.
+ */
+export function avatarRoomsOf(s: AvatarSubject): string[] {
+  const rooms = [userRoom(s.id)];
+  if (!s.companyId) {
+    rooms.push(PLATFORM_ROOM);
+    return rooms;
+  }
+  rooms.push(orgRoom(s.companyId), ALL_ORGS_ROOM);
+  if (s.role === 'USER' && s.departmentId) rooms.push(deptRoom(s.departmentId));
+  if (s.role === 'MANAGER') rooms.push(...s.managedDepartmentIds.map(deptStaffRoom));
+  if (s.role === 'ADMIN') rooms.push(membersRoom(s.companyId));
+  return rooms;
+}

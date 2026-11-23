@@ -11,6 +11,8 @@ export interface OrgAdminRef {
   name: string;
   email: string;
   status: 'ACTIVE' | 'DISABLED';
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface OrgCounts {
@@ -35,6 +37,8 @@ export interface OrgPerson {
   status: 'ACTIVE' | 'DISABLED';
   /** Their organisation when it still exists (a deleted one counts as none). */
   companyId: string | null;
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface NewOrgAdmin {

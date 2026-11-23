@@ -577,6 +577,24 @@ public class SignOutKeyTests
         Assert.Empty(Files());
     }
 
+    /// <summary>
+    /// Core review C-R02: a key sign-out (or a shift end on a shared computer) clears this
+    /// person's data only; another person's unsent samples on the same computer stay.
+    /// </summary>
+    [Fact]
+    public async Task A_key_sign_out_never_deletes_another_persons_unsent_samples()
+    {
+        using var h = new HostHarness(HostHarness.Day("OPEN"));
+        var other = new Core.Activity.ActivityQueue(h.Platform.Secrets, h.Platform.DataDir, "u-9", Core.Util.NullLog.Instance);
+        other.Enqueue(new Core.Api.ActivityReport { At = "2026-10-13T05:00:00.000Z" });
+        h.Server.Route("POST agent/sign-out", (_, _) => FakeServer.Ok(new { ok = true }));
+        await h.SignInAsync();
+
+        Assert.IsType<Core.KeyOutcome.Accepted>(await h.Host.SignOutWithKeyAsync("amber orbit cedar river lamp 42"));
+        Assert.Equal(1, new Core.Activity.ActivityQueue(h.Platform.Secrets, h.Platform.DataDir, "u-9", Core.Util.NullLog.Instance).Count);
+        Assert.Empty(Directory.GetFiles(h.Platform.DataDir, "queue-u1.bin"));
+    }
+
     [Fact]
     public async Task An_admins_quit_is_checked_with_a_key()
     {

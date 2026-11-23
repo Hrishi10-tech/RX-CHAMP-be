@@ -1073,7 +1073,7 @@ public sealed class AgentHost : IDisposable
         catch (Exception ex) { _log.Error("session", "a notice handler failed", ex); }
     }
 
-    /// <summary>C-966: an https server this build may not use (S-02, AG-2).</summary>
+    /// <summary>C-956: an https server this build may not use (S-02, AG-2).</summary>
     public const string ServerNotAllowed = "Check the server address with your organisation's admin.";
 
     /// <summary>
@@ -3277,11 +3277,13 @@ public sealed class AgentHost : IDisposable
         }
         if (clearData)
         {
-            // Only after everything reached the server (a key sign-out).
+            // Only after everything reached the server (a key sign-out or a shift end). Only
+            // this person's queue goes: other people's unsent samples on a shared computer
+            // stay for their next sign-in (Core review C-R02).
             _day.DeleteFiles();
             _queue?.Clear();
-            DeleteQueues();
         }
+        else ForgetOwnQueue();
         _day.Close();
         _queue = null;
         _queueUserId = null;
@@ -3334,12 +3336,22 @@ public sealed class AgentHost : IDisposable
         await Task.CompletedTask;
     }
 
-    private void DeleteQueues()
+    /// <summary>
+    /// A sign-out that keeps data: this person's queue file goes only when it is empty; samples
+    /// still unsent stay on disk (encrypted) for their next sign-in (Core review C-R02).
+    /// </summary>
+    private void ForgetOwnQueue()
     {
+        var queue = _queue;
+        if (queue is null) return;
         try
         {
-            var user = _queueUserId;
-            foreach (var f in Directory.EnumerateFiles(_platform.Paths.DataDir, "queue-*.bin")) HiddenFile.Delete(f);
+            if (queue.Count == 0) queue.Clear();
+            else
+            {
+                queue.Persist();
+                _log.Info("session", $"{queue.Count} unsent sample(s) kept for this person's next sign-in");
+            }
         }
         catch { }
     }
@@ -3397,6 +3409,7 @@ public sealed class AgentHost : IDisposable
     {
         Shutdown();
         _tracker?.Dispose();
+        try { _queue?.Persist(); } catch { /* best effort on the way out */ }
         _svc?.Dispose();
         _sync.Dispose();
         _lifetime.Dispose();

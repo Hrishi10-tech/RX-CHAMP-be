@@ -26,12 +26,47 @@ public static class BusinessClock
             }
         }
         var zone = !string.IsNullOrWhiteSpace(breaks?.Timezone) ? breaks!.Timezone : workday?.Timezone;
-        if (!string.IsNullOrWhiteSpace(zone))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(zone).GetUtcOffset(at); }
-            catch { /* unknown on this machine (e.g. invariant globalization on Windows) */ }
-        }
+        if (!string.IsNullOrWhiteSpace(zone) && ZoneOffset(zone!, at) is { } offset) return offset;
         return TimeZoneInfo.Local.GetUtcOffset(at);
+    }
+
+    // Core review C-R03: the Windows build runs with invariant globalization, so the machine
+    // cannot turn an IANA id ("Asia/Kolkata") into its own zone and the lookup throws. These
+    // zones never change their clocks, so their offset is known without a database.
+    private static readonly Dictionary<string, TimeSpan> FixedZones = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Asia/Kolkata"] = new(5, 30, 0), ["Asia/Calcutta"] = new(5, 30, 0), ["Asia/Colombo"] = new(5, 30, 0),
+        ["Asia/Kathmandu"] = new(5, 45, 0), ["Asia/Dhaka"] = new(6, 0, 0), ["Asia/Karachi"] = new(5, 0, 0),
+        ["Asia/Dubai"] = new(4, 0, 0), ["Asia/Singapore"] = new(8, 0, 0), ["Asia/Manila"] = new(8, 0, 0),
+        ["Asia/Shanghai"] = new(8, 0, 0), ["Asia/Tokyo"] = new(9, 0, 0), ["Pacific/Honolulu"] = new(-10, 0, 0),
+        ["UTC"] = TimeSpan.Zero, ["Etc/UTC"] = TimeSpan.Zero, ["GMT"] = TimeSpan.Zero,
+    };
+
+    // Zones with summer time: the Windows name, which the Windows database knows without ICU.
+    private static readonly Dictionary<string, string> WindowsNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["America/New_York"] = "Eastern Standard Time", ["America/Chicago"] = "Central Standard Time",
+        ["America/Denver"] = "Mountain Standard Time", ["America/Los_Angeles"] = "Pacific Standard Time",
+        ["Europe/London"] = "GMT Standard Time", ["Europe/Berlin"] = "W. Europe Standard Time",
+        ["Europe/Paris"] = "Romance Standard Time", ["Australia/Sydney"] = "AUS Eastern Standard Time",
+    };
+
+    /// <summary>
+    /// The zone's offset at <paramref name="at"/>, or null when nothing here knows the zone.
+    /// <paramref name="find"/> is the machine's zone database (tests pass a Windows-like one).
+    /// </summary>
+    internal static TimeSpan? ZoneOffset(string zone, DateTimeOffset at, Func<string, TimeZoneInfo>? find = null)
+    {
+        find ??= TimeZoneInfo.FindSystemTimeZoneById;
+        try { return find(zone).GetUtcOffset(at); }
+        catch { /* unknown on this machine (invariant globalization on Windows) */ }
+        if (FixedZones.TryGetValue(zone, out var fixedOffset)) return fixedOffset;
+        if (WindowsNames.TryGetValue(zone, out var windows))
+        {
+            try { return find(windows).GetUtcOffset(at); }
+            catch { /* not a Windows machine either */ }
+        }
+        return null;
     }
 
     /// <summary>"yyyy-MM-dd" of an instant in the business time zone.</summary>

@@ -60,6 +60,9 @@ public sealed class SocketChannel : IDisposable
     /// <summary>Drop and reconnect now (after waking from sleep the socket is usually dead without knowing it).</summary>
     public void Reconnect() => _dropped?.TrySetResult(true);
 
+    /// <summary>A connection that held this long counts as good: the next wait starts small again.</summary>
+    internal static readonly TimeSpan StableAfter = TimeSpan.FromMinutes(1);
+
     private async Task LoopAsync(CancellationToken ct)
     {
         var backoff = new Backoff(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(60));
@@ -71,8 +74,12 @@ public sealed class SocketChannel : IDisposable
                 connected = await ConnectOnceAsync(ct);
                 if (connected)
                 {
-                    backoff.Reset();
+                    // Core review C-R05: the server accepts the handshake and only then checks the
+                    // token and the account, and may drop at once (a database blip). The wait
+                    // starts over only after a connection that held for a minute.
+                    var upAt = SystemClock.Instance.Monotonic;
                     await _dropped!.Task.WaitAsync(ct);
+                    if (SystemClock.Instance.Monotonic - upAt >= StableAfter) backoff.Reset();
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -123,14 +123,14 @@ public sealed partial class LeaveViewModel : ObservableObject
             else
             {
                 Problem = result.Transient
-                    ? "Can't reach RX Vision to read your leave. Try again in a moment."
-                    : result.Message ?? "Your leave couldn't be read.";
+                    ? "Try again in a moment. Your leave shows once RX Vision answers."
+                    : result.Message ?? "Try opening your leave again.";
             }
         }
         catch (Exception ex)
         {
             _log.Warn("leave", "reading the leave failed", ex);
-            Problem = "Your leave couldn't be read. Try again in a moment.";
+            Problem = "Try opening your leave again in a moment.";
         }
     }
 
@@ -205,7 +205,7 @@ public sealed partial class LeaveViewModel : ObservableObject
                 await LoadAsync();
                 return;
             }
-            error = result.Transient ? "Can't reach RX Vision, so the request isn't saved. Try again." : result.Message ?? "That request couldn't be saved.";
+            error = result.Transient ? "Try again. Your request isn't saved yet." : result.Message ?? "Try saving that request again.";
         }
     }
 
@@ -236,9 +236,9 @@ public sealed partial class LeaveViewModel : ObservableObject
         var result = await _agent.CancelLeaveAsync(request.Id);
         if (!result.Ok)
         {
-            await _dialogs.AlertAsync("Couldn't cancel", result.Transient
-                ? "Can't reach RX Vision. Try again in a moment."
-                : result.Message ?? "That couldn't be cancelled.");
+            await _dialogs.AlertAsync("Try cancelling again", result.Transient
+                ? "Try again in a moment."
+                : result.Message ?? "Try cancelling that again.");
         }
         await LoadAsync();
     }

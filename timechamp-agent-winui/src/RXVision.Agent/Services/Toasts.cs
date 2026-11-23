@@ -50,7 +50,7 @@ public static class Toasts
     /// <summary>The answer to the shift-end question, said back in one line.</summary>
     public static string ShiftAnswer(IAgent agent, bool continuing, DateTimeOffset deadline) =>
         continuing
-            ? "Shift extended: your time keeps counting. Press End Day when you finish."
+            ? "Shift extended: your time keeps counting. Tap End day when you finish."
             : $"You'll be signed out at {agent.BusinessTime(deadline)}.";
 
     /// <summary>Signed out at the shift end (or after End Day) on a shared computer.</summary>

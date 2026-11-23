@@ -77,7 +77,7 @@ public sealed partial class SignInViewModel : ObservableObject
     public bool ShowForm => !ShowConnecting;
     public string Subtitle => UseCode
         ? "Paste the setup code from the RX Vision portal."
-        : "Sign in with the details your manager sent you.";
+        : "Sign in with the details your admin sent you.";
 
     /// <summary>Called before the window is shown, so it matches the agent's state.</summary>
     public void Prepare(AgentState state)
@@ -100,7 +100,7 @@ public sealed partial class SignInViewModel : ObservableObject
     public void SetSessionLost(string reason)
     {
         var text = string.IsNullOrWhiteSpace(reason) ? "your session ended" : reason.Trim().TrimEnd('.');
-        SessionLostReason = $"You were signed out: {char.ToLowerInvariant(text[0])}{text[1..]}.";
+        SessionLostReason = text.StartsWith("Sign in again", StringComparison.Ordinal) ? $"{text}." : $"Sign in again to carry on. You were signed out: {char.ToLowerInvariant(text[0])}{text[1..]}.";
     }
 
     [RelayCommand(CanExecute = nameof(CanSignIn))]
@@ -135,7 +135,7 @@ public sealed partial class SignInViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.Error("ui", "sign-in failed", ex);
-            Error = "Sign-in didn't work. Try again in a moment.";
+            Error = "Try signing in again in a moment.";
         }
         finally
         {
@@ -167,7 +167,7 @@ public sealed partial class SignInViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.Error("ui", "setup code sign-in failed", ex);
-            Error = "That didn't work. Try again in a moment.";
+            Error = "Try again in a moment.";
         }
         finally
         {

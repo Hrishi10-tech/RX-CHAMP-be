@@ -64,12 +64,12 @@ public sealed class BreakActions
     /// <summary>An Admin or Super Admin may quit (with a key); staff and managers cannot quit at all (SPEC 2.8).</summary>
     public bool CanQuit => _agent.User?.Role is "ADMIN" or "SUPER_ADMIN";
 
-    /// <summary>Who decides the person's items, mid-sentence: "your manager" (staff) or "your admin" (managers).</summary>
+    /// <summary>Who decides the person's items, mid-sentence: "a manager" (staff: any of the department's managers) or "your admin" (managers).</summary>
     public string Approver => _agent.User?.Role switch
     {
         "MANAGER" => "your admin",
         "ADMIN" or "SUPER_ADMIN" => "an admin",
-        _ => "your manager",
+        _ => "a manager",
     };
 
     public string ApproverCapital => Capital(Approver);
@@ -112,7 +112,7 @@ public sealed class BreakActions
         {
             await _dialogs.AlertAsync(
                 presenceType == PresenceStatus.Lunch ? "No lunch in your shift today" : "No breaks in your shift today",
-                "Your shift doesn't have one scheduled today. Ask your manager if that looks wrong.");
+                "Your shift doesn't have one scheduled today. Ask your managers if that looks wrong.");
             return;
         }
 
@@ -690,7 +690,7 @@ public sealed class BreakActions
                         error = MeetingMessage(invalid.Code, invalid.Message, invalid.With);
                         continue;
                     case MeetingOutcome.Refused refused:
-                        await _dialogs.AlertAsync(draft.IsPast ? "Couldn't log the meeting" : "Couldn't start the meeting",
+                        await _dialogs.AlertAsync(draft.IsPast ? "Try logging the meeting again" : "Couldn't start the meeting",
                             MeetingMessage(refused.Code, refused.Message, null));
                         return;
                     default:
@@ -716,16 +716,16 @@ public sealed class BreakActions
             : "";
         return code switch
         {
-            "MEETING_OUTSIDE_DAY" => "That time is outside your working day. Pick a time between Start day and now.",
-            "MEETING_IN_FUTURE" => "That runs past now. Pick an earlier start or fewer minutes.",
-            "MEETING_OVERLAPS_BREAK" => $"That overlaps your {(with?.Kind == "LUNCH" ? "lunch" : "break")}{Span()}. Pick another time.",
-            "MEETING_OVERLAPS_MEETING" => $"That overlaps another meeting{Span()}. Pick another time.",
+            "MEETING_OUTSIDE_DAY" => "Pick a time between Start day and now.",
+            "MEETING_IN_FUTURE" => "Pick an earlier start or fewer minutes. That runs past now.",
+            "MEETING_OVERLAPS_BREAK" => $"Pick another time. That overlaps your {(with?.Kind == "LUNCH" ? "lunch" : "break")}{Span()}.",
+            "MEETING_OVERLAPS_MEETING" => $"Pick another time. That overlaps another meeting{Span()}.",
             "MOM_SENDER_REQUIRED" => "Add who will mail the minutes.",
             "DAY_NOT_STARTED" => "Start your day first.",
             "DAY_ENDED" => "Your working day has ended.",
             "ON_BREAK" => "End your break first.",
             "MEETING_IN_PROGRESS" => "You're already in a meeting. Tap End meeting first.",
-            _ => string.IsNullOrWhiteSpace(message) ? "That meeting couldn't be saved." : message,
+            _ => string.IsNullOrWhiteSpace(message) ? "Try saving that meeting again." : message,
         };
     }
 
@@ -858,7 +858,7 @@ public sealed class BreakActions
                     error = result.Message;
                     continue;
                 }
-                await _dialogs.AlertAsync("Couldn't add the note", result.Message ?? "Try again in a moment.");
+                await _dialogs.AlertAsync("Try adding the note again", result.Message ?? "Try again in a moment.");
                 return;
             }
         });
@@ -1098,9 +1098,11 @@ public sealed class BreakActions
         progress.Finish();
         await shown;
         if (left == 0) return true;
-        await _dialogs.AlertAsync("Can't sign out yet", _agent.Online
-            ? $"{Fmt.Count(left, "action is", "actions are")} still on the way to RX Vision. Try again in a moment."
-            : $"You're offline. Signing out needs the internet: {Fmt.Count(left, "action", "actions")} must reach RX Vision first.");
+        var waiting = Fmt.Count(left, "action is", "actions are");
+        var queued = Fmt.Count(left, "action", "actions");
+        await _dialogs.AlertAsync("Try signing out in a moment", _agent.Online
+            ? $"Try again in a moment. {waiting} still on the way to RX Vision."
+            : $"Connect to the internet to sign out. {queued} must reach RX Vision first.");
         return false;
     }
 
@@ -1278,7 +1280,7 @@ public sealed class BreakActions
                 await _dialogs.AlertAsync("Start your day first", "Tap Start day when you begin work. Breaks and meetings follow from there.");
                 return false;
             default:
-                await _dialogs.AlertAsync("Not tracking yet", "Sign in and finish setting up RX Vision first.");
+                await _dialogs.AlertAsync("Not started", "Sign in and finish setting up RX Vision first.");
                 return false;
         }
     }

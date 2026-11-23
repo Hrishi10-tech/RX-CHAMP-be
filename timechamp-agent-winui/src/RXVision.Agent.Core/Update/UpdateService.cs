@@ -218,14 +218,14 @@ public sealed class UpdateService : IDisposable
     {
         if (!_api.IsSignedIn) return new ManualDownload(null, "Sign in to download the update.");
         if (Interlocked.Exchange(ref _busy, 1) == 1)
-            return new ManualDownload(null, "An update check is running. Try again in a minute.");
+            return new ManualDownload(null, "Try again in a minute. An update check is running.");
         string? part = null;
         try
         {
             var result = await _api.GetAgentVersionAsync(_platform.UpdateChannel, ct);
-            if (result.Transient) return new ManualDownload(null, "Can't reach RX Vision. Try again in a moment.");
+            if (result.Transient) return new ManualDownload(null, "Try again in a moment.");
             if (!result.Ok || result.Data is not { Available: true } info || string.IsNullOrWhiteSpace(info.Sha256))
-                return new ManualDownload(null, "The update isn't available to download right now. Try again later.");
+                return new ManualDownload(null, "Try the update again soon. It isn't available to download right now.");
 
             var folder = DownloadsFolder();
             var dest = Path.Combine(folder, ManualFileName(info.FileName, info.Version, _platform.UpdateChannel, _platform.Name));
@@ -234,13 +234,13 @@ public sealed class UpdateService : IDisposable
             budget.CancelAfter(TimeSpan.FromMinutes(20));
             _log.Info("update", $"downloading {info.Version} for a manual install");
             var sha = await _api.DownloadAgentAsync(_platform.UpdateChannel, part, budget.Token);
-            if (sha is null) return new ManualDownload(null, "The download didn't finish. Try again in a moment.");
+            if (sha is null) return new ManualDownload(null, "Try the download again in a moment.");
 
             var sizeOk = info.SizeBytes <= 0 || new FileInfo(part).Length == info.SizeBytes;
             if (!sizeOk || !string.Equals(sha, info.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 _log.Warn("update", $"{info.Version}: manual download failed the checksum or size check");
-                return new ManualDownload(null, "The download didn't match the published build, so it was deleted. Try again later.");
+                return new ManualDownload(null, "Try the download again soon. That copy didn't match, so it was removed.");
             }
             if (TrustedKey is { } key)
             {
@@ -262,7 +262,7 @@ public sealed class UpdateService : IDisposable
         catch (Exception ex)
         {
             _log.Warn("update", "manual download failed", ex);
-            return new ManualDownload(null, "Couldn't save the update. Try again in a moment.");
+            return new ManualDownload(null, "Try saving the update again in a moment.");
         }
         finally
         {

@@ -318,7 +318,7 @@ public class AwayViewModelTests
         Assert.False(vm.SubmitCommand.CanExecute(null)); // pick a reason first
         vm.Reasons.Single(r => r.Label == "Thinking").PickCommand.Execute(null);
         Assert.Equal("What were you thinking about?", vm.CommentLabel);
-        Assert.Equal("Sent to your manager for approval. If approved, it counts as focus time.", vm.SelectedNote);
+        Assert.Equal("Sent to a manager for approval. If approved, it counts as focus time.", vm.SelectedNote);
         await vm.SubmitCommand.ExecuteAsync(null);
         Assert.Equal("Add what you were thinking about (3 to 200 characters).", vm.Error);
         Assert.Empty(agent.AwayCalls);

@@ -510,14 +510,14 @@ public sealed partial class DashboardViewModel : ObservableObject
             else
             {
                 DownloadLabel = "Try again";
-                UpdateText = result.Error ?? "Couldn't download the update. Try again in a moment.";
+                UpdateText = result.Error ?? "Try the download again in a moment.";
             }
         }
         catch (Exception ex)
         {
             _log.Warn("ui", "update download failed", ex);
             DownloadLabel = "Try again";
-            UpdateText = "Couldn't download the update. Try again in a moment.";
+            UpdateText = "Try the download again in a moment.";
         }
         finally
         {
@@ -647,7 +647,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         // "Decided today": the business date of the decision against the business date now
         // (a night shift's day keeps its start date past midnight, the clock does not).
         Today.UpdateWaiting(_agent.MyApprovals, _agent.BusinessDate(now), _agent.BusinessDate,
-            _actions.Approver == "your manager" ? "Waiting for your manager" : _actions.Approver == "your admin" ? "Waiting for your admin" : "Waiting for an admin");
+            _actions.Approver == "a manager" ? "Waiting for a manager" : _actions.Approver == "your admin" ? "Waiting for your admin" : "Waiting for an admin");
         UpdateBanners(now);
         if (IsHistoryPage) History.Tick(DateTimeOffset.UtcNow);
         EndDayCommand.NotifyCanExecuteChanged();
@@ -1015,12 +1015,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         // An End Day done offline waiting for comments (the toast may have been missed).
         HeldEndDayText = _agent.HeldEndDay is { } held && _agent.State == AgentState.Running
-            ? $"Your End Day at {_agent.BusinessTime(held.At)} needs {(held.Breaks.Count == 1 ? "a comment on a skipped break" : $"comments on {held.Breaks.Count} skipped breaks")}. Until then your day stays open."
+            ? $"Your End day at {_agent.BusinessTime(held.At)} needs {(held.Breaks.Count == 1 ? "a comment on a skipped break" : $"comments on {held.Breaks.Count} skipped breaks")}. Until then your day stays open."
             : null;
 
         var offer = _agent.PendingUpdate;
         if (offer is { CanInstall: false } && UpdateText is null && !_updateDismissed.Contains(offer.Version))
-            UpdateText = $"RX Vision {offer.Version} is available. Download it and replace this app to update.";
+            UpdateText = $"Download RX Vision {offer.Version} and replace this app to update.";
 
         if (now - _permissionCheckedAt < TimeSpan.FromSeconds(5)) return;
         _permissionCheckedAt = now;

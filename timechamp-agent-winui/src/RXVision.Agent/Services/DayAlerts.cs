@@ -203,7 +203,7 @@ public sealed class DayAlerts
     {
         var one = held.Breaks.Count == 1;
         _center.Raise(new AlertCard(EndDayHeldKey, AlertLevel.Action,
-            $"Your End Day at {_agent.BusinessTime(held.At)} needs {(one ? "a comment" : "comments")}",
+            $"Your End day at {_agent.BusinessTime(held.At)} needs {(one ? "a comment" : "comments")}",
             one
                 ? "A skipped break needs a comment before your day can end then. Until you add it, your day stays open."
                 : $"{held.Breaks.Count} skipped breaks need a comment before your day can end then. Until you add them, your day stays open.")

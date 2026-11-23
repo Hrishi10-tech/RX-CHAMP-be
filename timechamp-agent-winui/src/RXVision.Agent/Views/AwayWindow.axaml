@@ -55,7 +55,7 @@
           </StackPanel>
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="What was it about?" />
-            <TextBox Classes="field" Text="{Binding Summary}" Watermark="One line, for example: stand-up with the QA team" MaxLength="200"
+            <TextBox Classes="field" Text="{Binding Summary}" Watermark="One line, for example: stand-up with the support team" MaxLength="200"
                      AutomationProperties.Name="What was it about" />
           </StackPanel>
           <StackPanel Spacing="6">
@@ -82,7 +82,7 @@
     <!-- On a break (Took a break) -->
     <StackPanel IsVisible="{Binding IsOnBreak}">
       <StackPanel Margin="24,22,24,18" Spacing="10">
-        <TextBlock Classes="small" Text="ON A BREAK" Foreground="{StaticResource Brush.Amber}" FontSize="11.5" FontWeight="Bold" />
+        <TextBlock Classes="small" Text="On a break" Foreground="{StaticResource Brush.Amber}" FontSize="11.5" FontWeight="Bold" />
         <StackPanel Orientation="Horizontal" Spacing="10">
           <TextBlock Classes="num" Text="{Binding BreakTimer}" FontSize="46" FontWeight="Bold" Foreground="{StaticResource Brush.Amber}" />
           <TextBlock Text="so far" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Brush.Amber}" VerticalAlignment="Bottom" Margin="0,0,0,10" />

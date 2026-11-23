@@ -45,12 +45,12 @@ public sealed partial class InstructionsViewModel : ObservableObject
             }
             Note = fresh ? null
                 : guide is not null ? "You're offline, so this is the last copy."
-                : "Can't reach RX Vision to read the instructions. Try again in a moment.";
+                : "Try again in a moment. The instructions show once RX Vision answers.";
         }
         catch (Exception ex)
         {
             _log.Warn("guide", "reading the guide failed", ex);
-            Note = "The instructions couldn't be read. Try again in a moment.";
+            Note = "Try opening the instructions again in a moment.";
         }
     }
 

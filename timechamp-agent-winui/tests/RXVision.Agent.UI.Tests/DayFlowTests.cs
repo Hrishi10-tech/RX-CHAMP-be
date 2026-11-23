@@ -295,7 +295,7 @@ public class DayFlowTests
         ui.Click("End day");
         var dialog = ui.Dialog<EndDayDialogViewModel>();
         Assert.True(ui.Shows("Before you end the day"));
-        Assert.True(ui.Shows("Add a comment to each of your 3 skipped breaks. Each goes to your manager."));
+        Assert.True(ui.Shows("Add a comment to each of your 3 skipped breaks. Each goes to a manager."));
         Assert.True(ui.Shows("Skipped for you at 2:00 PM on 12 Oct"));
         var endDay = ui.Button("End day");
         Assert.False(endDay.IsEffectivelyEnabled);
@@ -378,7 +378,7 @@ public class DayFlowTests
             Effect = new ApprovalEffect { Mode = "MINUS", Minutes = 15, Text = "−15 min if rejected" },
         });
         var ui = new DashboardHarness(agent);
-        Assert.True(ui.Shows("Waiting for your manager"));
+        Assert.True(ui.Shows("Waiting for a manager"));
         Assert.True(ui.Shows("Meeting: Client call with Acme"));
         Assert.True(ui.Shows("+30 min if approved"));
         Assert.True(ui.Shows("−15 min if rejected"));
@@ -396,7 +396,7 @@ public class DayFlowTests
         // Nothing waiting: no card.
         agent.Approvals.Clear();
         ui.Refresh();
-        Assert.False(ui.Shows("Waiting for your manager"));
+        Assert.False(ui.Shows("Waiting for a manager"));
         ui.Close();
     }
 }
@@ -415,7 +415,7 @@ public class BreakFlowTests
 
         var skip = ui.Dialog<ReasonDialogViewModel>();
         Assert.True(ui.Shows("Skip this break?"));
-        Assert.True(ui.Shows("Your focus time keeps running. If your manager rejects the skip, the 15 min come off it."));
+        Assert.True(ui.Shows("Your focus time keeps running. If a manager rejects the skip, the 15 min come off it."));
         Assert.True(ui.Shows("10 characters or more, please."));
         Assert.False(ui.Button("Skip break").IsEffectivelyEnabled);
         ui.Click("Client call");
@@ -686,7 +686,7 @@ public class MeetingFlowTests
         // Refused: the dialog comes back with the reason and what was filled in.
         var again = ui.Dialog<MeetingDialogViewModel>();
         Assert.NotSame(dialog, again);
-        Assert.True(ui.Shows("That overlaps your break from 11:00 AM to 11:15 AM. Pick another time."));
+        Assert.True(ui.Shows("Pick another time. That overlaps your break from 11:00 AM to 11:15 AM."));
         Assert.True(again.IsPast);
         Assert.Equal("Client call with Acme", again.Agenda);
 

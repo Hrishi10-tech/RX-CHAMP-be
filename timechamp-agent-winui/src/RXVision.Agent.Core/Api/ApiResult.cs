@@ -114,7 +114,7 @@ internal static class ResultReader
         }
         catch (Exception ex) when (ex is IOException or HttpRequestException or TaskCanceledException)
         {
-            return ApiResult<T>.TransientFailure("The connection dropped while reading the answer.", status);
+            return ApiResult<T>.TransientFailure("Check your connection and try again.", status);
         }
 
         if (res.IsSuccessStatusCode)
@@ -126,7 +126,7 @@ internal static class ResultReader
                 if (env is { Success: true }) return ApiResult<T>.Success(env.Data, status);
             }
             catch (JsonException) { }
-            return ApiResult<T>.TransientFailure("The server's answer was not understood (a network login page?).", status);
+            return ApiResult<T>.TransientFailure("Check your network's sign-in page, then try again.", status);
         }
 
         ErrorEnvelope? error = null;
@@ -158,7 +158,7 @@ internal static class ResultReader
             Outcome = outcome,
             Status = status,
             Code = code,
-            Message = message ?? (outcome == ApiOutcome.Transient ? $"The server is not available right now ({status})." : $"Refused ({status})."),
+            Message = message ?? (outcome == ApiOutcome.Transient ? $"RX Vision isn't available right now. Try again in a moment." : $"Try that again in a moment."),
             Details = error?.Error?.Details,
             RetryAfter = RetryAfterOf(res),
         };

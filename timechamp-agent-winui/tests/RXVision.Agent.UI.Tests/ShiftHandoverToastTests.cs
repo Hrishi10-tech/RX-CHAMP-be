@@ -34,7 +34,7 @@ public class ShiftHandoverToastTests
     {
         var agent = new FakeAgent();
         var end = agent.Now.AddMinutes(5);
-        Assert.Contains("Press End Day when you finish", Toasts.ShiftAnswer(agent, true, end));
+        Assert.Contains("Tap End day when you finish", Toasts.ShiftAnswer(agent, true, end));
         Assert.Equal($"You'll be signed out at {agent.BusinessTime(end)}.", Toasts.ShiftAnswer(agent, false, end));
     }
 }

@@ -157,7 +157,7 @@ public sealed class AppController : IDisposable
         catch (Exception ex)
         {
             _log.Error("ui", "the agent failed to start", ex);
-            _signInVm.Error = "RX Vision couldn't start properly. Try signing in, or quit and open it again.";
+            _signInVm.Error = "Try signing in, or quit and open RX Vision again.";
             ShowSignIn();
         }
     }
@@ -605,7 +605,7 @@ public sealed class AppController : IDisposable
             _bubbleVm.MessageCount = _agent.ChatUnread;
             if (chat is not null && !chat.ContactsLoaded) await chat.LoadContactsAsync();
             var sender = chat?.NameOf(message.FromUserId) ?? "Someone";
-            if (sender == "Someone") sender = "Your manager";
+            if (sender == "Someone") sender = "A manager";
             _toasts.Show(new ToastViewModel(ToastKind.Message, "chat:" + message.FromUserId)
             {
                 Heading = "New message",

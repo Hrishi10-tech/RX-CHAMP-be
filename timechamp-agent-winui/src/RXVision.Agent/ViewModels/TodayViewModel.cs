@@ -71,7 +71,7 @@ public sealed partial class TodayViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasWaiting))]
     private int _waitingCount;
 
-    [ObservableProperty] private string _waitingTitle = "Waiting for your manager";
+    [ObservableProperty] private string _waitingTitle = "Waiting for a manager";
     [ObservableProperty] private string? _waitingMore;
 
     public bool HasPlus => PlusText is not null;

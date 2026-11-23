@@ -72,7 +72,7 @@ public class DayNotesTests
         agent.Workday!.LateStart = new LateStartView { Minutes = 35, NeedsReason = true };
         agent.PresetLists[PresetKinds.LateDayStart] = new() { "Traffic", "Doctor appointment" };
         vm.Refresh();
-        Assert.Equal("Your day started 35 min after your shift start. Add a short note for your manager.", vm.LateReasonText);
+        Assert.Equal("Your day started 35 min after your shift start. Add a short note for a manager.", vm.LateReasonText);
 
         dialogs.Answer(d =>
         {
@@ -265,7 +265,7 @@ public class LeavePageTests
         await vm.LoadAsync();
         agent.LeaveResult = new ApiResult<MyLeave> { Outcome = ApiOutcome.Transient, Message = "offline" };
         await vm.LoadAsync();
-        Assert.Equal("Can't reach RX Vision to read your leave. Try again in a moment.", vm.Problem);
+        Assert.Equal("Try again in a moment. Your leave shows once RX Vision answers.", vm.Problem);
         Assert.Equal(3, vm.Balances.Count);
     }
 
@@ -443,7 +443,7 @@ public class CalendarPageTests
     {
         var vm = new CalendarViewModel(new FakeAgent("10:20"), NullLog.Instance);
         await vm.OpenAsync();
-        Assert.Equal("Can't reach RX Vision to read your calendar. Try again in a moment.", vm.Problem);
+        Assert.Equal("Try again in a moment. Your calendar shows once RX Vision answers.", vm.Problem);
     }
 }
 
@@ -474,7 +474,7 @@ public class InstructionsPageTests
         vm.Reset();
         await vm.LoadAsync();
         Assert.Empty(vm.Items);
-        Assert.Equal("Can't reach RX Vision to read the instructions. Try again in a moment.", vm.Note);
+        Assert.Equal("Try again in a moment. The instructions show once RX Vision answers.", vm.Note);
     }
 }
 

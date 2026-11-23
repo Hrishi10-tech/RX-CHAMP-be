@@ -132,7 +132,7 @@ public class DayActionTests
         {
             var end = Assert.IsType<EndDayDialogViewModel>(d);
             Assert.Equal("Before you end the day", end.Title);
-            Assert.Equal("Add a comment to each of your 3 skipped breaks. Each goes to your manager.", end.Message);
+            Assert.Equal("Add a comment to each of your 3 skipped breaks. Each goes to a manager.", end.Message);
             Assert.Equal("End day", end.PrimaryText);
             Assert.Equal("Not now", end.CancelText);
             Assert.Equal(new[] { "Evening break", "Morning break", "Lunch break" }, end.Items.Select(i => i.Name));
@@ -186,7 +186,7 @@ public class DayActionTests
             .Answer(d =>
             {
                 var end = Assert.IsType<EndDayDialogViewModel>(d);
-                Assert.Equal("Add a comment to your skipped break. It goes to your manager.", end.Message);
+                Assert.Equal("Add a comment to your skipped break. It goes to a manager.", end.Message);
                 end.Items[0].Text = "Release call ran late";
                 return true;
             })
@@ -436,7 +436,7 @@ public class DayActionTests
             .Answer(d =>
             {
                 var again = (MeetingDialogViewModel)d;
-                Assert.Equal("That overlaps your lunch from 1:00 PM to 1:30 PM. Pick another time.", again.Error);
+                Assert.Equal("Pick another time. That overlaps your lunch from 1:00 PM to 1:30 PM.", again.Error);
                 Assert.True(again.IsPast);
                 Assert.Equal("1:00 PM", again.StartAt!.Label);
                 Assert.Equal("40", again.MinutesText);
@@ -451,9 +451,9 @@ public class DayActionTests
     }
 
     [Theory]
-    [InlineData("MEETING_OUTSIDE_DAY", "That time is outside your working day. Pick a time between Start day and now.")]
-    [InlineData("MEETING_IN_FUTURE", "That runs past now. Pick an earlier start or fewer minutes.")]
-    [InlineData("MEETING_OVERLAPS_MEETING", "That overlaps another meeting from 10:00 AM to 10:30 AM. Pick another time.")]
+    [InlineData("MEETING_OUTSIDE_DAY", "Pick a time between Start day and now.")]
+    [InlineData("MEETING_IN_FUTURE", "Pick an earlier start or fewer minutes. That runs past now.")]
+    [InlineData("MEETING_OVERLAPS_MEETING", "Pick another time. That overlaps another meeting from 10:00 AM to 10:30 AM.")]
     [InlineData("DAY_NOT_STARTED", "Start your day first.")]
     [InlineData("SOMETHING_NEW", "The server's own words.")]
     public void Meeting_codes_in_plain_words(string code, string expected)
@@ -556,7 +556,7 @@ public class MeetingDialogTests
             dayStarted is null ? null : Ist.At(dayStarted),
             agent.BusinessTime,
             "u-1",
-            "your manager");
+            "a manager");
         return new MeetingDialogViewModel(context);
     }
 
@@ -603,7 +603,7 @@ public class MeetingDialogTests
     {
         var dialog = Dialog(search: _ => Task.FromResult<IReadOnlyList<ParticipantOption>?>(null));
         await dialog.LoadSuggestionsAsync();
-        Assert.Equal("Can't search the directory right now. You can still type names.", dialog.SearchProblem);
+        Assert.Equal("Type names for now. Search isn't available right now.", dialog.SearchProblem);
         dialog.PersonQuery = "Ravi";
         Assert.Equal("+ Add “Ravi”", Assert.Single(dialog.Suggestions).Label);
         dialog.AddTypedCommand.Execute(null);
@@ -646,13 +646,13 @@ public class MeetingDialogTests
         dialog.MinutesText = "abc";
         Assert.Equal("Enter how long it ran, in minutes.", dialog.Problem);
         dialog.MinutesText = "3";
-        Assert.Equal("How long must be 5 to 480 minutes.", dialog.Problem);
+        Assert.Equal("Enter 5 to 480 minutes.", dialog.Problem);
         dialog.MinutesText = "481";
-        Assert.Equal("How long must be 5 to 480 minutes.", dialog.Problem);
+        Assert.Equal("Enter 5 to 480 minutes.", dialog.Problem);
 
         // 11:50 + 45 min runs past 12:20: the chip is off and the check says why.
         dialog.MinutesText = "45";
-        Assert.Equal("That runs past now. Pick an earlier start or fewer minutes.", dialog.Problem);
+        Assert.Equal("Pick an earlier start or fewer minutes. That runs past now.", dialog.Problem);
         Assert.False(dialog.Durations.First(c => c.Minutes == 45).IsEnabled);
         Assert.True(dialog.Durations.First(c => c.Minutes == 30).IsEnabled);
         Assert.False(dialog.SubmitCommand.CanExecute(null));
@@ -685,9 +685,9 @@ public class MeetingDialogTests
     public void Notes_say_what_happens_to_focus_time()
     {
         var dialog = Dialog();
-        Assert.Equal("Your focus time keeps counting while you are in it. Tap End meeting when you are back. Your manager approves or rejects it after.", dialog.Note);
+        Assert.Equal("Your focus time keeps counting while you are in it. Tap End meeting when you are back. A manager approves or rejects it after.", dialog.Note);
         dialog.IsPast = true;
-        Assert.Equal("This time is already in your focus time. Your manager approves or rejects it; a rejection takes these minutes off.", dialog.Note);
+        Assert.Equal("This time is already in your focus time. A manager approves or rejects it; a rejection takes these minutes off.", dialog.Note);
     }
 }
 
@@ -945,7 +945,7 @@ public class DayStateTests
         var vm = Dashboard(agent);
         var today = vm.Today;
         Assert.True(today.HasWaiting);
-        Assert.Equal("Waiting for your manager", today.WaitingTitle);
+        Assert.Equal("Waiting for a manager", today.WaitingTitle);
         Assert.Equal(4, today.WaitingCount);
         Assert.Equal(new[]
         {

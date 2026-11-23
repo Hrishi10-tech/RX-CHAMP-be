@@ -986,7 +986,7 @@ public class AgentHostTests
         await h.Host.StartAsync();
 
         Assert.Equal(AgentState.SignIn, h.Host.State);
-        Assert.Equal("Check the server address with your manager.", h.Host.SignInNotice);
+        Assert.Equal("Check the server address with your organisation's admin.", h.Host.SignInNotice);
         Assert.Equal(0, h.Server.Count("POST auth/enroll"));
         h.Host.SignInNoticeShown();
         Assert.Null(h.Host.SignInNotice);

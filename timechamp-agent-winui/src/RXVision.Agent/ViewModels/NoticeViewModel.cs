@@ -25,10 +25,10 @@ public sealed partial class NoticeViewModel : ObservableObject
             new NoticeItem("Icon.Clock", "Working hours",
                 "When your day starts and ends, and when you're away from your computer or it's locked."),
             new NoticeItem("Icon.Coffee", "Breaks, lunch and meetings",
-                "When you take them and for how long, including any reason you give your manager."),
+                "When you take them and for how long, including any reason you give your managers."),
             new NoticeItem("Icon.Globe", "Apps and websites",
                 "The app in front and its window title, and the website address in your browser, about once a minute."),
-            new NoticeItem("Icon.Moon", "Idle time",
+            new NoticeItem("Icon.Moon", "Time away",
                 $"Time with no keyboard or mouse use for {idleMin} minutes or more."),
             new NoticeItem("Icon.Camera", "Screenshots",
                 $"A picture of your screen about every {shotsMin} minutes, and whenever a manager asks for one. " +
@@ -46,7 +46,7 @@ public sealed partial class NoticeViewModel : ObservableObject
 
     public string Heading => "RX Vision records your working day";
     public string Intro => "Your company uses RX Vision for attendance and work monitoring. While your day is running, it records:";
-    public string Footer => "Your manager and your company's admins can see this. You can see your own day any time from the round button, and End day stops tracking until you start again.";
+    public string Footer => "Your department's managers and your organisation's admins can see this. You can see your own day any time from the round icon, and End day stops tracking until you start again.";
     public IReadOnlyList<NoticeItem> Items { get; }
 
     [ObservableProperty]
@@ -67,7 +67,7 @@ public sealed partial class NoticeViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.Error("ui", "notice acknowledgement failed", ex);
-            Error = "That didn't work. Try again.";
+            Error = "Try again.";
         }
         finally
         {

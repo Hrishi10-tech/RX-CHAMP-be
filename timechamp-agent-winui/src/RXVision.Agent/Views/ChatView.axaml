@@ -63,7 +63,7 @@
             <TextBox Name="Input"
                      Classes="chatinput"
                      Text="{Binding Draft}"
-                     Watermark="Message..."
+                     Watermark="Write a message"
                      MaxLength="{Binding MaxChars}"
                      TextWrapping="Wrap"
                      AcceptsReturn="False"

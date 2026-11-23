@@ -152,6 +152,7 @@ public class NoRedTests
         }
         using var frame = top.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
         Assert.True(RedPixels(frame) == 0, $"{state}: {RedPixels(frame)} red pixels");
+        CopyRulesTests.CheckShown(top, state);
     }
 
     private static DashboardWindow Panel(FakeAgent agent, out DashboardViewModel vm)
@@ -274,12 +275,12 @@ public class NoRedTests
             ["quick break (4.0)"] = () => actions.QuickDialog(),
             ["sign-out key (4.0)"] = () => new KeyDialogViewModel("Enter the sign-out key", "Ask your admin for a key.", "Sign out") { Error = "That key isn't valid for you." },
             ["comment"] = () => actions.CommentDialog("Morning break", "closed 12:00 PM", 10),
-            ["end day"] = () => new EndDayDialogViewModel(EndDayFit.Items(3), "your manager", "Your manager"),
+            ["end day"] = () => new EndDayDialogViewModel(EndDayFit.Items(3), "a manager", "A manager"),
             ["end day, refused"] = () =>
             {
                 var items = EndDayFit.Items(1);
                 items[0].Error = "Add a little more.";
-                return new EndDayDialogViewModel(items, "your manager", "Your manager") { Error = "Try ending your day again." };
+                return new EndDayDialogViewModel(items, "a manager", "A manager") { Error = "Try ending your day again." };
             },
             ["quit"] = () => new MessageDialogViewModel("Quit RX Vision?", "Tracking stops until you open RX Vision again.") { PrimaryText = "Quit", CancelText = "Keep running" },
             ["meeting"] = () => new MeetingDialogViewModel(actions.MeetingContext()) { Error = "That overlaps your break." },

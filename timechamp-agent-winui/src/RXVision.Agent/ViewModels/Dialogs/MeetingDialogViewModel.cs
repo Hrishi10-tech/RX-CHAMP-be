@@ -264,7 +264,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         if (version != Volatile.Read(ref _searchVersion)) return; // a newer search is on its way
         if (found is null)
         {
-            SearchProblem = "Can't search the directory right now. You can still type names.";
+            SearchProblem = "Type names for now. Search isn't available right now.";
             return;
         }
         SearchProblem = null;
@@ -294,7 +294,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         }
         catch (Exception)
         {
-            SearchProblem = "Can't search the directory right now. You can still type names.";
+            SearchProblem = "Type names for now. Search isn't available right now.";
         }
     }
 
@@ -369,8 +369,8 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         if (!IsPast) return null;
         if (StartAt is null) return HasStartOptions ? "Pick when it started." : NoStartOptionsText;
         if (Minutes is not { } m) return "Enter how long it ran, in minutes.";
-        if (m < MinMinutes || m > MaxMinutes) return $"How long must be {MinMinutes} to {MaxMinutes} minutes.";
-        if (StartAt.At.AddMinutes(m) > _context.Now) return "That runs past now. Pick an earlier start or fewer minutes.";
+        if (m < MinMinutes || m > MaxMinutes) return $"Enter {MinMinutes} to {MaxMinutes} minutes.";
+        if (StartAt.At.AddMinutes(m) > _context.Now) return "Pick an earlier start or fewer minutes. That runs past now.";
         return null;
     }
 

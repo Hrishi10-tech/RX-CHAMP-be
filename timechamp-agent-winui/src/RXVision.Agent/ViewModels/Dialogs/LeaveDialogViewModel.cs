@@ -188,13 +188,13 @@ public sealed partial class LeaveDialogViewModel : DialogViewModel
         if (result.Data is not { } preview)
         {
             PreviewProblem = result.Transient ? null : result.Message;
-            if (result.Transient) PreviewLines.Add("Can't check this right now. You can still apply.");
+            if (result.Transient) PreviewLines.Add("You can still apply. This check isn't available right now.");
             SubmitCommand.NotifyCanExecuteChanged();
             return;
         }
         if (!preview.Ok)
         {
-            PreviewProblem = preview.Problem?.Message ?? "That leave can't be applied for.";
+            PreviewProblem = preview.Problem?.Message ?? "Try other dates or another leave type.";
             SubmitCommand.NotifyCanExecuteChanged();
             return;
         }

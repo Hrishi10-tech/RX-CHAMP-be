@@ -14,7 +14,7 @@ public class ReasonDialogTests
     [Fact]
     public async Task Submit_waits_for_the_minimum_length()
     {
-        var dialog = new ReasonDialogViewModel("Morning break, 12 min after its time", "Your morning break was due at 11:00 AM. Add a short note for your manager.", 10);
+        var dialog = new ReasonDialogViewModel("Morning break, 12 min after its time", "Your morning break was due at 11:00 AM. Add a short note for a manager.", 10);
         Assert.False(dialog.SubmitCommand.CanExecute(null));
         Assert.Equal("10 more characters", dialog.CountText);
         Assert.False(dialog.CountOk);
@@ -86,7 +86,7 @@ public class BreakActionsTests
         {
             var reason = Assert.IsType<ReasonDialogViewModel>(d);
             Assert.Equal("Morning break, 12 min after its time", reason.Title);
-            Assert.Equal("Your morning break was due at 11:00 AM. Add a short note for your manager.", reason.Message);
+            Assert.Equal("Your morning break was due at 11:00 AM. Add a short note for a manager.", reason.Message);
             Assert.Equal("Starting after its time", reason.TagText);
             Assert.Equal("Due 11:00 AM · window 10:30 AM to 12:00 PM", reason.TagDetail);
             Assert.Equal("What came up?", reason.Label);
@@ -298,7 +298,7 @@ public class BreakActionsTests
                 var skip = Assert.IsType<ReasonDialogViewModel>(d);
                 Assert.Equal("Skip this break?", skip.Title);
                 Assert.Equal("Your next one is at 1:00 PM.", skip.Lead);
-                Assert.Equal("Your focus time keeps running. If your manager rejects the skip, the 15 min come off it.", skip.Message);
+                Assert.Equal("Your focus time keeps running. If a manager rejects the skip, the 15 min come off it.", skip.Message);
                 Assert.Equal("Why are you skipping it?", skip.Label);
                 Assert.Equal("10 characters or more, please.", skip.Hint);
                 Assert.Equal("Skip break", skip.PrimaryText);
@@ -451,7 +451,7 @@ public class BreakActionsTests
         {
             var comment = Assert.IsType<ReasonDialogViewModel>(d);
             Assert.Equal("Add a comment", comment.Title);
-            Assert.Equal("Add a comment before you end the day. This skip goes to your manager either way.", comment.Message);
+            Assert.Equal("Add a comment before you end the day. This skip goes to a manager either way.", comment.Message);
             Assert.Equal("Skipped for you", comment.TagText);
             Assert.Equal("Morning break · closed 12:00 PM", comment.TagDetail);
             Assert.Equal("Send comment", comment.PrimaryText);
@@ -832,8 +832,8 @@ public class BreakActionsTests
         dialogs.Answer(_ => true).Answer(_ => true).Answer(_ => true);
         await actions.SignOutAsync();
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[^1]);
-        Assert.Equal("Can't sign out yet", alert.Title);
-        Assert.Equal("You're offline. Signing out needs the internet: 2 actions must reach RX Vision first.", alert.Message);
+        Assert.Equal("Try signing out in a moment", alert.Title);
+        Assert.Equal("Connect to the internet to sign out. 2 actions must reach RX Vision first.", alert.Message);
         Assert.Empty(agent.SignOutKeys);
         Assert.Equal(AgentState.Running, agent.State);
     }
@@ -910,7 +910,7 @@ public class ChatViewModelTests
         agent.FakeChat.Conversation.Add(new ChatMessage { Id = "1", FromUserId = "m-1", ToUserId = "u-1", Body = "Can you join the 4 pm call?", CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5) });
         var chat = new ChatViewModel(agent, NullLog.Instance);
         await chat.ActivateAsync();
-        Assert.Equal("Chat · Maya Reddy", chat.HeaderText);
+        Assert.Equal("Maya Reddy", chat.HeaderText);
         Assert.False(chat.HasManyContacts);
         Assert.Equal(new[] { "1", "2" }, chat.Messages.Select(m => m.Id));
         Assert.True(chat.Messages[0].IsTheirs);
@@ -924,12 +924,12 @@ public class ChatViewModelTests
         var agent = new FakeAgent();
         var chat = new ChatViewModel(agent, NullLog.Instance);
         await chat.ActivateAsync();
-        agent.FakeChat.SendResults.Enqueue(ApiResult<ChatMessage>.TransientFailure("Can't reach the server."));
+        agent.FakeChat.SendResults.Enqueue(ApiResult<ChatMessage>.TransientFailure("Check your connection and try again."));
         chat.Draft = "Running 5 min late";
         Assert.True(chat.SendCommand.CanExecute(null));
         await chat.SendCommand.ExecuteAsync(null);
         Assert.Equal("Running 5 min late", chat.Draft);
-        Assert.Equal("Couldn't send. Check your connection and try again.", chat.SendError);
+        Assert.Equal("Check your connection and try sending again.", chat.SendError);
         Assert.Empty(chat.Messages);
 
         agent.FakeChat.SendResults.Enqueue(new ApiResult<ChatMessage> { Outcome = ApiOutcome.Rejected, Message = "Messages can be up to 2000 characters." });
@@ -1222,8 +1222,8 @@ public class BubbleAndSignInTests
         Assert.False(vm.ShowForm);
         vm.ShowSignInFormCommand.Execute(null);
         Assert.True(vm.ShowForm);
-        vm.SetSessionLost("Your session has ended. Please sign in again.");
-        Assert.Equal("You were signed out: your session has ended. Please sign in again.", vm.SessionLostReason);
+        vm.SetSessionLost("Sign in again to carry on.");
+        Assert.Equal("Sign in again to carry on.", vm.SessionLostReason);
         vm.ToggleModeCommand.Execute(null);
         Assert.True(vm.UseCode);
         Assert.Equal("Paste the setup code from the RX Vision portal.", vm.Subtitle);

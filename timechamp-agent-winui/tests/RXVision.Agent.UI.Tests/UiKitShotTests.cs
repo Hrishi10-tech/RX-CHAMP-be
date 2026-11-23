@@ -133,7 +133,7 @@ public class UiKitShotTests
             Item(T("h2", "October 2026"), "TextBlock.h2  18 bold"),
             Item(T("status", "Working"), "TextBlock.status  15 bold"),
             Item(T("progressline", "4h 12m of 8h"), "TextBlock.progressline  15 bold"),
-            Item(T("lead", "Sign in with the details your manager sent you.", 600), "TextBlock.lead  15, quiet"),
+            Item(T("lead", "Sign in with the details your admin sent you.", 600), "TextBlock.lead  15, quiet"),
             Item(T("title", "Today's breaks"), "TextBlock.title  13 semibold"),
             Item(T("label", "Work email"), "TextBlock.label  13 semibold"),
             Item(T("body", "Your focus time keeps counting in a meeting. Breaks pause it.", 600), "TextBlock.body  13, line 19, quiet"),

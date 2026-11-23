@@ -99,7 +99,7 @@ public class HeldEndDayTests
         var vm = new DashboardViewModel(agent, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), NullLog.Instance);
         vm.Refresh();
         Assert.True(vm.HasHeldEndDay);
-        Assert.Equal("Your End Day at 6:30 PM needs a comment on a skipped break. Until then your day stays open.", vm.HeldEndDayText);
+        Assert.Equal("Your End day at 6:30 PM needs a comment on a skipped break. Until then your day stays open.", vm.HeldEndDayText);
         Assert.True(vm.EndDayCommand.CanExecute(null));
 
         agent.HeldEndDay = null;
@@ -117,7 +117,7 @@ public class HeldEndDayTests
         var alerts = new DayAlerts(agent, center, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), _ => { });
         alerts.OnEndDayHeld(agent.HeldEndDay);
         var card = Assert.Single(center.Cards);
-        Assert.Equal("Your End Day at 6:30 PM needs a comment", card.Title);
+        Assert.Equal("Your End day at 6:30 PM needs a comment", card.Title);
         Assert.Equal("A skipped break needs a comment before your day can end then. Until you add it, your day stays open.", card.Body);
         Assert.Equal("Add comments", card.PrimaryText);
         Assert.True(card.IsAction);

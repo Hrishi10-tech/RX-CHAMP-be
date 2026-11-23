@@ -215,7 +215,7 @@ public sealed class BreakService
             await RefreshAsync(ct);
             return new StartOutcome.Started(result.Data?.Record, result.Data?.Record.PresenceType ?? "BREAK");
         }
-        if (result.Transient) return new StartOutcome.Offline("Can't reach RX Vision, so the break hasn't started. Try again in a moment.");
+        if (result.Transient) return new StartOutcome.Offline("Try again in a moment. Your break hasn't started yet.");
         if (result.Code is "BREAK_NOT_SCHEDULED" or "BREAK_ALREADY_TAKEN" or "BREAK_ORDER" or "ALREADY_ON_BREAK"
             or "BREAK_WINDOW_CLOSED" or "DAY_ENDED" or "DAY_NOT_STARTED")
         {
@@ -228,14 +228,14 @@ public sealed class BreakService
     /// <summary>A refused break start in the person's terms (also for a replayed one).</summary>
     public static StartOutcome StartRefusal<T>(ApiResult<T> result, int minChars)
     {
-        if (result.Outcome == ApiOutcome.Unauthorized) return new StartOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again to take a break.");
+        if (result.Outcome == ApiOutcome.Unauthorized) return new StartOutcome.Refused("SIGNED_OUT", "Sign in again to take a break.");
         if (result.Code == "REASON_REQUIRED")
         {
             return new StartOutcome.NeedsReason(
                 result.DetailString("timing") ?? "LATE",
                 result.DetailInt("minutesOff") ?? 0,
                 result.DetailInt("minChars") ?? minChars,
-                result.Message ?? "Add a reason for your manager.");
+                result.Message ?? "Add a reason for your managers.");
         }
         return new StartOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? "That break can't start right now.");
     }
@@ -249,7 +249,7 @@ public sealed class BreakService
             await RefreshAsync(ct);
             return new StartOutcome.Started(null, presenceType);
         }
-        if (result.Transient) return new StartOutcome.Offline("Can't reach RX Vision, so the break hasn't started. Try again in a moment.");
+        if (result.Transient) return new StartOutcome.Offline("Try again in a moment. Your break hasn't started yet.");
         return new StartOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? "That can't start right now.");
     }
 
@@ -266,7 +266,7 @@ public sealed class BreakService
             await RefreshAsync(ct);
             return new SkipOutcome.Skipped(result.Data?.Record);
         }
-        if (result.Transient) return new SkipOutcome.Offline("Can't reach RX Vision, so the break isn't skipped. Try again in a moment.");
+        if (result.Transient) return new SkipOutcome.Offline("Try again in a moment. The break isn't skipped yet.");
         if (result.Outcome != ApiOutcome.Unauthorized && result.Code != "REASON_REQUIRED")
         {
             // The window closed, it was taken or skipped elsewhere, the day ended: show it as it is now.
@@ -278,12 +278,12 @@ public sealed class BreakService
     /// <summary>A refused skip in the person's terms (also for a replayed one).</summary>
     public static SkipOutcome SkipRefusal<T>(ApiResult<T> result, int minChars)
     {
-        if (result.Outcome == ApiOutcome.Unauthorized) return new SkipOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again to skip a break.");
+        if (result.Outcome == ApiOutcome.Unauthorized) return new SkipOutcome.Refused("SIGNED_OUT", "Sign in again to skip a break.");
         if (result.Code == "REASON_REQUIRED")
         {
             return new SkipOutcome.NeedsReason(
                 Math.Clamp(result.DetailInt("minChars") ?? minChars, 1, 500),
-                result.Message ?? "Add a reason for your manager.");
+                result.Message ?? "Add a reason for your managers.");
         }
         return new SkipOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? "That break can't be skipped right now.");
     }
@@ -298,7 +298,7 @@ public sealed class BreakService
             await RefreshAsync(ct);
             return new CommentOutcome.Saved(result.Data?.Record);
         }
-        if (result.Transient) return new CommentOutcome.Offline("Can't reach RX Vision, so the comment isn't saved. Try again in a moment.");
+        if (result.Transient) return new CommentOutcome.Offline("Try again in a moment. Your comment isn't saved yet.");
         if (result.Outcome != ApiOutcome.Unauthorized && result.Code != "REASON_REQUIRED") await RefreshAsync(ct);
         return CommentRefusal(result, MinChars);
     }
@@ -306,12 +306,12 @@ public sealed class BreakService
     /// <summary>A refused comment in the person's terms (also for a replayed one).</summary>
     public static CommentOutcome CommentRefusal<T>(ApiResult<T> result, int minChars)
     {
-        if (result.Outcome == ApiOutcome.Unauthorized) return new CommentOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again to add a comment.");
+        if (result.Outcome == ApiOutcome.Unauthorized) return new CommentOutcome.Refused("SIGNED_OUT", "Sign in again to add a comment.");
         return result.Code switch
         {
             "REASON_REQUIRED" => new CommentOutcome.NeedsReason(
                 Math.Clamp(result.DetailInt("minChars") ?? minChars, 1, 500),
-                result.Message ?? "Add a little more for your manager."),
+                result.Message ?? "Add a little more for your managers."),
             "COMMENT_NOT_NEEDED" => new CommentOutcome.NotNeeded(result.Message ?? "That break already has a comment."),
             _ => new CommentOutcome.Refused(result.Code ?? (result.Status == 404 ? "NOT_FOUND" : "REFUSED"),
                 result.Message ?? "That comment can't be added."),
@@ -332,19 +332,19 @@ public sealed class BreakService
                 await RefreshAsync(ct);
                 return result.Data is { Ended: true } ? new EndOutcome.Ended(result.Data.Record) : new EndOutcome.NothingRunning();
             }
-            if (result.Transient) return new EndOutcome.Offline("Can't reach RX Vision. Your break is still running; try again in a moment.");
+            if (result.Transient) return new EndOutcome.Offline("Try again in a moment. Your break is still running.");
             if (result.Code == "REASON_REQUIRED")
             {
                 return new EndOutcome.NeedsReason(
                     Math.Clamp(result.DetailInt("minChars") ?? MinChars, 1, 500),
-                    result.Message ?? "Add a reason for your manager, or leave the minutes out.");
+                    result.Message ?? "Add a reason for your managers, or leave the minutes out.");
             }
-            if (result.Status != 404) return new EndOutcome.Refused(result.Message ?? "Couldn't end the break.");
+            if (result.Status != 404) return new EndOutcome.Refused(result.Message ?? "Try resuming again.");
         }
 
         var plain = await _api.EndPresenceAsync(ct);
         if (plain.Ok) return new EndOutcome.Ended(null);
-        if (plain.Transient) return new EndOutcome.Offline("Can't reach RX Vision. Your break is still running; try again in a moment.");
-        return new EndOutcome.Refused(plain.Message ?? "Couldn't end the break.");
+        if (plain.Transient) return new EndOutcome.Offline("Try again in a moment. Your break is still running.");
+        return new EndOutcome.Refused(plain.Message ?? "Try resuming again.");
     }
 }

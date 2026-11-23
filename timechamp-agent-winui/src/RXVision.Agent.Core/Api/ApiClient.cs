@@ -141,7 +141,7 @@ public sealed class ApiClient : IDisposable
             OnAuthenticated(user);
             return new AuthResult(ApiOutcome.Ok, user, null);
         }
-        if (result.Ok) return new AuthResult(ApiOutcome.Transient, null, "The server's answer was not understood.");
+        if (result.Ok) return new AuthResult(ApiOutcome.Transient, null, "Try again in a moment.");
         // Only a real answer about these credentials is final (bad input, wrong password
         // or token, blocked account). Any other refusal, such as a 404 or 405 from a
         // broken deploy, means the server is not working right now: keep trying.
@@ -149,9 +149,9 @@ public sealed class ApiClient : IDisposable
         var message = result.Status == 429
             ? result.Code == "TOO_MANY_ATTEMPTS" && result.Message is { Length: > 0 } paused ? paused : "Too many sign-in attempts. Wait a minute and try again."
             : !final
-                ? "Can't reach RX Vision. Check your connection; we'll keep trying."
+                ? "Check your connection. We'll keep trying."
                 : result.Status == 401 && path.EndsWith("login") ? "Wrong email or password."
-                : result.Message ?? "Sign-in was refused.";
+                : result.Message ?? "Check your sign-in details and try again.";
         return new AuthResult(final ? ApiOutcome.Rejected : ApiOutcome.Transient, null, message, result.Code);
     }
 
@@ -320,7 +320,7 @@ public sealed class ApiClient : IDisposable
                 if (enrolled.Outcome == ApiOutcome.Transient) return ApiOutcome.Transient;
             }
 
-            RaiseSessionLost(refreshed.Message ?? "Your session has ended. Please sign in again.");
+            RaiseSessionLost(refreshed.Message ?? "Sign in again to carry on.");
             return ApiOutcome.Unauthorized;
         }
         finally
@@ -340,14 +340,14 @@ public sealed class ApiClient : IDisposable
             // JSON error, and only those end the session. Any other refusal (a 404 or
             // 405 after a broken deploy) must never sign the whole fleet out.
             if (result.Outcome == ApiOutcome.Rejected && !IsFinalAuthRefusal(result.Status, allowBadRequest: false))
-                return ApiResult<object>.TransientFailure(result.Message ?? "The server is not available right now.", result.Status);
+                return ApiResult<object>.TransientFailure(result.Message ?? "RX Vision isn't available right now. We'll keep trying.", result.Status);
             return result;
         }
         catch (Exception ex) when (IsNetwork(ex, ct))
         {
             NoteContact(ApiOutcome.Transient);
             LogNetworkFailure("POST", "auth/refresh", ex);
-            return ApiResult<object>.TransientFailure("Can't reach the server.");
+            return ApiResult<object>.TransientFailure("Check your connection and try again.");
         }
     }
 
@@ -843,11 +843,11 @@ public sealed class ApiClient : IDisposable
                 if (!ReadsAsApiError(body))
                 {
                     _log.Warn("net", $"{method} {path}: HTTP 401 that is not the API's (a proxy?); treated as no connection");
-                    return ApiResult<T>.TransientFailure("Unexpected 401 from the network.", 401);
+                    return ApiResult<T>.TransientFailure("Check your network, then sign in again.", 401);
                 }
 
                 var refreshed = await RefreshAsync(ct);
-                if (refreshed == ApiOutcome.Transient) return ApiResult<T>.TransientFailure("Can't reach the server to renew the session.");
+                if (refreshed == ApiOutcome.Transient) return ApiResult<T>.TransientFailure("Check your connection. We'll renew your session when you're back.");
                 if (refreshed != ApiOutcome.Ok) return new ApiResult<T> { Outcome = ApiOutcome.Unauthorized, Status = 401, Message = "Signed out." };
                 res = await (timeout is null ? _http : _bulk).SendAsync(Build(), token);
             }
@@ -864,7 +864,7 @@ public sealed class ApiClient : IDisposable
         {
             NoteContact(ApiOutcome.Transient);
             LogNetworkFailure(method, path, ex);
-            return ApiResult<T>.TransientFailure("Can't reach the server.");
+            return ApiResult<T>.TransientFailure("Check your connection and try again.");
         }
     }
 

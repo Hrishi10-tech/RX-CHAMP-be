@@ -138,7 +138,7 @@ public sealed class MeetingService
             await RefreshAsync(ct);
             return new MeetingOutcome.Logged(result.Data?.Meeting);
         }
-        return Failed(result, "Couldn't log the meeting.");
+        return Failed(result, "Try logging the meeting again.");
     }
 
     /// <summary>
@@ -207,8 +207,8 @@ public sealed class MeetingService
 
     internal static MeetingOutcome Failed<T>(ApiResult<T> result, string fallback)
     {
-        if (result.Transient) return new MeetingOutcome.Offline("Can't reach RX Vision, so nothing was saved. Try again in a moment.");
-        if (result.Outcome == ApiOutcome.Unauthorized) return new MeetingOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again first.");
+        if (result.Transient) return new MeetingOutcome.Offline("Try again in a moment. Nothing was saved yet.");
+        if (result.Outcome == ApiOutcome.Unauthorized) return new MeetingOutcome.Refused("SIGNED_OUT", "Sign in again first.");
         var code = result.Code ?? "REFUSED";
         var message = result.Message ?? fallback;
         // 422 (and 400 validation) means "change something and try again"; 409 means "not now".

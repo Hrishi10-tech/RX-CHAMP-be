@@ -418,10 +418,10 @@ public class BreakViewModelTests
     {
         var (vm, agent) = Dashboard(Days.General(), "10:47");
         agent.PendingUpdate = new Core.Update.UpdateOffer("3.1.0", 1000, CanInstall: false);
-        agent.DownloadResult = new Core.Update.ManualDownload(null, "Can't reach RX Vision. Try again in a moment.");
+        agent.DownloadResult = new Core.Update.ManualDownload(null, "Try again in a moment.");
         vm.Refresh();
         vm.DownloadUpdateCommand.Execute(null);
-        Assert.Equal("Can't reach RX Vision. Try again in a moment.", vm.UpdateText);
+        Assert.Equal("Try again in a moment.", vm.UpdateText);
         Assert.Equal("Try again", vm.DownloadLabel);
         Assert.Empty(agent.Dev.RevealedFiles);
         Assert.True(vm.DownloadUpdateCommand.CanExecute(null));
@@ -439,7 +439,7 @@ public class BreakViewModelTests
 /// <summary>Screens B, C and F: the countdown, then the timer counting up from zero in amber, and a break with no length.</summary>
 public class ActiveBreakTests
 {
-    private static ActiveBreakViewModel At(string now, BreakDay day, int workedSec = 0, string? approver = "your manager")
+    private static ActiveBreakViewModel At(string now, BreakDay day, int workedSec = 0, string? approver = "a manager")
     {
         var view = BreakSchedule.Compute(day, Ist.At(now)).Active!;
         var vm = new ActiveBreakViewModel();
@@ -487,7 +487,7 @@ public class ActiveBreakTests
         var day = Days.General().WithActive(Days.Running("MORNING", "11:42", timing: "LATE", approval: "PENDING"));
         var vm = At("11:45", day);
         Assert.Equal("Morning break · after its time", vm.TimingLine);
-        Assert.Equal("Sent to your manager for approval", vm.Approval);
+        Assert.Equal("Sent to a manager for approval", vm.Approval);
     }
 
     [Fact]

@@ -47,7 +47,7 @@ public static class LateStartRule
             Math.Clamp(result.DetailInt("minChars") ?? 10, 1, MaxChars),
             Math.Clamp(result.DetailInt("maxChars") ?? MaxChars, 1, MaxChars),
             result.Detail<List<string>>("presets") ?? new List<string>(),
-            result.Message ?? "Add a short note for your manager.");
+            result.Message ?? "Add a short note for your managers.");
     }
 
     /// <summary>
@@ -220,10 +220,10 @@ public sealed class WorkdayService
             return new StartDayOutcome.Started(day, result.Data?.Resumed ?? false);
         }
         if (result.Transient)
-            return new StartDayOutcome.Pending(retryOf ?? pressedAt, "Can't reach RX Vision yet. Your day starts as soon as it answers.");
+            return new StartDayOutcome.Pending(retryOf ?? pressedAt, "Your day starts as soon as RX Vision answers.");
         if (result.Outcome == ApiOutcome.Unauthorized)
-            return new StartDayOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again to start your day.");
-        return new StartDayOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? "Couldn't start your day.");
+            return new StartDayOutcome.Refused("SIGNED_OUT", "Sign in again to start your day.");
+        return new StartDayOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? "Try starting your day again.");
     }
 
     /// <summary>POST /activity/end-day with the comments for skipped breaks (if any).</summary>
@@ -238,7 +238,7 @@ public sealed class WorkdayService
             return new EndDayOutcome.Ended(day, result.Data?.EndedAt);
         }
         if (result.Transient)
-            return new EndDayOutcome.Offline("Can't reach RX Vision, so your day is still running. Check your connection and try again.");
+            return new EndDayOutcome.Offline("Check your connection and try again. Your day is still running.");
         return EndDayRefusal(result);
     }
 
@@ -246,9 +246,9 @@ public sealed class WorkdayService
     public static EndDayOutcome EndDayRefusal<T>(ApiResult<T> result)
     {
         if (result.Outcome == ApiOutcome.Unauthorized)
-            return new EndDayOutcome.Refused("SIGNED_OUT", "You're signed out. Sign in again to end your day.");
+            return new EndDayOutcome.Refused("SIGNED_OUT", "Sign in again to end your day.");
 
-        var message = result.Message ?? "Couldn't end your day.";
+        var message = result.Message ?? "Try ending your day again.";
         switch (result.Code)
         {
             case "SKIP_COMMENTS_REQUIRED":

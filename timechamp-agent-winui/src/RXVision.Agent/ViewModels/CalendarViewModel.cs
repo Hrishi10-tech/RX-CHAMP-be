@@ -81,14 +81,14 @@ public sealed partial class CalendarViewModel : ObservableObject
             else
             {
                 Problem = result.Transient
-                    ? "Can't reach RX Vision to read your calendar. Try again in a moment."
-                    : result.Message ?? "Your calendar couldn't be read.";
+                    ? "Try again in a moment. Your calendar shows once RX Vision answers."
+                    : result.Message ?? "Try opening your calendar again.";
             }
         }
         catch (Exception ex)
         {
             _log.Warn("calendar", "reading the calendar failed", ex);
-            Problem = "Your calendar couldn't be read. Try again in a moment.";
+            Problem = "Try opening your calendar again in a moment.";
         }
     }
 

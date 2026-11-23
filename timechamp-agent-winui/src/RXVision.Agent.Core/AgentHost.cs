@@ -719,7 +719,7 @@ public sealed class AgentHost : IDisposable
                 UseServer(url);
             }
             var result = await _svc!.Api.LoginAsync(email, password);
-            if (!result.Ok) return result.Message ?? "Sign-in failed.";
+            if (!result.Ok) return result.Message ?? "Try signing in again.";
             await BeginSessionAsync();
             return null;
         }
@@ -746,7 +746,7 @@ public sealed class AgentHost : IDisposable
     public async Task<string?> SignInWithCodeAsync(string code)
     {
         var enrollment = Enrollment.FromSetupCode(code, ApiBaseUrl);
-        if (enrollment is null) return "That setup code isn't valid. Copy it again from the portal.";
+        if (enrollment is null) return "Copy the setup code again from the portal.";
         StopReconnect();
         await _signInGate.WaitAsync();
         try
@@ -754,7 +754,7 @@ public sealed class AgentHost : IDisposable
             if (IsSignedInState(State)) return null;
             UseServer(enrollment.ApiBaseUrl);
             var result = await _svc!.Api.EnrollAsync(enrollment.EnrollmentToken);
-            if (!result.Ok) return result.Outcome == ApiOutcome.Transient ? result.Message : "That setup code was refused. Ask your manager for a new one.";
+            if (!result.Ok) return result.Outcome == ApiOutcome.Transient ? result.Message : "Ask your organisation's admin for a new setup code.";
             _enrollment = enrollment;
             _sessions.SaveEnrollment(enrollment);
             await BeginSessionAsync();
@@ -1074,7 +1074,7 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>C-966: an https server this build may not use (S-02, AG-2).</summary>
-    public const string ServerNotAllowed = "Check the server address with your manager.";
+    public const string ServerNotAllowed = "Check the server address with your organisation's admin.";
 
     /// <summary>
     /// A line the sign-in window shows once when it opens: set when a saved session or setup was
@@ -2165,7 +2165,7 @@ public sealed class AgentHost : IDisposable
                 _log.Info("day", "Start Day refused: the late start needs its note");
                 return asked;
             }
-            var outcome = new StartDayOutcome.Refused(refused.Result.Code ?? "REFUSED", refused.Result.Message ?? "Couldn't start your day.");
+            var outcome = new StartDayOutcome.Refused(refused.Result.Code ?? "REFUSED", refused.Result.Message ?? "Try starting your day again.");
             _log.Warn("day", $"Start Day refused: {outcome.Code} {outcome.Message}");
             return outcome;
         }
@@ -2311,7 +2311,7 @@ public sealed class AgentHost : IDisposable
         var svc = _svc;
         if (svc is null) return new EndDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
         if (State == AgentState.DayEnded) return new EndDayOutcome.Ended(Workday, Workday?.EndedAt);
-        if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Your day hasn't started, so there is nothing to end.");
+        if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Start your day first. There is nothing to end yet.");
         var gen = Gen;
 
         var day = Workday;
@@ -2332,7 +2332,7 @@ public sealed class AgentHost : IDisposable
         {
             if (gen != Gen) return new EndDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
             if (State == AgentState.DayEnded) return new EndDayOutcome.Ended(Workday, Workday?.EndedAt);
-            if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Your day hasn't started, so there is nothing to end.");
+            if (State != AgentState.Running) return new EndDayOutcome.NotStarted("Start your day first. There is nothing to end yet.");
             var now = _clock.UtcNow;
             // A held End Day ends the day when the person ended it (never later than now).
             var endAt = at is { } held && held < now ? held : now;
@@ -2493,7 +2493,7 @@ public sealed class AgentHost : IDisposable
         {
             var early = slot.TimingIfStartedNow == "EARLY";
             return new StartOutcome.NeedsReason(slot.TimingIfStartedNow ?? "LATE", slot.MinutesOffIfStartedNow, panel.MinChars,
-                $"You're starting it {slot.MinutesOffIfStartedNow} min {(early ? "early" : "late")}. Add a reason for your manager.");
+                $"You're starting it {slot.MinutesOffIfStartedNow} min {(early ? "early" : "late")}. Add a reason for your managers.");
         }
         var localId = OfflineDay.NewLocalId();
         var (_, fate) = await RecordAsync(EventKinds.BreakStart, new EventPayload { BreakKind = kind, Reason = ReasonText.Clean(reason), LocalId = localId });
@@ -2596,7 +2596,7 @@ public sealed class AgentHost : IDisposable
         var listed = Workday?.SkipsNeedingComment.FirstOrDefault(s => s.Id == breakId);
         var minChars = Math.Max(1, listed?.MinChars ?? panel.MinChars);
         if (ReasonText.Clean(comment).Length < minChars)
-            return new CommentOutcome.NeedsReason(minChars, $"Add a little more for your manager ({minChars} characters or more).");
+            return new CommentOutcome.NeedsReason(minChars, $"Add a little more for your managers ({minChars} characters or more).");
         var inSlot = panel.Slots.Any(s => s.Record?.Id == breakId);
         if (listed is null && !inSlot) return new CommentOutcome.NotNeeded("That break already has a comment, or is no longer waiting for one.");
         var (_, fate) = await RecordAsync(EventKinds.BreakComment, new EventPayload { TargetId = breakId, Comment = ReasonText.Clean(comment) });
@@ -2619,7 +2619,7 @@ public sealed class AgentHost : IDisposable
             return new EndOutcome.NothingRunning();
         var id = panel.Active?.Id ?? panel.Paused?.Record?.Id;
         var (_, fate) = await RecordAsync(EventKinds.BreakEnd, new EventPayload { TargetId = id });
-        if (fate is EventFate.Refused r) return new EndOutcome.Refused(r.Result.Message ?? "Couldn't end the break.");
+        if (fate is EventFate.Refused r) return new EndOutcome.Refused(r.Result.Message ?? "Try resuming again.");
         _log.Info("breaks", "break ended");
         return new EndOutcome.Ended(id is null ? null : FindRecord(id));
     }
@@ -2879,7 +2879,7 @@ public sealed class AgentHost : IDisposable
             Participants = ApiClient.CleanParticipants(participants),
             MomSender = ApiClient.CleanName(momSender),
         });
-        if (fate is EventFate.Refused r) return MeetingService.Failed(r.Result, "Couldn't log the meeting.");
+        if (fate is EventFate.Refused r) return MeetingService.Failed(r.Result, "Try logging the meeting again.");
         _log.Info("meetings", $"logged an earlier meeting of {durationMin} min");
         return new MeetingOutcome.Logged(FindMeeting(localId));
     }

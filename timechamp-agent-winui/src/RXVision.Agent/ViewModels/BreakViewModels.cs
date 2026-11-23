@@ -641,7 +641,7 @@ public sealed partial class ActiveBreakViewModel : ObservableObject
         IsQuick = view.IsQuick;
         CanPause = view.CanPause;
         Eyebrow = view.Label.ToUpperInvariant();
-        var timing = view.Timing switch { "LATE" => " · late", "EARLY" => " · early", _ => "" };
+        var timing = view.Timing switch { "LATE" => " · after its time", "EARLY" => " · early", _ => "" };
         Started = view.SegmentStartedAt is { } segment && segment - view.StartedAt > TimeSpan.FromSeconds(59)
             ? $"Started {hm(view.StartedAt)} · resumed {hm(segment)}"
             : $"Started {hm(view.StartedAt)}{timing}";

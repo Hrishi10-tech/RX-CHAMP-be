@@ -38,7 +38,7 @@
           <TextBlock Text="Reconnecting to RX Vision..." FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
         <TextBlock Classes="body" TextAlignment="Center"
-                   Text="You're still signed in. RX Vision can't reach the server right now and keeps trying in the background. Check your internet connection." />
+                   Text="Check your internet connection. You're still signed in, and RX Vision keeps trying in the background." />
         <Button Classes="link" HorizontalAlignment="Center" Command="{Binding ShowSignInFormCommand}">
           <TextBlock Text="Sign in with a different account" />
         </Button>
@@ -65,7 +65,7 @@
           <TextBox Name="CodeBox" Classes="field" Text="{Binding SetupCode}" Watermark="RXV1..." TextWrapping="Wrap"
                    AcceptsReturn="False" Height="88" VerticalContentAlignment="Top" FontSize="12.5"
                    AutomationProperties.Name="Setup code" />
-          <TextBlock Classes="small" Text="Your manager can create one in the portal, under your profile." TextWrapping="Wrap" />
+          <TextBlock Classes="small" Text="Your organisation's admin can create one in the portal, under your profile." TextWrapping="Wrap" />
         </StackPanel>
 
         <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />

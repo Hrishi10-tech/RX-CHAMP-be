@@ -204,7 +204,7 @@ public class BreakScreenTests
         ui.Click("Take a break");
         var note = ui.Dialog<ReasonDialogViewModel>();
         Assert.True(ui.Shows("Lunch break, 20 min after its time"));
-        Assert.True(ui.Shows("Your lunch break was due at 1:00 PM. Add a short note for your manager."));
+        Assert.True(ui.Shows("Your lunch break was due at 1:00 PM. Add a short note for a manager."));
         Assert.True(ui.Shows("What came up?"));
         Assert.NotEmpty(note.Chips);
         ui.Click(note.Chips[0].Label);
@@ -222,7 +222,7 @@ public class BreakScreenTests
         Assert.True(ui.Shows("Open now · 13 min early, reason needed")); // 4.0: Next break
         ui.Click("Next break");
         Assert.True(ui.Shows("Morning break, 13 min early"));
-        Assert.True(ui.Shows("Your morning break is due at 11:00 AM. Add a short note for your manager."));
+        Assert.True(ui.Shows("Your morning break is due at 11:00 AM. Add a short note for a manager."));
         Assert.True(ui.Shows("What is coming up?"));
         Assert.True(ui.HasButton("Skip break"));
         ui.Type(ui.Box("ReasonBox"), "A client call starts in 15 min");
@@ -280,7 +280,7 @@ public class BreakScreenTests
         ui.Click("Skip this break");
         Assert.True(ui.Shows("Skip this break?"));
         Assert.True(ui.Shows("Your next one is at 4:30 PM."));
-        Assert.True(ui.Shows("Your focus time keeps running. If your manager rejects the skip, the 45 min come off it."));
+        Assert.True(ui.Shows("Your focus time keeps running. If a manager rejects the skip, the 45 min come off it."));
         Assert.True(Styled(ui.Button("Keep my break"), "secondary"));
         Assert.True(Styled(ui.Button("Skip break"), "primary"));
         Assert.True(ui.Shows("Why are you skipping it?"));

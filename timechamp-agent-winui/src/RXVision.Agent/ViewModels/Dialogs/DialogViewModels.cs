@@ -141,7 +141,7 @@ public sealed partial class ReasonDialogViewModel : DialogViewModel
     public string CancelText { get; init; } = "Cancel";
     /// <summary>A third button that goes ahead without the reason (e.g. "Skip break", "Leave them out"), or null.</summary>
     public string? AltText { get; init; }
-    public string Hint { get; init; } = "Your manager reads this today.";
+    public string Hint { get; init; } = "Your managers read this today.";
     public bool HasTag => TagText is not null;
     public bool HasAlt => AltText is not null;
     public bool HasNoAlt => AltText is null;

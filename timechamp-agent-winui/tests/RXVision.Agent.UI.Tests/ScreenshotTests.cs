@@ -223,12 +223,12 @@ public class ScreenshotTests
             new SkipCommentItemViewModel("evening-auto", "Evening break", "Auto-skipped at 17:00", 10, BreakActions.SkipChips),
             new SkipCommentItemViewModel("lunch-auto", "Lunch break", "Auto-skipped at 14:00 on 12 Oct", 10, BreakActions.SkipChips, kind: "LUNCH"),
         };
-        vm.Overlay = new EndDayDialogViewModel(items, "your manager", "Your manager");
+        vm.Overlay = new EndDayDialogViewModel(items, "a manager", "A manager");
     }, width: 1040, height: 650);
 
     [AvaloniaFact]
     public Task Dashboard_end_day_three_comments_default_size() => Shoot("dialog-end-day-three-comments-1080x700", Agent("18:32"), vm =>
-        vm.Overlay = new EndDayDialogViewModel(EndDayFit.Items(3), "your manager", "Your manager"));
+        vm.Overlay = new EndDayDialogViewModel(EndDayFit.Items(3), "a manager", "A manager"));
 
     [AvaloniaFact]
     public Task Dashboard_not_started_offline() => Shoot("dashboard-not-started-offline", Agent("09:02", a =>
@@ -424,7 +424,7 @@ public class ScreenshotTests
             new SkipCommentItemViewModel("evening-auto", "Evening break", "Auto-skipped at 17:00", 10, BreakActions.SkipChips, "Deadline"),
             new SkipCommentItemViewModel("lunch-auto", "Lunch break", "Auto-skipped at 14:00 on 12 Oct", 10, BreakActions.SkipChips),
         };
-        vm.Overlay = new EndDayDialogViewModel(items, "your manager", "Your manager");
+        vm.Overlay = new EndDayDialogViewModel(items, "a manager", "A manager");
     }, height: 760);
 
     [AvaloniaFact]
@@ -476,7 +476,7 @@ public class ScreenshotTests
         var window = new SignInWindow { DataContext = vm };
         ShootWindow(window, "signin-connecting");
         var lost = new SignInViewModel(new FakeAgent(), null, NullLog.Instance) { Email = "asha@timechamp.test" };
-        lost.SetSessionLost("Your session has ended. Please sign in again.");
+        lost.SetSessionLost("Sign in again to carry on.");
         window.DataContext = lost;
         Shots.Save(window, "signin-session-lost");
         window.AllowClose = true;

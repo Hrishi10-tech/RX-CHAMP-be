@@ -183,7 +183,7 @@ public class WindowTests
         vm.Refresh();
         var window = new DashboardWindow { DataContext = vm };
         window.Show();
-        vm.Overlay = new ViewModels.Dialogs.EndDayDialogViewModel(EndDayFit.Items(boxes), "your manager", "Your manager");
+        vm.Overlay = new ViewModels.Dialogs.EndDayDialogViewModel(EndDayFit.Items(boxes), "a manager", "A manager");
         Settle();
         await Task.Yield();
         Settle();

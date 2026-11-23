@@ -204,7 +204,7 @@ public sealed partial class AwayViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.Error("ui", "away answer failed", ex);
-            Error = "That didn't work. Try again in a moment.";
+            Error = "Try again in a moment.";
         }
         finally
         {
@@ -244,7 +244,7 @@ public sealed partial class AwayViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.Error("ui", "ending the away break failed", ex);
-            Error = "That didn't work. Try again in a moment.";
+            Error = "Try again in a moment.";
             Mode = AwayMode.OnBreak;
         }
         finally
@@ -310,6 +310,6 @@ public sealed partial class AwayViewModel : ObservableObject
     {
         "MANAGER" => "your admin",
         "ADMIN" or "SUPER_ADMIN" => "an admin",
-        _ => "your manager",
+        _ => "a manager",
     };
 }

@@ -37,7 +37,7 @@ export class SuperManagersUseCase {
   async list(me: AuthenticatedUser): Promise<PublicUser[]> {
     this.assertSuperAdmin(me);
     const rows = await this.users.findAll({ roles: [Role.SUPER_MANAGER], sort: 'name_asc' });
-    return rows.map((u) => UserMapper.toPublic(u));
+    return rows.map((u) => UserMapper.toPublic(u, me));
   }
 
   async create(me: AuthenticatedUser, dto: CreateSuperManagerDto): Promise<PublicUser> {
@@ -94,7 +94,7 @@ export class SuperManagersUseCase {
       entityId: user.id,
       metadata: { role: Role.SUPER_MANAGER, companyId: null },
     });
-    return UserMapper.toPublic(user);
+    return UserMapper.toPublic(user, me);
   }
 
   private assertSuperAdmin(me: AuthenticatedUser): void {

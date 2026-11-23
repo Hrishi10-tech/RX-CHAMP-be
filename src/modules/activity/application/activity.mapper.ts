@@ -106,6 +106,7 @@ export class ActivityMapper {
       name: fullName(member),
       email: member.email,
       department: member.department,
+      avatarId: member.avatarId ?? null,
       status,
       app: live ? appDisplayName(sample!.app) : null,
       title: live ? sample!.title : null,

@@ -10,6 +10,7 @@ export class ChatMapper {
       fromUserId: m.fromUserId,
       toUserId: m.toUserId,
       body: m.body,
+      avatarId: m.fromAvatarId ?? null,
       mine: m.fromUserId === meId,
       read: m.readAt !== null,
       createdAt: m.createdAt.toISOString(),
@@ -23,6 +24,7 @@ export class ChatMapper {
       email: c.email,
       role: c.role,
       department: c.department,
+      avatarId: c.avatarId ?? null,
       relation: c.relation,
     };
   }

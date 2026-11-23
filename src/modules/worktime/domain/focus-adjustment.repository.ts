@@ -28,6 +28,8 @@ export interface AdjustmentPersonName {
   firstName: string;
   lastName: string;
   companyName: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export interface FocusAdjustmentRepository {

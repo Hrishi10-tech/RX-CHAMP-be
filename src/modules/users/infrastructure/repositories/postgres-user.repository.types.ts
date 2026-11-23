@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { Role } from '@shared/rbac/roles.enum';
 
 const DEPARTMENT_REF = { select: { id: true, name: true, icon: true, deletedAt: true } } as const;
@@ -39,4 +40,7 @@ export type UserWriteModel = {
   grants?: { screenshots: boolean; timeline: boolean; activity: boolean };
   idleEnabled?: boolean | null;
   idleMinutes?: number | null;
+  /** 3.6 */
+  gender?: Gender | null;
+  avatarId?: string | null;
 };

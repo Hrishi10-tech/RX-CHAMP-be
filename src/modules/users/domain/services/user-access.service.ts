@@ -23,6 +23,23 @@ export function factsOf(u: User): PersonFacts {
 }
 
 /**
+ * 3.6 gender (it picks the avatar library), fitted to 4.0: set the way people are
+ * edited, by the organisation's admins and Super Admins, never by the Super Manager
+ * (3.6: Super Admin only), a Manager or Staff.
+ *  - A Super Admin: anyone but another Super Admin, and themselves (nobody else can).
+ *    Setting it needs the organisation picked, like any edit; seeing it does not.
+ *  - An Admin: the Managers and Staff of their organisation (canEditPerson), not
+ *    themselves (a Super Admin sets an Admin's, as with their other details).
+ * Gender is in an answer about a person only when the viewer may set it.
+ */
+export function canSetGender(actor: ActorContext, target: User): boolean {
+  if (target.id === actor.id) return actor.role === Role.SUPER_ADMIN;
+  if (actor.role === Role.SUPER_ADMIN) return target.role !== Role.SUPER_ADMIN;
+  if (actor.role === Role.ADMIN) return canEditPerson(actor, factsOf(target));
+  return false;
+}
+
+/**
  * Who may see and change whom (4.0, docs/4.0/SPEC.md 1.2), on top of the shared
  * tenancy rules: an Admin or Super Admin (in the organisation they act in) sees
  * and changes its Managers and Staff (a Super Admin also its Admin); a Manager

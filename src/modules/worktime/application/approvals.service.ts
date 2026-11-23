@@ -98,6 +98,7 @@ function personLite(p: ShiftPerson | undefined, fallbackId: string): ApprovalPer
       department: null,
       companyId: null,
       companyName: null,
+      avatarId: null,
     };
   }
   return {
@@ -109,6 +110,7 @@ function personLite(p: ShiftPerson | undefined, fallbackId: string): ApprovalPer
     // 3.3: every person view names the organisation (chips on combined lists).
     companyId: p.companyId,
     companyName: p.companyName ?? null,
+    avatarId: p.avatarId ?? null,
   };
 }
 

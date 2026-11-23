@@ -40,6 +40,8 @@ export class UserPersistenceMapper {
       idleEnabled: row.idleEnabled,
       idleMinutes: row.idleMinutes,
       enrollVersion: row.enrollVersion,
+      gender: row.gender,
+      avatarId: row.avatarId,
       departmentRef: ref(row.departmentRef),
       managedDepartments:
         role === Role.MANAGER

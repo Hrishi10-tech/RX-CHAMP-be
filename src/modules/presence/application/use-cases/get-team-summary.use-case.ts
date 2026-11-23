@@ -73,6 +73,7 @@ export class GetTeamSummaryUseCase {
         name: PresenceMapper.fullName(member),
         email: member.email,
         department: member.department,
+        avatarId: member.avatarId ?? null,
         status: PresenceMapper.currentFrom(open, asOf, ended !== null).status,
         totals,
         meetingNotes,

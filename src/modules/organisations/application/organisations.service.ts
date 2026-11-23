@@ -65,6 +65,8 @@ export interface OrgAdminView {
   companyId: string;
   status: 'ACTIVE' | 'DISABLED';
   createdAt: string;
+  /** 3.6: a new Admin has no gender yet, so null (initials) until one is set. */
+  avatarId: string | null;
 }
 
 export interface UnassignedPersonView {
@@ -73,6 +75,8 @@ export interface UnassignedPersonView {
   email: string;
   role: string;
   status: 'ACTIVE' | 'DISABLED';
+  /** 3.6: the effective avatar; null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface DeleteOrganisationResult {
@@ -263,6 +267,7 @@ export class OrganisationsService {
       companyId: a.companyId,
       status: a.status,
       createdAt: a.createdAt.toISOString(),
+      avatarId: null,
     };
   }
 
@@ -274,6 +279,7 @@ export class OrganisationsService {
       email: p.email,
       role: p.role,
       status: p.status,
+      avatarId: p.avatarId,
     }));
   }
 

@@ -338,3 +338,24 @@ describe('DepartmentsService rules', () => {
     );
   });
 });
+
+describe('DepartmentsService: managers with their avatars (3.6)', () => {
+  it('names each manager with the avatar they show, null while they have no gender', async () => {
+    const { service, prisma } = setup(ALL);
+    prisma.managerDepartment.findMany.mockResolvedValueOnce([
+      {
+        departmentId: DEPT_A1,
+        manager: { id: 'm-1', firstName: 'Ravi', lastName: 'K', gender: 'MALE', avatarId: 'M12' },
+      },
+      {
+        departmentId: DEPT_A1,
+        manager: { id: 'm-2', firstName: 'Asha', lastName: 'P', gender: null, avatarId: null },
+      },
+    ]);
+    const [electronics] = await service.list(admin(ORG_A));
+    expect(electronics.managers).toEqual([
+      { id: 'm-2', name: 'Asha P', avatarId: null },
+      { id: 'm-1', name: 'Ravi K', avatarId: 'M12' },
+    ]);
+  });
+});

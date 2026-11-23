@@ -34,6 +34,6 @@ export class SetUserScreenshotsUseCase {
     target.setScreenshotsEnabled(enabled);
     const saved = await this.users.save(target);
     await this.cache.del(`user:profile:${targetId}`);
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 }

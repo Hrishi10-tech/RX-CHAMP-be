@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { assertMonthOpen } from '@shared/database/month-lock';
 import { FocusAdjustmentRecord } from '../domain/focus-adjustment';
@@ -103,13 +104,20 @@ export class PrismaFocusAdjustmentRepository implements FocusAdjustmentRepositor
     if (!wanted.length) return [];
     const rows = await this.prisma.user.findMany({
       where: { id: { in: wanted } },
-      select: { id: true, firstName: true, lastName: true, company: { select: { name: true } } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        company: { select: { name: true } },
+        ...AVATAR_COLUMNS,
+      },
     });
     return rows.map((r) => ({
       id: r.id,
       firstName: r.firstName,
       lastName: r.lastName,
       companyName: r.company?.name ?? null,
+      avatarId: effectiveAvatarId(r),
     }));
   }
 }

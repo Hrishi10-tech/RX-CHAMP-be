@@ -16,6 +16,7 @@ export class CompanyMapper {
         id: m.id,
         email: m.email,
         name: m.name,
+        avatarId: m.avatarId,
         joinedOn,
         userCount: m.userCount,
       })),

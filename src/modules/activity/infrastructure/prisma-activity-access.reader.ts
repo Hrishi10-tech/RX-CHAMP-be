@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AVATAR_COLUMNS, withEffectiveAvatar } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { peopleWhere } from '@shared/tenancy';
@@ -32,25 +33,27 @@ export class PrismaActivityAccessReader implements ActivityAccessReader {
         managerId: true,
         screenshotsEnabled: true,
         role: { select: { name: true } },
+        ...AVATAR_COLUMNS,
       },
     });
     if (!row) return undefined;
-    const { role, ...rest } = row;
+    const { role, ...rest } = withEffectiveAvatar(row);
     return { ...rest, role: role.name };
   }
 
   async findReports(me: AuthenticatedUser): Promise<ActivityTeamMember[]> {
     const rows = await this.prisma.user.findMany({
       where: { AND: [peopleWhere(me), { status: 'ACTIVE' }] },
-      select: { id: true, firstName: true, lastName: true, email: true, department: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        department: true,
+        ...AVATAR_COLUMNS,
+      },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     });
-    return rows.map((r) => ({
-      id: r.id,
-      firstName: r.firstName,
-      lastName: r.lastName,
-      email: r.email,
-      department: r.department,
-    }));
+    return rows.map(withEffectiveAvatar);
   }
 }

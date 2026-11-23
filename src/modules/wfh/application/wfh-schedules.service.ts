@@ -345,6 +345,7 @@ export class WfhSchedulesService {
         id: r.id,
         userId: r.userId,
         userName: fullName(person),
+        avatarId: person?.avatarId ?? null,
         department: person?.department ?? null,
         companyName: person?.companyName ?? null,
         weekdays: r.weekdays,

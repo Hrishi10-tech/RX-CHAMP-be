@@ -45,6 +45,8 @@ export interface PersonAttendanceView {
   biometricCode: string | null;
   attendanceSourceFrom: string | null;
   lastPunchAt: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface PunchView {
@@ -56,6 +58,8 @@ export interface PunchView {
   source: string;
   userId: string | null;
   userName: string | null;
+  /** The person's effective avatar (3.6). */
+  avatarId: string | null;
   dayKey: string;
   note: string | null;
   addedBy: string | null;
@@ -193,6 +197,7 @@ export class BiometricAdminService {
       biometricCode: p.biometricCode,
       attendanceSourceFrom: p.attendanceSourceFrom,
       lastPunchAt: last?.toISOString() ?? null,
+      avatarId: p.avatarId ?? null,
     };
   }
 
@@ -382,6 +387,7 @@ export class BiometricAdminService {
           ? name(people.get(r.userId))
           : 'Former user'
         : null,
+      avatarId: r.userId ? (people.get(r.userId)?.avatarId ?? null) : null,
       dayKey: r.dayKey,
       note: r.note,
       addedBy: r.createdById

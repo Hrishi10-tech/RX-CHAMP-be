@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AVATAR_COLUMNS, withEffectiveAvatar } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { peopleWhere } from '@shared/tenancy';
@@ -13,11 +14,19 @@ export class PrismaPresenceTeamReader implements PresenceTeamReader {
   constructor(private readonly prisma: PrismaService) {}
 
   async findReports(me: AuthenticatedUser): Promise<TeamMember[]> {
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where: { AND: [peopleWhere(me), { status: 'ACTIVE' }] },
-      select: { id: true, firstName: true, lastName: true, email: true, department: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        department: true,
+        ...AVATAR_COLUMNS,
+      },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     });
+    return rows.map(withEffectiveAvatar);
   }
 
   async findContext(userId: string): Promise<PresenceContext | null> {
@@ -30,10 +39,11 @@ export class PrismaPresenceTeamReader implements PresenceTeamReader {
         email: true,
         department: true,
         managerId: true,
+        ...AVATAR_COLUMNS,
       },
     });
     if (!row) return null;
-    const { managerId, ...self } = row;
+    const { managerId, ...self } = withEffectiveAvatar(row);
     return { self, managerId: managerId ?? null };
   }
 }

@@ -1,8 +1,16 @@
 import { LIVE_GRACE_SEC } from '@modules/activity/application/activity.constants';
 import { elapsedSeconds } from '@modules/activity/application/activity-date.util';
+import { effectiveAvatarId } from '@shared/avatars/person-avatar';
+import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { User } from '../../domain/entities/user.entity';
 import { AgentPresence } from '../../domain/repositories/agent-presence.reader';
+import { canSetGender } from '../../domain/services/user-access.service';
 import { AgentStatus, PublicUser, UserBriefItem, UserListItem } from '../user.types';
+
+/** 3.6: the gender field, only for a viewer who may set it (canSetGender). */
+function genderFor(user: User, viewer: AuthenticatedUser | undefined) {
+  return viewer && canSetGender(viewer, user) ? { gender: user.gender } : {};
+}
 
 export class UserMapper {
   /** The 4.0 department, managed departments, grants and override. */
@@ -27,10 +35,12 @@ export class UserMapper {
       designation: user.designation,
       department: user.departmentRef?.name ?? user.department,
       departmentRef: user.departmentRef,
+      avatarId: effectiveAvatarId(user),
     };
   }
 
-  static toPublic(user: User): PublicUser {
+  /** `viewer`: whose answer this is (it carries the gender when they may set it). */
+  static toPublic(user: User, viewer?: AuthenticatedUser): PublicUser {
     return {
       ...this.placement(user),
       id: user.id,
@@ -49,6 +59,8 @@ export class UserMapper {
       status: user.status,
       screenshotsEnabled: user.screenshotsEnabled,
       createdAt: user.createdAt.toISOString(),
+      avatarId: effectiveAvatarId(user),
+      ...genderFor(user, viewer),
     };
   }
 
@@ -77,7 +89,12 @@ export class UserMapper {
     return 'OFFLINE';
   }
 
-  static toListItem(user: User, presence?: AgentPresence, now: Date = new Date()): UserListItem {
+  static toListItem(
+    user: User,
+    presence?: AgentPresence,
+    now: Date = new Date(),
+    viewer?: AuthenticatedUser,
+  ): UserListItem {
     return {
       ...this.placement(user),
       designation: user.designation,
@@ -97,6 +114,8 @@ export class UserMapper {
       agentStatus: this.agentStatusOf(user, presence, now),
       agentLastSeenAt: presence?.lastSeenAt ? presence.lastSeenAt.toISOString() : null,
       createdAt: user.createdAt.toISOString(),
+      avatarId: effectiveAvatarId(user),
+      ...genderFor(user, viewer),
     };
   }
 }

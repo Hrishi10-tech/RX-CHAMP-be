@@ -91,6 +91,7 @@ describe('ListUsersUseCase', () => {
         designation: null,
         department: 'Electronics',
         departmentRef: { id: DEPT_A1, name: 'Electronics', icon: 'circuit-board' },
+        avatarId: null,
       });
       expect(presence.presenceFor).not.toHaveBeenCalled();
 

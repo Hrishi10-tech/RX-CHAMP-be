@@ -30,6 +30,11 @@ export const RATE_LIMITS = {
   activityReport: { user: 120, ip: 1200 },
   /** POST /biometric/punches (3.5): a connector pushing punches as they happen, or a backlog. */
   biometricPush: { user: 600, ip: 600 },
+  /**
+   * GET /avatars/files (3.6): one request per picture on a screen the first time it is
+   * seen, a whole team or a picker's grids at once; after that the browser's cache answers.
+   */
+  avatarFiles: { user: 1200, ip: 6000 },
 } as const satisfies Record<string, RouteRateLimit>;
 
 /** Route limits that depend on whom the request counts against (see RATE_LIMITS). */

@@ -62,7 +62,7 @@ export class SetUserStatusUseCase {
       });
     }
 
-    return UserMapper.toPublic(saved);
+    return UserMapper.toPublic(saved, me);
   }
 
   /**

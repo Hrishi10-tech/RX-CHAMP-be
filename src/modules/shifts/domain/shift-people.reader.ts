@@ -26,6 +26,8 @@ export interface ShiftPerson {
   biometricCode?: string | null;
   /** The day the attendance source last changed (3.5). */
   attendanceSourceFrom?: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export type AttendanceSource = 'AGENT' | 'BIOMETRIC';

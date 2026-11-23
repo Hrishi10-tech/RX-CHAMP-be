@@ -85,7 +85,9 @@ function setup(keys: Key[] = [], counts: { users?: number; departments?: number 
     },
     user: {
       count: jest.fn(async () => counts.users ?? 0),
-      findMany: jest.fn(async () => [{ id: IDS.adminA, firstName: 'Asha', lastName: 'R' }]),
+      findMany: jest.fn(async () => [
+        { id: IDS.adminA, firstName: 'Asha', lastName: 'R', gender: 'FEMALE', avatarId: 'F07' },
+      ]),
     },
     department: {
       count: jest.fn(async () => counts.departments ?? 0),
@@ -177,7 +179,7 @@ describe('SignOutKeysService: issuing (Admin side)', () => {
     expect(view).toMatchObject({
       scope: 'DEPARTMENTS',
       departments: [{ id: DEPT_A1, name: 'Electronics' }],
-      createdBy: { id: IDS.adminA, name: 'Asha R' },
+      createdBy: { id: IDS.adminA, name: 'Asha R', avatarId: 'F07' },
       uses: 3,
       active: true,
       revokedAt: null,

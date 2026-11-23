@@ -38,6 +38,7 @@ export function asShiftPerson(p: PersonRow): ShiftPerson {
     managerId: p.managerId,
     active: p.active,
     attendanceSource: p.attendanceSource ?? 'AGENT',
+    avatarId: p.avatarId,
   };
 }
 
@@ -174,6 +175,7 @@ export class TeamTodayService {
             role: p.role,
             department: p.department,
             managerId: p.managerId,
+            avatarId: p.avatarId ?? null,
           },
           status,
           statusSince: since,

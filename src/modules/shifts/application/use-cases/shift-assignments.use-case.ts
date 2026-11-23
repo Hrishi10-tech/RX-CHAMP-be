@@ -327,6 +327,7 @@ export class ShiftAssignmentsUseCase {
       department: p.department,
       designation: p.designation,
       managerId: p.managerId,
+      avatarId: p.avatarId ?? null,
       shift: ShiftMapper.ref(resolved.shift),
       source: pickedByTime ? 'DEPARTMENT' : resolved.source,
       pickedByTime,

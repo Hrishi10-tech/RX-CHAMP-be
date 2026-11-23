@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import {
+  AVATAR_COLUMNS,
+  effectiveAvatarId,
+  withEffectiveAvatar,
+} from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { LOCK_SCREEN_APP, MAX_GAP_SEC } from '@modules/activity/application/activity.constants';
@@ -37,6 +42,7 @@ const PERSON_SELECT = {
   role: { select: { name: true } },
   manager: { select: { firstName: true, lastName: true } },
   attendanceSource: true,
+  ...AVATAR_COLUMNS,
 } as const;
 
 type PersonPayload = Prisma.UserGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -57,6 +63,7 @@ function personFromPrisma(r: PersonPayload): PersonRow {
     active: r.status === 'ACTIVE' && r.deletedAt === null,
     joinedOn: dateKeyInZone(r.createdAt, appTimezone()),
     attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+    avatarId: effectiveAvatarId(r),
   };
 }
 
@@ -360,7 +367,7 @@ export class PrismaWorktimeReader implements WorktimeReader {
 
   async searchParticipants(companyId: string | null, q: string, excludeId: string, limit: number) {
     const words = q.split(/\s+/).filter(Boolean).slice(0, 4);
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where: {
         status: 'ACTIVE',
         deletedAt: null,
@@ -373,10 +380,11 @@ export class PrismaWorktimeReader implements WorktimeReader {
           ],
         })),
       },
-      select: { id: true, firstName: true, lastName: true, department: true },
+      select: { id: true, firstName: true, lastName: true, department: true, ...AVATAR_COLUMNS },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { id: 'asc' }],
       take: limit,
     });
+    return rows.map(withEffectiveAvatar);
   }
 
   async knownPeopleIds(companyId: string | null, ids: string[]): Promise<Set<string>> {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import {
   AgentHealthPerson,
@@ -30,6 +31,7 @@ export class PrismaAgentHealthReader implements AgentHealthReader {
         role: { select: { name: true } },
         company: { select: { name: true } },
         departmentRef: { select: { name: true, deletedAt: true } },
+        ...AVATAR_COLUMNS,
       },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { id: 'asc' }],
     });
@@ -46,6 +48,7 @@ export class PrismaAgentHealthReader implements AgentHealthReader {
       companyId: r.companyId,
       companyName: r.company?.name ?? null,
       attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+      avatarId: effectiveAvatarId(r),
     }));
   }
 

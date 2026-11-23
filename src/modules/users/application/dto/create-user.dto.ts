@@ -3,14 +3,20 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Gender } from '@shared/avatars/avatar-catalog';
 import { Role } from '@shared/rbac/roles.enum';
 import { IsId } from '@shared/validation/is-id';
+
+/** 3.6: the genders, which pick the avatar library. */
+export const GENDERS: Gender[] = ['MALE', 'FEMALE'];
 
 /** A Manager's view grants (docs/4.0/SPEC.md 2.2); a missing one stays as it is. */
 export class GrantsInputDto {
@@ -114,6 +120,15 @@ export class CreateUserItemDto {
   @IsString()
   @MaxLength(5)
   shiftEnd?: string;
+
+  @ApiPropertyOptional({
+    enum: GENDERS,
+    description:
+      'The organisation admin or a Super Admin only. Sets the default avatar; without it the person shows initials.',
+  })
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsIn(GENDERS)
+  gender?: Gender;
 }
 
 export class CreateUsersDto extends CreateUserItemDto {

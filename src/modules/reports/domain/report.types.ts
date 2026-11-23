@@ -25,6 +25,11 @@ export interface ReportPerson {
   /** 3.x reporting line, kept for older readers; not used for scope in 4.0. */
   managerId: string | null;
   managerName: string | null;
+  /**
+   * The effective avatar (3.6); null while the person has no gender. Display only: a
+   * locked month's snapshot keeps its figures and shows the avatar the person has now.
+   */
+  avatarId?: string | null;
 }
 
 export interface PersonDaySummary {

@@ -83,6 +83,7 @@ export class PresenceMapper {
       name: fullName(member),
       email: member.email,
       department: member.department,
+      avatarId: member.avatarId ?? null,
       status: current.status,
       note: current.note,
       since: current.since,

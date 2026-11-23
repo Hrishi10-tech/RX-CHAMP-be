@@ -327,6 +327,7 @@ describe('OrganisationsService: people with no organisation', () => {
     role: 'USER',
     status: 'ACTIVE',
     companyId: null,
+    avatarId: null,
     ...over,
   });
 

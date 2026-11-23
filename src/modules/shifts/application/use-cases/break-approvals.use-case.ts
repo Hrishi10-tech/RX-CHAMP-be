@@ -274,7 +274,16 @@ export class BreakApprovalsUseCase {
 }
 
 export function personView(p: ShiftPerson | undefined, fallbackId: string): ApprovalPersonView {
-  if (!p) return { id: fallbackId, name: 'Former user', email: '', role: 'USER', department: null };
+  if (!p) {
+    return {
+      id: fallbackId,
+      name: 'Former user',
+      email: '',
+      role: 'USER',
+      department: null,
+      avatarId: null,
+    };
+  }
   return {
     id: p.id,
     name: personName(p),
@@ -283,5 +292,6 @@ export function personView(p: ShiftPerson | undefined, fallbackId: string): Appr
     department: p.department,
     companyId: p.companyId,
     companyName: p.companyName ?? null,
+    avatarId: p.avatarId ?? null,
   };
 }

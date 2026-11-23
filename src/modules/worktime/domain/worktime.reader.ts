@@ -61,6 +61,8 @@ export interface PersonRow {
   joinedOn: string;
   /** How the person's day is recorded (3.5). */
   attendanceSource?: 'AGENT' | 'BIOMETRIC';
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId?: string | null;
 }
 
 export interface PeopleFilter {
@@ -119,7 +121,15 @@ export interface WorktimeReader {
     q: string,
     excludeId: string,
     limit: number,
-  ): Promise<{ id: string; firstName: string; lastName: string; department: string | null }[]>;
+  ): Promise<
+    {
+      id: string;
+      firstName: string;
+      lastName: string;
+      department: string | null;
+      avatarId?: string | null;
+    }[]
+  >;
   /** Which of these ids are active people in the company. */
   knownPeopleIds(companyId: string | null, ids: string[]): Promise<Set<string>>;
   /** The earliest work session day, or null. */

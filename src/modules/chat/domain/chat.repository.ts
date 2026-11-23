@@ -7,6 +7,8 @@ export interface ChatMessageRecord {
   body: string;
   readAt: Date | null;
   createdAt: Date;
+  /** The sender's effective avatar (3.6). */
+  fromAvatarId?: string | null;
 }
 
 export interface CreateMessageData {

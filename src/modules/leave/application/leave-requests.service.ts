@@ -859,6 +859,7 @@ export class LeaveRequestsService {
         id: r.id,
         userId: r.userId,
         userName: fullName(person),
+        avatarId: person?.avatarId ?? null,
         department: person?.department ?? null,
         companyId: person?.companyId ?? null,
         companyName: person?.companyName ?? null,

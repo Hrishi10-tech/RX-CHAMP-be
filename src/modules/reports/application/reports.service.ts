@@ -20,7 +20,12 @@ import { meetingView, MeetingsService } from '@modules/worktime/application/meet
 import { nameOf, PeopleScopeService } from '@modules/worktime/application/people-scope.service';
 import { asShiftPerson } from '@modules/worktime/application/team-today.service';
 import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/approvals.reader';
-import { BIOMETRIC_SOURCE, focusOfDay, intervalsOfDay, PersonDayData } from '@modules/worktime/domain/day';
+import {
+  BIOMETRIC_SOURCE,
+  focusOfDay,
+  intervalsOfDay,
+  PersonDayData,
+} from '@modules/worktime/domain/day';
 import { PUNCHES_READER, PunchesReader } from '@modules/worktime/domain/punches.reader';
 import {
   breakdownIn,
@@ -72,7 +77,13 @@ export function reportPerson(p: PersonRow): ReportPerson {
     departmentId: p.departmentId ?? null,
     managerId: p.managerId,
     managerName: p.managerName,
+    avatarId: p.avatarId ?? null,
   };
+}
+
+/** A locked month's stored report with the avatar the person has now. */
+function withCurrentAvatar(report: PersonMonthReport, p: PersonRow): PersonMonthReport {
+  return { ...report, person: { ...report.person, avatarId: p.avatarId ?? null } };
 }
 
 /** Everything one month of many people is built from (one query per table). */
@@ -398,7 +409,7 @@ export class ReportsService {
       : null;
     const fromSnapshot = snapshot?.persons[me.id];
     const report = fromSnapshot
-      ? { ...fromSnapshot, locked: true }
+      ? { ...withCurrentAvatar(fromSnapshot, person), locked: true }
       : { ...(await this.buildMonth([person], month, 'TEAM', now)).persons[0], locked: !!snapshot };
     return {
       person: report.person,
@@ -450,7 +461,10 @@ export class ReportsService {
     const fromSnapshot = snapshot?.persons[userId];
     const activity = this.mayActivity(me);
     if (fromSnapshot) {
-      return redactActivity(withPayrollFields({ ...fromSnapshot, locked: true }), activity);
+      return redactActivity(
+        withPayrollFields({ ...withCurrentAvatar(fromSnapshot, person), locked: true }),
+        activity,
+      );
     }
     const built = await this.buildMonth([person], month, 'TEAM', now, { activity });
     return redactActivity({ ...built.persons[0], locked: !!snapshot }, activity);
@@ -522,10 +536,10 @@ export class ReportsService {
     people: PersonRow[],
     scope: 'TEAM' | 'ALL',
   ): MonthBuild {
-    const persons = people
-      .map((p) => snapshot.persons[p.id])
-      .filter((x): x is PersonMonthReport => !!x)
-      .map((p) => withPayrollFields({ ...p, locked: true }));
+    const persons = people.flatMap((p) => {
+      const stored = snapshot.persons[p.id];
+      return stored ? [withPayrollFields({ ...withCurrentAvatar(stored, p), locked: true })] : [];
+    });
     const rows = persons.map((p) => ({
       person: p.person,
       totals: p.totals,

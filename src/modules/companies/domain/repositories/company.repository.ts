@@ -12,6 +12,8 @@ export interface CompanyManagerStats {
   id: string;
   email: string;
   name: string;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
   /** 4.0: active Staff in the manager's departments. */
   userCount: number;
 }

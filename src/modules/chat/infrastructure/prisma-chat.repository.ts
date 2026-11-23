@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ChatMessage as PrismaChatMessage } from '@prisma/client';
+import { AVATAR_COLUMNS, effectiveAvatarId } from '@shared/avatars/person-avatar';
 import { PrismaService } from '@shared/database/prisma.service';
 import {
   ChatMessageRecord,
@@ -16,7 +17,7 @@ export class PrismaChatRepository implements ChatRepository {
     const row = await this.prisma.chatMessage.create({
       data: { fromUserId: data.fromUserId, toUserId: data.toUserId, body: data.body },
     });
-    return this.toRecord(row);
+    return this.toRecord(row, await this.avatarsOf([data.fromUserId]));
   }
 
   async listConversation(userA: string, userB: string, take: number): Promise<ChatMessageRecord[]> {
@@ -30,7 +31,8 @@ export class PrismaChatRepository implements ChatRepository {
       orderBy: { createdAt: 'desc' },
       take,
     });
-    return rows.reverse().map((r) => this.toRecord(r));
+    const avatars = await this.avatarsOf([userA, userB]);
+    return rows.reverse().map((r) => this.toRecord(r, avatars));
   }
 
   async markRead(userId: string, fromUserId: string): Promise<number> {
@@ -69,14 +71,23 @@ export class PrismaChatRepository implements ChatRepository {
       ),
     );
 
+    const avatars = await this.avatarsOf([meId, ...otherIds]);
     return otherIds.map((otherId, i) => ({
       otherId,
-      lastMessage: lasts[i] ? this.toRecord(lasts[i]!) : null,
+      lastMessage: lasts[i] ? this.toRecord(lasts[i]!, avatars) : null,
       unreadCount: unreadByFrom.get(otherId) ?? 0,
     }));
   }
 
-  private toRecord(row: PrismaChatMessage): ChatMessageRecord {
+  private async avatarsOf(userIds: string[]): Promise<Map<string, string | null>> {
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, ...AVATAR_COLUMNS },
+    });
+    return new Map(rows.map((r) => [r.id, effectiveAvatarId(r)]));
+  }
+
+  private toRecord(row: PrismaChatMessage, avatars: Map<string, string | null>): ChatMessageRecord {
     return {
       id: row.id,
       fromUserId: row.fromUserId,
@@ -84,6 +95,7 @@ export class PrismaChatRepository implements ChatRepository {
       body: row.body,
       readAt: row.readAt,
       createdAt: row.createdAt,
+      fromAvatarId: avatars.get(row.fromUserId) ?? null,
     };
   }
 }

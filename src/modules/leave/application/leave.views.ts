@@ -14,12 +14,16 @@ export interface LeavePersonRef {
   companyName: string | null;
   managerId: string | null;
   managerName: string | null;
+  /** The effective avatar (3.6); null while the person has no gender. */
+  avatarId: string | null;
 }
 
 export interface LeaveRequestView {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId: string | null;
   department: string | null;
   companyId: string | null;
   companyName: string | null;
@@ -218,6 +222,8 @@ export interface LeaveAdjustmentView {
   id: string;
   userId: string;
   userName: string;
+  /** The person's effective avatar (3.6). */
+  avatarId: string | null;
   companyName: string | null;
   year: number;
   category: LeaveCategory;

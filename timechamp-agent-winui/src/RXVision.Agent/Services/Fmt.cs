@@ -143,18 +143,6 @@ public static class Fmt
     public static string Lower(string label) =>
         string.IsNullOrEmpty(label) ? label : char.ToLowerInvariant(label[0]) + label[1..];
 
-    /// <summary>Initials for an avatar: "Maya Reddy" gives "MR", "Vikram (Pune)" gives "VP".</summary>
-    public static string Initials(string? name)
-    {
-        var letters = (name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.FirstOrDefault(char.IsLetterOrDigit))
-            .Where(c => c != default)
-            .ToList();
-        if (letters.Count == 0) return "?";
-        if (letters.Count == 1) return char.ToUpperInvariant(letters[0]).ToString();
-        return string.Concat(char.ToUpperInvariant(letters[0]), char.ToUpperInvariant(letters[^1]));
-    }
-
     /// <summary>
     /// A chat timestamp: "2:05 PM" today, "12 Oct, 2:05 PM" before. Both instants already at
     /// the zone to show (the business time zone: <see cref="IAgent.BusinessLocal"/>).

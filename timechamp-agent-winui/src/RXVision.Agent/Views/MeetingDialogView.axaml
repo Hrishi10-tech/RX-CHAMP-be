@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dlg="using:RXVision.Agent.ViewModels.Dialogs"
+             xmlns:ctl="using:RXVision.Agent.Controls"
              x:Class="RXVision.Agent.Views.MeetingDialogView"
              x:DataType="dlg:MeetingDialogViewModel">
   <UserControl.KeyBindings>
@@ -94,9 +95,7 @@
                 <DataTemplate x:DataType="dlg:ParticipantChipViewModel">
                   <Border Classes="person">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <Border Classes="personinitials" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Initials}" />
-                      </Border>
+                      <ctl:PersonAvatar Width="20" Height="20" VerticalAlignment="Center" AvatarId="{Binding AvatarId}" />
                       <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="160" TextTrimming="CharacterEllipsis" />
                       <Button Classes="ghost" Padding="4" Command="{Binding RemoveCommand}" ToolTip.Tip="{Binding RemoveLabel}"
                               AutomationProperties.Name="{Binding RemoveLabel}" VerticalAlignment="Center">

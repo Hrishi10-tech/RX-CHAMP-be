@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RXVision.Agent.ViewModels"
         xmlns:views="using:RXVision.Agent.Views"
+        xmlns:ctl="using:RXVision.Agent.Controls"
         xmlns:conv="using:RXVision.Agent.Converters"
         x:Class="RXVision.Agent.Views.DashboardWindow"
         x:DataType="vm:DashboardViewModel"
@@ -54,10 +55,7 @@
                 Margin="0,0,12,0" VerticalAlignment="Center" ToolTip.Tip="Menu" AutomationProperties.Name="Menu">
           <PathIcon Classes="i" Data="{StaticResource Icon.Menu}" Width="18" Height="18" Foreground="{StaticResource Brush.InkSoft}" />
         </Button>
-        <Border Grid.Column="1" Width="40" Height="40" CornerRadius="20" Background="{StaticResource Brush.Brand}" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Initials}" Foreground="#FFFFFF" FontWeight="SemiBold" FontSize="14"
-                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-        </Border>
+        <ctl:PersonAvatar Grid.Column="1" Name="HeaderAvatar" Width="40" Height="40" VerticalAlignment="Center" AvatarId="{Binding Profile.AvatarId}" />
         <StackPanel Grid.Column="2" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="{Binding DisplayName}" FontSize="15.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           <StackPanel Orientation="Horizontal" Spacing="7">
@@ -320,9 +318,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="vm:MeetingPersonViewModel">
-                            <Border Classes="avatar" ToolTip.Tip="{Binding Name}">
-                              <TextBlock Text="{Binding Initials}" />
-                            </Border>
+                            <ctl:PersonAvatar Width="24" Height="24" Margin="0,0,-6,0" ToolTip.Tip="{Binding Name}" AvatarId="{Binding AvatarId}" />
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
@@ -543,6 +539,9 @@
               Command="{Binding CloseMenuCommand}" AutomationProperties.Name="Close menu" />
       <Border Name="MainMenu" Classes="menu" Width="244" Margin="22,60,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
         <StackPanel Spacing="2">
+          <!-- Profile (3.6): the account row opens the avatar picker -->
+          <views:ProfileView DataContext="{Binding Profile}" />
+          <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="8,4" />
           <Button Classes="menuitem" Classes.on="{Binding IsDashboardPage}" Command="{Binding ShowDashboardCommand}" AutomationProperties.Name="Dashboard">
             <StackPanel Orientation="Horizontal" Spacing="11">
               <PathIcon Classes="i" Data="{StaticResource Icon.Home}" Width="17" Height="17" />

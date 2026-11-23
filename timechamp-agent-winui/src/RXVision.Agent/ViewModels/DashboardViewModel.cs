@@ -18,8 +18,8 @@ public enum SyncTone { Ok, Pending, Off }
 /// <summary>The pages of the main window (the hamburger menu, SPEC 8.1).</summary>
 public enum DashboardPage { Dashboard, History, Leave, Calendar, Instructions }
 
-/// <summary>Someone in the running meeting, as a small round avatar.</summary>
-public sealed record MeetingPersonViewModel(string Initials, string Name);
+/// <summary>Someone in the running meeting, as a small circle: their avatar, else the RX mark.</summary>
+public sealed record MeetingPersonViewModel(string Name, string? AvatarId = null);
 
 /// <summary>
 /// The main screen. Everything is recomputed from the agent by <see cref="Refresh"/>
@@ -38,13 +38,16 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     /// <param name="alerts">The cards on top of the panel, shared with the icon's badge (3.6).</param>
     /// <param name="meter">The one value the ring and these progress lines both read (3.6).</param>
-    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log, AlertCenter? alerts = null, DayMeter? meter = null)
+    /// <param name="avatars">The person's picture for the panel's icon, the same as the floating icon's (3.6).</param>
+    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log, AlertCenter? alerts = null, DayMeter? meter = null,
+        IIconAvatarSource? avatars = null)
     {
         _agent = agent;
         _actions = actions;
         _log = log;
         Alerts = alerts ?? new AlertCenter();
         _meter = meter ?? new DayMeter(agent);
+        IconAvatars = avatars ?? new AvatarIconSource(agent);
 
         QuickTile = new TileViewModel("Quick break", "amber", "Icon.Coffee");
         QuickTile.Command = new AsyncRelayCommand(_actions.QuickBreakAsync, () => QuickTile.CanClick && !IsBusy);
@@ -60,6 +63,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         Leave = new LeaveViewModel(agent, actions.Dialogs, log);
         Calendar = new CalendarViewModel(agent, log);
         Instructions = new InstructionsViewModel(agent, log);
+        Profile = new ProfileViewModel(agent);
         _actions.BusyChanged += () => IsBusy = _actions.IsBusy;
     }
 
@@ -82,6 +86,10 @@ public sealed partial class DashboardViewModel : ObservableObject
     public CalendarViewModel Calendar { get; }
     /// <summary>The organisation's guide under the Instructions page (3.2).</summary>
     public InstructionsViewModel Instructions { get; }
+    /// <summary>Who is signed in, and the way to their avatar (3.6, for everyone).</summary>
+    public ProfileViewModel Profile { get; }
+    /// <summary>The person's picture, the same source as the floating icon's.</summary>
+    public IIconAvatarSource IconAvatars { get; }
     public ObservableCollection<BreakRowViewModel> Rows { get; } = new();
     public ObservableCollection<MeetingPersonViewModel> MeetingPeople { get; } = new();
 
@@ -93,7 +101,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     // ---- Header and pages -------------------------------------------------------------------
 
     [ObservableProperty] private string _displayName = "";
-    [ObservableProperty] private string _initials = "";
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private BubbleStatus _statusKind;
     /// <summary>"Day started 9:24 AM", or null before Start Day.</summary>
@@ -464,7 +471,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         var workday = _agent.Workday;
 
         DisplayName = _agent.User?.DisplayName ?? "";
-        Initials = Fmt.Initials(DisplayName);
+        Profile.Refresh();
         CanQuit = _actions.CanQuit;
         StatusText = _agent.AwaySince is not null && running && panel.Active is null && presence.Status == PresenceStatus.Working
             ? "Away"
@@ -644,7 +651,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         {
             _peopleKey = key;
             MeetingPeople.Clear();
-            foreach (var p in people.Take(5)) MeetingPeople.Add(new MeetingPersonViewModel(Fmt.Initials(p.Name), p.Name));
+            // A meeting's answer names people without their avatars; chat knows most of them.
+            var contacts = _agent.Chat?.Contacts;
+            foreach (var p in people.Take(5)) MeetingPeople.Add(new MeetingPersonViewModel(p.Name, contacts?.FirstOrDefault(c => c.UserId == p.Id)?.AvatarId));
         }
         MeetingPeopleText = people.Count == 0 ? "" : string.Join(", ", people.Select(p => p.Name));
         MeetingMomText = string.IsNullOrWhiteSpace(live?.MomSender) ? null : $"Minutes: {live!.MomSender!.Trim()}";

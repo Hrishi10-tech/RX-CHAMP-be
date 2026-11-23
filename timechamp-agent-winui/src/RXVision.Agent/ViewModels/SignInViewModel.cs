@@ -63,12 +63,25 @@ public sealed partial class SignInViewModel : ObservableObject
     private string? _sessionLostReason;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowForm), nameof(ShowConnecting))]
+    [NotifyPropertyChangedFor(nameof(ShowForm), nameof(ShowConnecting), nameof(ShowPerson), nameof(BrandAvatarId))]
     private bool _isConnecting;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowForm), nameof(ShowConnecting))]
+    [NotifyPropertyChangedFor(nameof(ShowForm), nameof(ShowConnecting), nameof(ShowPerson), nameof(BrandAvatarId))]
     private bool _signInAnyway;
+
+    /// <summary>The person who is still signed in while it reconnects (an offline start).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPerson), nameof(BrandAvatarId))]
+    private string? _personName;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BrandAvatarId))]
+    private string? _personAvatarId;
+
+    public bool ShowPerson => ShowConnecting && !string.IsNullOrEmpty(PersonName);
+    /// <summary>The top circle: the RX mark (null), or the reconnecting person's chosen avatar (3.6, D-85).</summary>
+    public string? BrandAvatarId => ShowPerson ? PersonAvatarId : null;
 
     public bool UseEmail => !UseCode;
     public bool HasError => !string.IsNullOrEmpty(Error);
@@ -84,6 +97,8 @@ public sealed partial class SignInViewModel : ObservableObject
     {
         IsConnecting = state == AgentState.Connecting;
         if (!IsConnecting) SignInAnyway = false;
+        PersonAvatarId = _agent.Avatars.ShownId;
+        PersonName = _agent.Avatars.PersonName;
         if (string.IsNullOrWhiteSpace(Server) || !ShowAdvanced) Server = _agent.ApiBaseUrl;
     }
 

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RXVision.Agent.ViewModels"
+        xmlns:ctl="using:RXVision.Agent.Controls"
         x:Class="RXVision.Agent.Views.ToastWindow"
         x:DataType="vm:ToastViewModel"
         Title="RX Vision"
@@ -83,10 +84,7 @@
 
       <Grid ColumnDefinitions="Auto,*">
         <Panel Width="36" Height="36" VerticalAlignment="Top">
-          <Border CornerRadius="18" Background="#E8EAFB" IsVisible="{Binding IsMessage}">
-            <TextBlock Text="{Binding Initials}" FontSize="13" FontWeight="SemiBold" Foreground="#4F46E5"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
+          <ctl:PersonAvatar IsVisible="{Binding IsMessage}" AvatarId="{Binding AvatarId}" />
           <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsInfo}">
             <PathIcon Classes="i" Data="{StaticResource Icon.Person}" Width="18" Height="18" Foreground="#4F46E5" />
           </Border>

@@ -10,7 +10,7 @@ namespace RXVision.Agent.UI.Tests;
 /// <summary>
 /// Every state on a light and a dark wallpaper at 56 px, as PNGs for a person to read against the
 /// design (brief, Testing). RXV_ICON_SHOTS says where; RXV_ICON_AVATARS names a folder of avatar
-/// masters so the shots carry the design's own faces, else the initials.
+/// masters so the shots carry the design's own faces, else the RX mark (D-85).
 /// </summary>
 public class IconShotTests
 {
@@ -37,7 +37,7 @@ public class IconShotTests
         yield return new("badge-info", IconPixels.Frame(IconStatus.Working, 5.2 / 8, IconGlyphs.Info), "male/M11.png");
         yield return new("badge-count", IconPixels.Frame(IconStatus.Meeting, 5.2 / 8, IconGlyphs.Count(3)), "male/M11.png");
         yield return new("badge-count-12", IconPixels.Frame(IconStatus.Meeting, 5.2 / 8, IconGlyphs.Count(12)), "male/M11.png");
-        yield return new("initials", IconPixels.Frame(IconStatus.Working, 5.2 / 8), null);
+        yield return new("mark", IconPixels.Frame(IconStatus.Working, 5.2 / 8), null);
     }
 
     private static Bitmap? Master(string? relative)
@@ -105,7 +105,7 @@ public class IconShotTests
             for (var y = 0; y < 192; y++) System.Runtime.InteropServices.Marshal.Copy(row, 0, target.Address + y * target.RowBytes, 192);
         }
         var drawn = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), scale, new IconPixels.Avatars(flat));
-        var plain = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), scale, new IconPixels.Avatars(null, " "));
+        var plain = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), scale, new IconPixels.Avatars(null));
         var magenta = IconPixels.Colour("#FF00FF");
         var (_, row2) = drawn.InBox(0, 28);
         double across = 0;

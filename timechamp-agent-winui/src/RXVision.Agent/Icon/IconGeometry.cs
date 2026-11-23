@@ -35,7 +35,6 @@ public static class IconGeometry
     public const double AvatarRadius = AvatarDiameter / 2;
     public const double AvatarEdgeStroke = 0.42;
     public const double AvatarEdgeOpacity = 0.35;
-    public const double InitialsSize = 16;
 
     public const double RingRadius = 25;
     public const double RingStroke = 2;

@@ -332,7 +332,9 @@ public class BreakViewModelTests
         Assert.Equal("12:00", vm.MeetingTimer);
         Assert.Equal("Started 10:08 AM", vm.MeetingStarted);
         Assert.Equal("Sprint review with the design team", vm.MeetingAgenda);
-        Assert.Equal(new[] { "MR", "VP" }, vm.MeetingPeople.Select(p => p.Initials));
+        Assert.Equal(new[] { "Maya Reddy", "Vikram (Pune)" }, vm.MeetingPeople.Select(p => p.Name));
+        // No avatar known for either: both show the RX mark.
+        Assert.All(vm.MeetingPeople, p => Assert.Null(p.AvatarId));
         Assert.Equal("Maya Reddy, Vikram (Pune)", vm.MeetingPeopleText);
         Assert.Equal("In a meeting", vm.StatusText);
         Assert.Equal("Counting · in a meeting", vm.Today.FocusStatus);
@@ -351,7 +353,7 @@ public class BreakViewModelTests
     {
         var (vm, agent) = Dashboard(Days.General(), "10:47");
         Assert.Equal("Asha Kumar", vm.DisplayName);
-        Assert.Equal("AK", vm.Initials);
+        Assert.Null(vm.Profile.AvatarId);
         Assert.Equal("Working", vm.StatusText);
         Assert.Equal("Day started 9:24 AM", vm.DayStartedText);
         Assert.Equal(SyncTone.Ok, vm.SyncTone);
@@ -527,15 +529,10 @@ public class FmtTests
         Assert.Equal(expected, Fmt.Timer(seconds));
 
     [Fact]
-    public void Running_time_and_initials()
+    public void Running_time()
     {
         Assert.Equal("4m 05s", Fmt.Running(TimeSpan.FromSeconds(245)));
         Assert.Equal("1h 02m", Fmt.Running(TimeSpan.FromMinutes(62)));
-        Assert.Equal("MR", Fmt.Initials("Maya Reddy"));
-        Assert.Equal("VP", Fmt.Initials("Vikram (Pune)"));
-        Assert.Equal("K", Fmt.Initials("kavya"));
-        Assert.Equal("?", Fmt.Initials("  "));
-        Assert.Equal("?", Fmt.Initials("( )"));
     }
 
     [Theory]

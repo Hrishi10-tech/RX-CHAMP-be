@@ -17,8 +17,6 @@ public static class IconColors
     public static readonly Color DarkEdge = Color.Parse("#141920");
     public static readonly Color Badge = Color.Parse("#E8EBF0");
     public static readonly Color BadgeGlyph = Color.Parse("#141920");
-    public static readonly Color InitialsFill = Color.Parse("#2B3343");
-    public static readonly Color InitialsText = Color.Parse("#E8EBF0");
 }
 
 /// <summary>The dot and the ring for one status (AGENT.md section 1, D-33, D-74).</summary>

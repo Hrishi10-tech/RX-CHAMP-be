@@ -51,20 +51,18 @@ public static class IconPainter
     private static readonly IImmutableBrush DarkEdge = new ImmutableSolidColorBrush(IconColors.DarkEdge);
     private static readonly IImmutableBrush BadgeFill = new ImmutableSolidColorBrush(IconColors.Badge);
     private static readonly IImmutableBrush GlyphFill = new ImmutableSolidColorBrush(IconColors.BadgeGlyph);
-    private static readonly IImmutableBrush InitialsFill = new ImmutableSolidColorBrush(IconColors.InitialsFill);
-    private static readonly IImmutableBrush InitialsText = new ImmutableSolidColorBrush(IconColors.InitialsText);
     private static readonly IPen HollowRing = Stroke(IconColors.HollowDot, 1, IconGeometry.HollowDotStroke);
 
     /// <param name="context">Scaled so that one unit is one device-independent pixel, origin at the canvas's top left.</param>
     /// <param name="scale">The display scale, for the snapped centres.</param>
-    /// <param name="avatar">The person's picture at this scale, or null to draw <paramref name="initials"/>.</param>
-    public static void Paint(DrawingContext context, IconFrame frame, double scale, Bitmap? avatar, string initials)
+    /// <param name="avatar">The person's picture at this scale, or null for the RX mark.</param>
+    public static void Paint(DrawingContext context, IconFrame frame, double scale, Bitmap? avatar)
     {
         using var inBox = context.PushTransform(Matrix.CreateTranslation(IconGeometry.Margin, IconGeometry.Margin));
         var c = new Point(IconGeometry.Centre, IconGeometry.Centre);
 
         PaintBase(context, c);
-        PaintAvatar(context, c, avatar, initials);
+        PaintAvatar(context, c, avatar);
         context.DrawEllipse(null, AvatarEdge, c, IconGeometry.AvatarRadius, IconGeometry.AvatarRadius);
         PaintRing(context, c, frame);
         PaintDot(context, frame.Look, scale);
@@ -81,7 +79,7 @@ public static class IconPainter
         context.DrawEllipse(null, WellEdge, c, IconGeometry.WellRadius, IconGeometry.WellRadius);
     }
 
-    private static void PaintAvatar(DrawingContext context, Point c, Bitmap? avatar, string initials)
+    private static void PaintAvatar(DrawingContext context, Point c, Bitmap? avatar)
     {
         var r = IconGeometry.AvatarRadius;
         var area = new Rect(c.X - r, c.Y - r, r * 2, r * 2);
@@ -93,8 +91,7 @@ public static class IconPainter
             context.DrawImage(avatar, new Rect(0, 0, avatar.PixelSize.Width, avatar.PixelSize.Height), area);
             return;
         }
-        context.DrawEllipse(InitialsFill, null, c, r, r);
-        DrawCentred(context, initials, c, IconGeometry.InitialsSize, FontWeight.Bold, InitialsText);
+        RxMark.DrawInCircle(context, c, IconGeometry.AvatarDiameter);
     }
 
     private static void PaintRing(DrawingContext context, Point c, IconFrame frame)

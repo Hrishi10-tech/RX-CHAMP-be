@@ -519,7 +519,7 @@ public class ScreenshotTests
     [AvaloniaFact]
     public void Toast_message() => ShootToast(new ToastViewModel(ToastKind.Message, "chat:m-1")
     {
-        Heading = "New message", Title = "Maya Reddy", Initials = "MR", Stamp = "15:42",
+        Heading = "New message", Title = "Maya Reddy", Stamp = "15:42",
         Body = "Can you join the 4 pm call with the Pune team? We need your numbers for the quarterly review.",
         PrimaryText = "View messages",
     }, "toast-message");

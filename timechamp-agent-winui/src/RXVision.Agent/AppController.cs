@@ -33,6 +33,7 @@ public sealed class AppController : IDisposable
     private readonly AlertCenter _alerts;
     private readonly DayMeter _meter;
     private readonly DayAlerts _dayAlerts;
+    private readonly AvatarIconSource _avatarSource;
     private readonly BubbleViewModel _bubbleVm;
     private readonly DashboardViewModel _dashboardVm;
     private readonly SignInViewModel _signInVm;
@@ -45,6 +46,8 @@ public sealed class AppController : IDisposable
     private NoticeWindow? _notice;
     private BubbleWindow? _bubble;
     private ToastWindow? _toastWindow;
+    private AvatarPickerWindow? _picker;
+    private AvatarPickerViewModel? _pickerVm;
     private TrayIcon? _tray;
 
     private AgentState _shownState = AgentState.Starting;
@@ -72,10 +75,17 @@ public sealed class AppController : IDisposable
         _alerts = new AlertCenter();
         _meter = new DayMeter(_agent, _settings);
         _dayAlerts = new DayAlerts(_agent, _alerts, _actions, OpenUrl);
-        _dashboardVm = new DashboardViewModel(_agent, _actions, _log, _alerts, _meter)
+        _avatarSource = new AvatarIconSource(_agent);
+        _dashboardVm = new DashboardViewModel(_agent, _actions, _log, _alerts, _meter, _avatarSource)
         {
             SignOutRequested = () => _actions.SignOutAsync(),
             QuitRequested = () => _actions.QuitAsync(QuitNowAsync),
+        };
+        // Profile (3.6, D-85): the account row opens the avatar picker.
+        _dashboardVm.Profile.AvatarRequested = () =>
+        {
+            _dashboardVm.CloseMenuCommand.Execute(null);
+            ShowAvatarPicker();
         };
 
         _menu = new AgentMenuViewModel(
@@ -88,7 +98,7 @@ public sealed class AppController : IDisposable
             signOut: () => RunFromMenu(() => { ShowDashboard(); return _actions.SignOutAsync(); }),
             quit: () => RunFromMenu(() => { ShowDashboard(); return _actions.QuitAsync(QuitNowAsync); }));
 
-        _bubbleVm = new BubbleViewModel(_agent, _meter, _alerts, new AvaloniaDispatcher(), _menu);
+        _bubbleVm = new BubbleViewModel(_agent, _meter, _alerts, new AvaloniaDispatcher(), _menu, _avatarSource);
         _signInVm = new SignInViewModel(_agent, _settings, _log);
         _noticeVm = new NoticeViewModel(_agent, _log);
         _toasts = new ToastService(new ToastPresenter(this));
@@ -96,6 +106,11 @@ public sealed class AppController : IDisposable
 
         _clock = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => Tick());
     }
+
+    /// <summary>For the tests that drive the whole app headless (3.6 avatars).</summary>
+    internal BubbleWindow? Bubble => _bubble;
+    internal AvatarPickerWindow? AvatarPicker => _picker;
+    internal DashboardViewModel Dashboard => _dashboardVm;
 
     // ---- Start and stop ----------------------------------------------------------------------
 
@@ -185,7 +200,7 @@ public sealed class AppController : IDisposable
     private void Exit()
     {
         StopAgent();
-        foreach (var w in new Window?[] { _dashboard, _signIn, _notice, _bubble, _toastWindow, _awayWindow })
+        foreach (var w in new Window?[] { _dashboard, _signIn, _notice, _bubble, _toastWindow, _awayWindow, _picker })
         {
             if (w is null) continue;
             if (w is DashboardWindow d) d.AllowClose = true;
@@ -220,6 +235,7 @@ public sealed class AppController : IDisposable
                 break;
             case AgentState.SignIn:
                 HideBubble();
+                HideAvatarPicker();
                 HideDashboard();
                 HideNotice();
                 CloseAway();
@@ -234,6 +250,7 @@ public sealed class AppController : IDisposable
             case AgentState.Connecting:
                 // Quietly retrying: tray only. The sign-in window, if open, says so.
                 HideBubble();
+                HideAvatarPicker();
                 HideDashboard();
                 HideNotice();
                 _signInVm.Prepare(state);
@@ -241,6 +258,7 @@ public sealed class AppController : IDisposable
             case AgentState.NeedsNotice:
                 HideSignIn();
                 HideBubble();
+                HideAvatarPicker();
                 HideDashboard();
                 _openDashboardOnSession = true;
                 ShowNotice();
@@ -317,6 +335,7 @@ public sealed class AppController : IDisposable
             _toasts.Tick();
             if (_dashboard?.IsVisible == true) _dashboardVm.Refresh();
             UpdateAway();
+            if (_picker?.IsVisible == true) _pickerVm?.Tick();
             if (_ticks % 3 == 0) _ = CheckFullScreenAsync();
             if (_ticks % 60 == 0 && _dashboard?.IsVisible == true) _ = RefreshDataAsync();
         }
@@ -488,6 +507,57 @@ public sealed class AppController : IDisposable
     {
         if (_bubble?.IsVisible == true) _bubble.Hide();
         _bubbleVm.SetShown(false);
+    }
+
+    /// <summary>Profile, then Avatar (3.6, D-85): a small window beside the icon, for everyone.</summary>
+    private void ShowAvatarPicker()
+    {
+        if (_picker is { IsVisible: true })
+        {
+            _picker.Activate();
+            return;
+        }
+        var vm = new AvatarPickerViewModel(_agent, _log)
+        {
+            BackRequested = () =>
+            {
+                // Back to Profile: the panel with its menu open, the account row on top.
+                HideAvatarPicker();
+                ShowDashboard();
+                _dashboardVm.IsMenuOpen = true;
+            },
+            CloseRequested = HideAvatarPicker,
+        };
+        _pickerVm = vm;
+        var window = new AvatarPickerWindow { DataContext = vm };
+        _picker = window;
+        // Closed by the OS, not by its own buttons.
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_picker, window)) HideAvatarPicker();
+        };
+        var (_, centre) = ToastAnchor(window);
+        var screen = BubblePlacement.ScreenFor(centre, window.Screens.All) ?? window.Screens.Primary;
+        if (screen is not null)
+        {
+            var scale = screen.Scaling;
+            var size = new PixelSize((int)Math.Ceiling(window.Width * scale), (int)Math.Ceiling(window.Height * scale));
+            window.Position = PickerPlacement.Beside(centre, scale, size, screen.WorkingArea);
+        }
+        window.Show();
+        window.Activate();
+        _ = SafeAsync(vm.OpenAsync);
+    }
+
+    private void HideAvatarPicker()
+    {
+        _pickerVm?.Closed();
+        _pickerVm = null;
+        if (_picker is { } window)
+        {
+            _picker = null;
+            window.Close();
+        }
     }
 
     private static bool IsOnAnyScreen(Window window)
@@ -674,7 +744,7 @@ public sealed class AppController : IDisposable
             {
                 Heading = "New message",
                 Title = sender,
-                Initials = Fmt.Initials(sender),
+                AvatarId = chat?.Contacts.FirstOrDefault(c => c.UserId == message.FromUserId)?.AvatarId,
                 Stamp = _agent.BusinessTime(message.CreatedAt == default ? DateTimeOffset.UtcNow : message.CreatedAt),
                 Body = message.Body,
                 PrimaryText = "View messages",

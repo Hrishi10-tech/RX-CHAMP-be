@@ -53,6 +53,12 @@ public abstract class E2ETest : IAsyncLifetime
         return rig;
     }
 
+    /// <summary>A rig the test built itself: its log goes to the test's output and it is cleaned up at the end.</summary>
+    protected void Track(AgentRig rig)
+    {
+        lock (_rigs) _rigs.Add(rig);
+    }
+
     /// <summary>The same person on another device (a plain HTTP client with the 4.0 agent's User-Agent): what the server has.</summary>
     protected async Task<Portal> ServerViewAsync(Person person)
     {

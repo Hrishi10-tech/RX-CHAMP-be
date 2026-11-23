@@ -6,6 +6,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/RXVision.Agent/RXVision.Agent.csproj" />
+    <ProjectReference Include="../../build/avatars/AvatarBundle/RXVision.AvatarBundle.csproj" />
   </ItemGroup>
 
 </Project>

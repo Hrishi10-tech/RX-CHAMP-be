@@ -59,3 +59,11 @@ docs/
 
 # The desktop agent's build scripts (the build/ rule above is for compiled output)
 !timechamp-agent-winui/build/
+
+# Release run (Nov 2026): the kit, the delivery output, agent worktrees and the generated
+# test environment never enter git.
+rxvision-kit/
+rxvision-delivery/
+.worktrees/
+.claude/worktrees/
+.env.test

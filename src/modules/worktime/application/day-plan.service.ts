@@ -24,7 +24,8 @@ export interface DayPlan {
   targetSec: number;
 }
 
-type PlanPerson = PersonForShift & { companyId: string | null };
+/** 3.5: the department decides too (its own week, its holidays), when known. */
+type PlanPerson = PersonForShift & { companyId: string | null; departmentId?: string | null };
 
 /** Resolved shifts, calendars and settings for many people at once (no per-person queries). */
 export class PlanContext {
@@ -48,13 +49,14 @@ export class PlanContext {
   plan(person: PlanPerson, date: string): DayPlan {
     const shift = this.days.resolveWith(this.shifts, person, date).shift;
     const cal = this.calendarOf(person.companyId);
-    const working = isWorkingDay(cal, date);
+    const who = { id: person.id, departmentId: person.departmentId ?? null };
+    const working = isWorkingDay(cal, date, who);
     const bufferMin = this.settingsOf(person.companyId).breakBufferMin;
     const a = allowanceOf(shift, bufferMin);
     return {
       date,
       isWorkingDay: working,
-      label: dayLabel(cal, date),
+      label: dayLabel(cal, date, who),
       shift,
       bufferMin,
       allowance: { scheduledSec: a.scheduledSec, bufferSec: a.bufferSec, totalSec: a.totalSec },

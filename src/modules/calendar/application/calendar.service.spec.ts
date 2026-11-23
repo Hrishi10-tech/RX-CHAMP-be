@@ -21,6 +21,7 @@ function setup(opts: { stored?: Record<string, unknown>; locks?: string[] } = {}
   };
   const prisma = {
     calendarDay: { findMany: jest.fn().mockResolvedValue([]) },
+    workCalendar: { findMany: jest.fn().mockResolvedValue([]) },
     monthLock: {
       findFirst: jest.fn(async ({ where }: { where: { month: { gte: string } } }) => {
         const hit = locks

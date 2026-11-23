@@ -23,6 +23,95 @@ export const PATTERN_SINCE_ALWAYS = '0000-01-01';
 export interface DayOverride {
   isWorking: boolean;
   label: string | null;
+  /**
+   * 3.5: the departments the override is for (a holiday for some departments);
+   * empty or absent: the whole organisation.
+   */
+  departmentIds?: string[];
+}
+
+// ---- 3.5: Saturday rules and weekly calendars for departments and people ----
+
+export const SATURDAY_RULES = [
+  'EVERY',
+  'NONE',
+  'OFF_2_4',
+  'OFF_1_3',
+  'OFF_1_3_5',
+  'ALTERNATE',
+] as const;
+export type SaturdayRule = (typeof SATURDAY_RULES)[number];
+
+export const SATURDAY_RULE_LABEL: Record<SaturdayRule, string> = {
+  EVERY: 'Every Saturday is a working day',
+  NONE: 'Every Saturday is off',
+  OFF_2_4: '2nd and 4th Saturdays off',
+  OFF_1_3: '1st and 3rd Saturdays off',
+  OFF_1_3_5: '1st, 3rd and 5th Saturdays off',
+  ALTERNATE: 'Alternate Saturdays (every other week)',
+};
+
+/** A week of working days plus a Saturday rule (a department's or a person's own). */
+export interface WorkWeek {
+  /** ISO weekdays worked, Monday 1 to Sunday 7 (Saturday follows `saturdays`). */
+  workDays: number[];
+  saturdays: SaturdayRule;
+  /** ALTERNATE: a Saturday that is worked; every other week from it is worked too. */
+  saturdayAnchor: string | null;
+}
+
+/** Who a day is asked for: their own calendar, then their department's, then the organisation's. */
+export interface CalendarWho {
+  id?: string | null;
+  departmentId?: string | null;
+}
+
+/** Which week of the month a Saturday falls in (1 to 5). */
+export function saturdayOrdinal(dateKey: string): number {
+  return Math.floor((Number(dateKey.slice(8, 10)) - 1) / 7) + 1;
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+/** Whether a Saturday is worked under a rule. */
+export function saturdayWorked(
+  rule: SaturdayRule,
+  anchor: string | null,
+  dateKey: string,
+): boolean {
+  switch (rule) {
+    case 'EVERY':
+      return true;
+    case 'NONE':
+      return false;
+    case 'OFF_2_4':
+      return ![2, 4].includes(saturdayOrdinal(dateKey));
+    case 'OFF_1_3':
+      return ![1, 3].includes(saturdayOrdinal(dateKey));
+    case 'OFF_1_3_5':
+      return ![1, 3, 5].includes(saturdayOrdinal(dateKey));
+    case 'ALTERNATE': {
+      if (!anchor || !isValidDateKey(anchor)) return true;
+      return Math.abs(Math.round(daysBetween(anchor, dateKey) / 7)) % 2 === 0;
+    }
+  }
+}
+
+/** Whether a weekly calendar works on a date. */
+export function weekWorks(week: WorkWeek, dateKey: string): boolean {
+  const weekday = isoWeekdayOfKey(dateKey);
+  if (weekday === 6) {
+    return (
+      week.workDays.includes(6) && saturdayWorked(week.saturdays, week.saturdayAnchor, dateKey)
+    );
+  }
+  return week.workDays.includes(weekday);
+}
+
+export function isSaturdayRule(value: unknown): value is SaturdayRule {
+  return typeof value === 'string' && (SATURDAY_RULES as readonly string[]).includes(value);
 }
 
 /** One week pattern and the date it applies from (until the next entry's). */
@@ -37,7 +126,24 @@ export interface OrgCalendar {
   /** The pattern history, oldest first; the first entry runs from PATTERN_SINCE_ALWAYS. */
   patterns?: WeekPatternEntry[];
   overrides: Map<string, DayOverride>;
+  /** 3.5: the organisation's Saturday rule (absent: every Saturday of the pattern). */
+  saturdays?: SaturdayRule;
+  saturdayAnchor?: string | null;
+  /** 3.5: departments with their own week, by department id. */
+  departments?: Map<string, WorkWeek>;
+  /** 3.5: people with their own week, by user id. */
+  people?: Map<string, WorkWeek>;
 }
+
+/** Where a person's working day comes from (3.5: shown with a person's year). */
+export type CalendarSource = 'OVERRIDE' | 'PERSON' | 'DEPARTMENT' | 'ORGANISATION';
+
+export const CALENDAR_SOURCE_LABEL: Record<CalendarSource, string> = {
+  OVERRIDE: 'A day set on the organisation calendar',
+  PERSON: 'Their own calendar',
+  DEPARTMENT: "Their department's calendar",
+  ORGANISATION: "The organisation's week",
+};
 
 /** The week pattern that applies on `date`. */
 export function patternOn(cal: OrgCalendar, date: string): number[] {
@@ -126,14 +232,56 @@ export function cleanLabel(label: unknown): string | null {
   return t ? t.slice(0, LABEL_MAX) : null;
 }
 
-export function isWorkingDay(cal: OrgCalendar, date: string): boolean {
+/**
+ * The override that applies to `who` on a date: the organisation's, or one for their
+ * department. One for some departments never applies when nobody is named.
+ */
+export function overrideFor(
+  cal: OrgCalendar,
+  date: string,
+  who?: CalendarWho,
+): DayOverride | undefined {
   const o = cal.overrides.get(date);
-  if (o) return o.isWorking;
-  return patternOn(cal, date).includes(isoWeekdayOfKey(date));
+  if (!o) return undefined;
+  if (!o.departmentIds?.length) return o;
+  return who?.departmentId && o.departmentIds.includes(who.departmentId) ? o : undefined;
 }
 
-export function dayLabel(cal: OrgCalendar, date: string): string | null {
-  return cal.overrides.get(date)?.label ?? null;
+/** The organisation's own answer: its week pattern on that date, with its Saturday rule. */
+function organisationWorks(cal: OrgCalendar, date: string): boolean {
+  const weekday = isoWeekdayOfKey(date);
+  if (!patternOn(cal, date).includes(weekday)) return false;
+  if (weekday === 6 && cal.saturdays) {
+    return saturdayWorked(cal.saturdays, cal.saturdayAnchor ?? null, date);
+  }
+  return true;
+}
+
+/** What decides a person's date (3.5: an override, their calendar, their department's, the organisation's). */
+export function calendarSource(cal: OrgCalendar, date: string, who?: CalendarWho): CalendarSource {
+  if (overrideFor(cal, date, who)) return 'OVERRIDE';
+  if (who?.id && cal.people?.has(who.id)) return 'PERSON';
+  if (who?.departmentId && cal.departments?.has(who.departmentId)) return 'DEPARTMENT';
+  return 'ORGANISATION';
+}
+
+/**
+ * Whether a date is a working day. 4.0: the organisation's overrides, then its week
+ * pattern. 3.5: for a person, an override for their department too, then their own
+ * week, their department's, and the organisation's with its Saturday rule.
+ */
+export function isWorkingDay(cal: OrgCalendar, date: string, who?: CalendarWho): boolean {
+  const o = overrideFor(cal, date, who);
+  if (o) return o.isWorking;
+  const own = who?.id ? cal.people?.get(who.id) : undefined;
+  if (own) return weekWorks(own, date);
+  const dept = who?.departmentId ? cal.departments?.get(who.departmentId) : undefined;
+  if (dept) return weekWorks(dept, date);
+  return organisationWorks(cal, date);
+}
+
+export function dayLabel(cal: OrgCalendar, date: string, who?: CalendarWho): string | null {
+  return overrideFor(cal, date, who)?.label ?? null;
 }
 
 /** Every date of a month ("2026-10" -> "2026-10-01" .. "2026-10-31"). */

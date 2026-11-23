@@ -242,11 +242,12 @@ export class LeavePeopleService {
     ]);
     return dates.map((date) => {
       const shift = this.days.resolveWith(ctx, person, date).shift;
-      const workday = isWorkingDay(cal, date);
+      const who = { id: person.id, departmentId: person.departmentId };
+      const workday = isWorkingDay(cal, date, who);
       return {
         date,
         workday,
-        offLabel: workday ? null : (dayLabel(cal, date) ?? 'Weekly day off'),
+        offLabel: workday ? null : (dayLabel(cal, date, who) ?? 'Weekly day off'),
         shiftStart: shift?.start ?? null,
         shiftEnd: shift?.end ?? null,
       };

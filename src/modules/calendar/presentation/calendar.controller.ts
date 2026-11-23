@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -9,8 +19,11 @@ import {
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
+  IsUUID,
   IsInt,
   IsOptional,
   IsString,
@@ -26,10 +39,10 @@ import { Role } from '@shared/rbac/roles.enum';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { envelope } from '@shared/http/envelope';
-import { requireOrg } from '@shared/tenancy';
+import { canSeePerson, PersonFactsReader, requireOrg } from '@shared/tenancy';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { CalendarService } from '../application/calendar.service';
-import { LABEL_MAX } from '../domain/calendar.rules';
+import { LABEL_MAX, SATURDAY_RULES } from '../domain/calendar.rules';
 
 class CalendarQueryDto {
   @ApiPropertyOptional({ example: 2026 })
@@ -75,6 +88,73 @@ class CalendarDayDto {
   @IsString()
   @MaxLength(LABEL_MAX)
   label?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: '3.5: only for these departments (a department holiday); empty: everyone',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsUUID('all', { each: true })
+  departmentIds?: string[];
+}
+
+class SaturdaysDto {
+  @ApiProperty({ enum: SATURDAY_RULES })
+  @IsIn(SATURDAY_RULES as unknown as string[])
+  saturdays!: string;
+
+  @ApiPropertyOptional({
+    example: '2026-11-07',
+    description: 'ALTERNATE: a Saturday that is worked',
+  })
+  @IsOptional()
+  @IsString()
+  saturdayAnchor?: string;
+}
+
+class WorkWeekDto extends SaturdaysDto {
+  @ApiProperty({
+    type: [String],
+    description: 'The departments or people (one week for all of them)',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1000)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+
+  @ApiProperty({
+    example: [1, 2, 3, 4, 5, 6],
+    description: 'ISO weekdays: 1 = Monday .. 7 = Sunday',
+  })
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  workDays!: number[];
+}
+
+class ClearWorkWeekDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1000)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+}
+
+const SCOPES: Record<string, 'DEPARTMENT' | 'PERSON'> = {
+  departments: 'DEPARTMENT',
+  people: 'PERSON',
+};
+
+function scopeOf(raw: string): 'DEPARTMENT' | 'PERSON' {
+  const scope = SCOPES[raw];
+  if (!scope) throw new NotFoundException('Unknown calendar scope');
+  return scope;
 }
 
 /** Working days and holidays (docs/4.0/SPEC.md 2.6, 5.5). */
@@ -83,7 +163,14 @@ class CalendarDayDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('calendar')
 export class CalendarController {
-  constructor(private readonly calendar: CalendarService) {}
+  constructor(
+    private readonly calendar: CalendarService,
+    private readonly facts: PersonFactsReader,
+  ) {}
+
+  private thisYear(): number {
+    return Number(dateKeyInZone(new Date(), appTimezone()).slice(0, 4));
+  }
 
   @Get()
   @ApiOperation({ summary: "The organisation's calendar for a year (anyone in the organisation)" })
@@ -119,7 +206,82 @@ export class CalendarController {
     @Body() body: CalendarDayDto,
   ) {
     return envelope(
-      await this.calendar.setDay(requireOrg(me), date, body.isWorking, body.label, me.id),
+      await this.calendar.setDay(
+        requireOrg(me),
+        date,
+        body.isWorking,
+        body.label,
+        me.id,
+        body.departmentIds ?? [],
+      ),
+    );
+  }
+
+  @Put('saturdays')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      "3.5: the organisation's Saturday rule (every, none, 2nd and 4th off, 1st and 3rd off, " +
+      '1st, 3rd and 5th off, alternate weeks) for Saturdays in its week pattern (Admin)',
+  })
+  async saturdays(@CurrentUser() me: AuthenticatedUser, @Body() body: SaturdaysDto) {
+    const companyId = requireOrg(me);
+    await this.calendar.setSaturdays(companyId, body.saturdays, body.saturdayAnchor, me.id);
+    return envelope(await this.calendar.view(companyId, this.thisYear()));
+  }
+
+  @Put(':scope')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      '3.5: a week of their own for departments or people (scope departments or people; Admin). ' +
+      "A person's own week comes first, then their department's, then the organisation's.",
+  })
+  async setWeek(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('scope') scope: string,
+    @Body() body: WorkWeekDto,
+  ) {
+    const companyId = requireOrg(me);
+    await this.calendar.setWorkWeek(companyId, scopeOf(scope), body.ids, body, me.id);
+    return envelope(await this.calendar.view(companyId, this.thisYear()));
+  }
+
+  @Delete(':scope')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: "3.5: back to the department's or the organisation's week (Admin)" })
+  async clearWeek(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('scope') scope: string,
+    @Body() body: ClearWorkWeekDto,
+  ) {
+    const companyId = requireOrg(me);
+    await this.calendar.clearWorkWeek(companyId, scopeOf(scope), body.ids);
+    return envelope(await this.calendar.view(companyId, this.thisYear()));
+  }
+
+  @Get('people/:userId/year')
+  @ApiOperation({
+    summary:
+      "3.5: a person's year, day by day, with what decides each day (themselves, or anyone " +
+      'the caller may see)',
+  })
+  async personYear(
+    @CurrentUser() me: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query() q: CalendarQueryDto,
+  ) {
+    const companyId = requireOrg(me);
+    const person = await this.facts.find(userId);
+    if (!person || person.companyId !== companyId || !canSeePerson(me, person)) {
+      throw new NotFoundException('Unknown person');
+    }
+    return envelope(
+      await this.calendar.personYear(
+        companyId,
+        { id: person.id, departmentId: person.departmentId },
+        q.year ?? this.thisYear(),
+      ),
     );
   }
 

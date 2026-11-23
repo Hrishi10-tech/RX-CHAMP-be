@@ -967,11 +967,35 @@ model CalendarDay {
   date        String
   isWorking   Boolean  @map("is_working")
   label       String?
+  /// 3.5: the departments it is for (a holiday for some departments); empty: everyone.
+  departmentIds String[] @default([]) @map("department_ids") @db.Uuid
   updatedById String?  @map("updated_by_id") @db.Uuid
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@id([companyId, date])
   @@map("calendar_days")
+}
+
+/// 3.5, on 4.0's calendar: a department's or a person's own week (working weekdays and a
+/// Saturday rule). A person's own week comes first, then their department's, then the
+/// organisation's week pattern; a day set on the organisation calendar beats them all.
+model WorkCalendar {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  /// DEPARTMENT or PERSON
+  scope          String
+  departmentId   String?  @unique @map("department_id") @db.Uuid
+  userId         String?  @unique @map("user_id") @db.Uuid
+  workDays       Int[]    @default([1, 2, 3, 4, 5, 6]) @map("work_days")
+  /// EVERY, NONE, OFF_2_4, OFF_1_3, OFF_1_3_5 or ALTERNATE
+  saturdays      String   @default("EVERY")
+  saturdayAnchor String?  @map("saturday_anchor")
+  updatedById    String?  @map("updated_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("work_calendars")
 }
 
 /// A 24-hour key an Admin issues so agents in its scope can sign out.

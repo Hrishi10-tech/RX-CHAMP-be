@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { grantsOf, isAdminLike, requireOrg, seesWholeOrg } from '@shared/tenancy';
+import { grantsOf, requireOrg, seesWholeOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, time12InZone } from '@shared/utils/timezone';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
@@ -20,25 +20,16 @@ import { meetingView, MeetingsService } from '@modules/worktime/application/meet
 import { nameOf, PeopleScopeService } from '@modules/worktime/application/people-scope.service';
 import { asShiftPerson } from '@modules/worktime/application/team-today.service';
 import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/approvals.reader';
-import {
-  BIOMETRIC_SOURCE,
-  focusOfDay,
-  intervalsOfDay,
-  PersonDayData,
-} from '@modules/worktime/domain/day';
+import { BIOMETRIC_SOURCE, focusOfDay, PersonDayData } from '@modules/worktime/domain/day';
 import { PUNCHES_READER, PunchesReader } from '@modules/worktime/domain/punches.reader';
 import {
-  breakdownIn,
-  IDLE_LEAD_IN_SEC,
-  inputIntervals,
-  SAMPLE_CAP_SEC,
-} from '@modules/worktime/domain/input-activity';
-import {
-  INPUT_SAMPLES_READER,
-  InputSamplesReader,
-} from '@modules/worktime/domain/input-samples.reader';
-import { normalize, subtract } from '@modules/worktime/domain/intervals';
+  BiometricStretchLite,
+  INTEGRATION_PERIODS_READER,
+  IntegrationPeriodLite,
+  IntegrationPeriodsReader,
+} from '@modules/worktime/domain/integration-periods.reader';
 import { HourActivity } from '@modules/worktime/domain/hourly';
+import { idleOfInput } from '@modules/worktime/domain/input-activity';
 import {
   PersonRow,
   WORKTIME_READER,
@@ -53,6 +44,13 @@ import {
   teamTotals,
   withPayrollFields,
 } from '../domain/report-builder';
+import {
+  inPayroll,
+  integrationWasOn,
+  isBiometricDay,
+  payrollOf,
+  payrollPartOf,
+} from '../domain/payroll-pause';
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
 import {
   DayPunchView,
@@ -61,6 +59,7 @@ import {
   PersonDayReport,
   PersonDaySummary,
   PersonMonthReport,
+  PersonPayroll,
   ReportPerson,
   TeamDayReport,
   TeamMonthReport,
@@ -93,6 +92,15 @@ interface MonthBuild {
 }
 
 /**
+ * What decides the payroll pause (3.6): when each organisation's integration was on (4.0:
+ * each runs its own, by organisation id), and who was on biometric before.
+ */
+interface PauseFacts {
+  periods: Map<string, IntegrationPeriodLite[]>;
+  stretches: Map<string, BiometricStretchLite[]>;
+}
+
+/**
  * Reports (SPEC 1.9, 3.7): person-day, person-month, team-day and team-month,
  * scoped like Team today. A locked month is read from its snapshot.
  */
@@ -111,8 +119,8 @@ export class ReportsService {
     private readonly plans: DayPlanService,
     private readonly personDays: PersonDaysService,
     private readonly adjustments: FocusAdjustmentsService,
-    @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
     @Inject(PUNCHES_READER) private readonly punches: PunchesReader,
+    @Inject(INTEGRATION_PERIODS_READER) private readonly integration: IntegrationPeriodsReader,
   ) {}
 
   /**
@@ -144,20 +152,17 @@ export class ReportsService {
    * active, idle (nobody at the computer), and no data (the agent was not reporting).
    */
   private async inputOf(d: PersonDayData, now: Date): Promise<PersonDayReport['input']> {
-    const { work, breaks, meetings } = intervalsOfDay(d, now);
-    const available = subtract(normalize(work), normalize([...breaks, ...meetings]));
-    if (!available.length) return { activeSec: 0, idleSec: 0, noDataSec: 0, availableSec: 0 };
-    const from = new Date(available[0].start - SAMPLE_CAP_SEC * 1000);
-    const to = new Date(available[available.length - 1].end + IDLE_LEAD_IN_SEC * 1000);
     try {
-      const got = await this.samples.samplesInWindows([{ key: 'day', userId: d.userId, from, to }]);
-      const b = breakdownIn(inputIntervals(got.get('day') ?? [], now), available, now);
-      return {
-        activeSec: b.activeSec,
-        idleSec: b.idleSec,
-        noDataSec: b.noDataSec,
-        availableSec: b.spanSec,
-      };
+      // 3.6: the same read as Team today and the team day, so the figures always agree.
+      const b = (await this.dayData.inputOf([d], now)).get(`${d.userId}|${d.date}`);
+      return b
+        ? {
+            activeSec: b.activeSec,
+            idleSec: b.idleSec,
+            noDataSec: b.noDataSec,
+            availableSec: b.spanSec,
+          }
+        : null;
     } catch {
       return null;
     }
@@ -165,6 +170,16 @@ export class ReportsService {
 
   private today(now: Date): string {
     return dateKeyInZone(now, appTimezone());
+  }
+
+  /** The payroll pause's facts for these people: their organisations' switches (3.6). */
+  private async pauseFacts(people: PersonRow[]): Promise<PauseFacts> {
+    const companyIds = people.map((p) => p.companyId).filter((c): c is string => !!c);
+    const [periods, stretches] = await Promise.all([
+      this.integration.list(companyIds),
+      this.integration.biometricStretches(people.map((p) => p.id)),
+    ]);
+    return { periods, stretches };
   }
 
   /** The month asked for, or the current one in business time. */
@@ -311,17 +326,18 @@ export class ReportsService {
   ): Promise<PersonDayReport> {
     const person = await this.scope.person(me, userId);
     const day = date ?? this.today(now);
-    const [data, pc, pending] = await Promise.all([
+    const [data, pc, pending, pause] = await Promise.all([
       this.dayData.load([userId], day, day, now, { heal: true }),
       this.plans.context([person]),
       this.approvalsReader.pendingByUserDate([userId], day, day, now),
+      this.pauseFacts([person]),
     ]);
     const settings = pc.settingsOf(person.companyId);
     const d = data.day(userId, day);
     const hourly = this.mayActivity(me)
       ? await this.dayData.hourlyFor(d, now, settings.quietHourActiveMin)
       : [];
-    const summary = this.summary(person, d, hourly, pc, pending[0]?.pending ?? 0, now);
+    const summary = this.summary(person, d, hourly, pc, pending[0]?.pending ?? 0, now, pause);
     const shift = pc.plan(person, day).shift;
     const names = await this.meetings.names(d.meetingRecords);
     return {
@@ -365,14 +381,22 @@ export class ReportsService {
     });
     const ids = people.map((p) => p.id);
     const activity = this.mayActivity(me);
-    const [data, pc, buckets, pending] = await Promise.all([
+    const [data, pc, buckets, pending, pause] = await Promise.all([
       this.dayData.load(ids, day, day, now, { heal: true }),
       this.plans.context(people),
       activity ? this.dayData.bucketHours(ids, day, day, now) : Promise.resolve(new Map()),
       this.approvalsReader.pendingByUserDate(ids, day, day, now),
+      this.pauseFacts(people),
     ]);
     const settings = pc.settingsOf(requireOrg(me));
     const pendingBy = new Map(pending.map((p) => [p.userId, p.pending]));
+    // 3.6: idle per person, read in one go like Team today; null when it cannot be read.
+    const inputs = await this.dayData
+      .inputOf(
+        people.map((p) => data.day(p.id, day)),
+        now,
+      )
+      .catch(() => null);
     return {
       date: day,
       rows: people.map((p) => {
@@ -382,7 +406,10 @@ export class ReportsService {
           : [];
         return {
           person: reportPerson(p),
-          summary: this.summary(p, d, hourly, pc, pendingBy.get(p.id) ?? 0, now),
+          summary: {
+            ...this.summary(p, d, hourly, pc, pendingBy.get(p.id) ?? 0, now, pause),
+            idleSec: inputs ? idleOfInput(inputs.get(`${p.id}|${day}`)) : null,
+          },
         };
       }),
     };
@@ -407,9 +434,9 @@ export class ReportsService {
     const snapshot = person.companyId
       ? await this.store.findSnapshot(person.companyId, month)
       : null;
-    const fromSnapshot = snapshot?.persons[me.id];
+    const fromSnapshot = snapshot?.persons[me.id] ?? snapshot?.payrollPaused?.[me.id];
     const report = fromSnapshot
-      ? { ...withCurrentAvatar(fromSnapshot, person), locked: true }
+      ? { ...withPayrollFields(withCurrentAvatar(fromSnapshot, person)), locked: true }
       : { ...(await this.buildMonth([person], month, 'TEAM', now)).persons[0], locked: !!snapshot };
     return {
       person: report.person,
@@ -418,6 +445,9 @@ export class ReportsService {
       generatedAt: report.generatedAt,
       totals: ownTotals(report.totals),
       days: report.days.map(ownDay),
+      ...(report.payroll
+        ? { payroll: { ...report.payroll, totals: ownTotals(report.payroll.totals) } }
+        : {}),
     };
   }
 
@@ -426,13 +456,14 @@ export class ReportsService {
     const person = await this.self(me);
     const day = date ?? this.today(now);
     // 4.0: the organisation calendar and settings, through the day plan.
-    const [data, pc, pending] = await Promise.all([
+    const [data, pc, pending, pause] = await Promise.all([
       this.dayData.load([me.id], day, day, now, { heal: true }),
       this.plans.context([person]),
       this.approvalsReader.pendingByUserDate([me.id], day, day, now),
+      this.pauseFacts([person]),
     ]);
     const d = data.day(me.id, day);
-    const summary = this.summary(person, d, [], pc, pending[0]?.pending ?? 0, now);
+    const summary = this.summary(person, d, [], pc, pending[0]?.pending ?? 0, now, pause);
     const shift = pc.plan(asShiftPerson(person), day).shift;
     const names = await this.meetings.names(d.meetingRecords);
     return {
@@ -458,7 +489,7 @@ export class ReportsService {
     const person = await this.scope.person(me, userId);
     await this.assertMonthInRange(month, now);
     const snapshot = await this.store.findSnapshot(requireOrg(me), month);
-    const fromSnapshot = snapshot?.persons[userId];
+    const fromSnapshot = snapshot?.persons[userId] ?? snapshot?.payrollPaused?.[userId];
     const activity = this.mayActivity(me);
     if (fromSnapshot) {
       return redactActivity(
@@ -525,7 +556,12 @@ export class ReportsService {
       team: {
         ...built.team,
         totals: quiet(built.team.totals),
-        rows: built.team.rows.map((r) => ({ ...r, totals: quiet(r.totals) })),
+        trackedTotals: quiet(built.team.trackedTotals),
+        rows: built.team.rows.map((r) => ({
+          ...r,
+          totals: quiet(r.totals),
+          ...(r.payroll ? { payroll: { ...r.payroll, totals: quiet(r.payroll.totals) } } : {}),
+        })),
       },
     };
   }
@@ -537,14 +573,10 @@ export class ReportsService {
     scope: 'TEAM' | 'ALL',
   ): MonthBuild {
     const persons = people.flatMap((p) => {
-      const stored = snapshot.persons[p.id];
+      const stored = snapshot.persons[p.id] ?? snapshot.payrollPaused?.[p.id];
       return stored ? [withPayrollFields({ ...withCurrentAvatar(stored, p), locked: true })] : [];
     });
-    const rows = persons.map((p) => ({
-      person: p.person,
-      totals: p.totals,
-      days: p.days.map((d) => ({ date: d.date, dayClass: d.dayClass, focusSec: d.focusSec })),
-    }));
+    const rows = persons.map(teamRow);
     // "Today" as it was when the snapshot was taken, so the totals add up the same way.
     const today = dateKeyInZone(new Date(snapshot.generatedAt), appTimezone());
     return {
@@ -554,10 +586,7 @@ export class ReportsService {
         scope,
         locked: true,
         generatedAt: snapshot.generatedAt,
-        totals: teamTotals(
-          persons.map((p) => ({ totals: p.totals, days: p.days })),
-          today,
-        ),
+        ...teamFigures(persons, today),
         rows,
       },
     };
@@ -576,13 +605,16 @@ export class ReportsService {
     const to = dates[dates.length - 1];
     const today = this.today(now);
     const ids = people.map((p) => p.id);
-    const [data, pc, buckets, pending] = await Promise.all([
+    const [data, pc, buckets, pending, pause, inputs] = await Promise.all([
       this.dayData.load(ids, from, to, now, { heal: true }),
       this.plans.context(people),
       opts.activity === false
         ? Promise.resolve(new Map<string, readonly number[]>())
         : this.dayData.bucketHours(ids, from, to, now),
       this.approvalsReader.pendingByUserDate(ids, from, to, now),
+      this.pauseFacts(people),
+      // 3.6: the month's idle, read in SQL with settled days kept; null when it cannot be read.
+      this.dayData.inputBetween(ids, from, to, now).catch(() => null),
     ]);
     const settings = pc.settingsOf(people[0]?.companyId ?? null);
     const pendingBy = new Map(pending.map((p) => [`${p.userId}|${p.date}`, p.pending]));
@@ -599,14 +631,27 @@ export class ReportsService {
           date <= today && opts.activity !== false
             ? this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin)
             : [];
+        const summary = this.summary(
+          p,
+          d,
+          hourly,
+          pc,
+          pendingBy.get(`${p.id}|${date}`) ?? 0,
+          now,
+          pause,
+          today,
+        );
         days.push(
-          this.summary(p, d, hourly, pc, pendingBy.get(`${p.id}|${date}`) ?? 0, now, today),
+          d.sessions.length
+            ? { ...summary, idleSec: inputs && this.dayData.idleFrom(d, inputs, now) }
+            : summary,
         );
         heatmap.push({
           date,
           hours: hourly.length ? hourly.map((h) => h.activeMin) : Array<number>(24).fill(0),
         });
       }
+      const payroll = payrollOf(days, today, settings.quietHoursFlag);
       return {
         person: reportPerson(p),
         month,
@@ -615,13 +660,10 @@ export class ReportsService {
         totals: monthTotals(days, today, settings.quietHoursFlag),
         days,
         heatmap,
+        ...(payroll ? { payroll } : {}),
       };
     });
-    const rows = persons.map((p) => ({
-      person: p.person,
-      totals: p.totals,
-      days: p.days.map((d) => ({ date: d.date, dayClass: d.dayClass, focusSec: d.focusSec })),
-    }));
+    const rows = persons.map(teamRow);
     return {
       persons,
       team: {
@@ -629,10 +671,7 @@ export class ReportsService {
         scope,
         locked: false,
         generatedAt,
-        totals: teamTotals(
-          persons.map((p) => ({ totals: p.totals, days: p.days })),
-          today,
-        ),
+        ...teamFigures(persons, today),
         rows,
       },
     };
@@ -645,6 +684,7 @@ export class ReportsService {
     pc: PlanContext,
     pending: number,
     now: Date,
+    pause: PauseFacts,
     today: string = this.today(now),
   ): PersonDaySummary {
     const plan = pc.plan(asShiftPerson(p), d.date);
@@ -665,6 +705,11 @@ export class ReportsService {
       now,
       joinedOn: p.joinedOn,
       plan: { isWorkingDay: plan.isWorkingDay, label: plan.label, targetSec: plan.targetSec },
+      // 3.6: biometric staff while their organisation's integration is off (4.0: each
+      // organisation's own switch; another organisation's never counts).
+      payrollPaused:
+        isBiometricDay(p, d.date, d.sessions, pause.stretches.get(p.id)) &&
+        !integrationWasOn((p.companyId && pause.periods.get(p.companyId)) || [], d.date),
     });
   }
 
@@ -682,28 +727,63 @@ function redactActivity(p: PersonMonthReport, activity: boolean): PersonMonthRep
     heatmap: [],
     days: p.days.map((d) => ({ ...d, quietHours: 0, activeMin: 0 })),
     totals: { ...p.totals, quietHours: 0, needsALook: false },
+    ...(p.payroll
+      ? {
+          payroll: {
+            ...p.payroll,
+            totals: { ...p.payroll.totals, quietHours: 0, needsALook: false },
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * A team's two sets of totals (3.6): what payroll counts, and everything as tracked, paused
+ * days and people included (only payroll changes for them).
+ */
+function teamFigures(
+  persons: PersonMonthReport[],
+  today: string,
+): Pick<TeamMonthReport, 'totals' | 'trackedTotals'> {
+  return {
+    totals: teamTotals(inPayroll(persons).map(payrollPartOf), today),
+    trackedTotals: teamTotals(
+      persons.map((p) => ({ totals: p.totals, days: p.days })),
+      today,
+    ),
+  };
+}
+
+/** One person's row in a team month. */
+function teamRow(p: PersonMonthReport): TeamMonthReport['rows'][number] {
+  return {
+    person: p.person,
+    totals: p.totals,
+    days: p.days.map((d) => ({ date: d.date, dayClass: d.dayClass, focusSec: d.focusSec })),
+    ...(p.payroll ? { payroll: p.payroll } : {}),
   };
 }
 
 /** A day as its owner sees it: no keyboard and mouse figures (SPEC 1.8). */
 export type OwnDaySummary = Omit<
   PersonDaySummary,
-  'quietHours' | 'activeMin' | 'activeSec' | 'availableSec'
+  'quietHours' | 'activeMin' | 'activeSec' | 'availableSec' | 'idleSec'
 >;
 export type OwnMonthTotals = Omit<
   MonthTotals,
-  'quietHours' | 'activeSec' | 'availableSec' | 'needsALook'
+  'quietHours' | 'activeSec' | 'availableSec' | 'needsALook' | 'idleSec'
 >;
 
 export function ownDay(d: PersonDaySummary): OwnDaySummary {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { quietHours, activeMin, activeSec, availableSec, ...rest } = d;
+  const { quietHours, activeMin, activeSec, availableSec, idleSec, ...rest } = d;
   return rest;
 }
 
 export function ownTotals(t: MonthTotals): OwnMonthTotals {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { quietHours, activeSec, availableSec, needsALook, ...rest } = t;
+  const { quietHours, activeSec, availableSec, needsALook, idleSec, ...rest } = t;
   return rest;
 }
 
@@ -714,6 +794,8 @@ export interface MyMonthReport {
   generatedAt: string;
   totals: OwnMonthTotals;
   days: OwnDaySummary[];
+  /** 3.6: set when some day of the month is paused (biometric staff). */
+  payroll?: Omit<PersonPayroll, 'totals'> & { totals: OwnMonthTotals };
 }
 
 export interface MyDayReport {

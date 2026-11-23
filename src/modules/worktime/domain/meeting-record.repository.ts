@@ -1,6 +1,7 @@
 import { ApproverRole, BreakApprovalStatus } from '@modules/shifts/domain/shift.types';
 import { DecisionGuard, Routing } from '@modules/shifts/domain/break-record.repository';
 import { AgentGeneration } from './agent-generation';
+import { MeetingEndReason, MeetingKind, StatusStartSource } from './meeting-status';
 import { PastMeetingConflict } from './meetings';
 
 export const MEETING_RECORD_REPOSITORY = Symbol('MEETING_RECORD_REPOSITORY');
@@ -33,6 +34,13 @@ export interface MeetingRecordRow {
   escalatedAt: Date | null;
   remindedAt: Date | null;
   createdAt: Date;
+  // ---- 3.6. Always set by the Prisma adapter; optional so rows built by hand (tests) read
+  //      as the declared meeting they have always been.
+  kind?: MeetingKind;
+  startSource?: StatusStartSource | null;
+  /** The start, then each "Still in it": the 2 hour check counts from here. */
+  confirmedAt?: Date | null;
+  endReason?: MeetingEndReason | null;
 }
 
 export interface NewMeeting {
@@ -44,7 +52,24 @@ export interface NewMeeting {
   momSender?: string | null;
   approvalStatus: 'PENDING' | 'NOT_REQUIRED';
   routing: Routing;
+  /** 3.6: a status meeting, and where it started; absent for a declared meeting. */
+  status?: { source: StatusStartSource };
 }
+
+/** The person's running meeting: its open MEETING presence and its record, if it has one. */
+export interface RunningMeeting {
+  presenceSessionId: string;
+  startedAt: Date;
+  /** Null for a meeting started through the older presence calls. */
+  record: MeetingRecordRow | null;
+}
+
+export type ConfirmStatusResult =
+  | { kind: 'CONFIRMED'; record: MeetingRecordRow }
+  /** The question went unanswered: too late to confirm, the fallback applies. */
+  | { kind: 'TOO_LATE'; record: MeetingRecordRow }
+  /** No status meeting is running. */
+  | { kind: 'NONE' };
 
 export type StartLiveResult =
   | {
@@ -134,6 +159,21 @@ export interface MeetingRecordRepository {
     decision: MeetingDecision,
     guard?: DecisionGuard,
   ): Promise<MeetingRecordRow | null>;
+
+  /** 3.6: the person's running meeting, whatever its kind; null when there is none. */
+  findRunning(userId: string): Promise<RunningMeeting | null>;
+
+  /** 3.6: "Still in it": the running status meeting's 2 hours start again from `now`. */
+  confirmStatus(userId: string, now: Date): Promise<ConfirmStatusResult>;
+
+  /** 3.6: running status meetings last confirmed at or before `cutoff` (the 2 hour check). */
+  listStatusUnanswered(cutoff: Date, userIds: string[] | null): Promise<MeetingRecordRow[]>;
+
+  /**
+   * 3.6: ends one unanswered status meeting at exactly its fallback moment (NO_ANSWER),
+   * closing its presence session there. Null when it ended or was confirmed meanwhile.
+   */
+  endStatusUnanswered(id: string, userId: string, now: Date): Promise<MeetingRecordRow | null>;
 
   reroute(id: string, routing: Routing): Promise<boolean>;
   listPendingForApprover(approverId: string): Promise<MeetingRecordRow[]>;

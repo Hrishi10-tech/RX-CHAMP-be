@@ -1,5 +1,6 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { attendanceByBiometric } from '@shared/exceptions/attendance-by-biometric';
 import {
   PRESENCE_SESSION_REPOSITORY,
   PresenceSessionRepository,
@@ -38,6 +39,11 @@ export class StartPresenceUseCase {
     now: Date = new Date(),
   ): Promise<CurrentPresenceView> {
     const note = dto.note?.trim() || null;
+    const context = await this.team.findContext(userId);
+
+    // A biometric day runs from the first punch to the last (3.5): a break here, from an
+    // agent left on the PC, would come off it, and off their pay.
+    if (context?.attendanceSource === 'BIOMETRIC') throw attendanceByBiometric('act');
 
     let date = localDateString(now);
     if (generation === 'AGENT_31') {
@@ -47,8 +53,6 @@ export class StartPresenceUseCase {
       // Nothing more may be recorded once the user has signed off for the day.
       throw new ConflictException('Your working day has already ended. Tracking resumes tomorrow.');
     }
-
-    const context = await this.team.findContext(userId);
 
     const { opened } = await this.sessions.switchTo({ userId, type: dto.type, note, date }, now);
 

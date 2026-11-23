@@ -16,6 +16,7 @@ const CHANGES: ReadonlyArray<{ path: RegExp; what: string }> = [
   { path: /\/breaks\/(start|end|skip)\/?$/, what: 'BREAK' },
   { path: /\/presence\/(start|end)\/?$/, what: 'PRESENCE' },
   { path: /\/meetings\/(start|past)\/?$/, what: 'MEETING' },
+  { path: /\/meetings\/status\/(start|end|confirm)\/?$/, what: 'MEETING' },
   { path: /\/meetings\/[^/]+\/end\/?$/, what: 'MEETING' },
 ];
 

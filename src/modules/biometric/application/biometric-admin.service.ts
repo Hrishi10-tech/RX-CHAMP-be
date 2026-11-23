@@ -71,6 +71,21 @@ export interface PunchView {
   receivedAt: string;
 }
 
+/**
+ * The stretch on biometric that a move back to the agent ends (3.6): up to yesterday, as a
+ * change of source applies from today. Null when none ends, or when it only began today.
+ */
+export function biometricStretchEnded(
+  before: Pick<BiometricPerson, 'attendanceSource' | 'attendanceSourceFrom'>,
+  source: 'AGENT' | 'BIOMETRIC',
+  today: string,
+): { fromDate: string | null; toDate: string } | null {
+  if (before.attendanceSource !== 'BIOMETRIC' || source !== 'AGENT') return null;
+  const toDate = addDaysToKey(today, -1);
+  const fromDate = before.attendanceSourceFrom;
+  return fromDate && fromDate > toDate ? null : { fromDate, toDate };
+}
+
 function name(p: { firstName: string; lastName: string } | undefined | null): string {
   if (!p) return 'Former user';
   return `${p.firstName} ${p.lastName}`.trim() || 'Former user';
@@ -277,11 +292,13 @@ export class BiometricAdminService {
         }
         codes.set(code, p.id);
       }
+      const endedBiometric = biometricStretchEnded(p, source, today);
       writes.push({
         userId: p.id,
         attendanceSource: source,
         biometricCode: code,
         attendanceSourceFrom: source !== p.attendanceSource ? today : p.attendanceSourceFrom,
+        ...(endedBiometric ? { endedBiometric } : {}),
       });
     }
     // A code held by someone not in this change.
@@ -296,7 +313,7 @@ export class BiometricAdminService {
         }
       }
     }
-    await this.repo.setAttendance(writes);
+    await this.repo.setAttendance(writes, now, me.id);
     // Someone off biometric now: a biometric day still open closes at its last punch.
     for (const w of writes) {
       const before = current.get(w.userId)!;
@@ -624,15 +641,18 @@ export class BiometricAdminService {
     const companyId = this.reader(me);
     const tz = appTimezone();
     const today = startOfDayInZone(dateKeyInZone(now, tz), tz);
-    const [stats, keys, pull, settings, biometric, everyone] = await Promise.all([
+    const [stats, keys, pull, settings, biometric, everyone, integration] = await Promise.all([
       this.repo.stats(companyId, today),
       this.keys.list(companyId),
       this.settings.pullState(companyId),
       this.settings.get(companyId),
       this.repo.people({ source: 'BIOMETRIC', companyId }),
       this.repo.people({ companyId }),
+      // 3.6: the organisation's own switch.
+      this.settings.integration(companyId),
     ]);
     return {
+      integrationOn: integration.on,
       keys: { active: keys.filter((k) => k.active).length, total: keys.length },
       lastPunchAt: stats.lastPunchAt?.toISOString() ?? null,
       lastReceivedAt: stats.lastReceivedAt?.toISOString() ?? null,

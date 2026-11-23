@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConflictError } from '@shared/exceptions/app.exception';
+import { attendanceByBiometric } from '@shared/exceptions/attendance-by-biometric';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { RequestClock } from '@shared/tenancy';
 import { NoticeEvent } from '@shared/events/notice.event';
@@ -26,6 +27,7 @@ import {
   idleCloseDue,
   idleRuleFrom,
   isStale,
+  lastInputWithMeeting,
   latestEndOf,
 } from '../domain/auto-close';
 import { START_DAY_BACKDATE_MS } from '../domain/meetings';
@@ -145,14 +147,7 @@ export class WorkSessionsService {
   async assertAgentDay(userId: string, action: 'start' | 'end' | 'act'): Promise<void> {
     const person = await this.people.findById(userId);
     if (person?.attendanceSource !== 'BIOMETRIC') return;
-    throw new ConflictError(
-      action === 'start'
-        ? 'Your attendance is recorded by the biometric device: your day starts with your first punch there.'
-        : action === 'end'
-          ? 'Your attendance is recorded by the biometric device: your day ends with your last punch there.'
-          : 'Your attendance is recorded by the biometric device, so the desktop app does not track your day.',
-      'ATTENDANCE_BY_BIOMETRIC',
-    );
+    throw attendanceByBiometric(action);
   }
 
   async startDay(
@@ -348,14 +343,16 @@ export class WorkSessionsService {
     if (closedWfh) this.logger.log(`ended ${closedWfh} work-from-home day(s) left running`);
     if (!stale.length && !watch.length) return closedWfh;
 
-    const lastInputs = await this.sessions.lastInputs(
-      [...stale, ...watch].map(({ session, latestEnd }) => ({
-        sessionId: session.id,
-        userId: session.userId,
-        from: session.startedAt,
-        to: new Date(Math.max(now.getTime(), latestEnd.getTime())),
-      })),
-    );
+    const queries = [...stale, ...watch].map(({ session, latestEnd }) => ({
+      sessionId: session.id,
+      userId: session.userId,
+      from: session.startedAt,
+      to: new Date(Math.max(now.getTime(), latestEnd.getTime())),
+    }));
+    const [lastInputs, meetingUntil] = await Promise.all([
+      this.sessions.lastInputs(queries),
+      this.sessions.statusMeetingsUntil(queries, now),
+    ]);
     const inMeeting = watch.length
       ? await this.sessions.usersInLiveMeeting(watch.map((w) => w.session.userId))
       : new Set<string>();
@@ -364,7 +361,11 @@ export class WorkSessionsService {
       if (inMeeting.has(w.session.userId)) continue;
       const due = idleCloseDue({
         ...w.basis,
-        lastInput: lastInputs.get(w.session.id) ?? null,
+        // Idle counts from the end of a status meeting, never inside it (D-22).
+        lastInput: lastInputWithMeeting(
+          lastInputs.get(w.session.id) ?? null,
+          meetingUntil.get(w.session.id) ?? null,
+        ),
         idleMin: w.idleMin,
       });
       if (now.getTime() >= due.getTime())
@@ -380,6 +381,7 @@ export class WorkSessionsService {
           startedAt: session.startedAt,
           latestEnd,
           lastInput: lastInputs.get(session.id) ?? null,
+          meetingUntil: meetingUntil.get(session.id) ?? null,
         });
         const res = await this.sessions.autoClose(session, closeAt);
         this.latestEndCache.delete(session.id);

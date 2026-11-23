@@ -71,6 +71,8 @@ export interface AttendanceWrite {
   attendanceSource: 'AGENT' | 'BIOMETRIC';
   biometricCode: string | null;
   attendanceSourceFrom: string | null;
+  /** 3.6: moved back to the agent: the stretch on biometric this ends, kept for the pause. */
+  endedBiometric?: { fromDate: string | null; toDate: string };
 }
 
 export interface KeyRecord {
@@ -118,7 +120,33 @@ export interface ReplaceDayResult {
   closedWfhAt: Date | null;
 }
 
+/** A stretch of days the integration was on (3.6), with who switched it. */
+export interface IntegrationPeriodRecord {
+  id: string;
+  fromDate: string;
+  toDate: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+  startedByName: string | null;
+  endedByName: string | null;
+}
+
 export interface BiometricRepository {
+  // ---- The integration switch (3.6) ---------------------------------------------
+  /** 4.0: the organisation's periods (each runs its own integration), newest first. */
+  integrationPeriods(companyId: string): Promise<IntegrationPeriodRecord[]>;
+  /**
+   * Opens a period of the organisation from `date`, or closes its open one at `date`.
+   * False when nothing changed. Another organisation's periods are never touched.
+   */
+  switchIntegration(
+    companyId: string,
+    on: boolean,
+    date: string,
+    at: Date,
+    byId: string,
+  ): Promise<boolean>;
+
   // ---- Punches ----------------------------------------------------------------
   /** Stores new punches; one already stored (same code, time and device) is skipped. */
   insertPunches(rows: NewPunch[]): Promise<{ inserted: PunchRecord[]; duplicates: number }>;
@@ -156,7 +184,8 @@ export interface BiometricRepository {
   names(ids: string[]): Promise<Map<string, PersonName>>;
   /** The organisation's people holding these codes (a code is unique within one). */
   peopleByCodes(companyId: string, codeKeys: string[]): Promise<Map<string, BiometricPerson>>;
-  setAttendance(rows: AttendanceWrite[]): Promise<void>;
+  /** Saves who checks in how, and any stretch on biometric this ends, in one transaction. */
+  setAttendance(rows: AttendanceWrite[], at: Date, byId: string): Promise<void>;
   /** The last valid punch of each of these people. */
   lastPunchOf(userIds: string[]): Promise<Map<string, Date>>;
 

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ValidationError } from '@shared/exceptions/app.exception';
+import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { SETTINGS_STORE, SettingsStore } from '@modules/settings/domain/settings.store';
 import {
   applyBiometricPatch,
@@ -10,6 +11,7 @@ import {
   BiometricSettings,
   biometricFromStored,
 } from '../domain/biometric-settings';
+import { BIOMETRIC_REPOSITORY, BiometricRepository } from '../domain/biometric.repository';
 
 const CACHE_MS = 15_000;
 
@@ -45,13 +47,32 @@ export function biometricKeys(companyId: string) {
   };
 }
 
-/** Biometric settings (3.5, per organisation in 4.0), the pull's secret kept apart and never shown. */
+/** One stretch of days the integration was on (3.6), as the portal shows it. */
+export interface IntegrationPeriodView {
+  fromDate: string;
+  toDate: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  startedByName: string | null;
+  endedByName: string | null;
+}
+
+/**
+ * Biometric settings (3.5, per organisation in 4.0), the pull's secret kept apart and
+ * never shown, and the integration switch (3.6): off until the organisation's admin turns
+ * it on. While it is off, the organisation's biometric staff's payroll is paused; each
+ * stretch it was on stays in the organisation's history, and that history decides which
+ * of their days are calculated. Another organisation's switch never touches them.
+ */
 @Injectable()
 export class BiometricSettingsService {
   private readonly logger = new Logger(BiometricSettingsService.name);
   private readonly cached = new Map<string, { value: BiometricSettings; at: number }>();
 
-  constructor(@Inject(SETTINGS_STORE) private readonly store: SettingsStore) {}
+  constructor(
+    @Inject(SETTINGS_STORE) private readonly store: SettingsStore,
+    @Inject(BIOMETRIC_REPOSITORY) private readonly repo: BiometricRepository,
+  ) {}
 
   async get(companyId: string): Promise<BiometricSettings> {
     const at = Date.now();
@@ -67,12 +88,19 @@ export class BiometricSettingsService {
     companyId: string,
     patch: Record<string, unknown>,
     byId: string,
+    now: Date = new Date(),
   ): Promise<{ after: BiometricSettings; changed: string[] }> {
     const keys = biometricKeys(companyId);
-    const { secret, password, ...rest } = patch as Record<string, unknown> & {
+    const { secret, password, integrationOn, ...rest } = patch as Record<string, unknown> & {
       secret?: unknown;
       password?: unknown;
+      integrationOn?: unknown;
     };
+    if (integrationOn !== undefined && typeof integrationOn !== 'boolean') {
+      throw new ValidationError('integrationOn must be on or off.').withDetails({
+        field: 'integrationOn',
+      });
+    }
     const current = biometricFromStored(await this.store.read(keys.settings));
     const result = applyBiometricPatch(current, rest);
     if (!result.ok) throw new ValidationError(result.message).withDetails({ field: result.field });
@@ -97,6 +125,13 @@ export class BiometricSettingsService {
     }
     await this.store.write(keys.settings, result.value, byId);
     this.cached.set(companyId, { value: result.value, at: Date.now() });
+    // 3.6: the organisation's own switch. On counts today in full; off keeps today (it was on).
+    if (typeof integrationOn === 'boolean') {
+      const today = dateKeyInZone(now, appTimezone());
+      if (await this.repo.switchIntegration(companyId, integrationOn, today, now, byId)) {
+        changed.push('integrationOn');
+      }
+    }
     if (changed.length) {
       this.logger.log(
         `biometric settings of ${companyId} changed by ${byId}: ${changed.join(', ')}`,
@@ -128,20 +163,44 @@ export class BiometricSettingsService {
     await this.store.write(biometricKeys(companyId).pullState, state, null);
   }
 
+  /** The organisation's integration switch and its history, newest first (3.6). */
+  async integration(companyId: string): Promise<{ on: boolean; periods: IntegrationPeriodView[] }> {
+    const rows = await this.repo.integrationPeriods(companyId);
+    return {
+      on: rows.some((r) => r.toDate === null),
+      periods: rows.map((r) => ({
+        fromDate: r.fromDate,
+        toDate: r.toDate,
+        startedAt: r.startedAt.toISOString(),
+        endedAt: r.endedAt?.toISOString() ?? null,
+        startedByName: r.startedByName,
+        endedByName: r.endedByName,
+      })),
+    };
+  }
+
   /** What the portal shows: the settings, which secrets are set (never their values). */
   async view(companyId: string): Promise<
     BiometricSettings & {
       secretSet: boolean;
       passwordSet: boolean;
       bounds: typeof BIOMETRIC_BOUNDS;
+      integrationOn: boolean;
+      integrationPeriods: IntegrationPeriodView[];
     }
   > {
-    const [s, secrets] = await Promise.all([this.get(companyId), this.secrets(companyId)]);
+    const [s, secrets, integration] = await Promise.all([
+      this.get(companyId),
+      this.secrets(companyId),
+      this.integration(companyId),
+    ]);
     return {
       ...s,
       secretSet: !!secrets.secret,
       passwordSet: !!secrets.password,
       bounds: BIOMETRIC_BOUNDS,
+      integrationOn: integration.on,
+      integrationPeriods: integration.periods,
     };
   }
 }

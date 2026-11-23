@@ -113,7 +113,11 @@ export class ReportActivityUseCase {
 
     // Push live: the user's own dashboard, and their manager's team board.
     // Best-effort — a broadcast failure must never fail the agent's report.
-    if (!opts.late) await this.broadcast(userId, created, daily, at, login, self);
+    // 3.6: who is in a meeting now, whatever date the meeting was filed on.
+    if (!opts.late) {
+      const inMeeting = (await this.meetings.usersInMeeting([userId])).has(userId);
+      await this.broadcast(userId, created, daily, at, login, self, inMeeting);
+    }
 
     return {
       ok: true,
@@ -281,9 +285,10 @@ export class ReportActivityUseCase {
     now: Date,
     login: Date | null,
     self: ActivitySelf | undefined,
+    inMeeting: boolean,
   ): Promise<void> {
     try {
-      const current = ActivityMapper.toCurrentView(created, now);
+      const current = ActivityMapper.toCurrentView(created, now, false, inMeeting);
       // Staff get the push without their activity figures (SPEC 1.8).
       this.gateway.emitToUser(
         userId,
@@ -293,7 +298,7 @@ export class ReportActivityUseCase {
       if (self) {
         await this.gateway.emitForSubject(
           userId,
-          ActivityMapper.toLiveUpdate(self, created, daily, now, false, login),
+          ActivityMapper.toLiveUpdate(self, created, daily, now, false, login, inMeeting),
         );
       }
     } catch (err) {

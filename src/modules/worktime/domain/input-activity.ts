@@ -139,6 +139,19 @@ export function inputIntervals(samples: readonly InputSample[], now: Date): Inpu
   return { active: activeFinal, idle: normalize(subtract(normalize(idle), activeFinal)) };
 }
 
+/**
+ * Meeting time is working time, never idle (brief 1.8, D-22): idle inside a meeting counts
+ * as active. Time no sample covers stays no data.
+ */
+export function withMeetings(input: InputIntervals, meetings: Interval[]): InputIntervals {
+  const spans = normalize(meetings);
+  if (!spans.length) return input;
+  return {
+    active: normalize([...input.active, ...intersect(input.idle, spans)]),
+    idle: subtract(input.idle, spans),
+  };
+}
+
 /** Milliseconds of `list` that fall inside `windows`. */
 export function overlapIn(list: Interval[], windows: Interval[]): number {
   return lengthMs(intersect(list, windows));
@@ -153,6 +166,16 @@ export interface InputBreakdown {
   noDataSec: number;
   /** Length of the windows that have already happened (up to now). */
   spanSec: number;
+}
+
+/**
+ * Idle as a figure a manager reads: null when no agent reported on any of the time (biometric
+ * staff, an agent left off), as nothing was read and a zero would look like a day with no idle.
+ * A day all in meetings or on breaks has no time to read, and reads zero.
+ */
+export function idleOfInput(b: InputBreakdown | undefined): number | null {
+  if (!b) return 0;
+  return b.activeSec === 0 && b.idleSec === 0 && b.noDataSec > 0 ? null : b.idleSec;
 }
 
 /** Active, idle and no-data seconds inside `windows`, counting only time up to `now`. */
@@ -221,9 +244,11 @@ export function afterSkipActivity(
   window: { from: Date; to: Date; basis: 'SKIPPED_AT' | 'BREAK_START' },
   samples: readonly InputSample[],
   now: Date,
+  /** The person's meetings around the window: skipped for a meeting is not walking away. */
+  meetings: Interval[] = [],
 ): AfterSkipActivity {
   const w = { start: window.from.getTime(), end: window.to.getTime() };
-  const intervals = inputIntervals(samples, now);
+  const intervals = withMeetings(inputIntervals(samples, now), meetings);
   const b = breakdownIn(intervals, [w], now);
   let verdict: AfterSkipVerdict;
   if (now.getTime() < w.end + IDLE_LEAD_IN_SEC * 1000) {

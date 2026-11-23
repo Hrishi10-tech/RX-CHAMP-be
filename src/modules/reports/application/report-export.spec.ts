@@ -191,6 +191,8 @@ describe('payrollWorkbook', () => {
       'Work from home days',
       'Hours from home over the cap',
       'No check-out days',
+      // 3.6, at the end: every column before it stays where it was.
+      'Meeting hours',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -505,5 +507,112 @@ describe('exportFileName', () => {
     );
     expect(exportFileName('2026-09', '  ')).toBe('rx-vision-2026-09-person.xlsx');
     expect(exportFileName('2026-09', '"; rm -rf /')).toBe('rx-vision-2026-09-rm-rf.xlsx');
+  });
+});
+
+describe('payrollWorkbook: the payroll pause (3.6)', () => {
+  const agent = () => {
+    const r = report('Asha Rao', 'asha@example.test', [
+      daySummary({
+        date: '2026-09-01',
+        focusSec: 8 * H,
+        meetingSec: 90 * 60,
+        breakSec: 45 * 60,
+        paidSec: 8.5 * H,
+        paidBreakSec: 30 * 60,
+      }),
+    ]);
+    r.totals.meetingSec = 90 * 60;
+    return r;
+  };
+  const fullDay = (date: string) =>
+    daySummary({ date, focusSec: 9 * H, startedAt: `${date}T04:00:00.000Z`, payrollPaused: true });
+  const biometric = (days: PersonDaySummary[], paused: boolean): PersonMonthReport => ({
+    ...report('Bala Krishnan', 'bala@example.test', days),
+    payroll: {
+      paused,
+      label: 'Payroll paused · biometric integration pending',
+      pausedDays: days.filter((d) => d.payrollPaused).length,
+      pausedFrom: '2026-09-01',
+      pausedTo: '2026-09-02',
+      totals: {
+        ...emptyTotals(),
+        focusSec: paused ? 0 : 7 * H,
+        paidSec: paused ? 0 : 7 * H,
+      },
+    },
+  });
+  /** Every row of a sheet, cell by cell. */
+  const rows = (wb: Workbook, name: string) => {
+    const out: unknown[][] = [];
+    wb.getWorksheet(name)?.eachRow((row) => out.push((row.values as unknown[]).slice(1)));
+    return out;
+  };
+
+  it('nobody paused: no third sheet, and the Meeting column is the last one', async () => {
+    const wb = await readBack(await payrollWorkbook([agent()], TZ));
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Payroll', 'Days']);
+    const header = rows(wb, 'Payroll')[0];
+    expect(header[header.length - 1]).toBe('Meeting hours');
+    expect(rows(wb, 'Payroll')[1][header.length - 1]).toBe(1.5);
+  });
+
+  it('a month stored before 3.6 reads its meeting hours from its days', async () => {
+    const old = agent();
+    delete (old.totals as { meetingSec?: number }).meetingSec;
+    const wb = await readBack(await payrollWorkbook([old], TZ));
+    const header = rows(wb, 'Payroll')[0];
+    expect(rows(wb, 'Payroll')[1][header.length - 1]).toBe(1.5);
+  });
+
+  it('someone fully paused is on neither payroll sheet, only named on the third', async () => {
+    const wb = await readBack(
+      await payrollWorkbook(
+        [agent(), biometric([fullDay('2026-09-01'), fullDay('2026-09-02')], true)],
+        TZ,
+      ),
+    );
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Payroll', 'Days', 'Payroll paused']);
+    expect(rows(wb, 'Payroll').map((r) => r[0])).toEqual(['Name', 'Asha Rao']);
+    expect(rows(wb, 'Days').map((r) => r[0])).toEqual(['Name', 'Asha Rao']);
+    expect(rows(wb, 'Payroll paused')).toEqual([
+      ['Name', 'Email', 'Department', 'Manager', 'Payroll', 'Paused days', 'From', 'To'],
+      [
+        'Bala Krishnan',
+        'bala@example.test',
+        'Billing',
+        'Kavya Iyer',
+        'Payroll paused · biometric integration pending',
+        2,
+        '2026-09-01',
+        '2026-09-02',
+      ],
+    ]);
+  });
+
+  it('someone partly paused: the calculated days go to payroll, and the rest are named', async () => {
+    const counted = daySummary({ date: '2026-09-03', focusSec: 7 * H, paidSec: 7 * H });
+    const wb = await readBack(
+      await payrollWorkbook(
+        [biometric([fullDay('2026-09-01'), fullDay('2026-09-02'), counted], false)],
+        TZ,
+      ),
+    );
+    const payroll = rows(wb, 'Payroll');
+    expect(payroll.map((r) => r[0])).toEqual(['Name', 'Bala Krishnan']);
+    // Focus hours and paid hours count only the day calculated.
+    expect(payroll[1][payroll[0].indexOf('Focus hours')]).toBe(7);
+    expect(payroll[1][payroll[0].indexOf('Paid time')]).toBe(7);
+    expect(rows(wb, 'Days').map((r) => r[2])).toEqual(['Date', '2026-09-03']);
+    expect(rows(wb, 'Payroll paused')[1][4]).toBe('Payroll paused · biometric integration pending');
+  });
+
+  it('a colleague being paused changes nothing for agent staff, cell by cell', async () => {
+    const before = await readBack(await payrollWorkbook([agent()], TZ));
+    const after = await readBack(
+      await payrollWorkbook([biometric([fullDay('2026-09-01')], true), agent()], TZ),
+    );
+    expect(rows(after, 'Payroll')).toEqual(rows(before, 'Payroll'));
+    expect(rows(after, 'Days')).toEqual(rows(before, 'Days'));
   });
 });

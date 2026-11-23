@@ -76,7 +76,11 @@ export class PrismaAgentHealthReader implements AgentHealthReader {
       )
       SELECT agg.*, (SELECT (s.idle OR s.locked) FROM activity_samples s
                       WHERE s.user_id = agg.user_id AND s.at = agg.last_at
-                      ORDER BY s.at DESC LIMIT 1) AS last_idle
+                      ORDER BY s.at DESC LIMIT 1)
+                    -- In a meeting the person is working, just not typing (3.6).
+                    AND NOT EXISTS (SELECT 1 FROM presence_sessions p
+                                     WHERE p.user_id = agg.user_id AND p.type = 'MEETING'
+                                       AND p.ended_at IS NULL) AS last_idle
         FROM agg`);
     return new Map(
       rows.map((r) => [

@@ -194,7 +194,8 @@ export class BiometricController {
   @ApiOperation({
     summary:
       'Change the settings: the gap rule (SPAN or PAIRS), a missing check-out (LAST_PUNCH or SHIFT_END), the ' +
-      'duplicate window, push direction words, the pull adapter and its secret',
+      'duplicate window, push direction words, the pull adapter and its secret; 3.6: integrationOn, the payroll ' +
+      'switch for biometric staff',
   })
   async patchSettings(
     @CurrentUser() me: AuthenticatedUser,

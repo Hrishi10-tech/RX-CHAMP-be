@@ -1,3 +1,5 @@
+import { InputIntervals } from './input-activity';
+
 export const WORKTIME_READER = Symbol('WORKTIME_READER');
 
 export interface PresenceRow {
@@ -59,10 +61,11 @@ export interface PersonRow {
   active: boolean;
   /** Business day the account was created: earlier days are not counted against them. */
   joinedOn: string;
-  /** How the person's day is recorded (3.5). */
+  /** How the person's day is recorded (3.5), and the day that last changed. */
   attendanceSource?: 'AGENT' | 'BIOMETRIC';
   /** The effective avatar (3.6); null while the person has no gender. */
   avatarId?: string | null;
+  attendanceSourceFrom?: string | null;
 }
 
 export interface PeopleFilter {
@@ -107,6 +110,14 @@ export interface WorktimeReader {
    * cover, as joined stretches, in one aggregated query.
    */
   activityCoverage(sessionIds: string[]): Promise<CoverageRow[]>;
+  /**
+   * Active and idle time of these days by `userId|date`, on the rules of inputIntervals (3.6),
+   * worked out in SQL from the samples around the day's work sessions. Days with none are left out.
+   */
+  inputOfDays(
+    days: { userId: string; date: string }[],
+    now: Date,
+  ): Promise<Map<string, InputIntervals>>;
   /** People, with their manager's name; any status unless filtered by the caller. */
   listPeople(filter: PeopleFilter): Promise<PersonRow[]>;
   /** Which of these people (or anyone, when null) have a work session dated in the range. */

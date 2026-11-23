@@ -1,5 +1,5 @@
 import { ActivityBackfilledEvent } from '@shared/events/activity-backfilled.event';
-import { DayDataService, focusOfDay, SETTLED_AFTER_MS } from './day-data.service';
+import { DayDataService, focusOfDay, PersonDayData, SETTLED_AFTER_MS } from './day-data.service';
 
 process.env.APP_TIMEZONE = 'Asia/Kolkata';
 
@@ -9,6 +9,7 @@ function setup() {
   const reader = {
     sessionDays: jest.fn(),
     activeSecByHour: jest.fn(),
+    inputOfDays: jest.fn().mockResolvedValue(new Map()),
     userIdsWithSessionsBetween: jest.fn().mockResolvedValue(new Set(['u1', 'u2'])),
   };
   const handlers = new Map<string, (e: unknown) => void>();
@@ -430,6 +431,7 @@ describe('DayDataService hour buckets', () => {
     // Already warm: nothing new, nothing aggregated again.
     expect(await svc.warmSettled(NOW)).toBe(0);
     expect(reader.activeSecByHour).toHaveBeenCalledTimes(1);
+    expect(reader.inputOfDays).toHaveBeenCalledTimes(1);
   });
 
   it("a person's day view reads the same buckets as the team and month views", async () => {
@@ -460,5 +462,205 @@ describe('DayDataService hour buckets', () => {
     const buckets = await svc.bucketHours(['u1'], '2026-10-13', '2026-10-13', NOW);
     expect(hourly).toEqual(svc.bucketHourly(day, buckets, NOW, 20));
     expect(hourly[10].activeMin).toBe(25);
+  });
+});
+
+describe('DayDataService.inputBetween and idleFrom: a month of idle (3.6)', () => {
+  const ON = '2026-10-13';
+  const at = (hhmm: string) => new Date(`${ON}T${hhmm}:00+05:30`);
+  const ms = (hhmm: string) => at(hhmm).getTime();
+  const LATER = new Date(`${ON}T20:00:00+05:30`);
+  const worked = (over: Partial<PersonDayData> = {}): PersonDayData => ({
+    userId: 'u1',
+    date: ON,
+    sessions: [
+      {
+        id: 's1',
+        userId: 'u1',
+        date: ON,
+        startedAt: at('09:00'),
+        endedAt: at('18:00'),
+        endReason: 'USER',
+        source: 'AGENT',
+      },
+    ],
+    presence: [],
+    breakRecords: [],
+    meetingRecords: [],
+    ...over,
+  });
+  const logged = (approvalStatus: string) =>
+    ({
+      mode: 'PAST',
+      approvalStatus,
+      startedAt: at('14:00'),
+      endedAt: at('14:30'),
+    }) as unknown as PersonDayData['meetingRecords'][number];
+  const inputOfU1 = new Map([
+    [
+      `u1|${ON}`,
+      {
+        active: [{ start: ms('09:00'), end: ms('14:00') }],
+        idle: [{ start: ms('14:00'), end: ms('15:00') }],
+      },
+    ],
+  ]);
+
+  it('a settled day is read once, then served from memory; a recent day every time', async () => {
+    const { svc, reader } = setup();
+    reader.sessionDays.mockResolvedValue([
+      { userId: 'u1', date: '2026-10-01', settled: true },
+      { userId: 'u1', date: ON, settled: false },
+    ]);
+    reader.inputOfDays.mockResolvedValue(
+      new Map([['u1|2026-10-01', { active: [], idle: [{ start: 1, end: 2 }] }]]),
+    );
+    const first = await svc.inputBetween(['u1'], '2026-10-01', '2026-10-14', NOW);
+    expect(first.get('u1|2026-10-01')?.idle).toEqual([{ start: 1, end: 2 }]);
+    // A day nobody reported on is known too, with nothing in it.
+    expect(first.get(`u1|${ON}`)).toEqual({ active: [], idle: [] });
+    await svc.inputBetween(['u1'], '2026-10-01', '2026-10-14', NOW);
+    expect(reader.inputOfDays.mock.calls[1][0]).toEqual([
+      { userId: 'u1', date: ON, settled: false },
+    ]);
+  });
+
+  it('nobody to read: no query', async () => {
+    const { svc, reader } = setup();
+    expect((await svc.inputBetween([], ON, ON, NOW)).size).toBe(0);
+    expect(reader.sessionDays).not.toHaveBeenCalled();
+  });
+
+  it('idle is what falls in the available time: meetings and breaks stay out', () => {
+    const { svc } = setup();
+    expect(svc.idleFrom(worked(), inputOfU1, LATER)).toBe(3600);
+    const meeting = {
+      id: 'p1',
+      userId: 'u1',
+      type: 'MEETING' as const,
+      note: null,
+      date: ON,
+      startedAt: at('14:00'),
+      endedAt: at('14:45'),
+    };
+    expect(svc.idleFrom(worked({ presence: [meeting] }), inputOfU1, LATER)).toBe(15 * 60);
+  });
+
+  it('a day no agent reported on has no figure', () => {
+    const { svc } = setup();
+    expect(svc.idleFrom(worked(), new Map(), LATER)).toBeNull();
+  });
+
+  it('a logged meeting counts until a manager rejects it', () => {
+    const { svc } = setup();
+    const on = (status: string) =>
+      svc.idleFrom(worked({ meetingRecords: [logged(status)] }), inputOfU1, LATER);
+    expect(on('PENDING')).toBe(30 * 60);
+    expect(on('APPROVED')).toBe(30 * 60);
+    expect(on('REJECTED')).toBe(3600);
+  });
+});
+
+describe('DayDataService.inputOf (3.6)', () => {
+  const at = (hhmm: string) => new Date(`2026-10-14T${hhmm}:00+05:30`);
+  const day = (userId: string, presence: PersonDayData['presence'] = []): PersonDayData => ({
+    userId,
+    date: '2026-10-14',
+    sessions: [
+      {
+        id: `s-${userId}`,
+        userId,
+        date: '2026-10-14',
+        startedAt: at('09:00'),
+        endedAt: at('11:00'),
+        endReason: 'USER',
+        source: 'AGENT',
+      },
+    ],
+    presence,
+    breakRecords: [],
+    meetingRecords: [],
+  });
+  const idle = (hhmm: string) => ({
+    at: at(hhmm),
+    durationSec: 120,
+    idle: true,
+    locked: false,
+    app: null,
+  });
+  const inputService = (samples: { samplesInWindows: jest.Mock }) =>
+    new DayDataService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      samples as never,
+    );
+
+  it('reads many days in one query and leaves meetings out of the idle time', async () => {
+    const samples = {
+      samplesInWindows: jest.fn().mockResolvedValue(
+        new Map([
+          ['a|2026-10-14', [idle('09:30')]],
+          ['b|2026-10-14', [idle('09:30')]],
+        ]),
+      ),
+    };
+    const meeting = {
+      id: 'p1',
+      userId: 'b',
+      type: 'MEETING' as const,
+      note: null,
+      date: '2026-10-14',
+      startedAt: at('09:00'),
+      endedAt: at('10:00'),
+    };
+    const out = await inputService(samples).inputOf([day('a'), day('b', [meeting])], at('12:00'));
+    expect(samples.samplesInWindows).toHaveBeenCalledTimes(1);
+    expect(samples.samplesInWindows.mock.calls[0][0]).toHaveLength(2);
+    expect(out.get('a|2026-10-14')?.idleSec).toBeGreaterThan(0);
+    expect(out.get('b|2026-10-14')?.idleSec).toBe(0);
+  });
+
+  it('a logged meeting left out of idle until a manager rejects it', async () => {
+    const samples = {
+      samplesInWindows: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([['a|2026-10-14', [idle('09:30'), idle('09:32'), idle('09:34')]]]),
+        ),
+    };
+    const withLogged = (approvalStatus: string): PersonDayData => ({
+      ...day('a'),
+      meetingRecords: [
+        {
+          mode: 'PAST',
+          approvalStatus,
+          startedAt: at('09:30'),
+          endedAt: at('09:36'),
+        } as unknown as PersonDayData['meetingRecords'][number],
+      ],
+    });
+    const idleWhen = async (status: string) =>
+      (await inputService(samples).inputOf([withLogged(status)], at('12:00'))).get('a|2026-10-14');
+    expect((await idleWhen('PENDING'))?.idleSec).toBe(0);
+    expect((await idleWhen('APPROVED'))?.idleSec).toBe(0);
+    // Rejected: its six minutes are read like any other.
+    expect((await idleWhen('REJECTED'))?.idleSec).toBe(360);
+    expect((await idleWhen('REJECTED'))?.spanSec).toBe(2 * 3600);
+  });
+
+  it('a day with no time available reads nothing and is all zeros', async () => {
+    const samples = { samplesInWindows: jest.fn() };
+    const empty: PersonDayData = { ...day('a'), sessions: [] };
+    const out = await inputService(samples).inputOf([empty], at('12:00'));
+    expect(samples.samplesInWindows).not.toHaveBeenCalled();
+    expect(out.get('a|2026-10-14')).toEqual({ activeSec: 0, idleSec: 0, noDataSec: 0, spanSec: 0 });
   });
 });

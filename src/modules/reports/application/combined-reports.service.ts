@@ -4,6 +4,7 @@ import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { allOrgsInView, OrgRef, OrgsInViewService, withOrg } from '@shared/tenancy';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { teamTotals } from '../domain/report-builder';
+import { inPayroll, payrollPartOf } from '../domain/payroll-pause';
 import {
   PersonMonthReport,
   ReportPerson,
@@ -54,7 +55,10 @@ export function combineTeamMonth(
       // Locked only when every organisation's month is locked.
       locked: results.length > 0 && results.every((r) => r.value.team.locked),
       generatedAt: now.toISOString(),
-      totals: teamTotals(
+      // 3.6: what payroll counts (each organisation's paused days and people left out),
+      // and everything as tracked.
+      totals: teamTotals(inPayroll(persons).map(payrollPartOf), today),
+      trackedTotals: teamTotals(
         persons.map((p) => ({ totals: p.totals, days: p.days })),
         today,
       ),

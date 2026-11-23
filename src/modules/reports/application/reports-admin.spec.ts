@@ -74,6 +74,7 @@ function built(persons: PersonMonthReport[]): {
       locked: false,
       generatedAt: '2026-10-01T00:00:00.000Z',
       totals: { ...emptyTotals(), people: persons.length },
+      trackedTotals: { ...emptyTotals(), people: persons.length },
       rows: [],
     },
   };
@@ -100,6 +101,50 @@ describe('runSummary', () => {
       pending: 1,
       needsALook: 1,
     });
+  });
+});
+
+describe('runSummary and the payroll pause (3.6)', () => {
+  const paused = (p: PersonRow, focusSec: number, whole: boolean): PersonMonthReport => ({
+    ...monthOf(p, { workdays: 20, full: 20, focusSec, needsALook: true, quietHours: 9 }),
+    payroll: {
+      paused: whole,
+      label: 'Payroll paused · biometric integration pending',
+      pausedDays: 20,
+      pausedFrom: '2026-09-01',
+      pausedTo: '2026-09-20',
+      totals: {
+        ...emptyTotals(),
+        workdays: whole ? 0 : 5,
+        full: whole ? 0 : 5,
+        focusSec: whole ? 0 : 40,
+      },
+    },
+  });
+
+  it('leaves out biometric staff with nothing calculated, and says how many', () => {
+    const s = runSummary([
+      monthOf(person('a'), { workdays: 20, full: 18, focusSec: 100 }),
+      paused(person('bio'), 9_999, true),
+    ]);
+    expect(s).toMatchObject({
+      people: 1,
+      workdays: 20,
+      full: 18,
+      focusSec: 100,
+      needsALook: 0,
+      payrollPaused: 1,
+    });
+  });
+
+  it('counts only the calculated days of someone partly paused', () => {
+    const s = runSummary([paused(person('bio'), 9_999, false)]);
+    expect(s).toMatchObject({ people: 1, workdays: 5, full: 5, focusSec: 40, needsALook: 0 });
+    expect(s.payrollPaused).toBeUndefined();
+  });
+
+  it('nobody paused: the summary is what it always was', () => {
+    expect(runSummary([monthOf(person('a'))])).not.toHaveProperty('payrollPaused');
   });
 });
 
@@ -475,6 +520,43 @@ describe('MonthLockService (per organisation, 4.0)', () => {
     return { svc, store, approvals, scope, reports, reader };
   }
   const ADMIN = user('admin', Role.ADMIN);
+
+  it('the payroll run leaves out biometric staff with nothing calculated, kept apart for their reports', async () => {
+    const { svc, store, reports } = setup();
+    const label = 'Payroll paused · biometric integration pending';
+    const payroll = (paused: boolean) => ({
+      paused,
+      label,
+      pausedDays: 3,
+      pausedFrom: '2026-09-01',
+      pausedTo: '2026-09-03',
+      totals: emptyTotals(),
+    });
+    const paused = { ...monthOf(person('a')), payroll: payroll(true) };
+    const partly = { ...monthOf(person('b')), payroll: payroll(false) };
+    reports.buildMonth.mockImplementation(async () => {
+      const b = built([paused, partly]);
+      b.team.rows = [
+        { person: paused.person, totals: paused.totals, days: [], payroll: paused.payroll },
+        { person: partly.person, totals: partly.totals, days: [], payroll: partly.payroll },
+      ];
+      return b;
+    });
+    await svc.lock(ADMIN, '2026-09', new Date('2026-10-02T05:00:00Z'));
+    const build = store.lockMonth.mock.calls[0][3] as () => Promise<MonthSnapshot>;
+    const snap = await build();
+    expect(Object.keys(snap.persons)).toEqual(['b']);
+    expect(snap.team.rows.map((r) => r.person.id)).toEqual(['b']);
+    expect(Object.keys(snap.payrollPaused ?? {})).toEqual(['a']);
+    expect(snap.payrollPaused?.a).toMatchObject({ locked: true, payroll: { paused: true, label } });
+  });
+
+  it('with nobody paused the snapshot has no such part', async () => {
+    const { svc, store } = setup();
+    await svc.lock(ADMIN, '2026-09', new Date('2026-10-02T05:00:00Z'));
+    const build = store.lockMonth.mock.calls[0][3] as () => Promise<MonthSnapshot>;
+    expect(await build()).not.toHaveProperty('payrollPaused');
+  });
 
   it('only the Admin, or a Super Admin acting in the organisation, locks or unlocks', async () => {
     const { svc, store } = setup();

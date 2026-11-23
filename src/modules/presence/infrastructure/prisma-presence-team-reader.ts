@@ -40,10 +40,15 @@ export class PrismaPresenceTeamReader implements PresenceTeamReader {
         department: true,
         managerId: true,
         ...AVATAR_COLUMNS,
+        attendanceSource: true,
       },
     });
     if (!row) return null;
-    const { managerId, ...self } = withEffectiveAvatar(row);
-    return { self, managerId: managerId ?? null };
+    const { managerId, attendanceSource, ...self } = withEffectiveAvatar(row);
+    return {
+      self,
+      managerId: managerId ?? null,
+      attendanceSource: attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+    };
   }
 }

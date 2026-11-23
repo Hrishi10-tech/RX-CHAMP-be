@@ -1,5 +1,6 @@
 import { ManagerLookupReader } from '@shared/rbac/manager-lookup.reader';
 import { ActivitySampleRecord } from '@modules/activity/domain/activity-sample.repository';
+import { MeetingWindow } from '@modules/activity/domain/meeting-window.reader';
 import { PresenceKind } from '@modules/presence/domain/presence-session.repository';
 
 export const ANALYTICS_READER = Symbol('ANALYTICS_READER');
@@ -24,6 +25,11 @@ export interface AnalyticsWindow {
   samplesByDate: Map<string, ActivitySampleRecord[]>;
   onlineByDate: Map<string, OnlineRow[]>;
   presenceByDate: Map<string, PresenceRow[]>;
+  /**
+   * 3.6: the meetings overlapping each date, live or logged and not rejected: their time is
+   * never idle. By time, as samples are filed under the calendar day they fall on.
+   */
+  meetingsByDate: Map<string, MeetingWindow[]>;
 }
 
 /**

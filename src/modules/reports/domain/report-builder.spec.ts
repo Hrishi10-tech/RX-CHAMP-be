@@ -359,6 +359,25 @@ describe('summarizeDay', () => {
     expect(inGrace.lateStart).toBeNull();
   });
 
+  describe('the payroll pause (3.6)', () => {
+    const worked = day('2026-09-07', { sessions: [session('2026-09-07', '09:30', '18:30')] });
+    it('an ordinary day has paid time and no flag', () => {
+      const s = summarize(worked);
+      expect(s).not.toHaveProperty('payrollPaused');
+      expect(s.paidSec).toBeGreaterThan(0);
+    });
+
+    it('a paused day has the flag and no paid time (4.0: zero), and is otherwise the same day', () => {
+      const s = summarize(worked, { payrollPaused: true });
+      expect(s.payrollPaused).toBe(true);
+      expect(s).toMatchObject({ paidSec: 0, paidBreakSec: 0 });
+      const plain = summarize(worked);
+      expect(s).toEqual({ ...plain, paidSec: 0, paidBreakSec: 0, payrollPaused: true });
+      // Tracking stays: focus time is what it always was.
+      expect(s.focusSec).toBe(plain.focusSec);
+    });
+  });
+
   describe('leave (3.4)', () => {
     const FULL = {
       mask: 15,
@@ -508,7 +527,7 @@ describe('summarizeDay', () => {
       expectedSec: 8 * H,
     });
     const future = summarize(day('2026-10-01'), { today: '2026-09-30', now });
-    expect(future).toMatchObject({ dayClass: 'UPCOMING', expectedSec: 0 });
+    expect(future).toMatchObject({ dayClass: 'UPCOMING', expectedSec: 0, plannedSec: 8 * H });
   });
 
   it('days before the person joined are days off unless they worked', () => {
@@ -646,6 +665,7 @@ describe('monthTotals', () => {
       awayApprovedSec: 300,
       awayPendingSec: 120,
       awayRejectedSec: 60,
+      plannedSec: 8 * H,
       skipped: 1,
       quietHours: 2,
       paidSec: 8 * H + 3000,
@@ -660,6 +680,7 @@ describe('monthTotals', () => {
       paidBreakSec: 1800,
       meetingSec: 2700,
       awayPendingSec: 600,
+      plannedSec: 8 * H,
       lateStart: { minutes: 20 },
       unverifiedSec: 2 * H,
       paidSec: 4 * H + 1800,
@@ -669,6 +690,7 @@ describe('monthTotals', () => {
       dayClass: 'ABSENT',
       expectedSec: 8 * H,
       targetSec: 8 * H,
+      plannedSec: 8 * H,
       autoSkipped: 2,
       pending: 2,
     }),
@@ -687,18 +709,20 @@ describe('monthTotals', () => {
       focusSec: 7 * H,
       expectedSec: 8 * H,
       targetSec: 8 * H,
+      plannedSec: 8 * H,
       approvedPlusSec: 600,
       rejectedMinusSec: 900,
       meetings: 3,
       quietHours: 1,
     }),
     // A future working day: no expected time yet, but its target counts for the month.
-    summary({ date: '2026-10-01', dayClass: 'UPCOMING', targetSec: 8 * H }),
+    summary({ date: '2026-10-01', dayClass: 'UPCOMING', targetSec: 8 * H, plannedSec: 8 * H }),
   ];
 
   it('every number is the sum or count of its days', () => {
     const t = monthTotals(days, '2026-09-30', 4);
     expect(t).toEqual({
+      idleSec: null,
       workdays: 4,
       full: 2,
       half: 1,
@@ -707,6 +731,8 @@ describe('monthTotals', () => {
       extra: 1,
       focusSec: 21 * H,
       expectedSec: 32 * H,
+      // 3.6: the whole month's target, the upcoming day included.
+      plannedSec: 40 * H,
       avgFocusSec: Math.round((19 * H) / 4),
       lateStarts: 1,
       skipped: 1,
@@ -749,6 +775,36 @@ describe('monthTotals', () => {
     });
   });
 
+  it('adds up meeting and break time (3.6), for each person and for the team', () => {
+    const a = [
+      summary({ date: '2026-09-01', meetingSec: 3600, breakSec: 900 }),
+      summary({ date: '2026-09-02', meetingSec: 1800, breakSec: 2700 }),
+    ];
+    const b = [summary({ date: '2026-09-01', meetingSec: 600, breakSec: 300 })];
+    const ta = monthTotals(a, '2026-09-30', 4);
+    const tb = monthTotals(b, '2026-09-30', 4);
+    expect(ta).toMatchObject({ meetingSec: 5400, breakSec: 3600 });
+    expect(tb).toMatchObject({ meetingSec: 600, breakSec: 300 });
+    expect(
+      teamTotals(
+        [
+          { totals: ta, days: a },
+          { totals: tb, days: b },
+        ],
+        '2026-09-30',
+      ),
+    ).toMatchObject({ meetingSec: 6000, breakSec: 3900, people: 2 });
+    // Stored totals with neither add nothing: what a locked month's rows hand over once
+    // the service has read them back from its days (reports.service.spec.ts).
+    const old: Partial<typeof tb> = { ...tb };
+    delete old.meetingSec;
+    delete old.breakSec;
+    expect(teamTotals([{ totals: old as typeof tb, days: b }], '2026-09-30')).toMatchObject({
+      meetingSec: 0,
+      breakSec: 0,
+    });
+  });
+
   it('a snapshot day or total from before paidSec existed: paid = focus + paid breaks, unverified 0', () => {
     const old = { ...days[0] } as Partial<PersonDaySummary>;
     delete old.paidSec;
@@ -780,6 +836,37 @@ describe('monthTotals', () => {
     const team = teamTotals([{ totals: totals as MonthTotals, days }], '2026-09-30');
     expect(team.paidSec).toBe(0);
     expect(team.unverifiedSec).toBe(0);
+  });
+
+  it('a team of rows locked before 3.2 has no available time, rather than none at all', () => {
+    const a = [summary({ date: '2026-09-01', availableSec: 3600 })];
+    const totals = monthTotals(a, '2026-09-30', 4);
+    expect(teamTotals([{ totals, days: a }], '2026-09-30').availableSec).toBe(3600);
+    const old = { ...totals };
+    delete old.availableSec;
+    expect(teamTotals([{ totals: old, days: a }], '2026-09-30').availableSec).toBeUndefined();
+    expect(teamTotals([], '2026-09-30').availableSec).toBe(0);
+  });
+
+  it('adds up idle over the days an agent reported (3.6), and says when none did', () => {
+    const a = [
+      summary({ date: '2026-09-01', idleSec: 600 }),
+      summary({ date: '2026-09-02', idleSec: null }),
+      summary({ date: '2026-09-03', idleSec: 0 }),
+      summary({ date: '2026-09-06' }),
+    ];
+    const none = [summary({ date: '2026-09-01', idleSec: null }), summary({ date: '2026-09-02' })];
+    const ta = monthTotals(a, '2026-09-30', 4);
+    const tb = monthTotals(none, '2026-09-30', 4);
+    expect(ta.idleSec).toBe(600);
+    expect(tb.idleSec).toBeNull();
+    const rows = (...totals: (typeof ta)[]) => totals.map((t) => ({ totals: t, days: [] }));
+    expect(teamTotals(rows(ta, tb), '2026-09-30').idleSec).toBe(600);
+    expect(teamTotals(rows(tb), '2026-09-30').idleSec).toBeNull();
+    // A month locked before idle was kept reads as no data, not as zero.
+    const old = { ...ta };
+    delete old.idleSec;
+    expect(teamTotals(rows(old), '2026-09-30').idleSec).toBeNull();
   });
 
   it('needs a look only at the flag; workdays stop at today', () => {

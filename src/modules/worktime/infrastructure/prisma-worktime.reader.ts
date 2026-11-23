@@ -10,7 +10,8 @@ import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { LOCK_SCREEN_APP, MAX_GAP_SEC } from '@modules/activity/application/activity.constants';
 import { isUuid } from '@modules/shifts/infrastructure/prisma-shift.repository';
 import { COVERAGE_JOIN_SEC } from '../domain/focus';
-import { IDLE_LEAD_IN_SEC } from '../domain/input-activity';
+import { IDLE_LEAD_IN_SEC, InputIntervals, LOCKED_GAP_CAP_SEC } from '../domain/input-activity';
+import { Interval, normalize, subtract } from '../domain/intervals';
 import {
   CoverageRow,
   DepartmentRow,
@@ -43,6 +44,7 @@ const PERSON_SELECT = {
   manager: { select: { firstName: true, lastName: true } },
   attendanceSource: true,
   ...AVATAR_COLUMNS,
+  attendanceSourceFrom: true,
 } as const;
 
 type PersonPayload = Prisma.UserGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -64,6 +66,7 @@ function personFromPrisma(r: PersonPayload): PersonRow {
     joinedOn: dateKeyInZone(r.createdAt, appTimezone()),
     attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
     avatarId: effectiveAvatarId(r),
+    attendanceSourceFrom: r.attendanceSourceFrom ?? null,
   };
 }
 
@@ -324,6 +327,133 @@ export class PrismaWorktimeReader implements WorktimeReader {
       startedAt: r.started_at,
       endedAt: r.ended_at,
     }));
+  }
+
+  async inputOfDays(
+    days: { userId: string; date: string }[],
+    now: Date,
+  ): Promise<Map<string, InputIntervals>> {
+    const out = new Map<string, InputIntervals>();
+    for (let i = 0; i < days.length; i += HOUR_BUCKET_BATCH) {
+      const batch = await this.inputOfDaysBatch(days.slice(i, i + HOUR_BUCKET_BATCH), now);
+      for (const [k, v] of batch) out.set(k, v);
+    }
+    return out;
+  }
+
+  private async inputOfDaysBatch(
+    days: { userId: string; date: string }[],
+    now: Date,
+  ): Promise<Map<string, InputIntervals>> {
+    // The rules of input-activity.ts, as activeSecByHour keeps them, for a whole person-day at
+    // once. Each PC is read on its own. A sample stands for its stamped span, capped; only the
+    // newest open one stands until now. A non-idle sample is active up to the 300 s before the
+    // next idle flag (not a lock), and idle from there. An idle sample is idle, and so is the
+    // hole a locked PC leaves before it reports again. Merged here, as input on any PC wins over
+    // idle on another; each day comes back as two arrays, far cheaper than a row per sample.
+    const [, , rows] = await this.prisma.$transaction([
+      this.prisma.$executeRaw`SET LOCAL jit = off`,
+      this.prisma.$executeRaw`SET LOCAL work_mem = '96MB'`,
+      this.prisma.$queryRaw<
+        { user_id: string; date: string; kind: string; xs: number[]; ys: number[] }[]
+      >`
+        WITH params AS (
+          SELECT (${now.toISOString()}::timestamptz AT TIME ZONE 'UTC') AS now_utc
+        ),
+        day AS (
+          SELECT ws.user_id, ws.date,
+                 min(ws.started_at) AS day_start,
+                 max(COALESCE(ws.ended_at, p.now_utc)) AS day_end,
+                 EXTRACT(EPOCH FROM p.now_utc)::float8 AS now_e
+            FROM unnest(${days.map((d) => d.userId)}::uuid[], ${days.map((d) => d.date)}::text[])
+                 AS d(user_id, date)
+            JOIN work_sessions ws ON ws.user_id = d.user_id AND ws.date = d.date
+           CROSS JOIN params p
+           GROUP BY ws.user_id, ws.date, p.now_utc
+        ),
+        smp AS (
+          SELECT day.user_id, day.date, s.device_id, s.e, s.idle_flag, s.lock_flag,
+                 CASE
+                   WHEN s.duration_sec > 0 THEN LEAST(s.duration_sec, ${MAX_GAP_SEC})::float8
+                   -- Only the newest sample of the day is still open: it stands until now.
+                   WHEN NOT EXISTS (
+                     SELECT 1 FROM activity_samples x
+                      WHERE x.user_id = day.user_id
+                        AND x.at > s.at
+                        AND x.at < day.day_end + make_interval(secs => ${IDLE_LEAD_IN_SEC})
+                   ) THEN LEAST(GREATEST(day.now_e - s.e, 0), ${MAX_GAP_SEC})::float8
+                   ELSE 0
+                 END AS len_sec
+            FROM day
+           CROSS JOIN LATERAL (
+             SELECT a.at, a.device_id, a.duration_sec,
+                    EXTRACT(EPOCH FROM a.at)::float8 AS e,
+                    (a.idle OR a.locked OR COALESCE(a.app = ${LOCK_SCREEN_APP}, false)) AS idle_flag,
+                    (a.locked OR COALESCE(a.app = ${LOCK_SCREEN_APP}, false)) AS lock_flag
+               FROM activity_samples a
+              WHERE a.user_id = day.user_id
+                AND a.at >= day.day_start - make_interval(secs => ${MAX_GAP_SEC})
+                AND a.at <  day.day_end + make_interval(secs => ${IDLE_LEAD_IN_SEC})
+             OFFSET 0
+           ) AS s
+        ),
+        cut AS (
+          SELECT user_id, date, e, len_sec, idle_flag, lock_flag,
+                 min(e) OVER later AS next_e,
+                 min(CASE WHEN idle_flag AND NOT lock_flag THEN e END) OVER later AS next_idle_e,
+                 min(CASE WHEN lock_flag THEN e END) OVER later AS next_lock_e
+            FROM smp
+          WINDOW later AS (PARTITION BY user_id, date, device_id ORDER BY e DESC
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+        ),
+        ends AS (
+          SELECT user_id, date, e, len_sec, idle_flag, lock_flag, next_e,
+                 CASE
+                   WHEN next_idle_e IS NOT NULL
+                        AND (next_lock_e IS NULL OR next_idle_e < next_lock_e)
+                     THEN next_idle_e - ${IDLE_LEAD_IN_SEC}
+                   ELSE 'Infinity'::float8
+                 END AS lead_in_e
+            FROM cut
+        ),
+        pieces AS (
+          SELECT user_id, date, 'active' AS kind, e AS x0, LEAST(e + len_sec, lead_in_e) AS x1
+            FROM ends
+           WHERE NOT idle_flag AND len_sec > 0
+          UNION ALL
+          SELECT user_id, date, 'idle', GREATEST(e, lead_in_e), e + len_sec
+            FROM ends
+           WHERE NOT idle_flag AND len_sec > 0 AND lead_in_e < e + len_sec
+          UNION ALL
+          SELECT user_id, date, 'idle', e, e + len_sec
+            FROM ends
+           WHERE idle_flag AND len_sec > 0
+          UNION ALL
+          SELECT user_id, date, 'idle', e + len_sec, next_e
+            FROM ends
+           WHERE lock_flag AND next_e IS NOT NULL AND next_e - e <= ${LOCKED_GAP_CAP_SEC}
+        )
+        SELECT user_id::text AS user_id, date, kind, array_agg(x0) AS xs, array_agg(x1) AS ys
+          FROM pieces
+         WHERE x1 > x0
+         GROUP BY user_id, date, kind`,
+    ]);
+    const lists = new Map<string, { active: Interval[]; idle: Interval[] }>();
+    for (const r of rows) {
+      const k = `${r.user_id}|${r.date}`;
+      const list = lists.get(k) ?? { active: [], idle: [] };
+      list[r.kind === 'active' ? 'active' : 'idle'] = r.xs.map((x, i) => ({
+        start: Math.round(x * 1000),
+        end: Math.round(r.ys[i] * 1000),
+      }));
+      lists.set(k, list);
+    }
+    const out = new Map<string, InputIntervals>();
+    for (const [k, { active, idle }] of lists) {
+      const merged = normalize(active);
+      out.set(k, { active: merged, idle: subtract(idle, merged) });
+    }
+    return out;
   }
 
   async listPeople(filter: PeopleFilter): Promise<PersonRow[]> {

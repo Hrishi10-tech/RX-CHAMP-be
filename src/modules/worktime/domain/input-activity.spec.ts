@@ -2,8 +2,10 @@ import {
   afterSkipActivity,
   afterSkipWindow,
   breakdownIn,
+  idleOfInput,
   InputSample,
   inputIntervals,
+  withMeetings,
 } from './input-activity';
 
 const T0 = new Date('2026-10-14T05:30:00.000Z'); // 11:00 in India
@@ -165,5 +167,76 @@ describe('afterSkipActivity', () => {
     expect(afterSkipActivity(window, run(0, 19), now).verdict).toBe('PENDING');
     const settled = new Date(T0.getTime() + 20 * 60_000);
     expect(afterSkipActivity(window, run(0, 20), settled).verdict).toBe('ACTIVE');
+  });
+});
+
+describe('withMeetings (D-22)', () => {
+  const span = (from: number, to: number) => ({ start: from * 1000, end: to * 1000 });
+
+  it('idle inside a meeting is active, and idle outside it stays idle', () => {
+    const input = { active: [span(0, 100)], idle: [span(100, 400)] };
+    expect(withMeetings(input, [span(100, 300)])).toEqual({
+      active: [span(0, 300)],
+      idle: [span(300, 400)],
+    });
+  });
+
+  it('with no meeting nothing changes', () => {
+    const input = { active: [span(0, 100)], idle: [span(100, 400)] };
+    expect(withMeetings(input, [])).toBe(input);
+  });
+});
+
+describe('afterSkipActivity with a meeting after the skip (D-22)', () => {
+  const from = new Date('2026-11-05T05:00:00Z');
+  const to = new Date(from.getTime() + 15 * 60_000);
+  const idleSamples = Array.from({ length: 30 }, (_, i) => ({
+    at: new Date(from.getTime() + i * 60_000),
+    durationSec: 60,
+    idle: true,
+    locked: false,
+    app: null,
+  }));
+  const now = new Date(from.getTime() + 60 * 60_000);
+  const window = { from, to, basis: 'SKIPPED_AT' as const };
+
+  it('nobody at the keyboard and no meeting: no input', () => {
+    expect(afterSkipActivity(window, idleSamples, now)).toMatchObject({
+      verdict: 'NONE',
+      idleSec: 15 * 60,
+    });
+  });
+
+  it('in a meeting all along: kept working, none of it idle', () => {
+    const meeting = { start: from.getTime(), end: to.getTime() + 60_000 };
+    expect(afterSkipActivity(window, idleSamples, now, [meeting])).toMatchObject({
+      verdict: 'ACTIVE',
+      activeSec: 15 * 60,
+      idleSec: 0,
+    });
+  });
+});
+
+describe('idleOfInput: idle as a figure a manager reads (3.6)', () => {
+  const b = (activeSec: number, idleSec: number, noDataSec: number) => ({
+    activeSec,
+    idleSec,
+    noDataSec,
+    spanSec: activeSec + idleSec + noDataSec,
+  });
+
+  it('no agent reported on any of the time: nothing was read, so there is no figure', () => {
+    expect(idleOfInput(b(0, 0, 32400))).toBeNull();
+  });
+
+  it('an agent reported: the figure, zero included', () => {
+    expect(idleOfInput(b(3600, 600, 28200))).toBe(600);
+    expect(idleOfInput(b(0, 600, 28200))).toBe(600);
+    expect(idleOfInput(b(3600, 0, 28800))).toBe(0);
+  });
+
+  it('a day all in meetings or on breaks has no time to read, and reads zero', () => {
+    expect(idleOfInput(b(0, 0, 0))).toBe(0);
+    expect(idleOfInput(undefined)).toBe(0);
   });
 });

@@ -1,7 +1,6 @@
 import { ActivitySampleRecord } from '@modules/activity/domain/activity-sample.repository';
 import { MAX_GAP_SEC } from '@modules/activity/application/activity.constants';
 import { inputIntervals } from '@modules/worktime/domain/input-activity';
-import { MeetingWindow } from '@modules/activity/domain/meeting-window.reader';
 import { OnlineRow, PresenceRow } from '../domain/analytics.reader';
 import { FocusSession } from './analytics.types';
 
@@ -50,17 +49,6 @@ export function computeOnline(
     last = Math.max(last, (r.endedAt ?? now).getTime());
   }
   return { onlineSec, spanSec: Math.max(0, Math.round((last - first) / 1000)) };
-}
-
-/**
- * The day's meeting periods, for the daily rollup. A meeting is working time even with
- * the keyboard untouched, so those samples count as active; breaks and lunches are time
- * away and stay idle, hence only MEETING rows are returned.
- */
-export function meetingWindows(rows: PresenceRow[]): MeetingWindow[] {
-  return rows
-    .filter((r) => r.type === 'MEETING')
-    .map((r) => ({ start: r.startedAt, end: r.endedAt }));
 }
 
 /** Break / lunch / meeting seconds for a day. */

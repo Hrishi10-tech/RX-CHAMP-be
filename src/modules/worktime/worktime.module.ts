@@ -29,6 +29,7 @@ import { DayPlanService } from './application/day-plan.service';
 import { FocusAdjustmentsService } from './application/focus-adjustments.service';
 import { HistoryService } from './application/history.service';
 import { PersonDaysService } from './application/person-days.service';
+import { DayProgressService } from './application/day-progress.service';
 import { HourlyActivityService } from './application/hourly-activity.service';
 import { LateStartService } from './application/late-start.service';
 import {
@@ -37,6 +38,7 @@ import {
   AutoCloseJob,
   AutoSkipJob,
   HourlyCacheJob,
+  StatusMeetingCheckJob,
 } from './application/jobs/worktime.jobs';
 import { MeetingRerouteSubscriber } from './application/meeting-reroute.subscriber';
 import { MeetingsService } from './application/meetings.service';
@@ -48,6 +50,7 @@ import { WorkdayService } from './application/workday.service';
 import { ApprovalsController } from './presentation/approvals.controller';
 import { AwayController } from './presentation/away.controller';
 import { FocusAdjustmentsController } from './presentation/focus-adjustments.controller';
+import { DayProgressController } from './presentation/day-progress.controller';
 import { MeetingsController } from './presentation/meetings.controller';
 import {
   OverviewController,
@@ -60,6 +63,8 @@ import { CombinedViewsService } from './application/combined-views.service';
 import { OrganisationsOverviewController } from './presentation/organisations-overview.controller';
 import { PUNCHES_READER } from './domain/punches.reader';
 import { PrismaPunchesReader } from './infrastructure/prisma-punches.reader';
+import { INTEGRATION_PERIODS_READER } from './domain/integration-periods.reader';
+import { PrismaIntegrationPeriodsReader } from './infrastructure/prisma-integration-periods.reader';
 import { WfhSessionsService } from './application/wfh-sessions.service';
 
 /**
@@ -84,6 +89,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     AwayController,
     FocusAdjustmentsController,
     OrganisationsOverviewController,
+    DayProgressController,
   ],
   providers: [
     { provide: WORK_SESSION_REPOSITORY, useClass: PrismaWorkSessionRepository },
@@ -98,6 +104,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     { provide: AWAY_REPOSITORY, useClass: PrismaAwayRepository },
     { provide: FOCUS_ADJUSTMENT_REPOSITORY, useClass: PrismaFocusAdjustmentRepository },
     { provide: PUNCHES_READER, useClass: PrismaPunchesReader },
+    { provide: INTEGRATION_PERIODS_READER, useClass: PrismaIntegrationPeriodsReader },
     FocusAdjustmentsService,
     { provide: INPUT_SAMPLES_READER, useClass: PrismaInputSamplesReader },
     WfhSessionsService,
@@ -122,7 +129,9 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     ApprovalsSlaJob,
     ApprovalsDigestJob,
     HourlyCacheJob,
+    StatusMeetingCheckJob,
     MeetingRerouteSubscriber,
+    DayProgressService,
   ],
   exports: [
     WorkSessionsService,
@@ -139,6 +148,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     WORK_SESSION_REPOSITORY,
     WORKTIME_READER,
     PUNCHES_READER,
+    INTEGRATION_PERIODS_READER,
     APPROVALS_READER,
     INPUT_SAMPLES_READER,
     MEETING_RECORD_REPOSITORY,

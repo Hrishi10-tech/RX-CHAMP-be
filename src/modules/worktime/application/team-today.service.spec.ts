@@ -72,6 +72,7 @@ function setup() {
     load: jest.fn().mockResolvedValue({ day }),
     bucketHours: jest.fn().mockResolvedValue(new Map()),
     bucketHourly: jest.fn().mockReturnValue([]),
+    inputOf: jest.fn().mockResolvedValue(new Map([['night|2026-10-13', { idleSec: 240 }]])),
   };
   const days = {
     context: jest.fn().mockResolvedValue({}),
@@ -193,6 +194,34 @@ describe('Team today', () => {
     await expect(svc.today(me, { departmentId: 'far' }, NOW)).rejects.toMatchObject({
       status: 404,
     });
+  });
+
+  it('idle time per person, as the day report reads it; none when it cannot be read', async () => {
+    const { svc, dayData } = setup();
+    const view = await svc.today(me, {}, NOW);
+    const byId = Object.fromEntries(view.rows.map((r) => [r.user.id, r]));
+    expect(byId.night.idleSec).toBe(240);
+    expect(byId.day.idleSec).toBe(0);
+    // One read for everyone in view, for each person's own working day.
+    expect(dayData.inputOf).toHaveBeenCalledTimes(1);
+    expect(dayData.inputOf.mock.calls[0][0].map((d: { date: string }) => d.date).sort()).toEqual([
+      '2026-10-13',
+      '2026-10-14',
+    ]);
+    dayData.inputOf.mockRejectedValueOnce(new Error('db down'));
+    const failed = await svc.today(me, {}, NOW);
+    expect(failed.rows.every((r) => r.idleSec === null)).toBe(true);
+  });
+
+  it('a person no agent reports on has no idle figure, rather than a clean zero', async () => {
+    const { svc, dayData } = setup();
+    dayData.inputOf.mockResolvedValueOnce(
+      new Map([
+        ['night|2026-10-13', { activeSec: 0, idleSec: 0, noDataSec: 32400, spanSec: 32400 }],
+      ]),
+    );
+    const view = await svc.today(me, {}, NOW);
+    expect(view.rows.find((r) => r.user.id === 'night')?.idleSec).toBeNull();
   });
 
   it('an asked day is that day for everyone', async () => {

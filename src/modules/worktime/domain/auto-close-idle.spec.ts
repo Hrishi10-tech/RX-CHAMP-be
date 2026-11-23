@@ -1,4 +1,10 @@
-import { idleCloseDue, idleRuleFrom, realLastInput } from './auto-close';
+import {
+  autoCloseAt,
+  idleCloseDue,
+  idleRuleFrom,
+  lastInputWithMeeting,
+  realLastInput,
+} from './auto-close';
 
 const at = (hhmm: string) => new Date(`2026-10-14T${hhmm}:00+05:30`);
 
@@ -101,5 +107,48 @@ describe('realLastInput', () => {
         now,
       }),
     ).toBeNull();
+  });
+});
+
+describe('a status meeting counts as input (D-22)', () => {
+  const startedAt = at('09:30');
+  const latestEnd = at('22:30');
+
+  it('closes at the last input with no status meeting, as before', () => {
+    expect(autoCloseAt({ startedAt, latestEnd, lastInput: at('17:00') })).toEqual(at('17:00'));
+    expect(autoCloseAt({ startedAt, latestEnd, lastInput: null })).toEqual(startedAt);
+    expect(autoCloseAt({ startedAt, latestEnd, lastInput: at('23:00') })).toEqual(latestEnd);
+    expect(autoCloseAt({ startedAt, latestEnd, lastInput: null, meetingUntil: null })).toEqual(
+      startedAt,
+    );
+  });
+
+  it('a meeting that ended after the last input moves the close to its end', () => {
+    expect(
+      autoCloseAt({ startedAt, latestEnd, lastInput: at('17:00'), meetingUntil: at('18:30') }),
+    ).toEqual(at('18:30'));
+    expect(
+      autoCloseAt({ startedAt, latestEnd, lastInput: null, meetingUntil: at('18:30') }),
+    ).toEqual(at('18:30'));
+  });
+
+  it('input after the meeting still wins', () => {
+    expect(
+      autoCloseAt({ startedAt, latestEnd, lastInput: at('19:00'), meetingUntil: at('18:30') }),
+    ).toEqual(at('19:00'));
+  });
+
+  it('is never held back to the hard stop: the meeting is not cut short', () => {
+    expect(
+      autoCloseAt({ startedAt, latestEnd, lastInput: at('17:00'), meetingUntil: at('23:05') }),
+    ).toEqual(at('23:05'));
+  });
+
+  it('lastInputWithMeeting takes the later of the two', () => {
+    expect(lastInputWithMeeting(null, null)).toBeNull();
+    expect(lastInputWithMeeting(at('10:00'), null)).toEqual(at('10:00'));
+    expect(lastInputWithMeeting(null, at('11:00'))).toEqual(at('11:00'));
+    expect(lastInputWithMeeting(at('10:00'), at('11:00'))).toEqual(at('11:00'));
+    expect(lastInputWithMeeting(at('12:00'), at('11:00'))).toEqual(at('12:00'));
   });
 });

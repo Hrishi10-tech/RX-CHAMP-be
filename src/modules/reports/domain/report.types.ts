@@ -51,6 +51,8 @@ export interface PersonDaySummary {
   dayOff?: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
   focusSec: number;
   expectedSec: number;
+  /** 3.6: the day's target with future working days included (expectedSec is 0 on those). Absent on a month locked before 3.6. */
+  plannedSec?: number;
   breakSec: number;
   meetingSec: number;
   approvedPlusSec: number;
@@ -102,6 +104,16 @@ export interface PersonDaySummary {
   compOffEarnedDays?: number;
   /** A biometric day closed with no check-out (3.5). */
   noCheckout?: boolean;
+  /**
+   * 3.6: seconds nobody was at the computer, outside breaks and meetings; null when no agent
+   * reported on the day. The team day and a month's worked days; absent elsewhere.
+   */
+  idleSec?: number | null;
+  /**
+   * 3.6: this day's payroll is not calculated (biometric staff, the integration off): no
+   * paid time. Absent on every other day. Tracking and focus time stay as they are.
+   */
+  payrollPaused?: boolean;
 }
 
 export interface TimelineSegment {
@@ -155,6 +167,8 @@ export interface MonthTotals {
   extra: number;
   focusSec: number;
   expectedSec: number;
+  /** 3.6: the whole month's target, future working days included. Absent on a month locked before 3.6. */
+  plannedSec?: number;
   avgFocusSec: number;
   lateStarts: number;
   /** Late starts still without a reason (3.2). */
@@ -187,6 +201,11 @@ export interface MonthTotals {
   noCheckoutDays?: number;
   /** Paid leave time: the expected time the leave covers (3.4). */
   leaveSec?: number;
+  /**
+   * The month's idle time, the sum of its days by the same rule as one day (3.6); null when no
+   * agent reported on any of them. Absent on a month locked before it was kept.
+   */
+  idleSec?: number | null;
   needsALook: boolean;
   // ---- 4.0
   /** Sum of every day's target (future working days included). */
@@ -205,6 +224,22 @@ export interface MonthTotals {
   adjustedSec?: number;
 }
 
+/**
+ * A person's payroll standing for the month (3.6): present only when some day of it is
+ * paused. `totals` are what payroll counts: the days calculated, with the paused ones left out.
+ */
+export interface PersonPayroll {
+  /** Every day so far is paused: the person is left out of payroll altogether. */
+  paused: boolean;
+  /** "Payroll paused · biometric integration pending". */
+  label: string;
+  /** Days so far whose payroll is not calculated, and the first and last of them. */
+  pausedDays: number;
+  pausedFrom: string;
+  pausedTo: string;
+  totals: MonthTotals;
+}
+
 export interface PersonMonthReport {
   person: ReportPerson;
   month: string;
@@ -214,12 +249,16 @@ export interface PersonMonthReport {
   days: PersonDaySummary[];
   /** Active minutes per hour 0..23, per day. */
   heatmap: { date: string; hours: number[] }[];
+  /** 3.6: set when some day of the month is paused (biometric staff). */
+  payroll?: PersonPayroll;
 }
 
 export interface TeamMonthRow {
   person: ReportPerson;
   totals: MonthTotals;
   days: { date: string; dayClass: DayClass; focusSec: number }[];
+  /** 3.6: set when some day of the month is paused (biometric staff). */
+  payroll?: PersonPayroll;
 }
 
 export interface TeamMonthReport {
@@ -227,7 +266,10 @@ export interface TeamMonthReport {
   scope: 'TEAM' | 'ALL';
   locked: boolean;
   generatedAt: string;
+  /** What payroll counts: every row's calculated days (3.6: paused days and people left out). */
   totals: MonthTotals & { people: number };
+  /** Everyone in `rows` as tracked, paused days and people included (3.6). */
+  trackedTotals: MonthTotals & { people: number };
   rows: TeamMonthRow[];
 }
 
@@ -242,6 +284,11 @@ export interface MonthSnapshot {
   generatedAt: string;
   team: TeamMonthReport;
   persons: Record<string, PersonMonthReport>;
+  /**
+   * 3.6: biometric staff with nothing calculated this month: not part of the payroll run,
+   * kept apart so their reports still show them, labelled. Absent when there are none.
+   */
+  payrollPaused?: Record<string, PersonMonthReport>;
 }
 
 export interface MonthLockView {

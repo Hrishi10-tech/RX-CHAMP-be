@@ -13,6 +13,7 @@ import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
 import { dayLeaveView, expectedAfterLeave, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { expectedSecOf, isWorkdayFor, lateStartDetail } from '../domain/attendance';
 import { quietHoursOf } from '../domain/hourly';
+import { idleOfInput } from '../domain/input-activity';
 import { PersonRow, PresenceRow, WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
 import { focusOfDay, meetingsOfDay, PersonDayData } from '../domain/day';
 import { WORK_SESSION_REPOSITORY, WorkSessionRepository } from '../domain/work-session.repository';
@@ -124,6 +125,12 @@ export class TeamTodayService {
           : Promise.resolve(new Map<string, DayPunch[]>()),
       ]);
     const pendingBy = new Map(pending.map((p) => [`${p.userId}|${p.date}`, p.pending]));
+    const inputs = await this.dayData
+      .inputOf(
+        people.map((p) => data.day(p.id, dateOf.get(p.id) ?? asked)),
+        now,
+      )
+      .catch(() => null);
     const openBy = new Map<string, PresenceRow>();
     for (const p of openPresence) if (p.endedAt === null) openBy.set(p.userId, p);
 
@@ -199,6 +206,7 @@ export class TeamTodayService {
           leave: workday ? dayLeaveView(d.leave) : null,
           focus: focusView(focus),
           expectedSec: workday ? expectedAfterLeave(expectedSecOf(shift), leave) : 0,
+          idleSec: inputs ? idleOfInput(inputs.get(`${p.id}|${date}`)) : null,
           breaks: slots.map((slot) => {
             const rec = recordFor(slot.kind);
             let cell: TeamBreakStatus;

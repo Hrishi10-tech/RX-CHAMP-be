@@ -8,6 +8,7 @@ import {
 import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
+import { WorkdayChangedEvent } from '@shared/events/workday-changed.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { appTimezone, time12InZone } from '@shared/utils/timezone';
 import { BreakApprovalPolicy } from '@modules/shifts/application/break-approval.policy';
@@ -25,6 +26,7 @@ import {
   MeetingRecordRepository,
   MeetingRecordRow,
 } from '../domain/meeting-record.repository';
+import { STATUS_MEETING_LABEL, statusCutoff, StatusStartSource } from '../domain/meeting-status';
 import { cleanParticipants, cleanText } from '../domain/meetings';
 import { meetingRequestedCopy, NOTICE } from '../domain/notice-copy';
 import { WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
@@ -45,7 +47,8 @@ export function meetingView(
     id: m.id,
     date: m.date,
     mode: m.mode,
-    agenda: m.agenda,
+    // A status meeting has no agenda (D-20): older clients list it under this label.
+    agenda: m.kind === 'STATUS' ? STATUS_MEETING_LABEL : m.agenda,
     participants: m.participants.map((p) => (p.id ? { id: p.id, name: p.name } : { name: p.name })),
     momSender: m.momSender ?? null,
     startedAt: m.startedAt.toISOString(),
@@ -59,13 +62,37 @@ export function meetingView(
     decidedAt: m.decidedAt?.toISOString() ?? null,
     decisionNote: m.decisionNote,
     decidedByName: m.decidedById ? (names?.get(m.decidedById) ?? null) : null,
+    kind: m.kind ?? 'DECLARED',
+    startSource: m.startSource ?? null,
+    confirmedAt: m.confirmedAt?.toISOString() ?? null,
+    endReason: m.endReason ?? null,
   };
+}
+
+/** Why a status meeting cannot start now. */
+function statusStartRefused(
+  code: 'DAY_NOT_STARTED' | 'DAY_ENDED' | 'ON_BREAK' | 'MEETING_IN_PROGRESS',
+): ConflictError {
+  switch (code) {
+    case 'ON_BREAK':
+      return new ConflictError(
+        "You're on a break. Resume work before starting a meeting.",
+        'ON_BREAK',
+      );
+    case 'MEETING_IN_PROGRESS':
+      return new ConflictError("You're already in a meeting.", 'MEETING_IN_PROGRESS');
+    default:
+      return dayClosedError(code);
+  }
 }
 
 /**
  * Meetings (SPEC 1.6): started live from the agent, or logged afterwards. Both
  * count as focus time as they happen and go to the person's approver; a live one
  * becomes decidable when it ends.
+ *
+ * 3.6 adds status meetings ("In a meeting", D-20): the same live meeting with only a
+ * start and an end, no approval, and the 2 hour check as its control (D-22).
  */
 @Injectable()
 export class MeetingsService {
@@ -127,6 +154,7 @@ export class MeetingsService {
     now: Date,
     opts: { agent40?: boolean } = {},
   ): Promise<{ meeting: MeetingRecordView; presence: CurrentPresenceLite }> {
+    await this.sessions.assertAgentDay(me.id, 'act');
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.person(me.id);
     const { agenda, participants, momSender } = await this.details(me, dto, !!opts.agent40);
@@ -207,6 +235,100 @@ export class MeetingsService {
     return { meeting: meetingView(result.record, now), discarded: false };
   }
 
+  // ---- Status meetings (3.6) ---------------------------------------------------------
+
+  /**
+   * In a meeting, from the button or a suggestion the person tapped. Nothing travels but
+   * the start. The day must be open (never an implicit one here, whoever calls) and the
+   * person must not be on a break or already in a meeting.
+   */
+  async statusStart(me: AuthenticatedUser, source: StatusStartSource, now: Date): Promise<void> {
+    await this.sessions.assertAgentDay(me.id, 'act');
+    await this.sessions.autoCloseIfStale(me.id, now);
+    await this.endUnanswered(now, [me.id]);
+    const today = await this.sessions.todayFor(me.id, now);
+    const result = await this.meetings.startLive(
+      {
+        userId: me.id,
+        date: today,
+        agenda: '',
+        participants: [],
+        approvalStatus: 'NOT_REQUIRED',
+        routing: { approverRole: null, approverId: null },
+        status: { source },
+      },
+      'AGENT_31',
+      now,
+      today,
+    );
+    if (!result.ok) throw statusStartRefused(result.code);
+    void this.presence.broadcast(
+      me.id,
+      {
+        id: result.presenceSessionId,
+        userId: me.id,
+        deviceId: null,
+        type: 'MEETING',
+        note: null,
+        date: today,
+        startedAt: now,
+        endedAt: null,
+        durationSec: null,
+      },
+      now,
+    );
+  }
+
+  /**
+   * End meeting: whichever meeting is running, so the button always gets the person back
+   * to Working. Nothing running answers as it stands (the 10 minute fallback may have got
+   * there first).
+   */
+  async statusEnd(me: AuthenticatedUser, now: Date): Promise<void> {
+    await this.endUnanswered(now, [me.id]);
+    const running = await this.meetings.findRunning(me.id);
+    if (!running) return;
+    if (running.record) {
+      await this.end(me, running.record.id, now);
+      return;
+    }
+    await this.presence.endOpen(me.id, now);
+    void this.presence.broadcast(me.id, null, now);
+  }
+
+  /**
+   * "Still in it": the 2 hours start again from now. Too late (the fallback moment has
+   * passed) the switch back to Working stands; nothing to confirm answers as it stands.
+   */
+  async statusConfirm(me: AuthenticatedUser, now: Date): Promise<void> {
+    const result = await this.meetings.confirmStatus(me.id, now);
+    if (result.kind === 'TOO_LATE') await this.endUnanswered(now, [me.id]);
+  }
+
+  /**
+   * The 2 hour check: every status meeting not confirmed for 2 hours and 10 minutes ends
+   * at exactly that moment, and the person is back to Working; idle counts from there
+   * (D-22). The minute job runs it for everyone, and each read of a day for its people.
+   */
+  async endUnanswered(now: Date, userIds: string[] | null = null): Promise<number> {
+    const due = await this.meetings.listStatusUnanswered(statusCutoff(now), userIds);
+    let ended = 0;
+    for (const m of due) {
+      try {
+        if (!(await this.meetings.endStatusUnanswered(m.id, m.userId, now))) continue;
+        ended += 1;
+        void this.presence.broadcast(m.userId, null, now);
+        await this.events.publish(
+          WorkdayChangedEvent.eventName,
+          new WorkdayChangedEvent([m.userId], 'MEETING', now.toISOString()),
+        );
+      } catch (err) {
+        this.logger.warn(`status meeting ${m.id} not ended: ${(err as Error).message}`);
+      }
+    }
+    return ended;
+  }
+
   async logPast(
     me: AuthenticatedUser,
     dto: LogPastMeetingDto,
@@ -214,6 +336,7 @@ export class MeetingsService {
     now: Date,
     opts: { agent40?: boolean } = {},
   ): Promise<{ meeting: MeetingRecordView }> {
+    await this.sessions.assertAgentDay(me.id, 'act');
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.person(me.id);
     const { agenda, participants, momSender } = await this.details(me, dto, !!opts.agent40);
@@ -291,6 +414,7 @@ export class MeetingsService {
    * minute is discarded. The approver is told about each one that now waits.
    */
   async heal(userIds: string[] | null, now: Date): Promise<void> {
+    await this.endUnanswered(now, userIds);
     const result = await this.meetings.heal(userIds);
     for (const m of result.healed) await this.requested(m);
     // The lists showed it while it ran. (POST /meetings/:id/end says so for its own.)

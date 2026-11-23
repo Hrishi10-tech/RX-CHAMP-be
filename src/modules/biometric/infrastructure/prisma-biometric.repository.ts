@@ -9,6 +9,7 @@ import {
   AttendanceWrite,
   BiometricPerson,
   BiometricRepository,
+  IntegrationPeriodRecord,
   DeviceSeen,
   KeyRecord,
   NewPunch,
@@ -272,6 +273,56 @@ export class PrismaBiometricRepository implements BiometricRepository {
 
   // ---- People -----------------------------------------------------------------
 
+  async integrationPeriods(companyId: string): Promise<IntegrationPeriodRecord[]> {
+    const rows = await this.prisma.biometricIntegrationPeriod.findMany({
+      where: { companyId: org(companyId) },
+      orderBy: [{ fromDate: 'desc' }, { startedAt: 'desc' }],
+    });
+    const ids = [
+      ...new Set(rows.flatMap((r) => [r.startedById, r.endedById]).filter((x): x is string => !!x)),
+    ];
+    const people = ids.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const names = new Map(people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()]));
+    const nameOf = (id: string | null) => (id ? (names.get(id) ?? 'Former user') : null);
+    return rows.map((r) => ({
+      id: r.id,
+      fromDate: r.fromDate,
+      toDate: r.toDate,
+      startedAt: r.startedAt,
+      endedAt: r.endedAt,
+      startedByName: nameOf(r.startedById),
+      endedByName: nameOf(r.endedById),
+    }));
+  }
+
+  async switchIntegration(
+    companyId: string,
+    on: boolean,
+    date: string,
+    at: Date,
+    byId: string,
+  ): Promise<boolean> {
+    if (!on) {
+      const res = await this.prisma.biometricIntegrationPeriod.updateMany({
+        where: { companyId: org(companyId), toDate: null },
+        data: { toDate: date, endedAt: at, endedById: byId },
+      });
+      return res.count > 0;
+    }
+    // Already on: the partial unique index (one open period per organisation) keeps two
+    // taps from opening two periods.
+    const res = await this.prisma.biometricIntegrationPeriod.createMany({
+      data: [{ companyId, fromDate: date, startedAt: at, startedById: byId }],
+      skipDuplicates: true,
+    });
+    return res.count > 0;
+  }
+
   async people(filter: {
     search?: string;
     companyId: string;
@@ -326,7 +377,7 @@ export class PrismaBiometricRepository implements BiometricRepository {
     return new Map(rows.map((r) => [r.biometricCode!, toPerson(r)]));
   }
 
-  async setAttendance(rows: AttendanceWrite[]): Promise<void> {
+  async setAttendance(rows: AttendanceWrite[], at: Date, byId: string): Promise<void> {
     if (!rows.length) return;
     await this.prisma.$transaction(async (tx) => {
       // Codes move first to nobody, so swapping two people's codes never trips the unique index.
@@ -342,6 +393,18 @@ export class PrismaBiometricRepository implements BiometricRepository {
             biometricCode: r.biometricCode,
             attendanceSourceFrom: r.attendanceSourceFrom,
           },
+        });
+      }
+      const ended = rows.filter((r) => r.endedBiometric);
+      if (ended.length) {
+        await tx.biometricSourcePeriod.createMany({
+          data: ended.map((r) => ({
+            userId: r.userId,
+            fromDate: r.endedBiometric!.fromDate,
+            toDate: r.endedBiometric!.toDate,
+            changedAt: at,
+            changedById: byId,
+          })),
         });
       }
     });

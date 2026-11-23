@@ -368,6 +368,11 @@ export interface TeamTodayRow {
   leave?: DayLeaveView | null;
   focus: FocusView;
   expectedSec: number;
+  /**
+   * 3.6: seconds nobody was at the computer, inside the working day and outside breaks and
+   * meetings (the day report's input figures); null when the input could not be read.
+   */
+  idleSec: number | null;
   breaks: {
     kind: BreakKind;
     label: string;

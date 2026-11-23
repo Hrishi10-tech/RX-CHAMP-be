@@ -2,6 +2,7 @@ import {
   afterSkipActivity,
   afterSkipWindow,
   breakdownIn,
+  idleOfInput,
   InputSample,
   inputIntervals,
   withMeetings,
@@ -213,5 +214,29 @@ describe('afterSkipActivity with a meeting after the skip (D-22)', () => {
       activeSec: 15 * 60,
       idleSec: 0,
     });
+  });
+});
+
+describe('idleOfInput: idle as a figure a manager reads (3.6)', () => {
+  const b = (activeSec: number, idleSec: number, noDataSec: number) => ({
+    activeSec,
+    idleSec,
+    noDataSec,
+    spanSec: activeSec + idleSec + noDataSec,
+  });
+
+  it('no agent reported on any of the time: nothing was read, so there is no figure', () => {
+    expect(idleOfInput(b(0, 0, 32400))).toBeNull();
+  });
+
+  it('an agent reported: the figure, zero included', () => {
+    expect(idleOfInput(b(3600, 600, 28200))).toBe(600);
+    expect(idleOfInput(b(0, 600, 28200))).toBe(600);
+    expect(idleOfInput(b(3600, 0, 28800))).toBe(0);
+  });
+
+  it('a day all in meetings or on breaks has no time to read, and reads zero', () => {
+    expect(idleOfInput(b(0, 0, 0))).toBe(0);
+    expect(idleOfInput(undefined)).toBe(0);
   });
 });

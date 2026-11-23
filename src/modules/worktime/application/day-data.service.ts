@@ -21,6 +21,17 @@ import {
 } from '../domain/focus-adjustment.repository';
 import { buildHourly, HourActivity } from '../domain/hourly';
 import {
+  breakdownIn,
+  IDLE_LEAD_IN_SEC,
+  idleOfInput,
+  InputBreakdown,
+  inputIntervals,
+  InputIntervals,
+  SAMPLE_CAP_SEC,
+} from '../domain/input-activity';
+import { INPUT_SAMPLES_READER, InputSamplesReader } from '../domain/input-samples.reader';
+import { Interval, normalize, subtract } from '../domain/intervals';
+import {
   MEETING_RECORD_REPOSITORY,
   MeetingRecordRepository,
   MeetingRecordRow,
@@ -77,8 +88,25 @@ interface CachedCoverage {
   /** Ended before the backlog window: no sample can join it any more. */
   settled: boolean;
 }
+/** Settled (person, day) input kept per process: more numbers each, so fewer of them. */
+const SETTLED_INPUT_CACHE_MAX = 50_000;
 /** People per query when warming the cache. */
 const WARM_BATCH = 200;
+
+const NO_INPUT: InputIntervals = Object.freeze({ active: [], idle: [] });
+
+/**
+ * The time input is read from: the day's work sessions minus breaks and meetings. A logged
+ * meeting a manager rejected is no meeting: its time is read like any other (3.6, as the
+ * rollup, the analytics and the presence views do).
+ */
+function availableOf(d: PersonDayData, now: Date): Interval[] {
+  const { work, breaks, meetings } = intervalsOfDay(
+    { ...d, meetingRecords: d.meetingRecords.filter((m) => m.approvalStatus !== 'REJECTED') },
+    now,
+  );
+  return subtract(normalize(work), normalize([...breaks, ...meetings]));
+}
 
 function group<T>(rows: T[], keyOf: (r: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();
@@ -181,6 +209,8 @@ export class DayDataService implements OnModuleInit {
   private readonly coverage = new Map<string, CachedCoverage>();
   /** Per person: how many times samples changed their closed days (ActivityBackfilledEvent). */
   private readonly sampleVersions = new Map<string, number>();
+  /** Input of settled days, by `userId|date` (see inputBetween). */
+  private readonly settledInput = new Map<string, InputIntervals>();
 
   constructor(
     @Inject(WORK_SESSION_REPOSITORY) private readonly sessions: WorkSessionRepository,
@@ -195,6 +225,9 @@ export class DayDataService implements OnModuleInit {
     // 3.4: approved leave, by person and day.
     @Optional() private readonly leaveDays?: LeaveDaysService,
     @Optional() private readonly wfhDays?: WfhDaysService,
+    @Optional()
+    @Inject(INPUT_SAMPLES_READER)
+    private readonly samples?: InputSamplesReader,
   ) {}
 
   onModuleInit(): void {
@@ -317,6 +350,83 @@ export class DayDataService implements OnModuleInit {
   }
 
   /**
+   * Keyboard and mouse input of many loaded days, by `userId|date`, inside the time
+   * available for it (work sessions minus breaks and meetings), on the rules every screen
+   * shares (Fix 10): active, idle (nobody at the computer) and no data. One query for all.
+   */
+  async inputOf(days: PersonDayData[], now: Date): Promise<Map<string, InputBreakdown>> {
+    const wanted = days.map((d) => ({
+      k: key(d.userId, d.date),
+      userId: d.userId,
+      available: availableOf(d, now),
+    }));
+    const windows = wanted
+      .filter((w) => w.available.length)
+      .map((w) => ({
+        key: w.k,
+        userId: w.userId,
+        from: new Date(w.available[0].start - SAMPLE_CAP_SEC * 1000),
+        to: new Date(w.available[w.available.length - 1].end + IDLE_LEAD_IN_SEC * 1000),
+      }));
+    const got =
+      windows.length && this.samples ? await this.samples.samplesInWindows(windows) : null;
+    return new Map(
+      wanted.map((w) => [
+        w.k,
+        breakdownIn(inputIntervals(got?.get(w.k) ?? [], now), w.available, now),
+      ]),
+    );
+  }
+
+  /**
+   * Who was active and who idle, by `userId|date`, for many people and days at once, on the
+   * rules of {@link inputOf} and read in SQL, as a month is far too many samples to read here.
+   * A settled day can no longer change, so it is kept in memory, as in {@link bucketHours}.
+   * The intervals are kept rather than a figure: what they count towards still moves when a
+   * logged meeting is decided (see {@link idleFrom}).
+   */
+  async inputBetween(
+    userIds: string[],
+    fromDate: string,
+    toDate: string,
+    now: Date,
+  ): Promise<Map<string, InputIntervals>> {
+    const out = new Map<string, InputIntervals>();
+    if (!userIds.length) return out;
+    const days = await this.reader.sessionDays(
+      userIds,
+      fromDate,
+      toDate,
+      new Date(now.getTime() - SETTLED_AFTER_MS),
+    );
+    const live: SessionDayRow[] = [];
+    for (const d of days) {
+      const hit = d.settled ? this.settledInput.get(key(d.userId, d.date)) : undefined;
+      if (hit) out.set(key(d.userId, d.date), hit);
+      else live.push(d);
+    }
+    if (!live.length) return out;
+    const fresh = await this.reader.inputOfDays(live, now);
+    for (const d of live) {
+      const k = key(d.userId, d.date);
+      const input = fresh.get(k) ?? NO_INPUT;
+      out.set(k, input);
+      if (d.settled) {
+        if (this.settledInput.size >= SETTLED_INPUT_CACHE_MAX) this.settledInput.clear();
+        this.settledInput.set(k, input);
+      }
+    }
+    return out;
+  }
+
+  /** A loaded day's idle from {@link inputBetween}; null when no agent reported on it. */
+  idleFrom(d: PersonDayData, input: Map<string, InputIntervals>, now: Date): number | null {
+    return idleOfInput(
+      breakdownIn(input.get(key(d.userId, d.date)) ?? NO_INPUT, availableOf(d, now), now),
+    );
+  }
+
+  /**
    * Active seconds per local hour for many people and days, aggregated in SQL.
    * A settled day (every session closed more than SETTLED_AFTER_MS ago) can no
    * longer change, so its buckets are kept in memory. A closed day still inside
@@ -401,6 +511,7 @@ export class DayDataService implements OnModuleInit {
     const before = this.settled.size;
     for (let i = 0; i < ids.length; i += WARM_BATCH) {
       await this.bucketHours(ids.slice(i, i + WARM_BATCH), from, today, now);
+      await this.inputBetween(ids.slice(i, i + WARM_BATCH), from, today, now);
     }
     return this.settled.size - before;
   }

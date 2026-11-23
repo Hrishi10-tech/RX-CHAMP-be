@@ -14,29 +14,34 @@ import { grantsOf, requireOrg } from '@shared/tenancy';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { WORKTIME_READER, WorktimeReader } from '@modules/worktime/domain/worktime.reader';
 import { monthlyReportCopy, NOTICE } from '@modules/worktime/domain/notice-copy';
+import { inPayroll, payrollPartOf } from '../domain/payroll-pause';
 import { monthDates } from '../domain/report-builder';
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
-import { PersonMonthReport, ReportRunView } from '../domain/report.types';
+import { MonthTotals, PersonMonthReport, ReportRunView } from '../domain/report.types';
 import { ReportsService } from './reports.service';
 
 /** The small summary a run keeps (the full report is always built live on opening). */
 export function runSummary(persons: PersonMonthReport[]): Record<string, number> {
-  const sum = (f: (p: PersonMonthReport) => number) => persons.reduce((s, p) => s + f(p), 0);
+  // 3.6: a run counts the days calculated; biometric staff with none are left out, and counted.
+  const counted = inPayroll(persons).map((p) => payrollPartOf(p).totals);
+  const sum = (f: (t: MonthTotals) => number) => counted.reduce((s, t) => s + f(t), 0);
+  const paused = persons.length - counted.length;
   return {
-    people: persons.length,
-    workdays: sum((p) => p.totals.workdays),
-    full: sum((p) => p.totals.full),
-    half: sum((p) => p.totals.half),
-    absent: sum((p) => p.totals.absent),
-    extra: sum((p) => p.totals.extra),
-    focusSec: sum((p) => p.totals.focusSec),
-    paidSec: sum((p) => p.totals.paidSec ?? 0),
-    unverifiedSec: sum((p) => p.totals.unverifiedSec ?? 0),
-    expectedSec: sum((p) => p.totals.expectedSec),
-    lateStarts: sum((p) => p.totals.lateStarts),
-    pending: sum((p) => p.totals.pending),
-    quietHours: sum((p) => p.totals.quietHours),
-    needsALook: persons.filter((p) => p.totals.needsALook).length,
+    people: counted.length,
+    workdays: sum((t) => t.workdays),
+    full: sum((t) => t.full),
+    half: sum((t) => t.half),
+    absent: sum((t) => t.absent),
+    extra: sum((t) => t.extra),
+    focusSec: sum((t) => t.focusSec),
+    paidSec: sum((t) => t.paidSec ?? 0),
+    unverifiedSec: sum((t) => t.unverifiedSec ?? 0),
+    expectedSec: sum((t) => t.expectedSec),
+    lateStarts: sum((t) => t.lateStarts),
+    pending: sum((t) => t.pending),
+    quietHours: sum((t) => t.quietHours),
+    needsALook: counted.filter((t) => t.needsALook).length,
+    ...(paused ? { payrollPaused: paused } : {}),
   };
 }
 
@@ -104,10 +109,7 @@ export class ReportRunsService implements OnApplicationBootstrap, OnModuleDestro
 
   async list(me: AuthenticatedUser): Promise<{ items: ReportRunView[] }> {
     // A Super Admin sees the organisation's everyone runs (the Admin's).
-    const rows = await this.store.listRuns(
-      requireOrg(me),
-      seesEveryOrg(me.role) ? null : me.id,
-    );
+    const rows = await this.store.listRuns(requireOrg(me), seesEveryOrg(me.role) ? null : me.id);
     // Quiet hours (and who needs a look for them) are activity data: a Manager
     // without the activity grant never reads them, whenever the run was made.
     const activity = grantsOf(me).activity;

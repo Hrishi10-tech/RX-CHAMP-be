@@ -186,4 +186,11 @@ export class PatchBiometricSettingsDto {
   @ApiPropertyOptional({ description: 'The pull sign-in password (write only; null clears it)' })
   @Allow()
   password?: unknown;
+  @ApiPropertyOptional({
+    description:
+      'Integration on (3.6): off pauses payroll for biometric staff; on calculates it from today. ' +
+      'Earlier days stay as they were',
+  })
+  @Allow()
+  integrationOn?: unknown;
 }

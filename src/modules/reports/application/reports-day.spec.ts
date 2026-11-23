@@ -94,8 +94,11 @@ function setup(adjustments: unknown[] = []) {
     plans as never,
     {} as never,
     adjustmentViews as never,
-    { samplesInWindows: jest.fn(async () => new Map()) } as never,
     { punchesOf: jest.fn(async () => new Map()) } as never,
+    {
+      list: jest.fn(async () => new Map()),
+      biometricStretches: jest.fn(async () => new Map()),
+    } as never,
   );
   return { svc, adjustmentViews };
 }

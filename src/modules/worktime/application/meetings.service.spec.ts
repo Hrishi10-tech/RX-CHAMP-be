@@ -4,7 +4,7 @@ import { ConflictError } from '@shared/exceptions/app.exception';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { WorkdayChangedEvent } from '@shared/events/workday-changed.event';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
-import { MeetingRecordRow } from '../domain/meeting-record.repository';
+import { MeetingRecordRow, NewMeeting } from '../domain/meeting-record.repository';
 import { MeetingsService, meetingView } from './meetings.service';
 
 const ist = (hm: string) => {
@@ -584,6 +584,20 @@ describe('MeetingsService status meetings (D-20)', () => {
       'staff',
       expect.objectContaining({ type: 'MEETING', note: null }),
       NOW,
+    );
+    expect(notices()).toHaveLength(0);
+  });
+
+  it("4.0: never routed to the department's managers or the organisation admins", async () => {
+    const { svc, repo, notices } = setup();
+    await svc.statusStart(STAFF, 'BUTTON', NOW);
+    // A declared meeting reads the person's department to route it; a status one never does.
+    expect((repo.startLive.mock.calls[0][0] as unknown as NewMeeting).routing).toEqual({
+      approverRole: null,
+      approverId: null,
+    });
+    expect((repo.startLive.mock.calls[0][0] as unknown as NewMeeting).approvalStatus).toBe(
+      'NOT_REQUIRED',
     );
     expect(notices()).toHaveLength(0);
   });

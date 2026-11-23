@@ -1,5 +1,7 @@
 import { Role } from '@shared/rbac/roles.enum';
+import { ROLES_KEY } from '@shared/rbac/roles.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
+import { BiometricController } from '../presentation/biometric.controller';
 import { biometricFromStored } from '../domain/biometric-settings';
 import { NewPunch, PunchRecord } from '../domain/biometric.repository';
 import { BiometricAdminService } from './biometric-admin.service';
@@ -191,7 +193,7 @@ describe('biometric settings and the pull per organisation (4.0)', () => {
       read: jest.fn(async (k: string) => rows.get(k) ?? null),
       write: jest.fn(async (k: string, v: unknown) => void rows.set(k, v)),
     };
-    const svc = new BiometricSettingsService(store as never);
+    const svc = new BiometricSettingsService(store as never, {} as never);
     // The 3.5 platform-wide value is never read by an organisation.
     expect((await svc.get(ORG_A)).duplicateWindowSec).toBe(
       biometricFromStored(null).duplicateWindowSec,
@@ -216,5 +218,70 @@ describe('biometric settings and the pull per organisation (4.0)', () => {
     const run = jest.spyOn(pull, 'run').mockResolvedValue({} as never);
     await pull.tick(NOW);
     expect(run.mock.calls).toEqual([[ORG_B, NOW, false]]);
+  });
+});
+
+describe('the integration switch and the payroll pause per organisation (3.6 on 4.0)', () => {
+  const rolesOf = (method: 'patchSettings' | 'getSettings'): Role[] =>
+    Reflect.getMetadata(ROLES_KEY, BiometricController.prototype[method]);
+
+  it("the organisation's admins (a Super Admin acting in it) switch it; the Super Manager reads", () => {
+    expect([...rolesOf('patchSettings')].sort()).toEqual([Role.ADMIN, Role.SUPER_ADMIN].sort());
+    expect([...rolesOf('getSettings')].sort()).toEqual(
+      [Role.ADMIN, Role.SUPER_ADMIN, Role.SUPER_MANAGER].sort(),
+    );
+  });
+
+  it("switches the organisation in view, never another's; on all organisations, pick one first", async () => {
+    const store = { read: jest.fn(async () => null), write: jest.fn(async () => undefined) };
+    const repo = {
+      integrationPeriods: jest.fn(async () => []),
+      switchIntegration: jest.fn(async () => true),
+    };
+    const settings = new BiometricSettingsService(store as never, repo as never);
+    const controller = new BiometricController({} as never, {} as never, settings, {} as never);
+    await controller.patchSettings(actor('sa', Role.SUPER_ADMIN, ORG_B), { integrationOn: true });
+    expect(repo.switchIntegration.mock.calls[0]).toEqual(
+      expect.arrayContaining([ORG_B, true, 'sa']),
+    );
+    expect(repo.integrationPeriods).toHaveBeenCalledWith(ORG_B);
+    await expect(
+      controller.patchSettings(actor('sa', Role.SUPER_ADMIN, null), { integrationOn: true }),
+    ).rejects.toMatchObject({ code: 'ORG_REQUIRED' });
+    expect(repo.switchIntegration).toHaveBeenCalledTimes(1);
+  });
+
+  it("the status shows the organisation's own switch to its readers, and refuses the rest", async () => {
+    const repo = {
+      stats: jest.fn(async () => ({
+        lastPunchAt: null,
+        lastReceivedAt: null,
+        today: 0,
+        unmatched: 0,
+      })),
+      people: jest.fn(async () => []),
+    };
+    const settings = {
+      pullState: jest.fn(async () => ({})),
+      get: jest.fn(async () => biometricFromStored(null)),
+      integration: jest.fn(async (companyId: string) => ({ on: companyId === ORG_B, periods: [] })),
+    };
+    const svc = new BiometricAdminService(
+      repo as never,
+      {} as never,
+      {} as never,
+      { list: jest.fn(async () => []) } as never,
+      settings as never,
+    );
+    await expect(svc.status(actor('admin-b', Role.ADMIN, ORG_B), NOW)).resolves.toMatchObject({
+      integrationOn: true,
+    });
+    await expect(svc.status(actor('sm', Role.SUPER_MANAGER, ORG_A), NOW)).resolves.toMatchObject({
+      integrationOn: false,
+    });
+    expect(settings.integration.mock.calls.map((c) => c[0])).toEqual([ORG_B, ORG_A]);
+    await expect(svc.status(actor('m', Role.MANAGER), NOW)).rejects.toMatchObject({
+      status: 403,
+    });
   });
 });

@@ -8,6 +8,7 @@ import { SHIFT_PEOPLE_READER, ShiftPeopleReader } from '@modules/shifts/domain/s
 import { PeopleScopeService } from '@modules/worktime/application/people-scope.service';
 import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/approvals.reader';
 import { WORKTIME_READER, WorktimeReader } from '@modules/worktime/domain/worktime.reader';
+import { inPayroll } from '../domain/payroll-pause';
 import { monthDates } from '../domain/report-builder';
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
 import { MonthLockBlockers, MonthLockView, MonthSnapshot } from '../domain/report.types';
@@ -187,11 +188,26 @@ export class MonthLockService {
     );
     const people = everyone.filter((p) => p.active || worked.has(p.id));
     const built = await this.reports.buildMonth(people, month, 'ALL', now);
+    // 3.6: biometric staff with nothing calculated are not part of the run. They stay apart,
+    // so their reports can still show them with the label.
+    const counted = inPayroll(built.persons);
+    const paused = built.persons.filter((p) => p.payroll?.paused);
     return {
       version: 1,
       generatedAt: now.toISOString(),
-      team: { ...built.team, locked: true },
-      persons: Object.fromEntries(built.persons.map((p) => [p.person.id, { ...p, locked: true }])),
+      team: {
+        ...built.team,
+        locked: true,
+        rows: built.team.rows.filter((r) => !r.payroll?.paused),
+      },
+      persons: Object.fromEntries(counted.map((p) => [p.person.id, { ...p, locked: true }])),
+      ...(paused.length
+        ? {
+            payrollPaused: Object.fromEntries(
+              paused.map((p) => [p.person.id, { ...p, locked: true }]),
+            ),
+          }
+        : {}),
     };
   }
 

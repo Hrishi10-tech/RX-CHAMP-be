@@ -1,11 +1,15 @@
 import { Workbook, Worksheet } from 'exceljs';
 import { time12InZone } from '@shared/utils/timezone';
+import { inPayroll, payrollPartOf } from '../domain/payroll-pause';
 import { PersonDaySummary, PersonMonthReport } from '../domain/report.types';
 
 /**
  * The payroll workbook (SPEC 3.7): sheet "Payroll" with one row per person and
  * sheet "Days" with one row per person and day. Frozen bold header, sensible
  * widths, every number a real number (hours as decimals with two places).
+ *
+ * 3.6: both sheets hold what payroll counts. Biometric staff's paused days are left out, and
+ * sheet "Payroll paused" (only when there is someone to list) names them with the label.
  */
 
 const hours = (sec: number) => Math.round((sec / 3600) * 100) / 100;
@@ -69,6 +73,8 @@ const PAYROLL: Col[] = [
   { header: 'Work from home days', key: 'wfhDays', width: 19 },
   { header: 'Hours from home over the cap', key: 'wfhOverHours', width: 26, hours: true },
   { header: 'No check-out days', key: 'noCheckoutDays', width: 17 },
+  // 3.6, after every earlier column again: already inside the focus hours.
+  { header: 'Meeting hours', key: 'meetingHours', width: 13, hours: true },
 ];
 
 const DAYS: Col[] = [
@@ -113,6 +119,17 @@ const DAYS: Col[] = [
   { header: 'Hours from home counted', key: 'wfhHours', width: 22, hours: true },
   { header: 'Comp off earned', key: 'compOffEarned', width: 15 },
   { header: 'No check-out', key: 'noCheckout', width: 12 },
+];
+
+const PAUSED: Col[] = [
+  { header: 'Name', key: 'name', width: 26 },
+  { header: 'Email', key: 'email', width: 30 },
+  { header: 'Department', key: 'department', width: 16 },
+  { header: 'Manager', key: 'manager', width: 22 },
+  { header: 'Payroll', key: 'label', width: 46 },
+  { header: 'Paused days', key: 'pausedDays', width: 12 },
+  { header: 'From', key: 'from', width: 12 },
+  { header: 'To', key: 'to', width: 12 },
 ];
 
 function sheet(wb: Workbook, name: string, cols: Col[]): Worksheet {
@@ -174,8 +191,9 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
   wb.created = new Date();
   const payroll = sheet(wb, 'Payroll', PAYROLL);
   const days = sheet(wb, 'Days', DAYS);
-  for (const p of persons) {
-    const t = p.totals;
+  for (const p of inPayroll(persons)) {
+    const counted = payrollPartOf(p);
+    const t = counted.totals;
     payroll.addRow({
       name: p.person.name,
       email: p.person.email,
@@ -216,8 +234,26 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       wfhDays: t.wfhDays ?? 0,
       wfhOverHours: hours(t.wfhOverSec ?? 0),
       noCheckoutDays: t.noCheckoutDays ?? 0,
+      // A month locked before 3.6 stored no such total: read from its days.
+      meetingHours: hours(t.meetingSec ?? counted.days.reduce((s, d) => s + d.meetingSec, 0)),
     });
-    for (const d of p.days) days.addRow(dayRow(p, d, tz));
+    for (const d of counted.days) days.addRow(dayRow(p, d, tz));
+  }
+  const paused = persons.filter((p) => p.payroll);
+  if (paused.length) {
+    const list = sheet(wb, 'Payroll paused', PAUSED);
+    for (const p of paused) {
+      list.addRow({
+        name: p.person.name,
+        email: p.person.email,
+        department: p.person.department ?? '',
+        manager: p.person.managerName ?? '',
+        label: p.payroll?.label,
+        pausedDays: p.payroll?.pausedDays,
+        from: p.payroll?.pausedFrom,
+        to: p.payroll?.pausedTo,
+      });
+    }
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

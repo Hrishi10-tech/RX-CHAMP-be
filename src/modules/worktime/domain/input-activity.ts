@@ -168,6 +168,16 @@ export interface InputBreakdown {
   spanSec: number;
 }
 
+/**
+ * Idle as a figure a manager reads: null when no agent reported on any of the time (biometric
+ * staff, an agent left off), as nothing was read and a zero would look like a day with no idle.
+ * A day all in meetings or on breaks has no time to read, and reads zero.
+ */
+export function idleOfInput(b: InputBreakdown | undefined): number | null {
+  if (!b) return 0;
+  return b.activeSec === 0 && b.idleSec === 0 && b.noDataSec > 0 ? null : b.idleSec;
+}
+
 /** Active, idle and no-data seconds inside `windows`, counting only time up to `now`. */
 export function breakdownIn(
   intervals: InputIntervals,

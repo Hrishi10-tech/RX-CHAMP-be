@@ -63,6 +63,8 @@ import { CombinedViewsService } from './application/combined-views.service';
 import { OrganisationsOverviewController } from './presentation/organisations-overview.controller';
 import { PUNCHES_READER } from './domain/punches.reader';
 import { PrismaPunchesReader } from './infrastructure/prisma-punches.reader';
+import { INTEGRATION_PERIODS_READER } from './domain/integration-periods.reader';
+import { PrismaIntegrationPeriodsReader } from './infrastructure/prisma-integration-periods.reader';
 import { WfhSessionsService } from './application/wfh-sessions.service';
 
 /**
@@ -102,6 +104,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     { provide: AWAY_REPOSITORY, useClass: PrismaAwayRepository },
     { provide: FOCUS_ADJUSTMENT_REPOSITORY, useClass: PrismaFocusAdjustmentRepository },
     { provide: PUNCHES_READER, useClass: PrismaPunchesReader },
+    { provide: INTEGRATION_PERIODS_READER, useClass: PrismaIntegrationPeriodsReader },
     FocusAdjustmentsService,
     { provide: INPUT_SAMPLES_READER, useClass: PrismaInputSamplesReader },
     WfhSessionsService,
@@ -145,6 +148,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     WORK_SESSION_REPOSITORY,
     WORKTIME_READER,
     PUNCHES_READER,
+    INTEGRATION_PERIODS_READER,
     APPROVALS_READER,
     INPUT_SAMPLES_READER,
     MEETING_RECORD_REPOSITORY,

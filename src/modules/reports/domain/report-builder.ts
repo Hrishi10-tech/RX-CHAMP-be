@@ -55,6 +55,8 @@ export interface DaySummaryInput {
    * Without it (3.1 callers), the shift's work days and shift − breaks apply.
    */
   plan?: { isWorkingDay: boolean; label: string | null; targetSec: number };
+  /** 3.6: biometric staff with the integration off that day: payroll is not calculated. */
+  payrollPaused?: boolean;
 }
 
 /** Before the person's first day, and nothing worked: not a working day for them. */
@@ -131,6 +133,8 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     // A future working day expects nothing yet, so a month's expected time is
     // always the sum of its days.
     expectedSec: i.date <= i.today ? expectedLeft : 0,
+    // 3.6: the day's target, future working days included, so a month's target is known on day one.
+    plannedSec: expectedLeft,
     breakSec: focus.breakSec,
     meetingSec: focus.meetingSec,
     approvedPlusSec: focus.approvedPlusSec,
@@ -171,12 +175,15 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     // that was available for it (sessions minus breaks and meetings).
     activeSec: i.hourly.reduce((sum, h) => sum + (h.activeSec ?? h.activeMin * 60), 0),
     availableSec: Math.max(0, focus.spanSec - focus.breakSec - focus.meetingSec),
+    // 3.6: a paused day's payroll is not calculated: no paid time. Tracking stays as it is.
+    ...(i.payrollPaused ? { payrollPaused: true, paidSec: 0, paidBreakSec: 0 } : {}),
   };
 }
 
 const SUM_KEYS = [
   'focusSec',
   'expectedSec',
+  'plannedSec',
   'skipped',
   'autoSkipped',
   'overruns',
@@ -203,6 +210,12 @@ const SUM_KEYS = [
   'compOffEarnedDays',
 ] as const;
 
+/** The sum of the figures there are; null with none to read, so it never reads as zero. */
+function sumOfFigures(figures: (number | null | undefined)[]): number | null {
+  const read = figures.filter((f): f is number => typeof f === 'number');
+  return read.length ? read.reduce((s, f) => s + f, 0) : null;
+}
+
 /** A month's totals: every number is the sum (or count) of its days. */
 export function monthTotals(
   days: PersonDaySummary[],
@@ -222,6 +235,7 @@ export function monthTotals(
     SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + ((d[k] as number | undefined) ?? 0), 0)]),
   ) as Record<(typeof SUM_KEYS)[number], number>;
   return {
+    idleSec: sumOfFigures(days.map((d) => d.idleSec)),
     holidays: days.filter((d) => d.dayOff?.kind === 'HOLIDAY').length,
     lateWithoutReason: days.filter((d) => d.lateStart && !d.lateStart.reason).length,
     workdays: workdays.length,
@@ -301,6 +315,7 @@ export function teamTotals(
     leaveSec: sums.leaveSec,
     focusSec: sums.focusSec,
     expectedSec: sums.expectedSec,
+    plannedSec: sums.plannedSec,
     avgFocusSec: workedDays > 0 ? Math.round(workdayFocus / workedDays) : 0,
     lateStarts: sums.lateStarts,
     lateWithoutReason: sums.lateWithoutReason,
@@ -324,7 +339,11 @@ export function teamTotals(
     pending: sums.pending,
     quietHours: sums.quietHours,
     activeSec: sums.activeSec,
-    availableSec: sums.availableSec,
+    // Rows locked before 3.2 did not keep it: the team says so rather than adding up to zero.
+    availableSec: rows.some((r) => r.totals.availableSec === undefined)
+      ? undefined
+      : sums.availableSec,
+    idleSec: sumOfFigures(rows.map((r) => r.totals.idleSec)),
     needsALook: rows.some((r) => r.totals.needsALook),
     people: rows.length,
   };
@@ -340,7 +359,18 @@ export function withPayrollFields(p: PersonMonthReport): PersonMonthReport {
     unverifiedSec: (x as { unverifiedSec?: number }).unverifiedSec ?? 0,
     paidSec: (x as { paidSec?: number }).paidSec ?? x.focusSec + (x.paidBreakSec ?? 0),
   });
-  return { ...p, totals: fill(p.totals), days: p.days.map(fill) };
+  // 3.6: meeting and break time of a month stored without them, read from its days.
+  const sum = (k: 'meetingSec' | 'breakSec') => p.days.reduce((s, d) => s + (d[k] ?? 0), 0);
+  const totals = fill(p.totals);
+  return {
+    ...p,
+    totals: {
+      ...totals,
+      meetingSec: totals.meetingSec ?? sum('meetingSec'),
+      breakSec: totals.breakSec ?? sum('breakSec'),
+    },
+    days: p.days.map(fill),
+  };
 }
 
 /** Totals of an empty month (a person with no days to show). */

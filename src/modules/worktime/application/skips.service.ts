@@ -418,7 +418,10 @@ export class SkipsService {
     now: Date,
     endingDay: boolean,
   ): Promise<PlannedAutoSkip[]> {
+    // Breaks are owed on the desktop agent's days only: a biometric person has no
+    // break flow, and the phone's work-from-home days have none either (3.5).
     const days = people
+      .filter((p) => p.attendanceSource !== 'BIOMETRIC')
       .map((p) => ({ person: p, day: this.days.dayWith(ctx, p, now) }))
       .filter(({ day }) => day.slots.length > 0);
     if (!days.length) return [];
@@ -454,7 +457,9 @@ export class SkipsService {
       const plans = planAutoSkips(
         day.slots,
         recorded.get(`${person.id}|${day.dateKey}`) ?? new Set(),
-        sessions.filter((s) => s.userId === person.id),
+        sessions.filter(
+          (s) => s.userId === person.id && s.source !== 'BIOMETRIC' && s.source !== 'MOBILE_WFH',
+        ),
         now,
         endingDay,
       );

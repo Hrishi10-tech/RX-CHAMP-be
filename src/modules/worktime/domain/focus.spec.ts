@@ -736,10 +736,13 @@ describe('computeFocus: 4.0 identities on random days', () => {
         now,
       });
 
+      // 3.5: capRemainingSec is null without work from home on the phone.
       const numbers = Object.entries(f)
-        .filter(([k]) => k !== 'running')
+        .filter(([k]) => k !== 'running' && k !== 'capRemainingSec')
         .map(([, v]) => v as number);
       expect(numbers.every((x) => Number.isInteger(x) && x >= 0)).toBe(true);
+      expect(f.capRemainingSec).toBeNull();
+      expect(f.wfhSec).toBe(0);
       expect(f.focusSec).toBe(
         Math.max(
           0,
@@ -1040,5 +1043,79 @@ describe('computeFocus: 4.0 offline evidence (REPLAY sessions)', () => {
       expect(f.paidSec).toBe(f.focusSec + f.paidBreakSec);
       if (!sessions.some((s) => s.replay)) expect(f).toEqual(live);
     }
+  });
+});
+
+describe('computeFocus: work from home on the phone (3.5)', () => {
+  const H = 3600;
+
+  it('credits time from home up to the cap: 11 hours on a 9-hour full day still credit 9', () => {
+    const f = computeFocus(
+      input({
+        sessions: [{ startedAt: ist('08:00'), endedAt: ist('19:00'), capped: true }],
+        wfhCapSec: 9 * H,
+      }),
+    );
+    expect(f).toMatchObject({
+      spanSec: 11 * H,
+      wfhSec: 11 * H,
+      wfhOverSec: 2 * H,
+      focusSec: 9 * H,
+    });
+  });
+
+  it('a half day of work from home caps at half the shift', () => {
+    const f = computeFocus(
+      input({
+        sessions: [{ startedAt: ist('09:00'), endedAt: ist('15:00'), capped: true }],
+        wfhCapSec: 4.5 * H,
+      }),
+    );
+    expect(f.focusSec).toBe(4.5 * H);
+  });
+
+  it('time at the office the same day counts in full, on top of the capped part', () => {
+    const f = computeFocus(
+      input({
+        sessions: [
+          { startedAt: ist('08:00'), endedAt: ist('13:00'), capped: true },
+          { startedAt: ist('14:00'), endedAt: ist('19:00') },
+        ],
+        wfhCapSec: 4.5 * H,
+      }),
+    );
+    // 5h at home capped to 4.5h, plus 5h at the office.
+    expect(f).toMatchObject({ wfhSec: 5 * H, wfhOverSec: 0.5 * H, focusSec: 9.5 * H });
+  });
+
+  it('with no approved work from home (revoked), time on the phone counts nothing', () => {
+    const f = computeFocus(
+      input({ sessions: [{ startedAt: ist('09:00'), endedAt: ist('18:00'), capped: true }] }),
+    );
+    expect(f).toMatchObject({ wfhOverSec: 9 * H, focusSec: 0 });
+  });
+
+  it('a running day from home stops ticking at the cap, and says how long is left', () => {
+    const running = computeFocus(
+      input({
+        sessions: [{ startedAt: ist('09:00'), endedAt: null, capped: true }],
+        wfhCapSec: 9 * H,
+        now: ist('15:00'),
+      }),
+    );
+    expect(running).toMatchObject({ running: true, capRemainingSec: 3 * H, focusSec: 6 * H });
+    const atCap = computeFocus(
+      input({
+        sessions: [{ startedAt: ist('09:00'), endedAt: null, capped: true }],
+        wfhCapSec: 9 * H,
+        now: ist('19:30'),
+      }),
+    );
+    expect(atCap).toMatchObject({ running: false, capRemainingSec: 0, focusSec: 9 * H });
+  });
+
+  it('days without work from home are unchanged', () => {
+    const f = computeFocus(input());
+    expect(f).toMatchObject({ wfhSec: 0, wfhOverSec: 0, capRemainingSec: null, focusSec: 9 * H });
   });
 });

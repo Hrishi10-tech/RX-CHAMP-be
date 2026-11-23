@@ -1,5 +1,6 @@
 import { DeciderRole } from './routing';
-import { LeaveCategory, LeaveKind, LeavePart, LeaveStatus } from './leave.types';
+import { CompOffCreditPatch, CompOffCreditRecord, CompOffUse, NewCompOffCredit } from './comp-off';
+import { LeaveCategory, LeaveKind, LeavePart, LeaveStatus, PoolCategory } from './leave.types';
 
 export const LEAVE_REPOSITORY = Symbol('LEAVE_REPOSITORY');
 
@@ -10,7 +11,7 @@ export interface LeaveAccountRecord {
   id: string;
   userId: string;
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   grantedUnits: number;
   grantSource: GrantSource;
   prorated: boolean;
@@ -21,7 +22,7 @@ export interface LeaveAccountRecord {
 export interface NewLeaveAccount {
   userId: string;
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   grantedUnits: number;
   grantSource: GrantSource;
   prorated: boolean;
@@ -96,7 +97,7 @@ export interface LeaveAdjustmentRecord {
   id: string;
   userId: string;
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   deltaUnits: number;
   mode: AdjustmentMode;
   targetUnits: number | null;
@@ -109,14 +110,14 @@ export type NewLeaveAdjustment = Omit<LeaveAdjustmentRecord, 'id' | 'createdAt'>
 
 export interface LeaveQuotaRecord {
   userId: string;
-  category: LeaveCategory;
+  category: PoolCategory;
   unitsPerYear: number;
 }
 
 /** Per year and pool: what the requests and adjustments add up to. */
 export interface LeaveSums {
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   adjustedUnits: number;
   takenUnits: number;
   pendingUnits: number;
@@ -181,10 +182,29 @@ export interface LeaveTx {
   quotas(userId: string): Promise<LeaveQuotaRecord[]>;
   setQuota(
     userId: string,
-    category: LeaveCategory,
+    category: PoolCategory,
     units: number | null,
     byId: string,
   ): Promise<void>;
+
+  // ---- Comp off (3.5) ---------------------------------------------------------
+  /** Every claim and credit of the person, oldest day first. */
+  credits(userId: string): Promise<CompOffCreditRecord[]>;
+  /** Charged days of the person's pending and approved COMPOFF leave. */
+  compOffUses(userId: string, exceptRequestId?: string): Promise<CompOffUse[]>;
+  findCredit(id: string): Promise<CompOffCreditRecord | null>;
+  insertCredit(data: NewCompOffCredit): Promise<CompOffCreditRecord>;
+  updateCredit(id: string, patch: CompOffCreditPatch): Promise<CompOffCreditRecord>;
+}
+
+export interface CreditFilter {
+  userId?: string;
+  userIds?: string[];
+  statuses?: LeaveStatus[];
+  /** Days worked in [from, to]. */
+  from?: string;
+  to?: string;
+  limit?: number;
 }
 
 export interface LeaveRepository {
@@ -216,4 +236,15 @@ export interface LeaveRepository {
   pendingInMonth(month: string): Promise<number>;
   /** Active people holding a role (routing and "waiting for" labels). */
   activeRoleIds(role: 'SUPER_MANAGER' | 'SUPER_ADMIN'): Promise<string[]>;
+
+  // ---- Comp off (3.5) ---------------------------------------------------------
+  findCredit(id: string): Promise<CompOffCreditRecord | null>;
+  listCredits(filter: CreditFilter): Promise<CompOffCreditRecord[]>;
+  /** Every claim and credit of these people. */
+  creditsOf(userIds: string[]): Promise<CompOffCreditRecord[]>;
+  /** Charged days of these people's pending and approved COMPOFF leave. */
+  compOffUsesOf(userIds: string[]): Promise<Map<string, CompOffUse[]>>;
+  /** Approved credits with an expiry in [from, to] and no expiry notice yet (the daily job). */
+  creditsExpiring(from: string, to: string): Promise<CompOffCreditRecord[]>;
+  markExpiryNoticed(ids: string[], at: Date): Promise<void>;
 }

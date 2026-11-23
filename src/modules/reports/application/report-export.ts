@@ -63,6 +63,8 @@ const PAYROLL: Col[] = [
   { header: 'CL/SL days', key: 'clslDays', width: 11 },
   { header: 'EL/PL days', key: 'elplDays', width: 11 },
   { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
+  // 3.5, after every earlier column again.
+  { header: 'Comp off days', key: 'compOffDays', width: 13 },
 ];
 
 const DAYS: Col[] = [
@@ -195,6 +197,7 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       leaveDays: t.leaveDays ?? 0,
       clslDays: t.clslDays ?? 0,
       elplDays: t.elplDays ?? 0,
+      compOffDays: t.compOffDays ?? 0,
       leaveHours: hours(t.leaveSec ?? 0),
     });
     for (const d of p.days) days.addRow(dayRow(p, d, tz));

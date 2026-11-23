@@ -4,7 +4,14 @@ export const WORK_SESSION_REPOSITORY = Symbol('WORK_SESSION_REPOSITORY');
 
 export type WorkSessionEndReason = 'USER' | 'AUTO_CLOSED';
 /** REPLAY (4.0): opened by an offline action replayed later (auditable, see agent_events). */
-export type WorkSessionSource = 'AGENT' | 'LEGACY' | 'BACKFILL' | 'REPLAY';
+/** BIOMETRIC and MOBILE_WFH (3.5): made from punches, or started on the phone at home. */
+export type WorkSessionSource =
+  | 'AGENT'
+  | 'LEGACY'
+  | 'BACKFILL'
+  | 'REPLAY'
+  | 'BIOMETRIC'
+  | 'MOBILE_WFH';
 
 export interface WorkSessionRecord {
   id: string;

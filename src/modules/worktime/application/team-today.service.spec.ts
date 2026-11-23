@@ -96,6 +96,7 @@ function setup() {
     dayData as never,
     days as never,
     settings as never,
+    { punchesOf: jest.fn().mockResolvedValue(new Map()) } as never,
   );
   return { svc, dayData, scope, sessions };
 }

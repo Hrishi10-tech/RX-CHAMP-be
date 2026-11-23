@@ -1,5 +1,5 @@
 import { isValidDateKey } from '@shared/utils/timezone';
-import { LeaveCategory, UNITS_PER_DAY, unitsOfDays } from './leave.types';
+import { PoolCategory, UNITS_PER_DAY, unitsOfDays } from './leave.types';
 
 /**
  * The leave policy (3.4), one JSON value in app_settings (key `leave`). Set by the
@@ -40,6 +40,24 @@ export interface LeavePolicy {
    * starts that year with the full grant; people who join later are prorated.
    */
   startedOn: string | null;
+
+  // ---- Comp off (3.5) ---------------------------------------------------------
+  /** Off: no claims and no comp off leave; credits and history stay readable. */
+  compOffEnabled: boolean;
+  /** A credit can be taken up to this many days after the day worked. */
+  compOffValidityDays: number;
+  /** Worked at least this % of the shift's expected time earns a full day. */
+  compOffFullDayPct: number;
+  /** At least this % (and below a full day) earns a half day. */
+  compOffHalfDayPct: number;
+  /** A day can be claimed up to this many days after it was worked. */
+  compOffClaimWithinDays: number;
+  /** Who decides a claim (comp off leave itself goes to `approver`, like any leave). */
+  compOffApprover: ApproverRoute;
+  /** A full day of approved leave that was worked anyway counts as an extra day. */
+  compOffCountLeaveDays: boolean;
+  /** No new credit beyond this balance (days); null = no cap. */
+  compOffMaxBalanceDays: number | null;
 }
 
 export type PolicyKey = Exclude<keyof LeavePolicy, 'startedOn'>;
@@ -54,6 +72,14 @@ export const DEFAULT_LEAVE_POLICY: Readonly<LeavePolicy> = Object.freeze({
   approver: 'MANAGER',
   prorateJoiners: true,
   startedOn: null,
+  compOffEnabled: true,
+  compOffValidityDays: 60,
+  compOffFullDayPct: 80,
+  compOffHalfDayPct: 40,
+  compOffClaimWithinDays: 30,
+  compOffApprover: 'MANAGER',
+  compOffCountLeaveDays: true,
+  compOffMaxBalanceDays: null,
 });
 
 /** Inclusive bounds; day amounts go in quarter days, the rest in whole days. */
@@ -63,11 +89,31 @@ export const POLICY_BOUNDS = Object.freeze({
   elplCarryCapDays: { min: 0, max: 365 },
   elplNoticeDays: { min: 0, max: 120 },
   clslBackdateDays: { min: 0, max: 62 },
+  compOffValidityDays: { min: 1, max: 365 },
+  compOffFullDayPct: { min: 1, max: 100 },
+  compOffHalfDayPct: { min: 1, max: 99 },
+  compOffClaimWithinDays: { min: 1, max: 90 },
+  compOffMaxBalanceDays: { min: 0.5, max: 365 },
 });
 
-const DAY_AMOUNT_KEYS = ['clslDaysPerYear', 'elplDaysPerYear', 'elplCarryCapDays'] as const;
-const WHOLE_KEYS = ['elplNoticeDays', 'clslBackdateDays'] as const;
-const BOOL_KEYS = ['enabled', 'prorateJoiners'] as const;
+const DAY_AMOUNT_KEYS = [
+  'clslDaysPerYear',
+  'elplDaysPerYear',
+  'elplCarryCapDays',
+  'compOffMaxBalanceDays',
+] as const;
+/** Day amounts that may be null (no cap). */
+const NULLABLE_KEYS = ['elplCarryCapDays', 'compOffMaxBalanceDays'] as const;
+const WHOLE_KEYS = [
+  'elplNoticeDays',
+  'clslBackdateDays',
+  'compOffValidityDays',
+  'compOffFullDayPct',
+  'compOffHalfDayPct',
+  'compOffClaimWithinDays',
+] as const;
+const BOOL_KEYS = ['enabled', 'prorateJoiners', 'compOffEnabled', 'compOffCountLeaveDays'] as const;
+const ROUTE_KEYS = ['approver', 'compOffApprover'] as const;
 
 export const POLICY_FIELD_LABEL: Record<PolicyKey, string> = {
   enabled: 'Leave',
@@ -78,6 +124,14 @@ export const POLICY_FIELD_LABEL: Record<PolicyKey, string> = {
   clslBackdateDays: 'CL/SL backdating',
   approver: 'Who approves',
   prorateJoiners: 'Pro rata for joiners',
+  compOffEnabled: 'Comp off',
+  compOffValidityDays: 'Comp off valid for',
+  compOffFullDayPct: 'Comp off full day (% of expected)',
+  compOffHalfDayPct: 'Comp off half day (% of expected)',
+  compOffClaimWithinDays: 'Comp off claim within',
+  compOffApprover: 'Who approves comp off claims',
+  compOffCountLeaveDays: 'Leave days worked earn comp off',
+  compOffMaxBalanceDays: 'Comp off balance cap',
 };
 
 function dayAmountOk(v: unknown, key: (typeof DAY_AMOUNT_KEYS)[number]): v is number {
@@ -98,17 +152,21 @@ export function policyFromStored(raw: unknown): LeavePolicy {
   for (const k of BOOL_KEYS) if (typeof r[k] === 'boolean') out[k] = r[k] as boolean;
   if (dayAmountOk(r.clslDaysPerYear, 'clslDaysPerYear')) out.clslDaysPerYear = r.clslDaysPerYear;
   if (dayAmountOk(r.elplDaysPerYear, 'elplDaysPerYear')) out.elplDaysPerYear = r.elplDaysPerYear;
-  if (r.elplCarryCapDays === null || dayAmountOk(r.elplCarryCapDays, 'elplCarryCapDays')) {
-    out.elplCarryCapDays = r.elplCarryCapDays as number | null;
+  for (const k of NULLABLE_KEYS) {
+    if (r[k] === null || dayAmountOk(r[k], k)) out[k] = r[k] as number | null;
   }
   for (const k of WHOLE_KEYS) if (wholeOk(r[k], k)) out[k] = r[k] as number;
-  if (
-    typeof r.approver === 'string' &&
-    (APPROVER_ROUTES as readonly string[]).includes(r.approver)
-  ) {
-    out.approver = r.approver as ApproverRoute;
+  for (const k of ROUTE_KEYS) {
+    const v = r[k];
+    if (typeof v === 'string' && (APPROVER_ROUTES as readonly string[]).includes(v)) {
+      out[k] = v as ApproverRoute;
+    }
   }
   if (typeof r.startedOn === 'string' && isValidDateKey(r.startedOn)) out.startedOn = r.startedOn;
+  if (out.compOffFullDayPct <= out.compOffHalfDayPct) {
+    out.compOffFullDayPct = DEFAULT_LEAVE_POLICY.compOffFullDayPct;
+    out.compOffHalfDayPct = DEFAULT_LEAVE_POLICY.compOffHalfDayPct;
+  }
   return out;
 }
 
@@ -128,7 +186,7 @@ export function applyPolicyPatch(
 ): PolicyPatchResult {
   const next: LeavePolicy = { ...current };
   const changed: PolicyKey[] = [];
-  const known = new Set<string>([...BOOL_KEYS, ...DAY_AMOUNT_KEYS, ...WHOLE_KEYS, 'approver']);
+  const known = new Set<string>([...BOOL_KEYS, ...DAY_AMOUNT_KEYS, ...WHOLE_KEYS, ...ROUTE_KEYS]);
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (!known.has(key)) {
@@ -145,8 +203,8 @@ export function applyPolicyPatch(
       (next as unknown as Record<string, unknown>)[key] = value;
     } else if ((DAY_AMOUNT_KEYS as readonly string[]).includes(key)) {
       const k = key as (typeof DAY_AMOUNT_KEYS)[number];
-      if (k === 'elplCarryCapDays' && value === null) {
-        next.elplCarryCapDays = null;
+      if ((NULLABLE_KEYS as readonly string[]).includes(k) && value === null) {
+        (next as unknown as Record<string, unknown>)[k] = null;
       } else if (!dayAmountOk(value, k)) {
         const b = POLICY_BOUNDS[k];
         return {
@@ -168,31 +226,43 @@ export function applyPolicyPatch(
         };
       }
       next[k] = value as number;
-    } else if (key === 'approver') {
+    } else if ((ROUTE_KEYS as readonly string[]).includes(key)) {
+      const k = key as (typeof ROUTE_KEYS)[number];
       if (typeof value !== 'string' || !(APPROVER_ROUTES as readonly string[]).includes(value)) {
         return {
           ok: false,
           field: key,
-          message: 'Who approves must be MANAGER, SUPER_MANAGER or SUPER_ADMIN.',
+          message: `${POLICY_FIELD_LABEL[k]} must be MANAGER, SUPER_MANAGER or SUPER_ADMIN.`,
         };
       }
-      if (!opts.mayRoute && value !== current.approver) {
+      if (!opts.mayRoute && value !== current[k]) {
         return {
           ok: false,
           field: key,
-          message: 'Only a Super Admin can change who approves leave.',
+          message:
+            k === 'approver'
+              ? 'Only a Super Admin can change who approves leave.'
+              : 'Only a Super Admin can change who approves comp off claims.',
         };
       }
-      next.approver = value as ApproverRoute;
+      next[k] = value as ApproverRoute;
     }
     const k = key as PolicyKey;
     if (next[k] !== current[k]) changed.push(k);
+  }
+  if (next.compOffFullDayPct <= next.compOffHalfDayPct) {
+    const field = patch.compOffFullDayPct !== undefined ? 'compOffFullDayPct' : 'compOffHalfDayPct';
+    return {
+      ok: false,
+      field,
+      message: `A full day of comp off (${next.compOffFullDayPct}%) must need more than a half day (${next.compOffHalfDayPct}%).`,
+    };
   }
   return { ok: true, value: next, changed };
 }
 
 /** The policy's yearly grant of a pool, in quarter days. */
-export function policyGrantUnits(policy: LeavePolicy, category: LeaveCategory): number {
+export function policyGrantUnits(policy: LeavePolicy, category: PoolCategory): number {
   const days = category === 'CLSL' ? policy.clslDaysPerYear : policy.elplDaysPerYear;
   return Math.round(days * UNITS_PER_DAY);
 }

@@ -20,7 +20,11 @@ export interface MonthLockRow {
 export type LockMonthResult =
   | { ok: true; lock: MonthLockRow; created: boolean }
   /** Work sessions dated in the month still open, items or leave (3.4) dated in it still PENDING. */
-  | { ok: false; reason: 'OPEN_SESSIONS' | 'PENDING_APPROVALS' | 'PENDING_LEAVE'; count: number };
+  | {
+      ok: false;
+      reason: 'OPEN_SESSIONS' | 'PENDING_APPROVALS' | 'PENDING_LEAVE' | 'PENDING_WFH';
+      count: number;
+    };
 
 /** report_runs and month_locks, per organisation (4.0). */
 export interface ReportStore {
@@ -73,6 +77,23 @@ export interface ReportStore {
     limit: number,
     userIds?: string[],
   ): Promise<{ count: number; items: PendingLeaveBlocker[] }>;
+  /** The organisation's work-from-home requests with a day in the month still waiting (3.5). */
+  pendingWfhInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<{ count: number; items: PendingWfhBlocker[] }>;
+}
+
+/** A work-from-home request with a day in the month that waits for a decision (3.5). */
+export interface PendingWfhBlocker {
+  id: string;
+  userId: string;
+  userName: string;
+  startDate: string;
+  endDate: string;
+  days: number;
 }
 
 /** A leave request with a day in the month that waits for a decision (3.4). */
@@ -80,7 +101,7 @@ export interface PendingLeaveBlocker {
   id: string;
   userId: string;
   userName: string;
-  category: 'CLSL' | 'ELPL';
+  category: 'CLSL' | 'ELPL' | 'COMPOFF';
   startDate: string;
   endDate: string;
   days: number;

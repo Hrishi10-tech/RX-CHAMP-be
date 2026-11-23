@@ -3,6 +3,8 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { ActivityBackfilledEvent } from '@shared/events/activity-backfilled.event';
 import { LeaveDaysService } from '@modules/leave/application/leave-days.service';
 import { DayLeave, LeaveByDay, leaveOn } from '@modules/leave/domain/day-leave';
+import { WfhDaysService } from '@modules/wfh/application/wfh-days.service';
+import { WfhByDay, WfhDay, wfhOn } from '@modules/wfh/domain/wfh';
 import {
   BREAK_RECORD_REPOSITORY,
   BreakRecordRepository,
@@ -109,6 +111,7 @@ export class DayDataSet {
     coverage: CoverageRow[] = [],
     adjustments: FocusAdjustmentRecord[] = [],
     private readonly leave: LeaveByDay = new Map(),
+    private readonly wfh: WfhByDay = new Map(),
   ) {
     this.sessions = group(sessions, (s) => key(s.userId, s.date));
     this.presenceByUser = group(presence, (p) => p.userId);
@@ -140,7 +143,13 @@ export class DayDataSet {
       coverage: sessions.flatMap((s) => this.coverageBySession.get(s.id) ?? []),
       adjustments: this.adjustments.get(key(userId, date)) ?? [],
       leave: leaveOn(this.leave, userId, date),
+      wfh: wfhOn(this.wfh, userId, date),
     };
+  }
+
+  /** Work from home of a person on a day (3.5). */
+  wfhOn(userId: string, date: string): WfhDay {
+    return wfhOn(this.wfh, userId, date);
   }
 
   /** Leave of a person on a day (3.4). */
@@ -183,6 +192,7 @@ export class DayDataService implements OnModuleInit {
     private readonly adjustmentsRepo: FocusAdjustmentRepository,
     // 3.4: approved leave, by person and day.
     @Optional() private readonly leaveDays?: LeaveDaysService,
+    @Optional() private readonly wfhDays?: WfhDaysService,
   ) {}
 
   onModuleInit(): void {
@@ -206,13 +216,14 @@ export class DayDataService implements OnModuleInit {
     if (opts.heal) await this.meetingService.heal(userIds, now);
     // Read before any sample is (see bucketHours).
     const versions = new Map(userIds.map((id) => [id, this.sampleVersionOf(id)]));
-    const [sessions, breaks, meetings, away, adjustments, leave] = await Promise.all([
+    const [sessions, breaks, meetings, away, adjustments, leave, wfh] = await Promise.all([
       this.sessions.listForUsersBetween(userIds, fromDate, toDate),
       this.breaks.listForUsersBetween(userIds, fromDate, toDate),
       this.meetings.listForUsersBetween(userIds, fromDate, toDate),
       this.awayRepo.listForUsers(userIds, fromDate, toDate),
       this.adjustmentsRepo.listForUsersBetween(userIds, fromDate, toDate),
       this.leaveDays ? this.leaveDays.byDay(userIds, fromDate, toDate) : Promise.resolve(new Map()),
+      this.wfhDays ? this.wfhDays.byDay(userIds, fromDate, toDate) : Promise.resolve(new Map()),
     ]);
     let presence: PresenceRow[] = [];
     let coverage: CoverageRow[] = [];
@@ -238,6 +249,7 @@ export class DayDataService implements OnModuleInit {
       coverage,
       adjustments,
       leave,
+      wfh,
     );
   }
 

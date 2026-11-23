@@ -24,6 +24,9 @@ const SELECT = {
   status: true,
   deletedAt: true,
   role: { select: { name: true } },
+  attendanceSource: true,
+  biometricCode: true,
+  attendanceSourceFrom: true,
 } as const;
 
 /** 3.3: with the organisation's name (combined views show it on every row). */
@@ -54,6 +57,9 @@ export function toPerson(r: Row): ShiftPerson {
     managerId: r.managerId,
     // A soft-deleted person can never approve anything, whatever their status says.
     active: r.status === 'ACTIVE' && r.deletedAt === null,
+    attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+    biometricCode: r.biometricCode ?? null,
+    attendanceSourceFrom: r.attendanceSourceFrom ?? null,
   };
 }
 
@@ -69,6 +75,7 @@ export class PrismaShiftPeopleReader implements ShiftPeopleReader {
     if (q.managerId) where.managerId = q.managerId;
     if (q.ids) where.id = { in: q.ids.filter(isUuid) };
     if (q.department) where.department = { equals: q.department.trim(), mode: 'insensitive' };
+    if (q.attendanceSource) where.attendanceSource = q.attendanceSource;
     if (q.search) {
       where.OR = [
         { firstName: { contains: q.search, mode: 'insensitive' } },

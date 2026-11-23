@@ -360,12 +360,21 @@ describe('summarizeDay', () => {
   });
 
   describe('leave (3.4)', () => {
-    const FULL = { mask: 15, units: 4, clslUnits: 4, elplUnits: 0, pendingMask: 0, full: true };
+    const FULL = {
+      mask: 15,
+      units: 4,
+      clslUnits: 4,
+      elplUnits: 0,
+      compOffUnits: 0,
+      pendingMask: 0,
+      full: true,
+    };
     const FIRST_HALF = {
       mask: 3,
       units: 2,
       clslUnits: 0,
       elplUnits: 2,
+      compOffUnits: 0,
       pendingMask: 0,
       full: false,
     };
@@ -730,6 +739,7 @@ describe('monthTotals', () => {
       leave: 0,
       leaveDays: 0,
       clslDays: 0,
+      compOffDays: 0,
       elplDays: 0,
       leaveSec: 0,
     });

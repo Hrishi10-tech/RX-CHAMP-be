@@ -90,7 +90,7 @@ export function checkRequest(
   ctx: { today: string; policy: LeavePolicy; joinDate?: string },
 ): ShapeResult {
   if (!isCategory(input.category)) {
-    return fail('category', 'VALIDATION_ERROR', 'Pick CL/SL or EL/PL.');
+    return fail('category', 'VALIDATION_ERROR', 'Pick CL/SL, EL/PL or Comp off.');
   }
   if (!isKind(input.kind)) {
     return fail('kind', 'VALIDATION_ERROR', 'Pick a full day, a half day or a quarter day.');
@@ -187,6 +187,7 @@ export function checkRequest(
       );
     }
   } else {
+    // CL/SL, and comp off (3.5) on the same timing: today, ahead, or a few days back.
     const earliest = addDaysToKey(ctx.today, -ctx.policy.clslBackdateDays);
     if (startDate < earliest) {
       const back = ctx.policy.clslBackdateDays;
@@ -194,8 +195,8 @@ export function checkRequest(
         'startDate',
         'TOO_FAR_BACK',
         back === 0
-          ? `${CATEGORY_LABEL.CLSL} cannot be applied for a day that has passed.`
-          : `${CATEGORY_LABEL.CLSL} can cover up to ${back} ${back === 1 ? 'day' : 'days'} back: ` +
+          ? `${CATEGORY_LABEL[category]} cannot be applied for a day that has passed.`
+          : `${CATEGORY_LABEL[category]} can cover up to ${back} ${back === 1 ? 'day' : 'days'} back: ` +
               `the first day can be ${leaveDay(earliest)} at the earliest.`,
       );
     }

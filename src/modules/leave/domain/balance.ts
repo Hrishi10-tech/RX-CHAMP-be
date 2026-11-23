@@ -1,4 +1,4 @@
-import { LeaveCategory, UNITS_PER_DAY } from './leave.types';
+import { PoolCategory, UNITS_PER_DAY } from './leave.types';
 
 /**
  * Balances (3.4), in quarter days. Pure: no Nest, no Prisma.
@@ -29,7 +29,7 @@ export interface AccountFigures {
 
 export interface YearBalance {
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   grantedUnits: number;
   carriedUnits: number;
   /** What last year's balance had left that did not come over (over the cap, or CL/SL lapsing). */
@@ -46,7 +46,7 @@ export interface YearBalance {
  * year breaks the chain (nothing is carried across a gap).
  */
 export function yearBalances(
-  category: LeaveCategory,
+  category: PoolCategory,
   accounts: readonly AccountFigures[],
 ): Map<number, YearBalance> {
   const out = new Map<number, YearBalance>();
@@ -158,14 +158,14 @@ export interface AccountPerson {
   /** First day (YYYY-MM-DD, business time zone). */
   joinDate: string;
   /** Their own yearly quota per pool, in quarter days. */
-  quotas: Partial<Record<LeaveCategory, number>>;
+  quotas: Partial<Record<PoolCategory, number>>;
 }
 
 export interface AccountPolicy {
   startedOn: string;
   prorateJoiners: boolean;
   /** The policy's yearly grant per pool, in quarter days. */
-  grantUnits: Record<LeaveCategory, number>;
+  grantUnits: Record<PoolCategory, number>;
   /** EL/PL carry-over cap in quarter days; null = none. */
   carryCapUnits: number | null;
 }
@@ -180,7 +180,7 @@ export interface AccountGrant {
 export function grantOf(
   person: AccountPerson,
   year: number,
-  category: LeaveCategory,
+  category: PoolCategory,
   policy: AccountPolicy,
 ): AccountGrant {
   const quota = person.quotas[category];
@@ -198,13 +198,13 @@ export function grantOf(
 /** The accounts a person is missing from their first leave year up to `upToYear`. */
 export function missingAccounts(
   person: AccountPerson,
-  existing: readonly { year: number; category: LeaveCategory }[],
+  existing: readonly { year: number; category: PoolCategory }[],
   upToYear: number,
   policy: AccountPolicy,
 ): {
   userId: string;
   year: number;
-  category: LeaveCategory;
+  category: PoolCategory;
   grantedUnits: number;
   grantSource: 'DEFAULT' | 'PERSON';
   prorated: boolean;
@@ -231,19 +231,19 @@ export function missingAccounts(
 export function balancesFrom(
   accounts: readonly {
     year: number;
-    category: LeaveCategory;
+    category: PoolCategory;
     grantedUnits: number;
     carryCapUnits: number | null;
   }[],
   sums: readonly {
     year: number;
-    category: LeaveCategory;
+    category: PoolCategory;
     adjustedUnits: number;
     takenUnits: number;
     pendingUnits: number;
   }[],
-): Record<LeaveCategory, Map<number, YearBalance>> {
-  const figures = (category: LeaveCategory): AccountFigures[] =>
+): Record<PoolCategory, Map<number, YearBalance>> {
+  const figures = (category: PoolCategory): AccountFigures[] =>
     accounts
       .filter((a) => a.category === category)
       .map((a) => {

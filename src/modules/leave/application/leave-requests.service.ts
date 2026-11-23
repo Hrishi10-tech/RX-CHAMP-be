@@ -14,6 +14,7 @@ import { allOrgsInView } from '@shared/tenancy';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { spendableUnits } from '../domain/balance';
+import { allocateCompOff, compOffBalanceOf, lotsOf } from '../domain/comp-off';
 import {
   leaveCancelledCopy,
   leaveDecidedCopy,
@@ -70,7 +71,14 @@ interface Problem {
 }
 
 /** Problems answered 409 (the state of things); the rest are 400 (the request itself). */
-const CONFLICT_CODES = new Set(['LEAVE_OFF', 'LEAVE_OVERLAP', 'NOT_ENOUGH_LEAVE', 'MONTH_LOCKED']);
+const CONFLICT_CODES = new Set([
+  'LEAVE_OFF',
+  'LEAVE_OVERLAP',
+  'NOT_ENOUGH_LEAVE',
+  'MONTH_LOCKED',
+  'COMPOFF_OFF',
+  'NOT_ENOUGH_COMPOFF',
+]);
 
 function toError(p: Problem): AppException {
   const details = { field: p.field, ...(p.details ?? {}) };
@@ -186,6 +194,14 @@ export class LeaveRequestsService {
     }
     const s = shape.value;
     plan.shape = s;
+    if (s.category === 'COMPOFF' && !policy.compOffEnabled) {
+      plan.problem = {
+        field: 'category',
+        code: 'COMPOFF_OFF',
+        message: 'Comp off is switched off. A Super Admin or the Super Manager can turn it on.',
+      };
+      return plan;
+    }
     plan.days = await this.people.dayInfos(person, datesOf(s.startDate, s.endDate));
     const priced = priceDays(s.kind, s.part, plan.days);
     plan.charged = priced.charged;
@@ -216,6 +232,30 @@ export class LeaveRequestsService {
         details: { dates: clash },
       };
       return plan;
+    }
+
+    if (s.category === 'COMPOFF') {
+      const check = await this.compOffCheck(tx, person.id, today, {
+        requestId: 'new',
+        days: priced.charged,
+        status: 'PENDING',
+      });
+      plan.balance = { category: 'COMPOFF', beforeUnits: check.availableUnits };
+      if (!check.fits) {
+        const covered = Math.max(0, plan.units - check.shortUnits);
+        plan.problem = {
+          field: 'category',
+          code: 'NOT_ENOUGH_COMPOFF',
+          message:
+            check.availableUnits <= 0
+              ? 'You have no comp off to take. Claim an extra day you worked first.'
+              : `Not enough comp off valid on ${leaveSpan(s.startDate, s.endDate)}: your credits cover ` +
+                `${formatDays(covered)} of the ${formatDays(plan.units)} this needs.`,
+          details: { availableDays: daysOf(check.availableUnits), neededDays: daysOf(plan.units) },
+        };
+        return plan;
+      }
+      return this.checkMonths(plan, priced.charged, s.startDate, person.id, tx);
     }
 
     const thisYear = Number(today.slice(0, 4));
@@ -250,9 +290,20 @@ export class LeaveRequestsService {
       };
       return plan;
     }
-    for (const month of monthsOf(priced.charged, s.startDate)) {
+    return this.checkMonths(plan, priced.charged, s.startDate, person.id, tx);
+  }
+
+  /** The last check of a plan: none of its days is in a month locked for payroll. */
+  private async checkMonths(
+    plan: Plan,
+    charged: LeaveDayRecord[],
+    startDate: string,
+    userId: string,
+    tx: LeaveTx,
+  ): Promise<Plan> {
+    for (const month of monthsOf(charged, startDate)) {
       try {
-        await tx.assertMonthOpen(`${month}-01`, person.id);
+        await tx.assertMonthOpen(`${month}-01`, userId);
       } catch (err) {
         if (err instanceof ConflictError) {
           plan.problem = {
@@ -267,6 +318,71 @@ export class LeaveRequestsService {
       }
     }
     return plan;
+  }
+
+  /**
+   * Comp off available from today, and whether `extra` days fit on the credits as
+   * well (3.5). `exceptRequestId`: leave that request's own days out first.
+   */
+  private async compOffCheck(
+    tx: LeaveTx,
+    userId: string,
+    today: string,
+    extra: { requestId: string; days: LeaveDayRecord[]; status: 'PENDING' | 'APPROVED' } | null,
+    exceptRequestId?: string,
+  ): Promise<{
+    availableUnits: number;
+    availableAfter: number;
+    fits: boolean;
+    shortUnits: number;
+  }> {
+    const [credits, uses] = await Promise.all([
+      tx.credits(userId),
+      tx.compOffUses(userId, exceptRequestId),
+    ]);
+    const lots = lotsOf(credits);
+    const base = allocateCompOff(lots, uses, today);
+    const availableUnits = compOffBalanceOf(base, credits).availableUnits;
+    if (!extra)
+      return { availableUnits, availableAfter: availableUnits, fits: true, shortUnits: 0 };
+    const more = extra.days.map((d) => ({
+      requestId: extra.requestId,
+      date: d.date,
+      units: d.units,
+      status: extra.status,
+      order: Number.MAX_SAFE_INTEGER,
+    }));
+    const after = allocateCompOff(lots, [...uses, ...more], today);
+    const shortUnits = Math.max(0, after.shortUnits - base.shortUnits);
+    return {
+      availableUnits,
+      availableAfter: compOffBalanceOf(after, credits).availableUnits,
+      fits: shortUnits === 0,
+      shortUnits,
+    };
+  }
+
+  /** What is left of the request's leave type once it has been decided (for the notice). */
+  private async availableAfter(
+    tx: LeaveTx,
+    userId: string,
+    row: LeaveRequestRecord,
+    policy: LivePolicy,
+    joinDate: string,
+    now: Date,
+  ): Promise<number> {
+    if (row.category === 'COMPOFF') {
+      return (await this.compOffCheck(tx, userId, this.today(now), null)).availableUnits;
+    }
+    const thisYear = Number(this.today(now).slice(0, 4));
+    const { balances } = await this.accounts.balancesIn(
+      tx,
+      userId,
+      Math.max(thisYear, row.year),
+      policy,
+      joinDate,
+    );
+    return balances[row.category].get(row.year)?.availableUnits ?? 0;
   }
 
   /** POST /leave/preview: what a request would do, without making it. */
@@ -461,17 +577,10 @@ export class LeaveRequestsService {
           decidedAt: now,
           decisionNote: checked.note,
         });
-        const { balances } = await this.accounts.balancesIn(
-          tx,
-          target.id,
-          Math.max(thisYear, row.year),
-          policy,
-          joinDate,
-        );
         return {
           row,
           givenBack: [] as { date: string; why: string }[],
-          available: balances[row.category].get(row.year)?.availableUnits ?? 0,
+          available: await this.availableAfter(tx, target.id, row, policy, joinDate, now),
         };
       }
       // Days that have become days off since the request are not charged.
@@ -492,6 +601,35 @@ export class LeaveRequestsService {
         return { row, givenBack, available: 0, closed: true };
       }
       const units = kept.reduce((n, d) => n + d.units, 0);
+      if (cur.category === 'COMPOFF') {
+        const check = await this.compOffCheck(
+          tx,
+          target.id,
+          this.today(now),
+          { requestId: cur.id, days: kept, status: 'APPROVED' },
+          cur.id,
+        );
+        if (!check.fits) {
+          throw new ConflictError(
+            `${fullName(target)}'s comp off credits valid on those days cover ` +
+              `${formatDays(Math.max(0, units - check.shortUnits))} of the ${formatDays(units)} this needs. ` +
+              'Reject it, or credit comp off first.',
+            'NOT_ENOUGH_COMPOFF',
+          ).withDetails({ availableDays: daysOf(check.availableUnits), neededDays: daysOf(units) });
+        }
+        const row = await tx.updateRequest(
+          id,
+          {
+            status: 'APPROVED',
+            decidedById: me.id,
+            decidedAt: now,
+            decisionNote: checked.note,
+            units,
+          },
+          kept.length !== cur.days.length ? kept : undefined,
+        );
+        return { row, givenBack, available: check.availableAfter };
+      }
       const { balances } = await this.accounts.balancesIn(
         tx,
         target.id,
@@ -577,14 +715,10 @@ export class LeaveRequestsService {
         decidedAt: now,
         decisionNote: checked.note,
       });
-      const { balances } = await this.accounts.balancesIn(
-        tx,
-        target.id,
-        Math.max(thisYear, cur.year),
-        policy,
-        joinDate,
-      );
-      return { row: updated, available: balances[cur.category].get(cur.year)?.availableUnits ?? 0 };
+      return {
+        row: updated,
+        available: await this.availableAfter(tx, target.id, updated, policy, joinDate, now),
+      };
     });
     const byName = fullName((await this.people.any([me.id])).get(me.id));
     const copy = leaveRevokedCopy({

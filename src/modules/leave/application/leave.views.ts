@@ -116,10 +116,22 @@ export interface LeavePolicyView {
     category: LeaveCategory;
     label: string;
     name: string;
-    daysPerYear: number;
-    yearEnd: 'LAPSES' | 'CARRIES';
+    /** Comp off: null (earned, not granted yearly). */
+    daysPerYear: number | null;
+    /** Comp off: EXPIRES (each credit lapses on its own date). */
+    yearEnd: 'LAPSES' | 'CARRIES' | 'EXPIRES';
     rule: string;
   }[];
+  /** Comp off (3.5). */
+  compOffEnabled: boolean;
+  compOffValidityDays: number;
+  compOffFullDayPct: number;
+  compOffHalfDayPct: number;
+  compOffClaimWithinDays: number;
+  compOffApprover: ApproverRoute;
+  compOffApproverLabel: string;
+  compOffCountLeaveDays: boolean;
+  compOffMaxBalanceDays: number | null;
   kinds: {
     kind: LeaveKind;
     label: string;

@@ -165,7 +165,34 @@ export class LeavePolicyService {
               ? 'What is left carries over to next year.'
               : `Up to ${cap} days carry over to next year; the rest lapses.`),
         },
+        ...(p.compOffEnabled
+          ? [
+              {
+                category: 'COMPOFF' as const,
+                label: CATEGORY_LABEL.COMPOFF,
+                name: CATEGORY_NAME.COMPOFF,
+                daysPerYear: null,
+                yearEnd: 'EXPIRES' as const,
+                rule:
+                  'Earned by working a weekly day off, a holiday' +
+                  (p.compOffCountLeaveDays ? ' or a day of leave' : '') +
+                  `, once the claim is approved. Take it within ${p.compOffValidityDays} days of the day worked` +
+                  (p.clslBackdateDays > 0
+                    ? `: any day, today included, or up to ${p.clslBackdateDays} days back.`
+                    : ', any day from today.'),
+              },
+            ]
+          : []),
       ],
+      compOffEnabled: p.compOffEnabled,
+      compOffValidityDays: p.compOffValidityDays,
+      compOffFullDayPct: p.compOffFullDayPct,
+      compOffHalfDayPct: p.compOffHalfDayPct,
+      compOffClaimWithinDays: p.compOffClaimWithinDays,
+      compOffApprover: p.compOffApprover,
+      compOffApproverLabel: APPROVER_ROUTE_LABEL[p.compOffApprover],
+      compOffCountLeaveDays: p.compOffCountLeaveDays,
+      compOffMaxBalanceDays: p.compOffMaxBalanceDays,
       kinds: LEAVE_KINDS.map((kind) => ({
         kind,
         label: KIND_LABEL[kind],

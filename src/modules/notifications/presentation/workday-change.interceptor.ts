@@ -12,6 +12,7 @@ import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 const CHANGES: ReadonlyArray<{ path: RegExp; what: string }> = [
   { path: /\/activity\/(start|end)-day\/?$/, what: 'DAY' },
   { path: /\/workday\/me\/late-reason\/?$/, what: 'DAY' },
+  { path: /\/workday\/me\/wfh\/(start|end)\/?$/, what: 'DAY' },
   { path: /\/breaks\/(start|end|skip)\/?$/, what: 'BREAK' },
   { path: /\/presence\/(start|end)\/?$/, what: 'PRESENCE' },
   { path: /\/meetings\/(start|past)\/?$/, what: 'MEETING' },

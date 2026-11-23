@@ -46,6 +46,7 @@ import { WorkSessionsService } from '../application/work-sessions.service';
 import { WorkdayService } from '../application/workday.service';
 import { HistoryService } from '../application/history.service';
 import { HistoryQueryDto } from '../application/dto/workday.dto';
+import { WfhSessionsService } from '../application/wfh-sessions.service';
 
 @ApiTags('workday')
 @ApiBearerAuth()
@@ -57,6 +58,7 @@ export class WorkdayController {
     private readonly history: HistoryService,
     private readonly sessions: WorkSessionsService,
     private readonly lateStart: LateStartService,
+    private readonly wfhSessions: WfhSessionsService,
   ) {}
 
   @Get('guide')
@@ -107,10 +109,32 @@ export class WorkdayController {
   @ApiOperation({
     summary:
       "The signed-in person's working day: state, sessions, focus time, late start, " +
-      'skips waiting for a comment, overdue approvals (any role)',
+      'skips waiting for a comment, overdue approvals; 3.5: how the day is recorded, work from ' +
+      'home and its cap, biometric punches (any role)',
   })
   async today(@CurrentUser() me: AuthenticatedUser) {
     return envelope(await this.workday.today(me, new Date()));
+  }
+
+  @Post('me/wfh/start')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Start your day, working from home (3.5, the phone): biometric staff on an approved or scheduled ' +
+      'work-from-home day. 409 ATTENDANCE_BY_AGENT, WFH_NOT_APPROVED, WFH_PENDING, CHECKED_IN_AT_OFFICE',
+  })
+  async wfhStart(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.wfhSessions.start(me, new Date()));
+  }
+
+  @Post('me/wfh/end')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'End your work-from-home day (3.5, the phone). Start again resumes it. 409 WFH_NOT_RUNNING',
+  })
+  async wfhEnd(@CurrentUser() me: AuthenticatedUser) {
+    return envelope(await this.wfhSessions.end(me, new Date()));
   }
 }
 

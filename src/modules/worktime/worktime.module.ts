@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { REPLAY_DAY_LIMITS } from '@shared/http/replay-day.port';
 import { WORKDAY_GATE } from '@shared/tenancy/workday-gate.port';
 import { LeaveModule } from '@modules/leave/leave.module';
+import { WfhModule } from '@modules/wfh/wfh.module';
 import { SettingsModule } from '@modules/settings/settings.module';
 import { CalendarModule } from '@modules/calendar/calendar.module';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
@@ -57,6 +58,9 @@ import {
 import { TeamOverviewService } from './application/team-overview.service';
 import { CombinedViewsService } from './application/combined-views.service';
 import { OrganisationsOverviewController } from './presentation/organisations-overview.controller';
+import { PUNCHES_READER } from './domain/punches.reader';
+import { PrismaPunchesReader } from './infrastructure/prisma-punches.reader';
+import { WfhSessionsService } from './application/wfh-sessions.service';
 
 /**
  * The 3.1 working day: work sessions (Start Day to End Day, the implicit legacy
@@ -69,7 +73,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
  * Start Day, End Day and activity reports; the reports module for its numbers.
  */
 @Module({
-  imports: [ShiftsModule, SettingsModule, CalendarModule, LeaveModule],
+  imports: [ShiftsModule, SettingsModule, CalendarModule, LeaveModule, WfhModule],
   controllers: [
     WorkdayController,
     WorkdayBreaksController,
@@ -93,8 +97,10 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     { provide: APPROVALS_READER, useClass: PrismaApprovalsReader },
     { provide: AWAY_REPOSITORY, useClass: PrismaAwayRepository },
     { provide: FOCUS_ADJUSTMENT_REPOSITORY, useClass: PrismaFocusAdjustmentRepository },
+    { provide: PUNCHES_READER, useClass: PrismaPunchesReader },
     FocusAdjustmentsService,
     { provide: INPUT_SAMPLES_READER, useClass: PrismaInputSamplesReader },
+    WfhSessionsService,
     WorkSessionsService,
     SkipsService,
     MeetingsService,
@@ -132,6 +138,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
     LateStartService,
     WORK_SESSION_REPOSITORY,
     WORKTIME_READER,
+    PUNCHES_READER,
     APPROVALS_READER,
     INPUT_SAMPLES_READER,
     MEETING_RECORD_REPOSITORY,

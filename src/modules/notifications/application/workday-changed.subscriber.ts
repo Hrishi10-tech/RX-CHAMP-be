@@ -6,6 +6,10 @@ import { NotificationsGateway } from '../presentation/notifications.gateway';
 const LEAVE_CHANGED = 'leave.changed';
 /** A day ended (End Day or the automatic close), published by activity and worktime. */
 const DAY_ENDED = 'activity.day-ended';
+/** Work from home asked, decided or scheduled (3.5, the wfh module). */
+const WFH_CHANGED = 'wfh.changed';
+/** Comp off claimed, decided or credited (3.5). */
+const COMPOFF_CHANGED = 'compoff.changed';
 
 /**
  * 3.4: passes leave changes and ended days to the person's own devices as
@@ -25,6 +29,12 @@ export class WorkdayChangedSubscriber implements OnModuleInit {
     );
     this.events.subscribe<{ userId: string }>(DAY_ENDED, (e) =>
       this.gateway.emitWorkdayChanged(e.userId, 'AUTO'),
+    );
+    this.events.subscribe<{ userId: string }>(WFH_CHANGED, (e) =>
+      this.gateway.emitWorkdayChanged(e.userId, 'WFH'),
+    );
+    this.events.subscribe<{ userId: string }>(COMPOFF_CHANGED, (e) =>
+      this.gateway.emitWorkdayChanged(e.userId, 'COMPOFF'),
     );
   }
 }

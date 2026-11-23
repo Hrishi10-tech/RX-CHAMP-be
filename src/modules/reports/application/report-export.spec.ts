@@ -186,6 +186,7 @@ describe('payrollWorkbook', () => {
       'CL/SL days',
       'EL/PL days',
       'Paid leave hours',
+      'Comp off days',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -283,6 +284,7 @@ describe('payrollWorkbook', () => {
         categories: 'CL/SL',
         clslDays: 1,
         elplDays: 0,
+        compOffDays: 0,
         pendingDays: 0,
         mask: 15,
       },
@@ -301,6 +303,7 @@ describe('payrollWorkbook', () => {
         categories: 'EL/PL',
         clslDays: 0,
         elplDays: 0.5,
+        compOffDays: 0,
         pendingDays: 0,
         mask: 3,
       },
@@ -312,6 +315,7 @@ describe('payrollWorkbook', () => {
       leaveDays: 1.5,
       clslDays: 1,
       elplDays: 0.5,
+      compOffDays: 0,
       leaveSec: 12 * H,
     };
     const wb = await readBack(await payrollWorkbook([r], TZ));

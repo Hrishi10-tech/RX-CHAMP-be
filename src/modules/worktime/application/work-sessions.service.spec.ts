@@ -71,6 +71,8 @@ function setup(
         active: true,
       },
     ]),
+    // 3.5: everyone here is on the desktop agent.
+    findById: jest.fn().mockResolvedValue({ id: 'u1', attendanceSource: 'AGENT' }),
     // 4.0: the department's managers oversee Staff; with none, the Admin.
     listDepartmentManagerIds: jest.fn().mockResolvedValue(['m1']),
     listOrgAdminIds: jest.fn().mockResolvedValue(['a1']),

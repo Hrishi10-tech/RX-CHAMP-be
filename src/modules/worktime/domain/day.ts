@@ -5,6 +5,7 @@ import {
 } from '@modules/shifts/domain/break-record.repository';
 import type { DayLeave } from '@modules/leave/domain/day-leave';
 import { AwayRow } from './away.repository';
+import type { WfhDay } from '@modules/wfh/domain/wfh';
 import { computeFocus, FocusBreakdown } from './focus';
 import { adjustedSecOf, FocusAdjustmentRecord } from './focus-adjustment';
 import { Interval, intersect, lengthMs, normalize, span, toSec } from './intervals';
@@ -32,7 +33,14 @@ export interface PersonDayData {
   adjustments?: FocusAdjustmentRecord[];
   /** Leave that day (3.4), approved and pending; optional for callers that have none. */
   leave?: DayLeave;
+  /** Work from home that day (3.5): its cap limits time on the phone; optional. */
+  wfh?: WfhDay;
 }
+
+/** A work-from-home session started on the phone (3.5): counts up to the day's cap. */
+export const MOBILE_WFH_SOURCE = 'MOBILE_WFH';
+/** A day made from biometric punches (3.5). */
+export const BIOMETRIC_SOURCE = 'BIOMETRIC';
 
 /**
  * Focus for one loaded day (4.0: docs/4.0/SPEC.md 2.4). `bufferMin` is the
@@ -45,6 +53,7 @@ export function focusOfDay(d: PersonDayData, now: Date, bufferMin = 0): FocusBre
       startedAt: s.startedAt,
       endedAt: s.endedAt,
       replay: s.source === 'REPLAY',
+      capped: s.source === MOBILE_WFH_SOURCE,
     })),
     coverage: d.coverage ?? [],
     presence: d.presence,
@@ -70,6 +79,7 @@ export function focusOfDay(d: PersonDayData, now: Date, bufferMin = 0): FocusBre
       endedAt: m.endedAt,
     })),
     adjustedSec: adjustedSecOf(d.adjustments ?? []),
+    wfhCapSec: d.wfh?.capSec ?? 0,
     now,
   });
 }

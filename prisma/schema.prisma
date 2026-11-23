@@ -521,6 +521,15 @@ model User {
   /// still request a shot by hand. Defaults on, so existing users are unaffected.
   screenshotsEnabled Boolean @default(true) @map("screenshots_enabled")
 
+  /// How the person's day is recorded (3.5): AGENT (the desktop app) or BIOMETRIC
+  /// (the first and last punch of the day). Never both.
+  attendanceSource     String  @default("AGENT") @map("attendance_source")
+  /// The code the biometric device knows the person by, normalised; 4.0: one
+  /// person per code in an organisation.
+  biometricCode        String? @map("biometric_code")
+  /// The day (YYYY-MM-DD) the source last changed: punches shape days from then on.
+  attendanceSourceFrom String? @map("attendance_source_from")
+
   /// 4.0: the person's department (staff: required; managers: their own, optional).
   departmentId       String?             @map("department_id") @db.Uuid
   departmentRef      Department?         @relation("UserDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
@@ -559,6 +568,7 @@ model User {
   @@index([status])
   @@index([companyId])
   @@index([departmentId])
+  @@unique([companyId, biometricCode])
   @@map("users")
 }
 
@@ -1109,6 +1119,8 @@ model ScreenshotExport {
 enum LeaveCategory {
   CLSL
   ELPL
+  /// 3.5: comp off, taken against credits earned by working extra days.
+  COMPOFF
 }
 
 enum LeaveKind {
@@ -1237,3 +1249,195 @@ model LeaveRequestDay {
   @@index([requestId])
   @@map("leave_request_days")
 }
+
+
+
+// ----------------------------------------------------------------------------
+// Biometric attendance (3.5): punches from the device, matched to people by their
+// biometric code; a biometric person's day runs from the first punch to the last.
+// ----------------------------------------------------------------------------
+
+/// One punch. Never deleted: a wrong one is voided with a reason.
+model BiometricPunch {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// 4.0: the organisation whose key or admin sent it; codes match its people only.
+  companyId   String    @map("company_id") @db.Uuid
+  /// The code as the device sent it.
+  code        String
+  /// The code normalised for matching (users.biometric_code).
+  codeKey     String    @map("code_key")
+  punchedAt   DateTime  @map("punched_at")
+  /// IN, OUT, or null when the device does not say.
+  direction   String?
+  /// The device or terminal ('' when not given); part of the duplicate check.
+  deviceId    String    @default("") @map("device_id")
+  /// The biometric system's own id for the punch, when it has one.
+  externalId  String?   @map("external_id")
+  /// PUSH | PULL | CSV | MANUAL
+  source      String
+  /// The person the code belongs to; null while nobody has it.
+  userId      String?   @map("user_id") @db.Uuid
+  /// The person's working day it belongs to (YYYY-MM-DD); the calendar day while unmatched.
+  dayKey      String    @map("day_key")
+  /// MANUAL: why it was added. The key or the person that sent it, for the log.
+  note        String?
+  createdById String?   @map("created_by_id") @db.Uuid
+  keyId       String?   @map("key_id") @db.Uuid
+  /// Arrived for a day in a month locked for payroll: kept, never applied.
+  lockedOut   Boolean   @default(false) @map("locked_out")
+  voidedAt    DateTime? @map("voided_at")
+  voidedById  String?   @map("voided_by_id") @db.Uuid
+  voidReason  String?   @map("void_reason")
+  receivedAt  DateTime  @default(now()) @map("received_at")
+
+  @@unique([companyId, codeKey, punchedAt, deviceId])
+  @@index([companyId, codeKey, punchedAt])
+  @@index([userId, dayKey])
+  @@index([codeKey, punchedAt])
+  @@index([punchedAt])
+  @@index([receivedAt])
+  @@index([deviceId, punchedAt])
+  @@map("biometric_punches")
+}
+
+/// An integration key for POST /biometric/punches. The key is shown once; only its
+/// SHA-256 is kept.
+model BiometricKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// 4.0: the organisation the key sends punches for.
+  companyId   String    @map("company_id") @db.Uuid
+  name        String
+  /// The first characters, so a key can be recognised in the list.
+  prefix      String
+  hash        String    @unique
+  createdById String    @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  lastUsedIp  String?   @map("last_used_ip")
+  revokedAt   DateTime? @map("revoked_at")
+  revokedById String?   @map("revoked_by_id") @db.Uuid
+
+  @@index([companyId])
+  @@map("biometric_keys")
+}
+
+// ----------------------------------------------------------------------------
+// Work from home (3.5): requests approved by the reporting manager, and schedules.
+// Counted in quarter days like leave (a full day is 4).
+// ----------------------------------------------------------------------------
+
+model WfhRequest {
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       String          @map("user_id") @db.Uuid
+  kind         LeaveKind
+  part         LeavePart?
+  startDate    String          @map("start_date")
+  endDate      String          @map("end_date")
+  /// Quarter days asked for (working days only).
+  units        Int
+  reason       String
+  status       LeaveStatus     @default(PENDING)
+  /// Who decides: MANAGER, SUPER_MANAGER or SUPER_ADMIN; null when approved at once.
+  approverRole RoleName?       @map("approver_role")
+  approverId   String?         @map("approver_id") @db.Uuid
+  decidedById  String?         @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime?       @map("decided_at")
+  decisionNote String?         @map("decision_note")
+  cancelledAt  DateTime?       @map("cancelled_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  days         WfhRequestDay[]
+
+  @@index([userId, status])
+  @@index([status, approverRole])
+  @@index([startDate])
+  @@map("wfh_requests")
+}
+
+/// One day of a request: which quarters it covers (bits Q1 = 1 to Q4 = 8).
+model WfhRequestDay {
+  id        String     @id @default(uuid()) @db.Uuid
+  requestId String     @map("request_id") @db.Uuid
+  request   WfhRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String     @map("user_id") @db.Uuid
+  date      String
+  mask      Int
+  units     Int
+
+  @@index([userId, date])
+  @@index([date])
+  @@index([requestId])
+  @@map("wfh_request_days")
+}
+
+/// Periodic work from home: these weekdays (some weeks of the month only, if set),
+/// from a date, until a date or for good. Scheduled days count as approved. A
+/// schedule that has begun is never edited: it is ended and a new one starts.
+model WfhSchedule {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  /// ISO weekdays (1 = Monday ... 7 = Sunday).
+  weekdays    Int[]
+  /// Weeks of the month (1 to 5); empty: every week.
+  weeks       Int[]      @default([])
+  kind        LeaveKind
+  part        LeavePart?
+  fromDate    String     @map("from_date")
+  toDate      String?    @map("to_date")
+  /// Days of the pattern left out (YYYY-MM-DD).
+  skipDates   String[]   @default([]) @map("skip_dates")
+  note        String     @default("")
+  createdById String     @map("created_by_id") @db.Uuid
+  updatedById String?    @map("updated_by_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([fromDate])
+  @@map("wfh_schedules")
+}
+
+// ----------------------------------------------------------------------------
+// Comp off (3.5): a credit for an extra day worked, claimed and approved, used as
+// leave of type COMPOFF before it lapses. Quarter days like leave.
+// ----------------------------------------------------------------------------
+
+model CompOffCredit {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  /// The extra day worked (YYYY-MM-DD).
+  workedDate     String      @map("worked_date")
+  /// WEEKLY_OFF | HOLIDAY | LEAVE | WORKING (credited by hand for a working day)
+  dayKind        String      @map("day_kind")
+  /// What the day was called ("Sunday", "Diwali", "On leave (CL/SL)").
+  dayLabel       String      @default("") @map("day_label")
+  /// Focus time that day when it was claimed, for the approver (seconds).
+  workedSec      Int         @default(0) @map("worked_sec")
+  /// Quarter days asked for, and given once approved.
+  askedUnits     Int         @map("asked_units")
+  units          Int         @default(0)
+  reason         String
+  /// CLAIM (the person asked) or GRANT (credited by hand).
+  source         String      @default("CLAIM")
+  status         LeaveStatus @default(PENDING)
+  approverRole   RoleName?   @map("approver_role")
+  approverId     String?     @map("approver_id") @db.Uuid
+  decidedById    String?     @map("decided_by_id") @db.Uuid
+  decidedAt      DateTime?   @map("decided_at")
+  decisionNote   String?     @map("decision_note")
+  /// The last day the credit can be taken (set when approved).
+  expiresOn      String?     @map("expires_on")
+  /// When the person was told it lapses soon.
+  expiryNoticeAt DateTime?   @map("expiry_notice_at")
+  createdById    String      @map("created_by_id") @db.Uuid
+  cancelledAt    DateTime?   @map("cancelled_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([status, approverRole])
+  @@index([workedDate])
+  @@index([expiresOn])
+  @@map("comp_off_credits")
+}
+

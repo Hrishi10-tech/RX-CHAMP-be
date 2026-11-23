@@ -36,6 +36,11 @@ export interface FocusView {
   paidSec: number;
   /** Signed seconds added by hand by the Super Manager (3.3); 0 on an untouched day. */
   adjustedSec: number;
+  /** Time worked from home on the phone (3.5), and the part beyond the day's cap (not counted). */
+  wfhSec?: number;
+  wfhOverSec?: number;
+  /** A work-from-home day running on the phone: seconds until focus stops at the cap. */
+  capRemainingSec?: number | null;
 }
 
 export type WorkdayState = 'NOT_STARTED' | 'OPEN' | 'ENDED';
@@ -44,6 +49,37 @@ export interface WorkSessionView {
   startedAt: string;
   endedAt: string | null;
   endReason: 'USER' | 'AUTO_CLOSED' | null;
+  /** AGENT, LEGACY, BIOMETRIC (punches) or MOBILE_WFH (the phone), 3.5. */
+  source?: string;
+}
+
+/** Work from home on the day (3.5). */
+export interface WorkdayWfhView {
+  /** Days approved (0.25 to 1) and as a label ("Full day", "Half day (first half)"). */
+  days: number;
+  label: string;
+  /** REQUEST, SCHEDULE or BOTH, and in words. */
+  source: string;
+  sourceLabel: string;
+  mask: number;
+  /** Waiting for approval (days). */
+  pendingDays: number;
+  /** The most the day's time from home counts (seconds); biometric staff on the phone. */
+  capSec: number;
+  /** Biometric staff: the phone may start or end the day now. */
+  canStart: boolean;
+  canEnd: boolean;
+  /** Why it cannot start, in a sentence (null when it can). */
+  startBlocked: string | null;
+}
+
+/** A biometric punch of the day (3.5). */
+export interface WorkdayPunchView {
+  at: string;
+  direction: 'IN' | 'OUT' | null;
+  deviceId: string;
+  source: string;
+  voided: boolean;
 }
 
 export interface ShiftBrief {
@@ -133,6 +169,14 @@ export interface WorkdayTodayView {
     /** The open day was carried on into the next shift (no more questions today). */
     extended: boolean;
   };
+  /** How the day is recorded (3.5): AGENT (the desktop app) or BIOMETRIC (punches). */
+  attendance?: { source: 'AGENT' | 'BIOMETRIC'; biometricCode: string | null };
+  /** Work from home on the day (3.5), or null. */
+  wfh?: WorkdayWfhView | null;
+  /** Biometric staff (3.5): the day's punches, oldest first. */
+  punches?: WorkdayPunchView[];
+  /** Biometric staff (3.5): the day was closed with no check-out. */
+  checkoutMissing?: boolean;
 }
 
 export interface StartDayResponse {
@@ -327,6 +371,17 @@ export interface TeamTodayRow {
   pending: number;
   hourly: HourActivity[];
   quietHours: number;
+  /** How the day is recorded (3.5). */
+  attendance?: 'AGENT' | 'BIOMETRIC';
+  /** Work from home that day (3.5), or null. */
+  wfh?: WorkdayWfhView | null;
+  /** Biometric staff (3.5): the day's punches in short. */
+  biometric?: {
+    punches: number;
+    firstPunchAt: string | null;
+    lastPunchAt: string | null;
+    checkoutMissing: boolean;
+  } | null;
 }
 
 export interface TeamTodayView {
@@ -344,6 +399,9 @@ export interface TeamTodayView {
     /** With part of the day on approved leave (3.4). */
     partLeave?: number;
     lateStarts: number;
+    /** 3.5 */
+    workingFromHome?: number;
+    biometric?: number;
     pendingApprovals: number;
     overdueApprovals: number;
     focusSec: number;

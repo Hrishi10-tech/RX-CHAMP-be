@@ -37,10 +37,10 @@ import {
   CATEGORY_NAME,
   daysOf,
   formatDays,
-  isCategory,
+  isPool,
   kindLabel,
-  LEAVE_CATEGORIES,
-  LeaveCategory,
+  POOL_CATEGORIES,
+  PoolCategory,
   unitsOfDays,
 } from '../domain/leave.types';
 import { leaveSpan } from '../domain/request-rules';
@@ -57,7 +57,7 @@ export const ADJUST_REASON_MIN = 5;
 export const ADJUST_REASON_MAX = 300;
 export const ADJUST_MAX_DAYS = 365;
 
-export type Balances = Record<LeaveCategory, Map<number, YearBalance>>;
+export type Balances = Record<PoolCategory, Map<number, YearBalance>>;
 
 export interface AdjustInput {
   userId: string;
@@ -68,10 +68,8 @@ export interface AdjustInput {
   reason: unknown;
 }
 
-export function quotaMap(
-  rows: readonly LeaveQuotaRecord[],
-): Partial<Record<LeaveCategory, number>> {
-  const out: Partial<Record<LeaveCategory, number>> = {};
+export function quotaMap(rows: readonly LeaveQuotaRecord[]): Partial<Record<PoolCategory, number>> {
+  const out: Partial<Record<PoolCategory, number>> = {};
   for (const q of rows) out[q.category] = q.unitsPerYear;
   return out;
 }
@@ -82,7 +80,7 @@ function thisYearOf(now: Date): number {
 
 /** One pool's balance for one year as the API shows it. */
 export function categoryView(
-  category: LeaveCategory,
+  category: PoolCategory,
   year: number,
   b: YearBalance | undefined,
   account: LeaveAccountRecord | undefined,
@@ -186,7 +184,7 @@ export class LeaveAccountsService {
     now: Date,
   ): CategoryBalanceView[] {
     const carryUsable = year <= thisYearOf(now);
-    return LEAVE_CATEGORIES.map((c) =>
+    return POOL_CATEGORIES.map((c) =>
       categoryView(
         c,
         year,
@@ -262,7 +260,7 @@ export class LeaveAccountsService {
     const names = await this.people.any(adjustments.map((a) => a.createdById));
     const tz = appTimezone();
     const lines: LedgerLine[] = [];
-    for (const category of LEAVE_CATEGORIES) {
+    for (const category of POOL_CATEGORIES) {
       const b = balances[category].get(year);
       const account = accounts.find((a) => a.year === year && a.category === category);
       if (!b || !account) continue;
@@ -355,8 +353,12 @@ export class LeaveAccountsService {
     const target = (await this.people.any([input.userId])).get(input.userId);
     if (!target) throw new NotFoundError('Unknown person');
     this.assertMayAdjust(me, target);
-    if (!isCategory(input.category)) {
-      throw new ValidationError('Pick CL/SL or EL/PL.').withDetails({ field: 'category' });
+    if (!isPool(input.category)) {
+      throw new ValidationError(
+        input.category === 'COMPOFF'
+          ? 'Comp off is credited from the Comp off tab, not changed here.'
+          : 'Pick CL/SL or EL/PL.',
+      ).withDetails({ field: 'category' });
     }
     const category = input.category;
     const mode = input.mode;
@@ -454,7 +456,7 @@ export class LeaveAccountsService {
     const target = (await this.people.any([userId])).get(userId);
     if (!target) throw new NotFoundError('Unknown person');
     this.assertMayAdjust(me, target);
-    const wanted: { category: LeaveCategory; units: number | null }[] = [];
+    const wanted: { category: PoolCategory; units: number | null }[] = [];
     for (const [field, category] of [
       ['clslDaysPerYear', 'CLSL'],
       ['elplDaysPerYear', 'ELPL'],
@@ -486,7 +488,7 @@ export class LeaveAccountsService {
     const thisYear = thisYearOf(now);
     const changes = await this.repo.inUserLock(userId, async (tx) => {
       const before = quotaMap(await tx.quotas(userId));
-      const done: { category: LeaveCategory; fromUnits: number; toUnits: number }[] = [];
+      const done: { category: PoolCategory; fromUnits: number; toUnits: number }[] = [];
       for (const w of wanted) {
         const fromUnits = before[w.category] ?? policyGrantUnits(policy, w.category);
         const toUnits = w.units ?? policyGrantUnits(policy, w.category);

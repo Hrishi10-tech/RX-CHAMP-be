@@ -36,6 +36,7 @@ const PERSON_SELECT = {
   createdAt: true,
   role: { select: { name: true } },
   manager: { select: { firstName: true, lastName: true } },
+  attendanceSource: true,
 } as const;
 
 type PersonPayload = Prisma.UserGetPayload<{ select: typeof PERSON_SELECT }>;
@@ -55,6 +56,7 @@ function personFromPrisma(r: PersonPayload): PersonRow {
     managerName: r.manager ? `${r.manager.firstName} ${r.manager.lastName}`.trim() : null,
     active: r.status === 'ACTIVE' && r.deletedAt === null,
     joinedOn: dateKeyInZone(r.createdAt, appTimezone()),
+    attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
   };
 }
 

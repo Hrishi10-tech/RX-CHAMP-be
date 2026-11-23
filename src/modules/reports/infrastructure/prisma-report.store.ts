@@ -7,6 +7,7 @@ import {
   MonthLockRow,
   OpenSessionBlocker,
   PendingLeaveBlocker,
+  PendingWfhBlocker,
   ReportRunRow,
   ReportStore,
 } from '../domain/report.store';
@@ -123,10 +124,27 @@ export class PrismaReportStore implements ReportStore {
         return { ok: false as const, reason: 'PENDING_APPROVALS' as const, count: pending };
       }
       // Leave waiting for a decision (3.4): it would change the month's attendance.
+      // 4.0: the organisation's people only (requests carry the person, not the org).
+      const orgPeople = (
+        await tx.user.findMany({ where: { companyId }, select: { id: true } })
+      ).map((u) => u.id);
       const leave = await tx.leaveRequest.count({
-        where: { status: 'PENDING', days: { some: { date: { startsWith: `${month}-` } } } },
+        where: {
+          status: 'PENDING',
+          userId: { in: orgPeople },
+          days: { some: { date: { startsWith: `${month}-` } } },
+        },
       });
       if (leave > 0) return { ok: false as const, reason: 'PENDING_LEAVE' as const, count: leave };
+      // Work from home waiting (3.5): it decides what biometric staff's days at home count.
+      const wfh = await tx.wfhRequest.count({
+        where: {
+          status: 'PENDING',
+          userId: { in: orgPeople },
+          days: { some: { date: { startsWith: `${month}-` } } },
+        },
+      });
+      if (wfh > 0) return { ok: false as const, reason: 'PENDING_WFH' as const, count: wfh };
       const snapshot = await buildSnapshot();
       const lock = await tx.monthLock.create({
         data: {
@@ -216,6 +234,49 @@ export class PrismaReportStore implements ReportStore {
         userId: r.userId,
         userName: nameOf.get(r.userId) ?? 'Former user',
         category: r.category,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        days: r.units / 4,
+      })),
+    };
+  }
+
+  async pendingWfhInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<{ count: number; items: PendingWfhBlocker[] }> {
+    const where: Prisma.WfhRequestWhereInput = {
+      status: 'PENDING',
+      // 4.0: the organisation's people only.
+      userId: { in: userIds ?? (await this.orgUserIds(companyId)) },
+      days: { some: { date: { startsWith: `${month}-` } } },
+    };
+    const [count, rows] = await Promise.all([
+      this.prisma.wfhRequest.count({ where }),
+      this.prisma.wfhRequest.findMany({
+        where,
+        orderBy: [{ startDate: 'asc' }, { createdAt: 'asc' }],
+        take: Math.max(1, Math.min(500, Math.floor(limit))),
+        select: { id: true, userId: true, startDate: true, endDate: true, units: true },
+      }),
+    ]);
+    const people = rows.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: [...new Set(rows.map((r) => r.userId))] } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameOf = new Map(
+      people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim() || 'Former user'] as const),
+    );
+    return {
+      count,
+      items: rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        userName: nameOf.get(r.userId) ?? 'Former user',
         startDate: r.startDate,
         endDate: r.endDate,
         days: r.units / 4,

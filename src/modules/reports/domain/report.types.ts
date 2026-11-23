@@ -9,7 +9,7 @@ import {
 import { DayClass } from '@modules/worktime/domain/attendance';
 import { HourActivity } from '@modules/worktime/domain/hourly';
 import type { PendingBlocker } from '@modules/worktime/domain/approvals.reader';
-import type { OpenSessionBlocker, PendingLeaveBlocker } from './report.store';
+import type { OpenSessionBlocker, PendingLeaveBlocker, PendingWfhBlocker } from './report.store';
 
 /** Report shapes (SPEC 3.7). */
 
@@ -149,6 +149,8 @@ export interface MonthTotals {
   leaveDays?: number;
   clslDays?: number;
   elplDays?: number;
+  /** Comp off taken (3.5). */
+  compOffDays?: number;
   /** Paid leave time: the expected time the leave covers (3.4). */
   leaveSec?: number;
   needsALook: boolean;
@@ -231,6 +233,9 @@ export interface MonthLockBlockers {
   leave?: PendingLeaveBlocker[];
   /** How many there are (the list stops at 50). */
   pendingLeave?: number;
+  /** Work-from-home requests with a day in the month still waiting (3.5). */
+  wfh?: PendingWfhBlocker[];
+  pendingWfh?: number;
 }
 
 export interface ReportRunView {

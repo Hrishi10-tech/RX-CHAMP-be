@@ -33,7 +33,12 @@ import { GuideItem, staffGuide } from '../domain/staff-guide';
 import { DayDataService } from './day-data.service';
 import { SkipsService } from './skips.service';
 import { WorkSessionsService } from './work-sessions.service';
-import { FocusView, WorkdayTodayView, WorkSessionView } from './worktime.types';
+import { FocusView, WorkdayTodayView, WorkdayWfhView, WorkSessionView } from './worktime.types';
+import { unitsOfMask } from '@modules/leave/domain/leave.types';
+import { WFH_SOURCE_LABEL, wfhMaskLabel } from '@modules/wfh/application/wfh-overview.service';
+import { WfhDay } from '@modules/wfh/domain/wfh';
+import { BIOMETRIC_SOURCE, MOBILE_WFH_SOURCE } from '../domain/day';
+import { DayPunch, PUNCHES_READER, PunchesReader } from '../domain/punches.reader';
 
 export function focusView(f: FocusBreakdown): FocusView {
   return {
@@ -57,6 +62,9 @@ export function focusView(f: FocusBreakdown): FocusView {
     unverifiedSec: f.unverifiedSec,
     paidSec: f.paidSec,
     adjustedSec: f.adjustedSec ?? 0,
+    wfhSec: f.wfhSec,
+    wfhOverSec: f.wfhOverSec,
+    capRemainingSec: f.capRemainingSec,
   };
 }
 
@@ -66,6 +74,33 @@ export function sessionView(s: WorkSessionRecord): WorkSessionView {
     endedAt: s.endedAt?.toISOString() ?? null,
     // A reopened day keeps its AUTO_CLOSED reason while open: an open session has none.
     endReason: s.endedAt ? s.endReason : null,
+    source: s.source,
+  };
+}
+
+/** The day's work from home as the views show it (3.5); null without any. */
+export function wfhDayView(
+  w: WfhDay | undefined,
+  opts: { biometric: boolean; openSource: string | null; dayIsToday: boolean },
+): WorkdayWfhView | null {
+  if (!w || (!w.mask && !w.pendingMask)) return null;
+  const running = opts.openSource === MOBILE_WFH_SOURCE;
+  let startBlocked: string | null = null;
+  if (!opts.biometric) startBlocked = 'Your desktop app tracks your day, at home too.';
+  else if (!w.mask) startBlocked = 'Your work from home today is waiting for approval.';
+  else if (!opts.dayIsToday) startBlocked = 'Work from home starts on the day itself.';
+  else if (opts.openSource && !running) startBlocked = 'You are checked in at the office.';
+  return {
+    days: w.units / 4,
+    label: w.mask ? wfhMaskLabel(w.mask) : 'Waiting for approval',
+    source: w.source ?? 'REQUEST',
+    sourceLabel: WFH_SOURCE_LABEL[w.source ?? 'REQUEST'] ?? 'Approved request',
+    mask: w.mask,
+    pendingDays: unitsOfMask(w.pendingMask) / 4,
+    capSec: w.capSec,
+    canStart: opts.biometric && !running && startBlocked === null,
+    canEnd: running,
+    startBlocked: running ? null : startBlocked,
   };
 }
 
@@ -84,6 +119,7 @@ export class WorkdayService {
     private readonly settings: AppSettingsService,
     private readonly config: ConfigService,
     private readonly plans: DayPlanService,
+    @Inject(PUNCHES_READER) private readonly punches: PunchesReader,
   ) {}
 
   /** GET /workday/me/today: closes a stale session and auto-skips first (lazily). */
@@ -141,10 +177,15 @@ export class WorkdayService {
     const mark = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, leave);
 
     const approverScope = approverScopeOf(me);
-    const [overdue, lastEnded] = await Promise.all([
+    const biometric = person?.attendanceSource === 'BIOMETRIC';
+    const [overdue, lastEnded, punches] = await Promise.all([
       approverScope ? this.approvals.overdueIn(approverScope, now) : Promise.resolve({ count: 0 }),
       state === 'NOT_STARTED' ? this.lastEnded(me.id, date, now) : Promise.resolve(null),
+      biometric
+        ? this.punches.punchesOf([me.id], date, date)
+        : Promise.resolve(new Map<string, DayPunch[]>()),
     ]);
+    const today = person ? this.days.dayWith(ctx, person, now).dateKey : dateKeyInZone(now, tz);
 
     return {
       date,
@@ -218,6 +259,28 @@ export class WorkdayService {
         shiftEndAt: workday && shift ? shiftBounds(shift, date, tz).end.toISOString() : null,
         extended: !!(open && open.date === date && open.extendedAt),
       },
+      attendance: {
+        source: biometric ? 'BIOMETRIC' : 'AGENT',
+        biometricCode: person?.biometricCode ?? null,
+      },
+      wfh: wfhDayView(day.wfh, {
+        biometric,
+        openSource: open && open.date === date ? open.source : null,
+        dayIsToday: date === today,
+      }),
+      punches: biometric
+        ? (punches.get(`${me.id}|${date}`) ?? []).map((p) => ({
+            at: p.at.toISOString(),
+            direction: p.direction,
+            deviceId: p.deviceId,
+            source: p.source,
+            voided: p.voided,
+          }))
+        : [],
+      checkoutMissing:
+        biometric &&
+        !open &&
+        day.sessions.some((s) => s.source === BIOMETRIC_SOURCE && s.endReason === 'AUTO_CLOSED'),
     };
   }
 

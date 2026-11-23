@@ -19,9 +19,14 @@ import { Interval, intersect, joinGaps, lengthMs, normalize, subtract, toSec } f
  *   approvedPlusSec  = Σ overrunSec of TAKEN records with overrunAsked and APPROVED (3.x)
  *   rejectedMinusSec = Σ |meeting ∩ W| of REJECTED meetings + Σ durationMin×60 of REJECTED skips
  *   adjustedSec      = Σ deltaSec of the day's live manual adjustments (3.3, Super Manager)
+ *   wfhSec           = |H − O|   H = work-from-home sessions on the phone (3.5), O = the others
+ *   wfhOverSec       = max(0, wfhSec − wfhCapSec)   time from home beyond the day's cap
  *   focusSec         = max(0, spanSec − breakSec − awayPending − awayRejected − awayUnexplained
- *                              + approvedPlusSec − rejectedMinusSec + adjustedSec)
+ *                              − wfhOverSec + approvedPlusSec − rejectedMinusSec + adjustedSec)
  *   pendingPlusSec   = awayPending + the PENDING overrun asks (3.x)     ("+N min if approved")
+ *
+ * Work from home on the phone (3.5) credits at most the day's share of the shift
+ * (the cap); time at the office the same day (biometric) counts in full on top.
  *
  * Offline evidence (4.0): a REPLAY session (opened or reopened by an action the
  * agent replayed after being offline) counts only where evidence covers it: the
@@ -54,6 +59,8 @@ export interface FocusSession {
   endedAt: Date | null;
   /** 4.0: opened by a replayed offline action (source REPLAY): counts only where covered. */
   replay?: boolean;
+  /** A work-from-home session on the phone (3.5): its time counts up to the day's cap. */
+  capped?: boolean;
 }
 
 /** 4.0: a stretch covered by the agent's activity samples. */
@@ -112,6 +119,8 @@ export interface FocusInput {
   coverage?: FocusCoverage[];
   /** Signed seconds of the day's live manual adjustments (3.3); default 0. */
   adjustedSec?: number;
+  /** The most the day's work from home on the phone credits (3.5); 0 or absent: none. */
+  wfhCapSec?: number;
   now: Date;
 }
 
@@ -145,6 +154,14 @@ export interface FocusBreakdown {
   paidSec: number;
   /** Signed seconds added by hand (3.3); 0 for almost every day. Already inside focusSec. */
   adjustedSec: number;
+  /** Time worked from home on the phone (3.5), and the part beyond the day's cap. */
+  wfhSec: number;
+  wfhOverSec: number;
+  /**
+   * While a work-from-home session runs: seconds until the cap is reached and focus
+   * stops growing (0 once reached); null otherwise.
+   */
+  capRemainingSec: number | null;
 }
 
 export const EMPTY_FOCUS: Readonly<FocusBreakdown> = Object.freeze({
@@ -172,6 +189,9 @@ export const EMPTY_FOCUS: Readonly<FocusBreakdown> = Object.freeze({
   unverifiedSec: 0,
   paidSec: 0,
   adjustedSec: 0,
+  wfhSec: 0,
+  wfhOverSec: 0,
+  capRemainingSec: null,
 });
 
 const SCHEDULED = new Set(['MORNING', 'LUNCH', 'EVENING']);
@@ -317,10 +337,30 @@ export function computeFocus(input: FocusInput): FocusBreakdown {
   const paidScheduledShown = Math.min(paidScheduledSec, paidBreakSec);
   const bufferUsedShown = paidBreakSec - paidScheduledShown;
 
+  // Work from home on the phone (3.5): only the time not also at the office is capped.
+  const capped = input.sessions.filter((s) => s.capped);
+  let wfhSec = 0;
+  let wfhOverSec = 0;
+  let capRemainingSec: number | null = null;
+  if (capped.length) {
+    const home = normalize(capped.map((s) => wholeSpan(s.startedAt, s.endedAt, now)));
+    const office = normalize(
+      input.sessions.filter((s) => !s.capped).map((s) => wholeSpan(s.startedAt, s.endedAt, now)),
+    );
+    wfhSec = toSec(lengthMs(subtract(home, office)));
+    const cap = Math.max(0, Math.round(input.wfhCapSec ?? 0));
+    wfhOverSec = Math.max(0, wfhSec - cap);
+    if (capped.some((s) => s.endedAt === null)) capRemainingSec = Math.max(0, cap - wfhSec);
+  }
+
   const open = input.sessions.some((s) => s.endedAt === null);
   const onBreak = input.presence.some(
     (p) => p.endedAt === null && (p.type === 'BREAK' || p.type === 'LUNCH'),
   );
+  // An open work-from-home session at its cap no longer adds focus.
+  const atCap =
+    capRemainingSec === 0 && !input.sessions.some((s) => s.endedAt === null && !s.capped);
+
   const adjustedSec = Math.round(input.adjustedSec ?? 0);
   const focusSec = Math.max(
     0,
@@ -332,12 +372,13 @@ export function computeFocus(input: FocusInput): FocusBreakdown {
       awayUnexplainedSec +
       approvedPlusSec -
       rejectedMinusSec -
-      unverifiedSec,
+      unverifiedSec -
+      wfhOverSec,
   );
 
   return {
     focusSec,
-    running: open && !onBreak,
+    running: open && !onBreak && !atCap,
     spanSec,
     breakSec,
     meetingSec,
@@ -360,6 +401,9 @@ export function computeFocus(input: FocusInput): FocusBreakdown {
     unverifiedSec,
     paidSec: focusSec + paidBreakSec,
     adjustedSec,
+    wfhSec,
+    wfhOverSec,
+    capRemainingSec,
   };
 }
 

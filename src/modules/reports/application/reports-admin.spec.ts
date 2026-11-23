@@ -437,6 +437,7 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       unlockMonth: jest.fn().mockResolvedValue(true),
       openSessionsInMonth: jest.fn().mockResolvedValue([OPEN_DAY]),
       pendingLeaveInMonth: jest.fn().mockResolvedValue({ count: 1, items: [LEAVE_BLOCKER] }),
+      pendingWfhInMonth: jest.fn().mockResolvedValue({ count: 0, items: [] }),
     };
     const approvals = {
       pendingInMonth: jest.fn().mockResolvedValue(3),
@@ -556,7 +557,15 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       lockedAt: '2026-10-02T05:00:00.000Z',
       lockedByName: 'Meera Nair',
       pending: 0,
-      blockers: { items: [], moreItems: false, openSessions: [], leave: [], pendingLeave: 0 },
+      blockers: {
+        items: [],
+        moreItems: false,
+        openSessions: [],
+        leave: [],
+        pendingLeave: 0,
+        wfh: [],
+        pendingWfh: 0,
+      },
     });
     expect(store.lockMonth).toHaveBeenCalledWith('c1', '2026-09', 'admin', expect.any(Function));
     expect(reader.listPeople).toHaveBeenCalledWith({
@@ -594,6 +603,8 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       openSessions: [OPEN_DAY],
       leave: [LEAVE_BLOCKER],
       pendingLeave: 1,
+      wfh: [],
+      pendingWfh: 0,
     });
     expect(store.pendingLeaveInMonth).toHaveBeenLastCalledWith('c1', '2026-09', 50, undefined);
     expect(approvals.pendingInMonthDetails).toHaveBeenLastCalledWith('c1', '2026-09', 50);
@@ -630,6 +641,8 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       openSessions: [],
       leave: [],
       pendingLeave: 0,
+      wfh: [],
+      pendingWfh: 0,
     });
     expect(approvals.pendingInMonthDetails).not.toHaveBeenCalled();
   });

@@ -311,6 +311,9 @@ describe('toPerson', () => {
       status: 'ACTIVE' as const,
       deletedAt: new Date('2026-10-01T00:00:00Z'),
       role: { name: 'MANAGER' as const },
+      attendanceSource: 'AGENT',
+      biometricCode: null,
+      attendanceSourceFrom: null,
     };
     expect(toPerson(row).active).toBe(false);
     expect(toPerson({ ...row, deletedAt: null }).active).toBe(true);

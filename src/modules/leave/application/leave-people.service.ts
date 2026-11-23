@@ -254,6 +254,21 @@ export class LeavePeopleService {
     });
   }
 
+  /**
+   * Whether people work on a date (4.0: their organisation's calendar; 3.5: their
+   * own or their department's week first). One calendar read per organisation.
+   */
+  async workdays(
+    people: Pick<ShiftPerson, 'companyId'>[],
+  ): Promise<(p: Pick<ShiftPerson, 'id' | 'companyId' | 'departmentId'>, date: string) => boolean> {
+    const orgs = [...new Set(people.map((p) => p.companyId ?? ''))];
+    const cals = new Map(
+      await Promise.all(orgs.map(async (o) => [o, await this.calendar.forOrg(o || null)] as const)),
+    );
+    return (p, date) =>
+      isWorkingDay(cals.get(p.companyId ?? '')!, date, { id: p.id, departmentId: p.departmentId });
+  }
+
   /** The shift times of many people on many days (part-day labels). */
   async shiftTimes(
     items: { person: ShiftPerson; date: string }[],

@@ -83,7 +83,7 @@ export class MonthLockService {
     people: string[] | undefined,
     withSessions: boolean,
   ): Promise<MonthLockBlockers> {
-    const [items, openSessions, leave] = await Promise.all([
+    const [items, openSessions, leave, wfh] = await Promise.all([
       pending > 0
         ? people
           ? this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT, people)
@@ -91,6 +91,7 @@ export class MonthLockService {
         : [],
       withSessions ? this.store.openSessionsInMonth(companyId, month, BLOCKER_LIMIT) : [],
       this.store.pendingLeaveInMonth(companyId, month, BLOCKER_LIMIT, people),
+      this.store.pendingWfhInMonth(companyId, month, BLOCKER_LIMIT, people),
     ]);
     return {
       items,
@@ -98,6 +99,8 @@ export class MonthLockService {
       openSessions,
       leave: leave.items,
       pendingLeave: leave.count,
+      wfh: wfh.items,
+      pendingWfh: wfh.count,
     };
   }
 
@@ -131,6 +134,18 @@ export class MonthLockService {
         count: result.count,
         leave: leave.items,
         moreLeave: result.count > leave.items.length,
+      });
+    }
+    if (!result.ok && result.reason === 'PENDING_WFH') {
+      const wfh = await this.store.pendingWfhInMonth(companyId, month, BLOCKER_LIMIT);
+      throw new ConflictError(
+        `${result.count === 1 ? '1 work-from-home request' : `${result.count} work-from-home requests`} with days in ${month} ` +
+          `still ${result.count === 1 ? 'waits' : 'wait'} for a decision. Decide ${result.count === 1 ? 'it' : 'them'} before locking the month.`,
+        'PENDING_WFH',
+      ).withDetails({
+        count: result.count,
+        wfh: wfh.items,
+        moreWfh: result.count > wfh.items.length,
       });
     }
     if (!result.ok) {
@@ -206,4 +221,6 @@ const EMPTY_BLOCKERS: MonthLockBlockers = {
   openSessions: [],
   leave: [],
   pendingLeave: 0,
+  wfh: [],
+  pendingWfh: 0,
 };

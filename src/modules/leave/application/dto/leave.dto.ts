@@ -27,7 +27,10 @@ const toBool = ({ value }: { value: unknown }) =>
  * the fields through.
  */
 export class LeaveRequestDto {
-  @ApiProperty({ enum: ['CLSL', 'ELPL'] })
+  @ApiProperty({
+    enum: ['CLSL', 'ELPL', 'COMPOFF'],
+    description: 'COMPOFF (3.5): taken against comp off credits',
+  })
   @Allow()
   category!: unknown;
 
@@ -112,9 +115,9 @@ export class ListLeaveQueryDto {
   @IsDateKey()
   to?: string;
 
-  @ApiPropertyOptional({ enum: ['CLSL', 'ELPL'] })
+  @ApiPropertyOptional({ enum: ['CLSL', 'ELPL', 'COMPOFF'] })
   @IsOptional()
-  @IsIn(['CLSL', 'ELPL'])
+  @IsIn(['CLSL', 'ELPL', 'COMPOFF'])
   category?: string;
 
   @ApiPropertyOptional({ description: 'Only requests waiting on the caller' })
@@ -260,6 +263,27 @@ export class PatchLeavePolicyDto {
   @Allow()
   approver?: unknown;
   @ApiPropertyOptional() @Allow() prorateJoiners?: unknown;
+
+  // ---- Comp off (3.5) ----
+  @ApiPropertyOptional({ example: true }) @Allow() compOffEnabled?: unknown;
+  @ApiPropertyOptional({ example: 60, description: 'Days after the day worked (1 to 365)' })
+  @Allow()
+  compOffValidityDays?: unknown;
+  @ApiPropertyOptional({ example: 80 }) @Allow() compOffFullDayPct?: unknown;
+  @ApiPropertyOptional({ example: 40 }) @Allow() compOffHalfDayPct?: unknown;
+  @ApiPropertyOptional({ example: 30, description: 'Days after the day worked (1 to 90)' })
+  @Allow()
+  compOffClaimWithinDays?: unknown;
+  @ApiPropertyOptional({
+    enum: ['MANAGER', 'SUPER_MANAGER', 'SUPER_ADMIN'],
+    description: 'Who decides comp off claims (Super Admin only)',
+  })
+  @Allow()
+  compOffApprover?: unknown;
+  @ApiPropertyOptional({ example: true }) @Allow() compOffCountLeaveDays?: unknown;
+  @ApiPropertyOptional({ example: null, nullable: true, description: 'Days; null: no cap' })
+  @Allow()
+  compOffMaxBalanceDays?: unknown;
 
   @ApiPropertyOptional({
     description:

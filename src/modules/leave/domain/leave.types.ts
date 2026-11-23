@@ -3,11 +3,17 @@
  *
  * CL/SL (casual or sick leave) lapses at the end of the year; EL/PL (earned or
  * privilege leave) carries over. Both allow a full day (or a range of full days),
- * a half day and a quarter day. Pure: no Nest, no Prisma.
+ * a half day and a quarter day. Comp off (3.5) is a third leave type with no
+ * yearly pool: it is taken against credits earned by working extra days. Pure: no
+ * Nest, no Prisma.
  */
 
-export const LEAVE_CATEGORIES = ['CLSL', 'ELPL'] as const;
+export const LEAVE_CATEGORIES = ['CLSL', 'ELPL', 'COMPOFF'] as const;
 export type LeaveCategory = (typeof LEAVE_CATEGORIES)[number];
+
+/** The two yearly pools: accounts, quotas, adjustments and carry-over are theirs alone. */
+export const POOL_CATEGORIES = ['CLSL', 'ELPL'] as const;
+export type PoolCategory = (typeof POOL_CATEGORIES)[number];
 
 export const LEAVE_KINDS = ['FULL_DAY', 'HALF_DAY', 'QUARTER_DAY'] as const;
 export type LeaveKind = (typeof LEAVE_KINDS)[number];
@@ -21,10 +27,15 @@ export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
 /** Requests that hold days: a pending one reserves them, an approved one has taken them. */
 export const ACTIVE_STATUSES: readonly LeaveStatus[] = ['PENDING', 'APPROVED'];
 
-export const CATEGORY_LABEL: Record<LeaveCategory, string> = { CLSL: 'CL/SL', ELPL: 'EL/PL' };
+export const CATEGORY_LABEL: Record<LeaveCategory, string> = {
+  CLSL: 'CL/SL',
+  ELPL: 'EL/PL',
+  COMPOFF: 'Comp off',
+};
 export const CATEGORY_NAME: Record<LeaveCategory, string> = {
   CLSL: 'Casual or sick leave',
   ELPL: 'Earned or privilege leave',
+  COMPOFF: 'Compensatory off, for extra days worked',
 };
 export const KIND_LABEL: Record<LeaveKind, string> = {
   FULL_DAY: 'Full day',
@@ -70,6 +81,9 @@ export const KIND_PARTS: Record<LeaveKind, readonly LeavePart[]> = {
 
 export function isCategory(v: unknown): v is LeaveCategory {
   return typeof v === 'string' && (LEAVE_CATEGORIES as readonly string[]).includes(v);
+}
+export function isPool(v: unknown): v is PoolCategory {
+  return typeof v === 'string' && (POOL_CATEGORIES as readonly string[]).includes(v);
 }
 export function isKind(v: unknown): v is LeaveKind {
   return typeof v === 'string' && (LEAVE_KINDS as readonly string[]).includes(v);

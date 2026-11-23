@@ -30,6 +30,7 @@ import {
 } from '../domain/auto-close';
 import { START_DAY_BACKDATE_MS } from '../domain/meetings';
 import { dayAutoClosedManagerCopy, dayAutoClosedSelfCopy, NOTICE } from '../domain/notice-copy';
+import { WFH_NOTICE, wfhAutoEndedCopy } from '@modules/wfh/domain/wfh-copy';
 import {
   EndDayTxResult,
   LAST_ENDED_WITHIN_MS,
@@ -137,12 +138,30 @@ export class WorkSessionsService {
 
   // ---- Start / End Day ----------------------------------------------------------
 
+  /**
+   * 409 ATTENDANCE_BY_BIOMETRIC for someone whose day comes from the biometric
+   * device (3.5): the desktop agent can neither start nor end it.
+   */
+  async assertAgentDay(userId: string, action: 'start' | 'end' | 'act'): Promise<void> {
+    const person = await this.people.findById(userId);
+    if (person?.attendanceSource !== 'BIOMETRIC') return;
+    throw new ConflictError(
+      action === 'start'
+        ? 'Your attendance is recorded by the biometric device: your day starts with your first punch there.'
+        : action === 'end'
+          ? 'Your attendance is recorded by the biometric device: your day ends with your last punch there.'
+          : 'Your attendance is recorded by the biometric device, so the desktop app does not track your day.',
+      'ATTENDANCE_BY_BIOMETRIC',
+    );
+  }
+
   async startDay(
     userId: string,
     startedAt: Date,
     generation: AgentGeneration,
     now: Date,
   ): Promise<StartDayTxResult> {
+    await this.assertAgentDay(userId, 'start');
     await this.autoCloseIfStale(userId, now);
     await this.pickShift(userId, startedAt);
     const dayOf = await this.dayKeys.keyFnFor(userId);
@@ -170,6 +189,7 @@ export class WorkSessionsService {
   async endDay(userId: string, generation: AgentGeneration, now: Date): Promise<EndDayTxResult> {
     // 4.0: a paused break ends at its pause before the day closes.
     await this.breakRecords.endPaused(userId);
+    await this.assertAgentDay(userId, 'end');
     const today = await this.todayFor(userId, now);
     return this.sessions.endDay(
       userId,
@@ -189,6 +209,7 @@ export class WorkSessionsService {
     generation: AgentGeneration,
     now: Date,
   ): Promise<WorkSessionRecord> {
+    await this.assertAgentDay(userId, 'act');
     await this.autoCloseIfStale(userId, now);
     const today = await this.todayFor(userId, now);
     const result = await this.sessions.ensureOpen(userId, generation, now, today);
@@ -207,6 +228,8 @@ export class WorkSessionsService {
     at: Date,
     now: Date,
   ): Promise<WorkSessionRecord | null> {
+    // A biometric person's day comes from the device only (3.5).
+    if ((await this.people.findById(userId))?.attendanceSource === 'BIOMETRIC') return null;
     const dayOf = await this.dayKeys.keyFnFor(userId);
     const today = dayOf(now);
     if (dayOf(at) !== today) return null;
@@ -225,6 +248,8 @@ export class WorkSessionsService {
   async autoCloseIfStale(userId: string, now: Date): Promise<boolean> {
     const open = await this.sessions.findOpen(userId);
     if (!open) return false;
+    // A biometric day is closed by the biometric module from its punches (3.5).
+    if (open.source === 'BIOMETRIC') return false;
     // The cache holds the earliest instant this session could be closed (the idle
     // rule's due time, or the hard stop): nothing to check before it.
     const cached = this.latestEndCache.get(open.id);
@@ -259,6 +284,9 @@ export class WorkSessionsService {
       await Promise.all(orgs.map(async (o) => [o, await this.settings.get(o)] as const)),
     );
     const stale: { session: WorkSessionRecord; latestEnd: Date }[] = [];
+    // Work from home on the phone (3.5): no keyboard or mouse to read, so a day left
+    // running is ended at the shift end once the latest close has passed.
+    const wfhStale: { session: WorkSessionRecord; closeAt: Date }[] = [];
     // 3.2 Forgotten End Day: past the shift's end, a day nobody has touched the
     // keyboard or mouse in for `forgottenEndDayIdleMin` is ended. Needs the last
     // input, read in one query.
@@ -269,9 +297,22 @@ export class WorkSessionsService {
       idleMin: number;
     }[] = [];
     for (const s of open) {
+      // A biometric day is closed by its punches (the biometric module, 3.5).
+      if (s.source === 'BIOMETRIC') continue;
       const person = byId.get(s.userId) ?? null;
       const settings = settingsByOrg.get(person?.companyId ?? null)!;
       const latestEnd = this.latestEndFor(s, person, ctx, settings.autoCloseAfterShiftEndMin);
+      if (s.source === 'MOBILE_WFH') {
+        const shiftEnd = this.shiftEndFor(s, person, ctx);
+        if (isStale(latestEnd, now)) {
+          const closeAt =
+            shiftEnd && shiftEnd.getTime() > s.startedAt.getTime() ? shiftEnd : latestEnd;
+          wfhStale.push({ session: s, closeAt });
+        } else {
+          this.remember(s.id, latestEnd, now);
+        }
+        continue;
+      }
       // 4.1 shared computer: a day carried on into the next shift is measured from
       // that answer, as a day with no shift, never from the first shift's end.
       const basis = s.extendedAt
@@ -285,7 +326,27 @@ export class WorkSessionsService {
       // The lazy check needs nothing before the idle rule can apply.
       this.remember(s.id, new Date(Math.min(latestEnd.getTime(), idleFrom.getTime())), now);
     }
-    if (!stale.length && !watch.length) return 0;
+    let closedWfh = 0;
+    for (const { session, closeAt } of wfhStale) {
+      try {
+        const res = await this.sessions.autoClose(session, closeAt);
+        this.latestEndCache.delete(session.id);
+        if (!res.closed) continue;
+        closedWfh += 1;
+        await this.announceWfhAutoEnd(
+          session,
+          closeAt,
+          res.newlyEnded,
+          byId.get(session.userId) ?? null,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `auto-end of work from home ${session.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (closedWfh) this.logger.log(`ended ${closedWfh} work-from-home day(s) left running`);
+    if (!stale.length && !watch.length) return closedWfh;
 
     const lastInputs = await this.sessions.lastInputs(
       [...stale, ...watch].map(({ session, latestEnd }) => ({
@@ -310,9 +371,9 @@ export class WorkSessionsService {
         stale.push({ session: w.session, latestEnd: w.latestEnd });
       else this.remember(w.session.id, due, now);
     }
-    if (!stale.length) return 0;
+    if (!stale.length) return closedWfh;
 
-    let closed = 0;
+    let closed = closedWfh;
     for (const { session, latestEnd } of stale) {
       try {
         const closeAt = autoCloseAt({
@@ -393,6 +454,32 @@ export class WorkSessionsService {
   private remember(sessionId: string, latestEnd: Date, now: Date): void {
     if (this.latestEndCache.size >= LATEST_END_CACHE_MAX) this.latestEndCache.clear();
     this.latestEndCache.set(sessionId, { latestEnd: latestEnd.getTime(), at: now.getTime() });
+  }
+
+  private async announceWfhAutoEnd(
+    session: WorkSessionRecord,
+    closeAt: Date,
+    newlyEnded: boolean,
+    person: ShiftPerson | null,
+  ): Promise<void> {
+    const name = person ? personName(person) : 'A team member';
+    try {
+      if (newlyEnded) {
+        await this.events.publish(
+          DayEndedEvent.eventName,
+          new DayEndedEvent(session.userId, name, person?.managerId ?? null, session.date, closeAt),
+        );
+      }
+      const copy = wfhAutoEndedCopy({ endedAt: time12InZone(closeAt, this.timezone) });
+      await this.events.publish(
+        NoticeEvent.eventName,
+        new NoticeEvent([session.userId], WFH_NOTICE.WFH_AUTO_ENDED, copy.title, copy.body, null),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `work-from-home end notice for ${session.userId} failed: ${(err as Error).message}`,
+      );
+    }
   }
 
   private async announceAutoClose(

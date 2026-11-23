@@ -20,7 +20,15 @@ export interface ShiftPerson {
   /** 3.x reporting line; 4.0 no longer reads it for access or routing. */
   managerId: string | null;
   active: boolean;
+  /** How the person's day is recorded (3.5): the desktop agent, or the biometric device. */
+  attendanceSource?: AttendanceSource;
+  /** The code the biometric device knows them by (3.5), normalised. */
+  biometricCode?: string | null;
+  /** The day the attendance source last changed (3.5). */
+  attendanceSourceFrom?: string | null;
 }
+
+export type AttendanceSource = 'AGENT' | 'BIOMETRIC';
 
 export interface PeopleQuery {
   /** 4.0: only this organisation's people. */
@@ -33,6 +41,8 @@ export interface PeopleQuery {
   managerId?: string;
   search?: string;
   department?: string;
+  /** Only people recorded this way (3.5). */
+  attendanceSource?: AttendanceSource;
   ids?: string[];
   skip?: number;
   take?: number;

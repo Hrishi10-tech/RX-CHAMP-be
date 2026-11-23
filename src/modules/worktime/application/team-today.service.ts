@@ -18,7 +18,9 @@ import { focusOfDay, meetingsOfDay, PersonDayData } from '../domain/day';
 import { WORK_SESSION_REPOSITORY, WorkSessionRepository } from '../domain/work-session.repository';
 import { DayDataService } from './day-data.service';
 import { PeopleScopeService } from './people-scope.service';
-import { focusView } from './workday.service';
+import { focusView, wfhDayView } from './workday.service';
+import { BIOMETRIC_SOURCE } from '../domain/day';
+import { DayPunch, PUNCHES_READER, PunchesReader } from '../domain/punches.reader';
 import { TeamBreakStatus, TeamRowStatus, TeamTodayRow, TeamTodayView } from './worktime.types';
 
 /** A PersonRow as the shift resolver needs it. */
@@ -35,6 +37,7 @@ export function asShiftPerson(p: PersonRow): ShiftPerson {
     departmentId: p.departmentId,
     managerId: p.managerId,
     active: p.active,
+    attendanceSource: p.attendanceSource ?? 'AGENT',
   };
 }
 
@@ -53,6 +56,7 @@ export class TeamTodayService {
     private readonly dayData: DayDataService,
     private readonly days: BreakDayService,
     private readonly settings: AppSettingsService,
+    @Inject(PUNCHES_READER) private readonly punches: PunchesReader,
   ) {}
 
   async today(
@@ -94,23 +98,30 @@ export class TeamTodayService {
     const dates = [...new Set(dateOf.values())].sort();
     const from = dates[0] ?? asked;
     const to = dates[dates.length - 1] ?? asked;
-    const [data, buckets, pending, overdueApprovals, settings, openPresence] = await Promise.all([
-      this.dayData.load(ids, from, to, now, { heal: true }),
-      activity
-        ? this.dayData.bucketHours(ids, from, to, now)
-        : Promise.resolve(new Map<string, readonly number[]>()),
-      this.approvals.pendingByUserDate(ids, from, to, now),
-      ids.length
-        ? this.approvals.count({
-            scope: { kind: 'ALL' },
-            statuses: ['PENDING'],
-            overdueAt: now,
-            userIds: ids,
-          })
-        : Promise.resolve(0),
-      this.settings.get(people[0]?.companyId ?? null),
-      live ? this.reader.presenceOverlapping(ids, now, now) : Promise.resolve([] as PresenceRow[]),
-    ]);
+    const biometricIds = people.filter((p) => p.attendanceSource === 'BIOMETRIC').map((p) => p.id);
+    const [data, buckets, pending, overdueApprovals, settings, openPresence, punches] =
+      await Promise.all([
+        this.dayData.load(ids, from, to, now, { heal: true }),
+        activity
+          ? this.dayData.bucketHours(ids, from, to, now)
+          : Promise.resolve(new Map<string, readonly number[]>()),
+        this.approvals.pendingByUserDate(ids, from, to, now),
+        ids.length
+          ? this.approvals.count({
+              scope: { kind: 'ALL' },
+              statuses: ['PENDING'],
+              overdueAt: now,
+              userIds: ids,
+            })
+          : Promise.resolve(0),
+        this.settings.get(people[0]?.companyId ?? null),
+        live
+          ? this.reader.presenceOverlapping(ids, now, now)
+          : Promise.resolve([] as PresenceRow[]),
+        biometricIds.length
+          ? this.punches.punchesOf(biometricIds, from, to)
+          : Promise.resolve(new Map<string, DayPunch[]>()),
+      ]);
     const pendingBy = new Map(pending.map((p) => [`${p.userId}|${p.date}`, p.pending]));
     const openBy = new Map<string, PresenceRow>();
     for (const p of openPresence) if (p.endedAt === null) openBy.set(p.userId, p);
@@ -130,15 +141,18 @@ export class TeamTodayService {
         const bounds = shift ? shiftBounds(shift, date, tz) : null;
         const mark = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, leave);
         // A day off shows its breaks only once the person has started it (3.2); leave
-        // hides the breaks it covers (3.4).
-        const slots = (workday || d.sessions.length ? breakDay.slots : []).filter((slot) => {
-          if (!leave?.mask || d.breakRecords.some((r) => r.kind === slot.kind)) return true;
-          if (leave.full) return d.sessions.length > 0;
-          const at = slot.scheduledStart.getTime();
-          return (
-            (!mark.start || at >= mark.start.getTime()) && (!mark.end || at < mark.end.getTime())
-          );
-        });
+        // hides the breaks it covers (3.4). Biometric staff have no break flow (3.5).
+        const biometric = p.attendanceSource === 'BIOMETRIC';
+        const slots = (!biometric && (workday || d.sessions.length) ? breakDay.slots : []).filter(
+          (slot) => {
+            if (!leave?.mask || d.breakRecords.some((r) => r.kind === slot.kind)) return true;
+            if (leave.full) return d.sessions.length > 0;
+            const at = slot.scheduledStart.getTime();
+            return (
+              (!mark.start || at >= mark.start.getTime()) && (!mark.end || at < mark.end.getTime())
+            );
+          },
+        );
         const hourly = activity
           ? this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin)
           : [];
@@ -204,6 +218,13 @@ export class TeamTodayService {
           pending: pendingBy.get(`${p.id}|${date}`) ?? 0,
           hourly,
           quietHours: quietHoursOf(hourly),
+          attendance: biometric ? 'BIOMETRIC' : 'AGENT',
+          wfh: wfhDayView(d.wfh, {
+            biometric,
+            openSource: openSession?.source ?? null,
+            dayIsToday: live,
+          }),
+          biometric: biometric ? this.punchSummary(punches.get(`${p.id}|${date}`) ?? [], d) : null,
         };
       });
 
@@ -221,12 +242,27 @@ export class TeamTodayService {
         onLeave: count(['ON_LEAVE']),
         partLeave: rows.filter((r) => r.leave && r.leave.days > 0 && !r.leave.full).length,
         lateStarts: rows.filter((r) => r.lateStart).length,
+        workingFromHome: rows.filter((r) => r.wfh && r.wfh.days > 0).length,
+        biometric: rows.filter((r) => r.attendance === 'BIOMETRIC').length,
         pendingApprovals: rows.reduce((s, r) => s + r.pending, 0),
         overdueApprovals,
         focusSec: rows.reduce((s, r) => s + r.focus.focusSec, 0),
         quietHours: rows.reduce((s, r) => s + r.quietHours, 0),
       },
       rows,
+    };
+  }
+
+  /** A biometric person's punches of the day, in short (3.5). */
+  private punchSummary(list: DayPunch[], d: PersonDayData): TeamTodayRow['biometric'] {
+    const valid = list.filter((p) => !p.voided);
+    return {
+      punches: valid.length,
+      firstPunchAt: valid[0]?.at.toISOString() ?? null,
+      lastPunchAt: valid.length > 1 ? valid[valid.length - 1].at.toISOString() : null,
+      checkoutMissing: d.sessions.some(
+        (s) => s.source === BIOMETRIC_SOURCE && s.endReason === 'AUTO_CLOSED',
+      ),
     };
   }
 

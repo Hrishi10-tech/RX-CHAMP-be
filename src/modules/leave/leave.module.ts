@@ -35,6 +35,13 @@ import { LeaveController } from './presentation/leave.controller';
     LeaveDaysService,
     LeaveJobs,
   ],
-  exports: [LeaveDaysService, LeavePolicyService, LeaveOverviewService],
+  exports: [
+    LeaveDaysService,
+    LeavePolicyService,
+    LeaveOverviewService,
+    LeavePeopleService,
+    LeaveRequestsService,
+    LEAVE_REPOSITORY,
+  ],
 })
 export class LeaveModule {}

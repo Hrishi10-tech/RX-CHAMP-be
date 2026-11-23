@@ -19,6 +19,8 @@ export interface DayLeave {
   units: number;
   clslUnits: number;
   elplUnits: number;
+  /** Comp off taken that day (3.5). */
+  compOffUnits: number;
   /** Quarters asked for and still waiting for a decision. */
   pendingMask: number;
   /** The whole day is on approved leave. */
@@ -30,6 +32,7 @@ export const NO_LEAVE: Readonly<DayLeave> = Object.freeze({
   units: 0,
   clslUnits: 0,
   elplUnits: 0,
+  compOffUnits: 0,
   pendingMask: 0,
   full: false,
 });
@@ -69,10 +72,11 @@ export interface DayLeaveView {
   full: boolean;
   /** "Full day", "Half day (first half)", "2nd quarter" for odd masks. */
   label: string;
-  /** "CL/SL", "EL/PL" or "CL/SL + EL/PL". */
+  /** "CL/SL", "EL/PL", "Comp off" or "CL/SL + EL/PL". */
   categories: string;
   clslDays: number;
   elplDays: number;
+  compOffDays: number;
   /** Quarters still waiting for a decision. */
   pendingDays: number;
   mask: number;
@@ -94,6 +98,7 @@ export function dayLeaveView(leave: DayLeave | undefined): DayLeaveView | null {
   const cats: LeaveCategory[] = [];
   if (leave.clslUnits) cats.push('CLSL');
   if (leave.elplUnits) cats.push('ELPL');
+  if (leave.compOffUnits) cats.push('COMPOFF');
   return {
     days: leave.units / 4,
     full: leave.full,
@@ -101,6 +106,7 @@ export function dayLeaveView(leave: DayLeave | undefined): DayLeaveView | null {
     categories: cats.map((c) => CATEGORY_LABEL[c]).join(' + '),
     clslDays: leave.clslUnits / 4,
     elplDays: leave.elplUnits / 4,
+    compOffDays: (leave.compOffUnits ?? 0) / 4,
     pendingDays: unitsOfMask(leave.pendingMask & ~leave.mask) / 4,
     mask: leave.mask,
   };

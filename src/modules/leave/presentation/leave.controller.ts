@@ -242,8 +242,8 @@ export class LeaveController {
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({
     summary:
-      'Change the policy (Super Admin, Super Manager; who approves: Super Admin only). Returns the policy ' +
-      'and how many accounts followed',
+      "Change the organisation's leave policy (its admins, who approves included). Returns the " +
+      'policy and how many accounts followed',
   })
   async patchPolicy(@CurrentUser() me: AuthenticatedUser, @Body() body: PatchLeavePolicyDto) {
     const now = new Date();
@@ -264,7 +264,7 @@ export class LeaveController {
     return envelope({
       policy: LeavePolicyService.view(after, {
         canEdit: true,
-        canRoute: me.role === Role.SUPER_ADMIN,
+        canRoute: true,
         now,
       }),
       changed,

@@ -42,6 +42,7 @@ function build(over: Partial<Record<string, unknown>> = {}) {
     },
     config: { get: jest.fn() },
     plans: {},
+    punches: { punchesOf: jest.fn().mockResolvedValue(new Map()) },
     ...over,
   };
   const svc = new WorkdayService(
@@ -56,6 +57,7 @@ function build(over: Partial<Record<string, unknown>> = {}) {
     deps.settings as never,
     deps.config as never,
     deps.plans as never,
+    deps.punches as never,
   );
   return { svc, deps };
 }
@@ -200,15 +202,13 @@ describe('WorkdayService view', () => {
       overdueIn: jest.fn().mockResolvedValue({ count: opts.overdue ?? 0, oldestDueAt: null }),
     };
     const people = {
-      findById: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'u1',
-          role: 'USER',
-          companyId: 'co-1',
-          department: 'Ops',
-          departmentId: 'dept-1',
-        }),
+      findById: jest.fn().mockResolvedValue({
+        id: 'u1',
+        role: 'USER',
+        companyId: 'co-1',
+        department: 'Ops',
+        departmentId: 'dept-1',
+      }),
     };
     const dayData = {
       load: jest.fn(async () => ({
@@ -233,11 +233,9 @@ describe('WorkdayService view', () => {
       sharedComputerFor: jest.fn().mockResolvedValue(opts.sharedComputer ?? false),
     };
     const plans = {
-      context: jest
-        .fn()
-        .mockResolvedValue({
-          plan: jest.fn((_p: unknown, date: string) => ({ ...(opts.plan ?? plan()), date })),
-        }),
+      context: jest.fn().mockResolvedValue({
+        plan: jest.fn((_p: unknown, date: string) => ({ ...(opts.plan ?? plan()), date })),
+      }),
     };
     const config = {
       get: jest.fn((key: string) =>

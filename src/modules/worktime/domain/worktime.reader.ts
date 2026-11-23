@@ -59,6 +59,8 @@ export interface PersonRow {
   active: boolean;
   /** Business day the account was created: earlier days are not counted against them. */
   joinedOn: string;
+  /** How the person's day is recorded (3.5). */
+  attendanceSource?: 'AGENT' | 'BIOMETRIC';
 }
 
 export interface PeopleFilter {

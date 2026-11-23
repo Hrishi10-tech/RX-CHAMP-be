@@ -25,7 +25,8 @@ export class LeaveDaysService {
       if (r.status === 'APPROVED') {
         cur.mask |= r.mask;
         if (r.category === 'CLSL') cur.clslUnits += r.units;
-        else cur.elplUnits += r.units;
+        else if (r.category === 'ELPL') cur.elplUnits += r.units;
+        else cur.compOffUnits += r.units;
       } else {
         cur.pendingMask |= r.mask;
       }

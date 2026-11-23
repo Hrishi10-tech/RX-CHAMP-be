@@ -5,6 +5,7 @@ import { assertMonthOpen, isMonthLocked } from '@shared/database/month-lock';
 import {
   AccountUpdate,
   AdjustmentMode,
+  CreditFilter,
   GrantSource,
   HeldLeaveDay,
   LeaveAccountRecord,
@@ -22,7 +23,15 @@ import {
   RequestPatch,
 } from '../domain/leave.repository';
 import { DeciderRole } from '../domain/routing';
-import { LeaveCategory } from '../domain/leave.types';
+import {
+  CompOffCreditPatch,
+  CompOffCreditRecord,
+  CompOffDayKind,
+  CompOffUse,
+  COMPOFF_DAY_KINDS,
+  NewCompOffCredit,
+} from '../domain/comp-off';
+import { LeaveCategory, PoolCategory } from '../domain/leave.types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuids = (ids: string[]) => ids.filter((id) => UUID.test(id));
@@ -59,12 +68,17 @@ function toRequest(r: RequestRow): LeaveRequestRecord {
   };
 }
 
+/** Accounts, quotas and adjustments exist for the two yearly pools only. */
+function poolOf(c: LeaveCategory): PoolCategory {
+  return c === 'ELPL' ? 'ELPL' : 'CLSL';
+}
+
 function toAccount(r: AccountRow): LeaveAccountRecord {
   return {
     id: r.id,
     userId: r.userId,
     year: r.year,
-    category: r.category,
+    category: poolOf(r.category),
     grantedUnits: r.grantedUnits,
     grantSource: (r.grantSource === 'PERSON' ? 'PERSON' : 'DEFAULT') as GrantSource,
     prorated: r.prorated,
@@ -78,7 +92,7 @@ function toAdjustment(r: AdjustmentRow): LeaveAdjustmentRecord {
     id: r.id,
     userId: r.userId,
     year: r.year,
-    category: r.category,
+    category: poolOf(r.category),
     deltaUnits: r.deltaUnits,
     mode: r.mode as AdjustmentMode,
     targetUnits: r.targetUnits,
@@ -112,7 +126,7 @@ async function sumsFor(
       _sum: { deltaUnits: true },
     }),
   ]);
-  const slot = (userId: string, year: number, category: LeaveCategory): LeaveSums => {
+  const slot = (userId: string, year: number, category: PoolCategory): LeaveSums => {
     let list = out.get(userId);
     if (!list) out.set(userId, (list = []));
     let s = list.find((x) => x.year === year && x.category === category);
@@ -120,12 +134,16 @@ async function sumsFor(
     return s;
   };
   for (const r of requests) {
+    // Comp off has no yearly pool: its requests are charged against credits (3.5).
+    if (r.category === 'COMPOFF') continue;
     const s = slot(r.userId, r.year, r.category);
     if (r.status === 'APPROVED') s.takenUnits += r._sum.units ?? 0;
     else s.pendingUnits += r._sum.units ?? 0;
   }
-  for (const a of adjustments)
+  for (const a of adjustments) {
+    if (a.category === 'COMPOFF') continue;
     slot(a.userId, a.year, a.category).adjustedUnits += a._sum.deltaUnits ?? 0;
+  }
   return out;
 }
 
@@ -146,6 +164,68 @@ function heldRow(d: {
     category: d.request.category,
     status: d.request.status,
   };
+}
+
+type CreditRow = Prisma.CompOffCreditGetPayload<object>;
+
+function toCredit(r: CreditRow): CompOffCreditRecord {
+  return {
+    id: r.id,
+    userId: r.userId,
+    workedDate: r.workedDate,
+    dayKind: (COMPOFF_DAY_KINDS as readonly string[]).includes(r.dayKind)
+      ? (r.dayKind as CompOffDayKind)
+      : 'WORKING',
+    dayLabel: r.dayLabel,
+    workedSec: r.workedSec,
+    askedUnits: r.askedUnits,
+    units: r.units,
+    reason: r.reason,
+    source: r.source === 'GRANT' ? 'GRANT' : 'CLAIM',
+    status: r.status,
+    approverRole: r.approverRole as DeciderRole | null,
+    approverId: r.approverId,
+    decidedById: r.decidedById,
+    decidedAt: r.decidedAt,
+    decisionNote: r.decisionNote,
+    expiresOn: r.expiresOn,
+    expiryNoticeAt: r.expiryNoticeAt,
+    createdById: r.createdById,
+    cancelledAt: r.cancelledAt,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+/** Charged days of active COMPOFF requests, with whose they are. */
+async function usesFor(
+  db: Prisma.TransactionClient,
+  userIds: string[],
+  exceptRequestId?: string,
+): Promise<{ userId: string; use: CompOffUse }[]> {
+  const ids = uuids(userIds);
+  if (!ids.length) return [];
+  const rows = await db.leaveRequestDay.findMany({
+    where: {
+      userId: { in: ids },
+      request: {
+        category: 'COMPOFF',
+        status: ACTIVE,
+        ...(exceptRequestId ? { id: { not: exceptRequestId } } : {}),
+      },
+    },
+    include: { request: { select: { status: true, createdAt: true } } },
+  });
+  return rows.map((d) => ({
+    userId: d.userId,
+    use: {
+      requestId: d.requestId,
+      date: d.date,
+      units: d.units,
+      status: d.request.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
+      order: d.request.createdAt.getTime(),
+    },
+  }));
 }
 
 class PrismaLeaveTx implements LeaveTx {
@@ -242,10 +322,11 @@ class PrismaLeaveTx implements LeaveTx {
   }
 
   async quotas(userId: string): Promise<LeaveQuotaRecord[]> {
-    return this.tx.leaveQuota.findMany({
-      where: { userId },
+    const rows = await this.tx.leaveQuota.findMany({
+      where: { userId, category: { in: ['CLSL', 'ELPL'] } },
       select: { userId: true, category: true, unitsPerYear: true },
     });
+    return rows.map((r) => ({ ...r, category: poolOf(r.category) }));
   }
 
   async setQuota(
@@ -263,6 +344,34 @@ class PrismaLeaveTx implements LeaveTx {
       create: { userId, category, unitsPerYear: units, updatedById: byId },
       update: { unitsPerYear: units, updatedById: byId },
     });
+  }
+
+  // ---- Comp off (3.5) ---------------------------------------------------------
+
+  async credits(userId: string): Promise<CompOffCreditRecord[]> {
+    const rows = await this.tx.compOffCredit.findMany({
+      where: { userId },
+      orderBy: [{ workedDate: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(toCredit);
+  }
+
+  async compOffUses(userId: string, exceptRequestId?: string): Promise<CompOffUse[]> {
+    return (await usesFor(this.tx, [userId], exceptRequestId)).map((u) => u.use);
+  }
+
+  async findCredit(id: string): Promise<CompOffCreditRecord | null> {
+    if (!UUID.test(id)) return null;
+    const row = await this.tx.compOffCredit.findUnique({ where: { id } });
+    return row ? toCredit(row) : null;
+  }
+
+  async insertCredit(data: NewCompOffCredit): Promise<CompOffCreditRecord> {
+    return toCredit(await this.tx.compOffCredit.create({ data }));
+  }
+
+  async updateCredit(id: string, patch: CompOffCreditPatch): Promise<CompOffCreditRecord> {
+    return toCredit(await this.tx.compOffCredit.update({ where: { id }, data: patch }));
   }
 }
 
@@ -360,10 +469,11 @@ export class PrismaLeaveRepository implements LeaveRepository {
   async quotasOf(userIds: string[]): Promise<LeaveQuotaRecord[]> {
     const ids = uuids(userIds);
     if (!ids.length) return [];
-    return this.prisma.leaveQuota.findMany({
-      where: { userId: { in: ids } },
+    const rows = await this.prisma.leaveQuota.findMany({
+      where: { userId: { in: ids }, category: { in: ['CLSL', 'ELPL'] } },
       select: { userId: true, category: true, unitsPerYear: true },
     });
+    return rows.map((r) => ({ ...r, category: poolOf(r.category) }));
   }
 
   async accountsFromYear(fromYear: number): Promise<LeaveAccountRecord[]> {
@@ -419,6 +529,68 @@ export class PrismaLeaveRepository implements LeaveRepository {
   async pendingInMonth(month: string): Promise<number> {
     return this.prisma.leaveRequest.count({
       where: { status: 'PENDING', days: { some: { date: { startsWith: `${month}-` } } } },
+    });
+  }
+
+  // ---- Comp off (3.5) ---------------------------------------------------------
+
+  async findCredit(id: string): Promise<CompOffCreditRecord | null> {
+    if (!UUID.test(id)) return null;
+    const row = await this.prisma.compOffCredit.findUnique({ where: { id } });
+    return row ? toCredit(row) : null;
+  }
+
+  async listCredits(f: CreditFilter): Promise<CompOffCreditRecord[]> {
+    const ids = f.userIds ? uuids(f.userIds) : undefined;
+    if (ids && !ids.length) return [];
+    const rows = await this.prisma.compOffCredit.findMany({
+      where: {
+        ...(f.userId ? { userId: f.userId } : {}),
+        ...(ids ? { userId: { in: ids } } : {}),
+        ...(f.statuses?.length ? { status: { in: f.statuses } } : {}),
+        ...(f.from || f.to
+          ? { workedDate: { ...(f.from ? { gte: f.from } : {}), ...(f.to ? { lte: f.to } : {}) } }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: Math.min(1000, Math.max(1, f.limit ?? 300)),
+    });
+    return rows.map(toCredit);
+  }
+
+  async creditsOf(userIds: string[]): Promise<CompOffCreditRecord[]> {
+    const ids = uuids(userIds);
+    if (!ids.length) return [];
+    const rows = await this.prisma.compOffCredit.findMany({
+      where: { userId: { in: ids } },
+      orderBy: [{ workedDate: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(toCredit);
+  }
+
+  async compOffUsesOf(userIds: string[]): Promise<Map<string, CompOffUse[]>> {
+    const out = new Map<string, CompOffUse[]>();
+    for (const { userId, use } of await usesFor(this.prisma, userIds)) {
+      const list = out.get(userId);
+      if (list) list.push(use);
+      else out.set(userId, [use]);
+    }
+    return out;
+  }
+
+  async creditsExpiring(from: string, to: string): Promise<CompOffCreditRecord[]> {
+    const rows = await this.prisma.compOffCredit.findMany({
+      where: { status: 'APPROVED', expiryNoticeAt: null, expiresOn: { gte: from, lte: to } },
+      take: 5000,
+    });
+    return rows.map(toCredit);
+  }
+
+  async markExpiryNoticed(ids: string[], at: Date): Promise<void> {
+    if (!ids.length) return;
+    await this.prisma.compOffCredit.updateMany({
+      where: { id: { in: ids } },
+      data: { expiryNoticeAt: at },
     });
   }
 }

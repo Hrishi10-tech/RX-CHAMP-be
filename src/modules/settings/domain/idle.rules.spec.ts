@@ -31,7 +31,12 @@ describe('away reasons from what is stored (SPEC 2.5)', () => {
       { key: 'THINKING', label: 'Deep thought', kind: 'CUSTOM', builtIn: false },
     ]);
     expect(keysOf(r)).toEqual(['BREAK', 'THINKING', 'MEETING', 'HARDWARE', 'OTHER']);
-    expect(r[1]).toEqual({ key: 'THINKING', label: 'Deep thought', kind: 'THINKING', builtIn: true });
+    expect(r[1]).toEqual({
+      key: 'THINKING',
+      label: 'Deep thought',
+      kind: 'THINKING',
+      builtIn: true,
+    });
     expect(r[4]).toEqual({ key: 'OTHER', label: 'Desk work', kind: 'OTHER', builtIn: true });
   });
 
@@ -70,11 +75,16 @@ describe('away reasons from what is stored (SPEC 2.5)', () => {
       'C_string',
       null,
     ]);
-    expect(r.slice(5)).toEqual([{ key: 'C_ok', label: 'Okay label', kind: 'CUSTOM', builtIn: false }]);
+    expect(r.slice(5)).toEqual([
+      { key: 'C_ok', label: 'Okay label', kind: 'CUSTOM', builtIn: false },
+    ]);
   });
 
   it(`keeps at most ${MAX_CUSTOM_REASONS} custom reasons`, () => {
-    const many = Array.from({ length: MAX_CUSTOM_REASONS + 5 }, (_, i) => ({ key: `C_r${i}`, label: `Reason ${i}` }));
+    const many = Array.from({ length: MAX_CUSTOM_REASONS + 5 }, (_, i) => ({
+      key: `C_r${i}`,
+      label: `Reason ${i}`,
+    }));
     const r = reasonsFromStored(many);
     expect(r).toHaveLength(BUILT_IN_REASONS.length + MAX_CUSTOM_REASONS);
     expect(r[r.length - 1].key).toBe(`C_r${MAX_CUSTOM_REASONS - 1}`);
@@ -100,9 +110,12 @@ describe('organisation input-tracking settings from the settings row', () => {
     expect(idleFromStored({ idleDefaultMinutes: 60 }).defaultMinutes).toBe(60);
   });
 
-  it.each([[1], [61], [7.5], ['10'], [null]])('an invalid default minutes %p falls back to 5', (v) => {
-    expect(idleFromStored({ idleDefaultMinutes: v }).defaultMinutes).toBe(5);
-  });
+  it.each([[1], [61], [7.5], ['10'], [null]])(
+    'an invalid default minutes %p falls back to 5',
+    (v) => {
+      expect(idleFromStored({ idleDefaultMinutes: v }).defaultMinutes).toBe(5);
+    },
+  );
 
   it('a non-boolean enabled falls back to off', () => {
     expect(idleFromStored({ idleDefaultEnabled: 'yes' }).defaultEnabled).toBe(false);
@@ -161,9 +174,18 @@ describe('effective input tracking for a person', () => {
   });
 
   it('the person wins over the department', () => {
-    expect(effectiveIdle(org, 'eng', { idleEnabled: false, idleMinutes: 30 })).toMatchObject({ enabled: false, minutes: 30 });
-    expect(effectiveIdle(org, 'ops', { idleEnabled: true, idleMinutes: null })).toMatchObject({ enabled: true, minutes: 20 });
-    expect(effectiveIdle(org, null, { idleEnabled: true, idleMinutes: 3 })).toMatchObject({ enabled: true, minutes: 3 });
+    expect(effectiveIdle(org, 'eng', { idleEnabled: false, idleMinutes: 30 })).toMatchObject({
+      enabled: false,
+      minutes: 30,
+    });
+    expect(effectiveIdle(org, 'ops', { idleEnabled: true, idleMinutes: null })).toMatchObject({
+      enabled: true,
+      minutes: 20,
+    });
+    expect(effectiveIdle(org, null, { idleEnabled: true, idleMinutes: 3 })).toMatchObject({
+      enabled: true,
+      minutes: 3,
+    });
   });
 
   it('a department with nulls (or an unknown department) uses the organisation default', () => {
@@ -189,7 +211,12 @@ describe('effective input tracking for a person', () => {
     expect(e.reasons).toEqual([
       { key: 'BREAK', label: 'Took a break', kind: 'BREAK', fields: [] },
       { key: 'THINKING', label: 'Pondering', kind: 'THINKING', fields: ['comment'] },
-      { key: 'MEETING', label: 'Short meeting', kind: 'MEETING', fields: ['participants', 'comment', 'momSender'] },
+      {
+        key: 'MEETING',
+        label: 'Short meeting',
+        kind: 'MEETING',
+        fields: ['participants', 'comment', 'momSender'],
+      },
       { key: 'OTHER', label: 'Other work', kind: 'OTHER', fields: ['comment'] },
     ]);
     expect(effectiveIdle(org, 'eng', none).reasons.find((r) => r.key === 'C_lab')).toEqual({

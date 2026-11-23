@@ -17,7 +17,10 @@ describe('EndDayUseCase', () => {
   const access = { findSelf: jest.fn(), findReports: jest.fn(), findManagerId: jest.fn() } as any;
   const meetings = { listForUserByDate: jest.fn() } as any;
   const events = { publish: jest.fn(), subscribe: jest.fn() } as any;
-  const gateway = { emitToUser: jest.fn(), emitForSubject: jest.fn().mockResolvedValue(undefined) } as any;
+  const gateway = {
+    emitToUser: jest.fn(),
+    emitForSubject: jest.fn().mockResolvedValue(undefined),
+  } as any;
 
   let useCase: EndDayUseCase;
   beforeEach(() => {
@@ -128,7 +131,10 @@ describe('EndDayUseCase', () => {
 
     expect(gateway.emitForSubject).toHaveBeenCalledTimes(1);
     expect(gateway.emitForSubject.mock.calls[0][0]).toBe('user-1');
-    expect(gateway.emitForSubject.mock.calls[0][1]).toMatchObject({ userId: 'user-1', status: 'DAY_ENDED' });
+    expect(gateway.emitForSubject.mock.calls[0][1]).toMatchObject({
+      userId: 'user-1',
+      status: 'DAY_ENDED',
+    });
   });
 
   it('is idempotent: a second press keeps the original end time and fires nothing', async () => {

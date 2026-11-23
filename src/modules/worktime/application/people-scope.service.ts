@@ -8,7 +8,9 @@ import {
   isAdminLike,
   managedDeptIds,
   requireOrg,
-  Section, seesWholeOrg } from '@shared/tenancy';
+  Section,
+  seesWholeOrg,
+} from '@shared/tenancy';
 import {
   PeopleFilter,
   PersonRow,

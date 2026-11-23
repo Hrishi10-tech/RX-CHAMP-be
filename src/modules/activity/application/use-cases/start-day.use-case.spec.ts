@@ -17,7 +17,10 @@ describe('StartDayUseCase', () => {
   } as any;
   const access = { findSelf: jest.fn(), findReports: jest.fn(), findManagerId: jest.fn() } as any;
   const meetings = { listForUserByDate: jest.fn() } as any;
-  const gateway = { emitToUser: jest.fn(), emitForSubject: jest.fn().mockResolvedValue(undefined) } as any;
+  const gateway = {
+    emitToUser: jest.fn(),
+    emitForSubject: jest.fn().mockResolvedValue(undefined),
+  } as any;
 
   let useCase: StartDayUseCase;
   beforeEach(() => {
@@ -39,7 +42,7 @@ describe('StartDayUseCase', () => {
     expect(result).toEqual({ ok: true, date: localDateString(at), resumed: true });
   });
 
-  it("pushes the now-live (not ended) state to the user and to whoever oversees them (4.0 organisation and department rooms)", async () => {
+  it('pushes the now-live (not ended) state to the user and to whoever oversees them (4.0 organisation and department rooms)', async () => {
     workDays.clearEnd.mockResolvedValue(true);
     access.findSelf.mockResolvedValue({
       id: 'user-1',
@@ -61,9 +64,17 @@ describe('StartDayUseCase', () => {
 
   it('a broadcast failure never fails Start Day', async () => {
     workDays.clearEnd.mockResolvedValue(true);
-    access.findSelf.mockResolvedValue({ id: 'user-1', firstName: 'Asha', lastName: 'Rao', email: 'a@x', department: null });
+    access.findSelf.mockResolvedValue({
+      id: 'user-1',
+      firstName: 'Asha',
+      lastName: 'Rao',
+      email: 'a@x',
+      department: null,
+    });
     gateway.emitForSubject.mockRejectedValueOnce(new Error('socket down'));
-    await expect(useCase.execute('user-1', new Date('2026-07-21T15:00:00.000Z'))).resolves.toMatchObject({ resumed: true });
+    await expect(
+      useCase.execute('user-1', new Date('2026-07-21T15:00:00.000Z')),
+    ).resolves.toMatchObject({ resumed: true });
   });
 
   it('does nothing (no broadcast) when the day was already open', async () => {

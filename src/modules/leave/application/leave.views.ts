@@ -157,6 +157,22 @@ export interface MyLeaveView {
   upcoming: LeaveRequestView[];
   requests: LeaveRequestView[];
   ledger: LedgerLine[];
+  /** Comp off (3.5): what can be taken, what is held, claims waiting, the next to lapse. */
+  compOff?: CompOffSummaryView;
+}
+
+/** A person's comp off in short (3.5). Days in quarter steps. */
+export interface CompOffSummaryView {
+  enabled: boolean;
+  availableDays: number;
+  pendingDays: number;
+  takenDays: number;
+  earnedDays: number;
+  lapsedDays: number;
+  claimsWaitingDays: number;
+  /** The next credit to lapse with days left on it. */
+  nextExpiry: { date: string; label: string; days: number } | null;
+  validityDays: number;
 }
 
 export interface LeavePreview {
@@ -186,6 +202,8 @@ export interface PersonBalanceRow {
   elpl: CategoryBalanceView;
   quota: { clslDaysPerYear: number | null; elplDaysPerYear: number | null };
   upcomingDays: number;
+  /** Comp off in short (3.5). */
+  compOff?: CompOffSummaryView;
 }
 
 export interface PersonLeaveView extends PersonBalanceRow {

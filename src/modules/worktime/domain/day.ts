@@ -35,6 +35,8 @@ export interface PersonDayData {
   leave?: DayLeave;
   /** Work from home that day (3.5): its cap limits time on the phone; optional. */
   wfh?: WfhDay;
+  /** Comp off approved for working this day (3.5), in quarter days; optional. */
+  compOffEarned?: number;
 }
 
 /** A work-from-home session started on the phone (3.5): counts up to the day's cap. */

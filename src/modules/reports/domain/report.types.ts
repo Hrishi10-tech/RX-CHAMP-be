@@ -88,6 +88,15 @@ export interface PersonDaySummary {
   leave?: DayLeaveView | null;
   /** Expected seconds the approved leave covers: paid leave time (3.4). */
   leaveSec?: number;
+  /** Work from home approved that day, in days (3.5). */
+  wfhDays?: number;
+  /** Time worked from home on the phone that counted, and beyond the cap (3.5). */
+  wfhSec?: number;
+  wfhOverSec?: number;
+  /** Comp off approved for working this day (3.5). */
+  compOffEarnedDays?: number;
+  /** A biometric day closed with no check-out (3.5). */
+  noCheckout?: boolean;
 }
 
 export interface TimelineSegment {
@@ -149,8 +158,13 @@ export interface MonthTotals {
   leaveDays?: number;
   clslDays?: number;
   elplDays?: number;
-  /** Comp off taken (3.5). */
+  /** Comp off taken, and earned (approved for days worked) in the month (3.5). */
   compOffDays?: number;
+  compOffEarnedDays?: number;
+  /** Days of work from home, time from home beyond the cap, biometric days with no check-out (3.5). */
+  wfhDays?: number;
+  wfhOverSec?: number;
+  noCheckoutDays?: number;
   /** Paid leave time: the expected time the leave covers (3.4). */
   leaveSec?: number;
   needsALook: boolean;

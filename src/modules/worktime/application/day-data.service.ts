@@ -112,6 +112,7 @@ export class DayDataSet {
     adjustments: FocusAdjustmentRecord[] = [],
     private readonly leave: LeaveByDay = new Map(),
     private readonly wfh: WfhByDay = new Map(),
+    private readonly compOff: Map<string, Map<string, number>> = new Map(),
   ) {
     this.sessions = group(sessions, (s) => key(s.userId, s.date));
     this.presenceByUser = group(presence, (p) => p.userId);
@@ -144,6 +145,7 @@ export class DayDataSet {
       adjustments: this.adjustments.get(key(userId, date)) ?? [],
       leave: leaveOn(this.leave, userId, date),
       wfh: wfhOn(this.wfh, userId, date),
+      compOffEarned: this.compOff.get(userId)?.get(date) ?? 0,
     };
   }
 
@@ -216,7 +218,7 @@ export class DayDataService implements OnModuleInit {
     if (opts.heal) await this.meetingService.heal(userIds, now);
     // Read before any sample is (see bucketHours).
     const versions = new Map(userIds.map((id) => [id, this.sampleVersionOf(id)]));
-    const [sessions, breaks, meetings, away, adjustments, leave, wfh] = await Promise.all([
+    const [sessions, breaks, meetings, away, adjustments, leave, wfh, compOff] = await Promise.all([
       this.sessions.listForUsersBetween(userIds, fromDate, toDate),
       this.breaks.listForUsersBetween(userIds, fromDate, toDate),
       this.meetings.listForUsersBetween(userIds, fromDate, toDate),
@@ -224,6 +226,9 @@ export class DayDataService implements OnModuleInit {
       this.adjustmentsRepo.listForUsersBetween(userIds, fromDate, toDate),
       this.leaveDays ? this.leaveDays.byDay(userIds, fromDate, toDate) : Promise.resolve(new Map()),
       this.wfhDays ? this.wfhDays.byDay(userIds, fromDate, toDate) : Promise.resolve(new Map()),
+      this.leaveDays
+        ? this.leaveDays.compOffEarnedByDay(userIds, fromDate, toDate)
+        : Promise.resolve(new Map<string, Map<string, number>>()),
     ]);
     let presence: PresenceRow[] = [];
     let coverage: CoverageRow[] = [];
@@ -250,6 +255,7 @@ export class DayDataService implements OnModuleInit {
       adjustments,
       leave,
       wfh,
+      compOff,
     );
   }
 

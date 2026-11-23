@@ -65,6 +65,10 @@ const PAYROLL: Col[] = [
   { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
   // 3.5, after every earlier column again.
   { header: 'Comp off days', key: 'compOffDays', width: 13 },
+  { header: 'Comp off earned', key: 'compOffEarned', width: 15 },
+  { header: 'Work from home days', key: 'wfhDays', width: 19 },
+  { header: 'Hours from home over the cap', key: 'wfhOverHours', width: 26, hours: true },
+  { header: 'No check-out days', key: 'noCheckoutDays', width: 17 },
 ];
 
 const DAYS: Col[] = [
@@ -104,6 +108,11 @@ const DAYS: Col[] = [
   { header: 'Leave', key: 'leave', width: 24 },
   { header: 'Leave days', key: 'leaveDays', width: 11 },
   { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
+  // 3.5
+  { header: 'Work from home (days)', key: 'wfhDays', width: 20 },
+  { header: 'Hours from home counted', key: 'wfhHours', width: 22, hours: true },
+  { header: 'Comp off earned', key: 'compOffEarned', width: 15 },
+  { header: 'No check-out', key: 'noCheckout', width: 12 },
 ];
 
 function sheet(wb: Workbook, name: string, cols: Col[]): Worksheet {
@@ -151,6 +160,10 @@ function dayRow(p: PersonMonthReport, d: PersonDaySummary, tz: string) {
       d.leave && d.leave.days > 0 ? `${d.leave.categories} ${d.leave.label.toLowerCase()}` : '',
     leaveDays: d.leave?.days ?? 0,
     leaveHours: hours(d.leaveSec ?? 0),
+    wfhDays: d.wfhDays ?? 0,
+    wfhHours: hours(d.wfhSec ?? 0),
+    compOffEarned: d.compOffEarnedDays ?? 0,
+    noCheckout: d.noCheckout ? 'Yes' : '',
   };
 }
 
@@ -199,6 +212,10 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       elplDays: t.elplDays ?? 0,
       compOffDays: t.compOffDays ?? 0,
       leaveHours: hours(t.leaveSec ?? 0),
+      compOffEarned: t.compOffEarnedDays ?? 0,
+      wfhDays: t.wfhDays ?? 0,
+      wfhOverHours: hours(t.wfhOverSec ?? 0),
+      noCheckoutDays: t.noCheckoutDays ?? 0,
     });
     for (const d of p.days) days.addRow(dayRow(p, d, tz));
   }

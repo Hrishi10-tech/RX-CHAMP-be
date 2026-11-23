@@ -740,6 +740,10 @@ describe('monthTotals', () => {
       leaveDays: 0,
       clslDays: 0,
       compOffDays: 0,
+      compOffEarnedDays: 0,
+      noCheckoutDays: 0,
+      wfhDays: 0,
+      wfhOverSec: 0,
       elplDays: 0,
       leaveSec: 0,
     });

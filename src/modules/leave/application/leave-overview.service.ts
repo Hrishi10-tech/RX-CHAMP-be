@@ -6,11 +6,14 @@ import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { routeFor } from '../domain/routing';
 import { LEAVE_REPOSITORY, LeaveRepository, LeaveRequestRecord } from '../domain/leave.repository';
 import { daysOf } from '../domain/leave.types';
+import { allocateCompOff, compOffBalanceOf, lotsOf } from '../domain/comp-off';
+import { leaveDay } from '../domain/request-rules';
+import { LivePolicy } from './leave-policy.service';
 import { LeaveAccountsService, quotaMap } from './leave-accounts.service';
 import { LeavePeopleService } from './leave-people.service';
 import { LeavePolicyService } from './leave-policy.service';
 import { LeaveRequestsService } from './leave-requests.service';
-import { MyLeaveView, PersonBalanceRow, PersonLeaveView } from './leave.views';
+import { CompOffSummaryView, MyLeaveView, PersonBalanceRow, PersonLeaveView } from './leave.views';
 
 /**
  * The read-side pages (3.4): "My leave" for everyone (portal, mobile app, agent
@@ -79,7 +82,48 @@ export class LeaveOverviewService {
       upcoming,
       requests: views.filter((v) => v.year === year),
       ledger: await this.accounts.ledger(me.id, year, balances, accounts, records),
+      compOff: (await this.compOffOf([me.id], policy, now)).get(me.id),
     };
+  }
+
+  /**
+   * Comp off in short for these people (3.5): one read of credits and comp off leave.
+   * 4.0: each person's organisation's policy (one policy, or one per person).
+   */
+  async compOffOf(
+    userIds: string[],
+    policyOf: LivePolicy | ((userId: string) => LivePolicy),
+    now: Date,
+  ): Promise<Map<string, CompOffSummaryView>> {
+    const today = dateKeyInZone(now, appTimezone());
+    const [credits, uses] = await Promise.all([
+      this.repo.creditsOf(userIds),
+      this.repo.compOffUsesOf(userIds),
+    ]);
+    const out = new Map<string, CompOffSummaryView>();
+    for (const id of new Set(userIds)) {
+      const mine = credits.filter((c) => c.userId === id);
+      const b = compOffBalanceOf(allocateCompOff(lotsOf(mine), uses.get(id) ?? [], today), mine);
+      const policy = typeof policyOf === 'function' ? policyOf(id) : policyOf;
+      out.set(id, {
+        enabled: policy.compOffEnabled,
+        availableDays: daysOf(b.availableUnits),
+        pendingDays: daysOf(b.pendingUnits),
+        takenDays: daysOf(b.takenUnits),
+        earnedDays: daysOf(b.earnedUnits),
+        lapsedDays: daysOf(b.lapsedUnits),
+        claimsWaitingDays: daysOf(b.claimsWaitingUnits),
+        nextExpiry: b.nextExpiry
+          ? {
+              date: b.nextExpiry.date,
+              label: leaveDay(b.nextExpiry.date),
+              days: daysOf(b.nextExpiry.units),
+            }
+          : null,
+        validityDays: policy.compOffValidityDays,
+      });
+    }
+    return out;
   }
 
   /** GET /leave/balances/:userId: one person's leave (themselves, or someone in scope). */
@@ -122,6 +166,7 @@ export class LeaveOverviewService {
       ),
       ledger,
       requests: views,
+      compOff: (await this.compOffOf([target.id], policy, now)).get(target.id),
       canAdjust:
         (me.role === Role.SUPER_ADMIN ||
           me.role === Role.ADMIN ||
@@ -139,6 +184,14 @@ export class LeaveOverviewService {
     const people = await this.people.scopePeople(me, q);
     const year = q.year ?? Number(dateKeyInZone(now, appTimezone()).slice(0, 4));
     const rows = await this.accounts.rows(people, year, now);
+    const policyOf = await this.policies.forPeople(people, now);
+    const byId = new Map(people.map((p) => [p.id, p] as const));
+    const compOff = await this.compOffOf(
+      people.map((p) => p.id),
+      (id) => policyOf(byId.get(id)!),
+      now,
+    );
+    for (const r of rows) r.compOff = compOff.get(r.user.id);
     rows.sort((a, b) => a.user.name.localeCompare(b.user.name));
     return {
       year,

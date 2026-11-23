@@ -12,7 +12,7 @@ import {
 } from '@shared/tenancy';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { CalendarService } from '@modules/calendar/application/calendar.service';
-import { dayLabel, isWorkingDay } from '@modules/calendar/domain/calendar.rules';
+import { calendarSource, dayLabel, isWorkingDay } from '@modules/calendar/domain/calendar.rules';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
 import {
   SHIFT_PEOPLE_READER,
@@ -35,6 +35,11 @@ export function fullName(
 export interface DayWithShift extends DayInfo {
   shiftStart: string | null;
   shiftEnd: string | null;
+  /**
+   * 3.5 comp off: a day off set on the organisation calendar is a holiday (its
+   * label, else "Holiday"); null for a working day or a weekly day off.
+   */
+  holiday: string | null;
 }
 
 const APPROVER_ROLES: string[] = [Role.SUPER_ADMIN, Role.SUPER_MANAGER, Role.ADMIN, Role.MANAGER];
@@ -244,10 +249,14 @@ export class LeavePeopleService {
       const shift = this.days.resolveWith(ctx, person, date).shift;
       const who = { id: person.id, departmentId: person.departmentId };
       const workday = isWorkingDay(cal, date, who);
+      const label = dayLabel(cal, date, who);
+      const holiday =
+        !workday && calendarSource(cal, date, who) === 'OVERRIDE' ? (label ?? 'Holiday') : null;
       return {
         date,
         workday,
-        offLabel: workday ? null : (dayLabel(cal, date, who) ?? 'Weekly day off'),
+        offLabel: workday ? null : (label ?? 'Weekly day off'),
+        holiday,
         shiftStart: shift?.start ?? null,
         shiftEnd: shift?.end ?? null,
       };

@@ -307,6 +307,8 @@ export class LeaveAccountsService {
     }
     for (const r of requests) {
       if (r.year !== year || (r.status !== 'APPROVED' && r.status !== 'PENDING')) continue;
+      // Comp off has its own history (credits and what drew on them, 3.5).
+      if (r.category === 'COMPOFF') continue;
       lines.push({
         date: r.startDate,
         kind: r.status === 'APPROVED' ? 'LEAVE' : 'PENDING',

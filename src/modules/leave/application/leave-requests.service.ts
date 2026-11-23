@@ -696,7 +696,6 @@ export class LeaveRequestsService {
     if (!checked.ok) throw new ValidationError(checked.message).withDetails({ field: 'note' });
     const policy = await this.policies.get(target.companyId, now);
     const joinDate = await this.people.joinDate(target.id);
-    const thisYear = Number(this.today(now).slice(0, 4));
     const { row, available } = await this.repo.inUserLock(target.id, async (tx) => {
       const cur = (await tx.findRequest(id))!;
       if (cur.status !== 'APPROVED') {

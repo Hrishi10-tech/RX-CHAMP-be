@@ -41,4 +41,27 @@ export class LeaveDaysService {
   pendingInMonth(month: string): Promise<number> {
     return this.repo.pendingInMonth(month);
   }
+
+  /** Approved comp off earned per day worked (3.5): userId -> date -> quarter days. */
+  async compOffEarnedByDay(
+    userIds: string[],
+    from: string,
+    to: string,
+  ): Promise<Map<string, Map<string, number>>> {
+    const out = new Map<string, Map<string, number>>();
+    if (!userIds.length || from > to) return out;
+    const rows = await this.repo.listCredits({
+      userIds,
+      statuses: ['APPROVED'],
+      from,
+      to,
+      limit: 1000,
+    });
+    for (const r of rows) {
+      const days = out.get(r.userId) ?? new Map<string, number>();
+      days.set(r.workedDate, (days.get(r.workedDate) ?? 0) + r.units);
+      out.set(r.userId, days);
+    }
+    return out;
+  }
 }

@@ -187,6 +187,10 @@ describe('payrollWorkbook', () => {
       'EL/PL days',
       'Paid leave hours',
       'Comp off days',
+      'Comp off earned',
+      'Work from home days',
+      'Hours from home over the cap',
+      'No check-out days',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -236,6 +240,11 @@ describe('payrollWorkbook', () => {
       'Leave',
       'Leave days',
       'Paid leave hours',
+      // 3.5
+      'Work from home (days)',
+      'Hours from home counted',
+      'Comp off earned',
+      'No check-out',
     ]);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const first = ws.getRow(2);

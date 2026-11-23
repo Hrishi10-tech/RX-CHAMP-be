@@ -31,6 +31,7 @@ import { AgentHealthModule } from '@modules/agent-health/agent-health.module';
 import { LeaveModule } from '@modules/leave/leave.module';
 import { WfhModule } from '@modules/wfh/wfh.module';
 import { BiometricModule } from '@modules/biometric/biometric.module';
+import { CompOffModule } from '@modules/compoff/compoff.module';
 import { ReportsModule } from '@modules/reports/reports.module';
 import { CalendarModule } from '@modules/calendar/calendar.module';
 import { OrganisationsModule } from '@modules/organisations/organisations.module';
@@ -71,6 +72,7 @@ import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
     LeaveModule,
     WfhModule,
     BiometricModule,
+    CompOffModule,
     ReportsModule,
     OrganisationsModule,
     DepartmentsModule,

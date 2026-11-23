@@ -55,6 +55,12 @@ export interface TeamPersonView {
   lateReason: string | null;
   /** 3.4: leave that day ("Half day (first half)", "CL/SL"), or null. */
   leave: { label: string; categories: string; full: boolean; pendingDays: number } | null;
+  /** 3.5: how the day is recorded: the desktop agent, or the biometric device. */
+  attendance: 'AGENT' | 'BIOMETRIC';
+  /** 3.5: work from home approved that day, in days (0.5 for half a day); 0 without. */
+  wfhDays: number;
+  /** 3.5: a biometric day closed at the last punch with no check-out. */
+  noCheckout: boolean;
 }
 
 export interface TeamView {
@@ -326,6 +332,9 @@ export class TeamOverviewService {
               pendingDays: s.leave.pendingDays,
             }
           : null,
+      attendance: l.person.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+      wfhDays: s.wfhDays ?? 0,
+      noCheckout: s.noCheckout ?? false,
     };
   }
 

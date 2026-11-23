@@ -37,6 +37,7 @@ const PEOPLE = Array.from({ length: 25 }, (_, i) => {
     managerName: null,
     active: true,
     joinedOn: '2026-01-01',
+    attendanceSource: n === 3 ? ('BIOMETRIC' as const) : ('AGENT' as const),
   };
 });
 
@@ -67,6 +68,8 @@ function setup() {
           unverifiedSec: 0,
           paidSec: 0,
           lateStart: null,
+          wfhDays: Number(p.lastName) === 5 ? 0.5 : 0,
+          noCheckout: Number(p.lastName) === 3,
         },
         plan: { isWorkingDay: true },
       }),
@@ -173,5 +176,16 @@ describe('GET /overview paging', () => {
     expect(res.attention).toEqual(full.attention);
     expect(res.nextHolidays).toEqual(full.nextHolidays);
     expect(res.hourly).toHaveLength(24);
+  });
+});
+
+describe('GET /team: work from home and biometric (3.5)', () => {
+  it('carries how the day is recorded, work from home and a missing check-out', async () => {
+    const { svc } = setup();
+    const res = await svc.team(admin, { page: '1', limit: '100' }, NOW);
+    const by = new Map(res.people.map((p) => [p.id, p] as const));
+    expect(by.get('u03')).toMatchObject({ attendance: 'BIOMETRIC', noCheckout: true, wfhDays: 0 });
+    expect(by.get('u05')).toMatchObject({ attendance: 'AGENT', noCheckout: false, wfhDays: 0.5 });
+    expect(by.get('u07')).toMatchObject({ attendance: 'AGENT', noCheckout: false, wfhDays: 0 });
   });
 });

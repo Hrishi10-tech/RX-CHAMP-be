@@ -27,6 +27,7 @@ public sealed class WindowsPlatform : IPlatform
         Lock = new WindowsLockProbe(log);
         SleepClock = new WindowsSleepClock(new WindowsSleepSource());
         Foreground = new WindowsForegroundProbe(log);
+        CallWindows = new WindowsCallWindowProbe(log);
         Screen = new WindowsScreenCapture(log);
         Secrets = new WindowsSecretStore(paths.DataDir, log);
         Autostart = new WindowsAutostart(log);
@@ -46,6 +47,7 @@ public sealed class WindowsPlatform : IPlatform
     public ILockProbe Lock { get; }
     public ISleepClock SleepClock { get; }
     public IForegroundProbe Foreground { get; }
+    public ICallWindowProbe CallWindows { get; }
     public IScreenCapture Screen { get; }
     public ISecretStore Secrets { get; }
     public IAutostart Autostart { get; }

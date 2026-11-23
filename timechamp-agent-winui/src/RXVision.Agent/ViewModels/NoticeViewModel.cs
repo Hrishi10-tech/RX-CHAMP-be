@@ -36,6 +36,14 @@ public sealed partial class NoticeViewModel : ObservableObject
         };
     }
 
+    /// <summary>
+    /// AGENT.md section 9: with data handling on (GET /features), this exact sentence comes first.
+    /// Null while the flag is off (the notice as it was).
+    /// </summary>
+    public string? DataHandlingSentence => _agent.FeatureOn(Core.Api.FeatureNames.DataHandling)
+        ? "RxVision records activity, periodic captures and file-transfer events on this work device for attendance, payroll and data security."
+        : null;
+
     public string Heading => "RX Vision records your working day";
     public string Intro => "Your company uses RX Vision for attendance and work monitoring. While your day is running, it records:";
     public string Footer => "Your manager and your company's admins can see this. You can see your own day any time from the round button, and End day stops tracking until you start again.";

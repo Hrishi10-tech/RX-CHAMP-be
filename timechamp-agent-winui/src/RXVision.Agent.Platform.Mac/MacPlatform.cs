@@ -19,6 +19,7 @@ public sealed class MacPlatform : IPlatform
     private readonly MacLockProbe _lock;
     private readonly MacSleepClock _sleep;
     private readonly MacForegroundProbe _foreground;
+    private readonly MacCallWindowProbe _callWindows;
     private readonly MacScreenCapture _screen;
     private readonly MacSecretStore _secrets;
     private readonly MacAutostart _autostart;
@@ -42,6 +43,7 @@ public sealed class MacPlatform : IPlatform
         _lock = new MacLockProbe(_log);
         _sleep = new MacSleepClock();
         _foreground = new MacForegroundProbe(_log);
+        _callWindows = new MacCallWindowProbe(_log);
         _screen = new MacScreenCapture(_paths.TempDir, _log);
         _secrets = new MacSecretStore(_paths.DataDir, _log);
         _autostart = new MacAutostart(_paths.AppDir, _log);
@@ -66,6 +68,7 @@ public sealed class MacPlatform : IPlatform
     public ILockProbe Lock => _lock;
     public ISleepClock SleepClock => _sleep;
     public IForegroundProbe Foreground => _foreground;
+    public ICallWindowProbe CallWindows => _callWindows;
     public IScreenCapture Screen => _screen;
     public ISecretStore Secrets => _secrets;
     public IAutostart Autostart => _autostart;

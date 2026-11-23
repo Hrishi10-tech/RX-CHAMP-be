@@ -50,6 +50,20 @@ public sealed class NotificationService
         // 4.0: the organisation's settings (calendar, away tracking) or the person's day changed.
         _socket.On("config:changed", e => RaiseChanged("CONFIG:" + Kind(e)));
         _socket.On("workday:changed", e => RaiseChanged("WORKDAY:" + Kind(e, "reason")));
+        _socket.ConnectionChanged += up =>
+        {
+            if (up) RaiseConnected();
+        };
+    }
+
+    /// <summary>The socket is up. Events are not replayed: what may have been missed is read again (background thread).</summary>
+    public event Action? Connected;
+
+    /// <summary>The socket came up (tests call it to stand in for a real reconnect).</summary>
+    internal void RaiseConnected()
+    {
+        try { Connected?.Invoke(); }
+        catch { /* the host logs its own failures */ }
     }
 
     /// <summary>A notification worth a toast arrived (background thread).</summary>

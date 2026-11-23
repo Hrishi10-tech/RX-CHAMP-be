@@ -142,6 +142,7 @@ public class UpdateKeyGuardTests
         public ILockProbe Lock => _dev.Lock;
         public ISleepClock SleepClock => _dev.SleepClock;
         public IForegroundProbe Foreground => _dev.Foreground;
+        public ICallWindowProbe CallWindows => _dev.CallWindows;
         public ISoundPlayer Sound => _dev.Sound;
         public IScreenCapture Screen => _dev.Screen;
         public ISecretStore Secrets => _dev.Secrets;

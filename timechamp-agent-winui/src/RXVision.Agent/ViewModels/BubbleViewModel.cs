@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using RXVision.Agent.Core;
 using RXVision.Agent.Core.Api;
+using RXVision.Agent.Core.Workday;
 using RXVision.Agent.Services;
 
 namespace RXVision.Agent.ViewModels;
@@ -32,8 +33,13 @@ public sealed partial class BubbleViewModel : ObservableObject
     private string? _ringLabel;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUnread), nameof(UnreadText), nameof(ToolTip))]
+    [NotifyPropertyChangedFor(nameof(HasUnread), nameof(ShowUnread), nameof(UnreadText), nameof(ToolTip))]
     private int _unread;
+
+    /// <summary>"!" or "i" from a meeting card the panel has not shown yet; null with nothing to see.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAlertBadge), nameof(ShowUnread))]
+    private string? _alertBadge;
 
     /// <summary>The day has not started: the tooltip says so.</summary>
     [ObservableProperty]
@@ -47,6 +53,9 @@ public sealed partial class BubbleViewModel : ObservableObject
     public bool IsOverrun => Status == BubbleStatus.Overrun;
     public bool HasRingLabel => !string.IsNullOrEmpty(RingLabel);
     public bool HasUnread => Unread > 0;
+    public bool HasAlertBadge => AlertBadge is not null;
+    /// <summary>One badge at a time: a meeting card's over the count.</summary>
+    public bool ShowUnread => HasUnread && !HasAlertBadge;
     public string UnreadText => Unread > 9 ? "9+" : Unread.ToString();
 
     public string ToolTip
@@ -68,18 +77,19 @@ public sealed partial class BubbleViewModel : ObservableObject
         }
     }
 
+    /// <summary>The look of a status: one status, one look, for the icon and the panel's header.</summary>
+    public static BubbleStatus StatusFor(DayStatus status, bool overrun) => status switch
+    {
+        DayStatus.OnBreak => overrun ? BubbleStatus.Overrun : BubbleStatus.Away,
+        DayStatus.InMeeting => BubbleStatus.Meeting,
+        DayStatus.Working => BubbleStatus.Working,
+        _ => BubbleStatus.Idle,
+    };
+
     public void Update(IAgent agent)
     {
         var panel = agent.BreakPanel;
-        var presence = agent.Presence.Status;
-        Status = agent.State switch
-        {
-            AgentState.Running when panel.Active is { Overrun: true } => BubbleStatus.Overrun,
-            AgentState.Running when panel.Active is not null || presence is PresenceStatus.Break or PresenceStatus.Lunch => BubbleStatus.Away,
-            AgentState.Running when presence == PresenceStatus.Meeting => BubbleStatus.Meeting,
-            AgentState.Running => BubbleStatus.Working,
-            _ => BubbleStatus.Idle,
-        };
+        Status = StatusFor(DayStatusReader.Of(agent.State, agent.DayProgress, agent.Presence.Status, panel.Active is not null), panel.Active is { Overrun: true });
         IsNotStarted = agent.State == AgentState.NotStarted;
         var ring = agent.State == AgentState.Running ? agent.Ring : null;
         IsRinging = ring is not null;

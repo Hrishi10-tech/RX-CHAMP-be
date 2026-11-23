@@ -41,7 +41,7 @@ internal sealed class HostHarness : IDisposable
     public static string Yesterday => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).AddDays(-1).ToString("yyyy-MM-dd");
     public static string Tomorrow => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).AddDays(1).ToString("yyyy-MM-dd");
 
-    public HostHarness(object workday, string role = "USER", DevPlatform? platform = null, TimeSpan? secretStoreLimit = null)
+    public HostHarness(object workday, string role = "USER", DevPlatform? platform = null, TimeSpan? secretStoreLimit = null, IClock? clock = null)
     {
         Platform = platform ?? new DevPlatform(Directory.CreateTempSubdirectory().FullName);
         // The monitoring notice was read on an earlier day.
@@ -67,7 +67,7 @@ internal sealed class HostHarness : IDisposable
 
         Server.Route("POST auth/refresh", (_, _) => FakeServer.Ok(new { refreshed = true }, FakeServer.AccessCookie(), FakeServer.RefreshCookie("rt-2")));
 
-        Host = new AgentHost(Platform, new AgentOptions { ApiBaseUrl = Base }.Normalised(), Log, Server, secretStoreLimit: secretStoreLimit);
+        Host = new AgentHost(Platform, new AgentOptions { ApiBaseUrl = Base }.Normalised(), Log, Server, clock: clock, secretStoreLimit: secretStoreLimit);
         Host.Nudge += n => { lock (Nudges) Nudges.Add(n); };
         Host.BreakAutoSkipped += r => { lock (AutoSkips) AutoSkips.Add(r); };
     }

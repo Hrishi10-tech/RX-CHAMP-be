@@ -607,7 +607,7 @@ public class BreakFlowTests
     }
 }
 
-/// <summary>Meetings on the window: now, earlier today, a refusal, and Meeting ended.</summary>
+/// <summary>Meetings on the window: now, earlier today, a refusal, and End meeting.</summary>
 public class MeetingFlowTests
 {
     [AvaloniaFact]
@@ -615,10 +615,10 @@ public class MeetingFlowTests
     {
         var agent = new FakeAgent("10:20");
         var ui = new DashboardHarness(agent);
-        ui.Click("Meeting");
+        ui.Click("Meeting with details, or an earlier one");
         var dialog = ui.Dialog<MeetingDialogViewModel>();
         Assert.True(ui.Shows("Start a meeting"));
-        Assert.False(ui.Button("Start meeting").IsEffectivelyEnabled);
+        Assert.False(dialog.SubmitCommand.CanExecute(null)); // the tile reads Start meeting too (3.6)
 
         ui.Type(ui.Box("AgendaBox"), "Sprint planning for the invoice release");
         ui.Click("+ Maya Reddy");
@@ -626,7 +626,7 @@ public class MeetingFlowTests
         ui.Press(Key.Enter);
         Assert.Equal(new[] { "Maya Reddy", "Vikram (Pune)" }, dialog.Chosen.Select(c => c.Name));
         Assert.True(ui.Shows("Vikram (Pune)"));
-        Assert.False(ui.Button("Start meeting").IsEffectivelyEnabled); // who mails the minutes is required
+        Assert.False(dialog.SubmitCommand.CanExecute(null)); // who mails the minutes is required
         ui.Click("Me (Asha)");
         ui.Click("Start meeting");
 
@@ -644,11 +644,11 @@ public class MeetingFlowTests
         Assert.True(ui.Shows("Minutes: Asha Kumar"));
         Assert.False(ui.HasButton("Quick break"));
 
-        ui.Click("Meeting ended");
+        ui.Click("End meeting");
         Assert.Equal(1, agent.EndMeetingCalls);
         ui.Refresh();
         Assert.False(ui.Shows("IN A MEETING"));
-        Assert.True(ui.HasButton("Meeting"));
+        Assert.True(ui.HasButton("Start meeting"));
         ui.Close();
     }
 
@@ -661,7 +661,7 @@ public class MeetingFlowTests
             Kind = "BREAK", StartedAt = Ist.At("11:00").ToUniversalTime(), EndedAt = Ist.At("11:15").ToUniversalTime(),
         }));
         var ui = new DashboardHarness(agent, height: 820);
-        ui.Click("Meeting");
+        ui.Click("Meeting with details, or an earlier one");
         ui.Click("Already happened");
         var dialog = ui.Dialog<MeetingDialogViewModel>();
         Assert.True(ui.Shows("Log an earlier meeting"));

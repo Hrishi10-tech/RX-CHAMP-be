@@ -37,6 +37,9 @@ public sealed class AgentFacade : IAgent, IDisposable
         host.PresenceChanged += p => Raise(() => PresenceChanged?.Invoke(p));
         host.BreaksChanged += () => Raise(() => BreaksChanged?.Invoke());
         host.WorkdayChanged += () => Raise(() => WorkdayChanged?.Invoke());
+        host.DayProgressChanged += () => Raise(() => DayProgressChanged?.Invoke());
+        host.MeetingAlertsChanged += () => Raise(() => MeetingAlertsChanged?.Invoke());
+        host.NoticePendingChanged += () => Raise(() => NoticePendingChanged?.Invoke());
         host.MeetingsChanged += () => Raise(() => MeetingsChanged?.Invoke());
         host.ApprovalsChanged += () => Raise(() => ApprovalsChanged?.Invoke());
         host.ChatMessageReceived += m => Raise(() => ChatMessageReceived?.Invoke(m));
@@ -74,6 +77,11 @@ public sealed class AgentFacade : IAgent, IDisposable
     public string? BuiltForHosts => AgentOptions.BuiltForProductionOnly ? null : string.Join(", ", AgentOptions.BuiltInHosts);
     public string? UnsignedUpdatesNote => UpdateSignature.UnsignedBuildNote;
     public MeetingRecord? LiveMeeting => _host.LiveMeeting;
+    public DayProgress? DayProgress => _host.DayProgress;
+    public IReadOnlyList<MeetingAlert> MeetingAlerts => _host.MeetingAlerts;
+    public TimeSpan IdleFor => _host.IdleFor;
+    public bool NoticePending => _host.NoticePending;
+    public bool FeatureOn(string name) => _host.Features.On(name);
     public IReadOnlyList<ApprovalItem> MyApprovals => _host.MyApprovals;
     public string ApiBaseUrl => _host.ApiBaseUrl;
     public string Version => _host.Version;
@@ -123,6 +131,9 @@ public sealed class AgentFacade : IAgent, IDisposable
     public event Action<CurrentPresence>? PresenceChanged;
     public event Action? BreaksChanged;
     public event Action? WorkdayChanged;
+    public event Action? DayProgressChanged;
+    public event Action? MeetingAlertsChanged;
+    public event Action? NoticePendingChanged;
     public event Action? MeetingsChanged;
     public event Action? ApprovalsChanged;
     public event Action<ChatMessage>? ChatMessageReceived;
@@ -165,6 +176,10 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<CommentOutcome> CommentBreakAsync(string breakId, string comment) => Task.Run(() => _host.CommentBreakAsync(breakId, comment));
     public Task<EndOutcome> BackToWorkAsync() => Task.Run(() => _host.BackToWorkAsync());
     public Task<EndOutcome> EndMeetingAsync() => Task.Run(_host.EndMeetingAsync);
+    public Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source) => Task.Run(() => _host.StartMeetingStatusAsync(source));
+    public Task<MeetingStatusOutcome> ConfirmMeetingAsync() => Task.Run(_host.ConfirmMeetingAsync);
+    public void DismissMeetingAlert(MeetingAlertKind kind) => _host.DismissMeetingAlert(kind);
+    public void MeetingPanelClosed() => _host.MeetingPanelClosed();
     public Task<MeetingOutcome> StartMeetingAsync(string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender) =>
         Task.Run(() => _host.StartMeetingAsync(agenda, participants, momSender));
     public Task<MeetingOutcome> LogPastMeetingAsync(DateTimeOffset startedAt, int durationMin, string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender) =>

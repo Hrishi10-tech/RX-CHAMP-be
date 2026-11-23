@@ -17,6 +17,13 @@ public static class Fmt
         return minutes >= 60 ? $"{minutes / 60}h {minutes % 60:00}m" : $"{minutes}m";
     }
 
+    /// <summary>"2h 00m", hours always shown, whole minutes down: how long a meeting has run (C-628).</summary>
+    public static string HoursMinutes(TimeSpan elapsed)
+    {
+        var minutes = (int)Math.Max(0, Math.Floor(elapsed.TotalMinutes));
+        return $"{minutes / 60}h {minutes % 60:00}m";
+    }
+
     /// <summary>Like <see cref="Duration"/>, but some time never reads "0m": under a minute is "1m".</summary>
     public static string SomeDuration(int seconds) => Duration(seconds > 0 ? Math.Max(seconds, 60) : 0);
 

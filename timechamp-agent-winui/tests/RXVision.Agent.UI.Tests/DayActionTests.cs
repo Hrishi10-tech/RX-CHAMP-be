@@ -323,7 +323,7 @@ public class DayActionTests
         agent.Presence = new CurrentPresence { Status = PresenceStatus.Meeting };
         dialogs.Answer(_ => true);
         await actions.EndDayAsync();
-        Assert.Equal("Tap Meeting ended, then end your day.", ((MessageDialogViewModel)dialogs.Shown[1]).Message);
+        Assert.Equal("Tap End meeting, then end your day.", ((MessageDialogViewModel)dialogs.Shown[1]).Message);
         Assert.Empty(agent.EndDayCalls);
     }
 
@@ -341,7 +341,7 @@ public class DayActionTests
             Assert.Equal("Add what the meeting is about.", meeting.Problem);
             return false;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Empty(agent.MeetingCalls);
         Assert.Empty(agent.PastMeetingCalls);
     }
@@ -373,7 +373,7 @@ public class DayActionTests
             Assert.Equal("Start meeting", meeting.PrimaryText);
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var (agenda, people, mom) = Assert.Single(agent.MeetingCalls);
         Assert.Equal("Asha Kumar", mom);
         Assert.Equal("Sprint planning for the invoice release", agenda);
@@ -404,7 +404,7 @@ public class DayActionTests
             Assert.True(meeting.SubmitCommand.CanExecute(null));
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var call = Assert.Single(agent.PastMeetingCalls);
         Assert.Equal("Priya", call.MomSender);
         Assert.Equal(Ist.At("10:30"), call.StartedAt);
@@ -447,7 +447,7 @@ public class DayActionTests
                 again.StartAt = again.StartOptions.First(o => o.Label == "1:30 PM");
                 return true;
             });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Equal(2, agent.PastMeetingCalls.Count);
         Assert.Equal(Ist.At("13:30"), agent.PastMeetingCalls[1].StartedAt);
     }
@@ -471,7 +471,7 @@ public class DayActionTests
         var (actions, agent, dialogs) = Setup("10:20");
         agent.MeetingOutcomes.Enqueue(new MeetingOutcome.Refused("ON_BREAK", "On a break."));
         dialogs.Answer(d => { ((MeetingDialogViewModel)d).Agenda = "Standup"; return true; }).Answer(_ => true);
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[^1]);
         Assert.Equal("Couldn't start the meeting", alert.Title);
         Assert.Equal("End your break first.", alert.Message);
@@ -489,7 +489,7 @@ public class DayActionTests
             meeting.MomSender = "Ravi";
             return true;
         });
-        await actions.StartMeetingAsync();
+        await actions.RecordMeetingAsync();
         Assert.Single(agent.MeetingCalls);
         Assert.Single(dialogs.Shown);
         Assert.Equal(PresenceStatus.Meeting, agent.Presence.Status);
@@ -687,7 +687,7 @@ public class MeetingDialogTests
     public void Notes_say_what_happens_to_focus_time()
     {
         var dialog = Dialog();
-        Assert.Equal("Your focus time keeps counting while you are in it. Tap Meeting ended when you are back. Your manager approves or rejects it after.", dialog.Note);
+        Assert.Equal("Your focus time keeps counting while you are in it. Tap End meeting when you are back. Your manager approves or rejects it after.", dialog.Note);
         dialog.IsPast = true;
         Assert.Equal("This time is already in your focus time. Your manager approves or rejects it; a rejection takes these minutes off.", dialog.Note);
     }

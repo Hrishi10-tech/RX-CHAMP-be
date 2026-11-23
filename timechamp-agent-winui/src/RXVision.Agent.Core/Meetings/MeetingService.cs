@@ -1,6 +1,7 @@
 using RXVision.Agent.Core.Api;
 using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Util;
+using RXVision.Agent.Core.Workday;
 
 namespace RXVision.Agent.Core.Meetings;
 
@@ -21,9 +22,28 @@ public abstract record MeetingOutcome
     public sealed record Offline(string Message) : MeetingOutcome;
 }
 
+/// <summary>Where a status meeting's start came from: the only field that travels with it.</summary>
+public static class MeetingSources
+{
+    public const string Button = "BUTTON";
+    public const string Suggestion = "SUGGESTION";
+}
+
+/// <summary>Result of a tap on the status routes (start, end, confirm).</summary>
+public abstract record MeetingStatusOutcome
+{
+    /// <summary>The server's answer: the day progress as it stands now.</summary>
+    public sealed record Done(DayProgress Progress) : MeetingStatusOutcome;
+    /// <summary>It can't happen now (409: day not started or ended, on a break, already in a meeting, biometric).</summary>
+    public sealed record Refused(string Code, string Message) : MeetingStatusOutcome;
+    /// <summary>No answer: nothing changed; the person can try again.</summary>
+    public sealed record Offline(string Message) : MeetingStatusOutcome;
+}
+
 /// <summary>
-/// Meetings (3.1): a live one with its agenda and people, ended with Meeting ended,
-/// and earlier ones logged after the fact. Each goes to the person's approver.
+/// Meetings: In a meeting (3.6), which sends only its start and end through the status
+/// routes; a live one with its agenda and people (4.0, journaled; kept for meetings
+/// already queued); and earlier ones logged after the fact, which go to the approver.
 /// </summary>
 public sealed class MeetingService
 {
@@ -65,6 +85,32 @@ public sealed class MeetingService
         }
         Changed?.Invoke();
         return true;
+    }
+
+    /// <summary>In a meeting, at once. <paramref name="source"/>: BUTTON or SUGGESTION. Nothing else travels.</summary>
+    public Task<MeetingStatusOutcome> StartStatusAsync(string source, CancellationToken ct = default) =>
+        StatusAsync(_api.StartMeetingStatusAsync(source, ct), "started", "Try again in a moment. Nothing was saved yet.", "Try starting the meeting again");
+
+    /// <summary>End meeting: back to Working, from whichever meeting runs. Safe to repeat.</summary>
+    public Task<MeetingStatusOutcome> EndStatusAsync(CancellationToken ct = default) =>
+        StatusAsync(_api.EndMeetingStatusAsync(ct), "ended", "Try again in a moment. Your meeting is still running.", "Try ending the meeting again");
+
+    /// <summary>Still in it: the 2 hours start again from now. A tap that lost the race reads Working.</summary>
+    public Task<MeetingStatusOutcome> ConfirmStatusAsync(CancellationToken ct = default) =>
+        StatusAsync(_api.ConfirmMeetingStatusAsync(ct), "confirmed", "Try again in a moment. Your meeting is still running.", "Try again in a moment");
+
+    private async Task<MeetingStatusOutcome> StatusAsync(Task<ApiResult<DayProgress>> call, string what, string offline, string fallback)
+    {
+        var result = await call;
+        if (result.Ok && result.Data is { } progress)
+        {
+            _log.Info("meetings", $"status meeting {what}; the server says {progress.Status}");
+            await RefreshAsync();
+            return new MeetingStatusOutcome.Done(progress);
+        }
+        if (result.Ok || result.Transient) return new MeetingStatusOutcome.Offline(offline);
+        if (result.Outcome == ApiOutcome.Unauthorized) return new MeetingStatusOutcome.Refused("SIGNED_OUT", "Sign in again first.");
+        return new MeetingStatusOutcome.Refused(result.Code ?? "REFUSED", result.Message ?? fallback);
     }
 
     public async Task<MeetingOutcome> StartAsync(string agenda, IReadOnlyList<MeetingParticipant> participants, string? momSender = null, CancellationToken ct = default)

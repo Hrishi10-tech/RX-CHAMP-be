@@ -1,0 +1,121 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RXVision.Agent.ViewModels"
+             x:Class="RXVision.Agent.Views.MeetingCardsView"
+             x:DataType="vm:MeetingCardsViewModel">
+
+  <!-- The meeting feature's cards, on top of the panel. Tokens: AGENT.md section 4. -->
+  <UserControl.Styles>
+    <Style Selector="Border.meetingcard">
+      <Setter Property="Background" Value="#222937" />
+      <Setter Property="BorderBrush" Value="#3A4356" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="17" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+    <Style Selector="Border.cardicon">
+      <Setter Property="Width" Value="40" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="Background" Value="#1A6FC9B6" />
+    </Style>
+    <Style Selector="Border.cardicon.action">
+      <Setter Property="Background" Value="#1FF2A93B" />
+    </Style>
+    <Style Selector="Border.cardicon TextBlock">
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="FontWeight" Value="ExtraBold" />
+      <Setter Property="Foreground" Value="#6FC9B6" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.cardicon.action TextBlock">
+      <Setter Property="Foreground" Value="#F2A93B" />
+    </Style>
+    <Style Selector="Button.cardprimary">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Background" Value="#6FC9B6" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.cardprimary TextBlock">
+      <Setter Property="Foreground" Value="#0E1B18" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.cardoutlined">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#3A4356" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Name="PART_ContentPresenter"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Content="{TemplateBinding Content}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.cardoutlined TextBlock">
+      <Setter Property="Foreground" Value="#E8EBF0" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.cardquiet">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Padding" Value="12,4" />
+    </Style>
+    <Style Selector="Button.cardquiet TextBlock">
+      <Setter Property="Foreground" Value="#9AA3B2" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Styles>
+
+  <ItemsControl ItemsSource="{Binding Cards}">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:MeetingCardViewModel">
+        <Border Classes="meetingcard">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="Auto,*">
+              <Border Classes="cardicon" Classes.action="{Binding NeedsAction}">
+                <TextBlock Text="{Binding Badge}" />
+              </Border>
+              <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="3" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold" Foreground="#E8EBF0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Body}" FontSize="13" Foreground="#9AA3B2" TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+            <Button Classes="cardprimary" Command="{Binding PrimaryCommand}" AutomationProperties.Name="{Binding PrimaryText}">
+              <TextBlock Text="{Binding PrimaryText}" />
+            </Button>
+            <Button Classes="cardoutlined" Command="{Binding SecondaryCommand}" IsVisible="{Binding ShowOutlinedSecondary}"
+                    AutomationProperties.Name="{Binding SecondaryText}">
+              <TextBlock Text="{Binding SecondaryText}" />
+            </Button>
+            <Button Classes="cardquiet" Command="{Binding SecondaryCommand}" IsVisible="{Binding ShowQuietSecondary}"
+                    AutomationProperties.Name="{Binding SecondaryText}">
+              <TextBlock Text="{Binding SecondaryText}" />
+            </Button>
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

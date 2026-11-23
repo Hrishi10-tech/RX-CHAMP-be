@@ -92,4 +92,39 @@ public class BrowserSupportTests
     [InlineData("not a url")]
     public void HostFromUrl_drops_non_web_and_junk(string? url)
         => Assert.Null(BrowserSupport.HostFromUrl(url));
+
+    // ---- The call detectors' tab read --------------------------------------------------------------
+
+    [Fact]
+    public void Tab_titles_script_reads_every_window_of_a_scriptable_browser_and_never_launches_one()
+    {
+        var chrome = BrowserSupport.TabTitlesScriptFor(BrowserKind.Chromium, "Google Chrome")!;
+        Assert.StartsWith("if application \"Google Chrome\" is running then ", chrome);
+        Assert.EndsWith("get title of every tab of every window", chrome);
+        var safari = BrowserSupport.TabTitlesScriptFor(BrowserKind.Safari, "Safari")!;
+        Assert.EndsWith("get name of every tab of every window", safari);
+        Assert.Null(BrowserSupport.TabTitlesScriptFor(BrowserKind.Firefox, "Firefox"));
+        Assert.Null(BrowserSupport.TabTitlesScriptFor(BrowserKind.Chromium, "Evil\" to quit"));
+        Assert.Null(BrowserSupport.TabTitlesScriptFor(BrowserKind.Chromium, "Evil\\"));
+    }
+
+    [Fact]
+    public void Tab_titles_come_apart_at_the_list_separator()
+    {
+        Assert.Equal(new[] { "Inbox", "Meet - abc-defg-hij" }, BrowserSupport.TabTitlesFrom("Inbox, Meet - abc-defg-hij\n"));
+        Assert.Empty(BrowserSupport.TabTitlesFrom(""));
+        Assert.Empty(BrowserSupport.TabTitlesFrom("   "));
+        Assert.Empty(BrowserSupport.TabTitlesFrom(null));
+        Assert.Empty(BrowserSupport.TabTitlesFrom("missing value"));
+    }
+
+    /// <summary>The native read on a real Mac: no window of a process nobody runs, and no title read for it. No browser is scripted.</summary>
+    [Fact]
+    public void The_window_read_runs_and_finds_only_the_owners_it_was_asked_for()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        var probe = new MacCallWindowProbe(new RXVision.Agent.Core.Util.MemoryLog());
+        Assert.Empty(probe.WindowsOf(new[] { "RXVision no such owner" }));
+        Assert.Empty(probe.TabTitlesOf("RXVision no such browser"));
+    }
 }

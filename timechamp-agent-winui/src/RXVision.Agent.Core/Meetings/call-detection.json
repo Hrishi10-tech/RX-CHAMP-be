@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "browserSuffix": "\\s+[-\\u2013\\u2014]\\s+(google chrome|chromium|microsoft\\u200b? edge|brave|opera|vivaldi|(mozilla )?firefox|safari)(\\s+[-\\u2013\\u2014]\\s.*)?$",
+  "calls": [
+    {
+      "id": "teams",
+      "app": "Teams",
+      "huddle": false,
+      "owners": {
+        "windows": ["ms-teams", "Teams"],
+        "mac": ["Microsoft Teams", "MSTeams", "Microsoft Teams classic"]
+      },
+      "titles": [
+        "^(meeting|call)\\b.*\\|\\s*microsoft teams",
+        "^(?!\\s*(activity|chat|teams|calendar|calls|onedrive|files|apps|copilot)\\s*\\|).+\\|\\s*microsoft teams\\s*$"
+      ]
+    },
+    {
+      "id": "zoom",
+      "app": "Zoom",
+      "huddle": false,
+      "owners": {
+        "windows": ["Zoom"],
+        "mac": ["zoom.us"]
+      },
+      "titles": ["^zoom (meeting|webinar)\\b"],
+      "windowClasses": ["ZPContentViewWndClass", "ConfMultiTabContentWndClass"]
+    },
+    {
+      "id": "meet",
+      "app": "Google Meet",
+      "huddle": false,
+      "browser": true,
+      "hosts": ["meet.google.com"],
+      "owners": {
+        "windows": ["chrome", "msedge", "brave", "opera", "vivaldi", "firefox", "chromium"],
+        "mac": ["Google Chrome", "Microsoft Edge", "Brave Browser", "Safari", "Firefox", "Vivaldi", "Opera", "Chromium"]
+      },
+      "titles": ["^meet\\s*[-\\u2013]\\s*\\S"]
+    },
+    {
+      "id": "slack",
+      "app": "Slack",
+      "huddle": true,
+      "owners": {
+        "windows": ["slack"],
+        "mac": ["Slack"]
+      },
+      "titles": ["\\bhuddle\\b"],
+      "notTitles": ["\\((channel|private channel|dm)\\)"]
+    }
+  ]
+}

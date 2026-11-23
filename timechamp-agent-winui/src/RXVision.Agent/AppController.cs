@@ -96,6 +96,15 @@ public sealed class AppController : IDisposable
         _agent.PresenceChanged += _ => Refresh();
         _agent.BreaksChanged += Refresh;
         _agent.WorkdayChanged += Refresh;
+        _agent.DayProgressChanged += Refresh;
+        _agent.MeetingAlertsChanged += Refresh;
+        // C-R11: a day already running keeps running while the notice waits on top.
+        _agent.NoticePendingChanged += () =>
+        {
+            if (!IsDayState(_agent.State)) return;
+            if (_agent.NoticePending) ShowNotice();
+            else HideNotice();
+        };
         _agent.MeetingsChanged += Refresh;
         _agent.ApprovalsChanged += Refresh;
         _agent.RingChanged += OnRingChanged;
@@ -224,7 +233,9 @@ public sealed class AppController : IDisposable
             case AgentState.Running:
             case AgentState.DayEnded:
                 HideSignIn();
-                HideNotice();
+                // A day already running keeps running while the notice waits on top (C-R11).
+                if (_agent.NoticePending) ShowNotice();
+                else HideNotice();
                 ShowBubble();
                 if (!IsDayState(previous))
                 {
@@ -265,7 +276,15 @@ public sealed class AppController : IDisposable
     {
         _bubbleVm.Update(_agent);
         UpdateMenu();
+        UpdateMeetingBadge();
         if (_dashboard?.IsVisible == true) _dashboardVm.Refresh();
+    }
+
+    /// <summary>The meeting cards' badge on the button, until the dashboard opens. Never a window: the person opens it when they choose (3.6).</summary>
+    private void UpdateMeetingBadge()
+    {
+        _dashboardVm.MeetingCards.Update(panelOpen: _dashboard?.IsVisible == true);
+        _bubbleVm.AlertBadge = _dashboardVm.MeetingCards.Badge;
     }
 
     private void UpdateMenu()
@@ -283,6 +302,7 @@ public sealed class AppController : IDisposable
             _ticks++;
             _bubbleVm.Update(_agent);
             UpdateMenu();
+            UpdateMeetingBadge();
             _toasts.Tick();
             if (_dashboard?.IsVisible == true) _dashboardVm.Refresh();
             UpdateAway();
@@ -358,6 +378,7 @@ public sealed class AppController : IDisposable
             SaveDashboardPlacement();
             _dashboardVm.Overlay?.Cancel();
             _dashboardVm.IsOnScreen = false;
+            _agent.MeetingPanelClosed();
         };
         window.Activated += (_, _) =>
         {

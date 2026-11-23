@@ -93,6 +93,9 @@ public sealed class ActivityTracker : IDisposable
     /// </summary>
     public Func<bool> MaySend { get; set; } = () => true;
 
+    /// <summary>What idle time reads as: the host restarts it at a meeting's fallback (brief 1.8). The OS's by default.</summary>
+    public Func<TimeSpan, TimeSpan> IdleFilter { get; set; } = idle => idle;
+
     public void Start()
     {
         if (_running) return;
@@ -391,7 +394,7 @@ public sealed class ActivityTracker : IDisposable
 
     private TimeSpan SafeIdle()
     {
-        try { return _platform.Idle.IdleTime(); } catch { return TimeSpan.Zero; }
+        try { return IdleFilter(_platform.Idle.IdleTime()); } catch { return TimeSpan.Zero; }
     }
 
     internal static string Iso(DateTimeOffset t) => t.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

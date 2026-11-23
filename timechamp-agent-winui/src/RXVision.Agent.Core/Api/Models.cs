@@ -782,6 +782,17 @@ public sealed class MeetingRecord
     public string? DecidedByName { get; set; }
     /// <summary>Who will mail the minutes (4.0).</summary>
     public string? MomSender { get; set; }
+    /// <summary>STATUS for In a meeting (3.6); anything else was declared with an agenda.</summary>
+    public string? Kind { get; set; }
+    /// <summary>Why a status meeting ended: USER, BREAK, END_DAY, NO_ANSWER or AUTO_CLOSED.</summary>
+    public string? EndReason { get; set; }
+    public bool IsStatus => Kind == MeetingKinds.Status;
+}
+
+/// <summary>What a meeting is: In a meeting from the status routes (3.6), or declared with an agenda.</summary>
+public static class MeetingKinds
+{
+    public const string Status = "STATUS";
 }
 
 public sealed class StartMeetingRequest
@@ -998,6 +1009,25 @@ public sealed class AwayUnexplainedRequest
 public sealed class SignOutKeyRequest
 {
     public string Key { get; set; } = "";
+}
+
+/// <summary>GET /features: each release flag, true or false. A flag reads off until the server says it is on.</summary>
+public sealed class FeatureFlags
+{
+    public Dictionary<string, bool> Flags { get; set; } = new();
+
+    public bool On(string name) => Flags.TryGetValue(name, out var on) && on;
+}
+
+/// <summary>The release flags the agent reads (src/shared/features/feature-flags.ts on the API).</summary>
+public static class FeatureNames
+{
+    /// <summary>2.7 Data handling: the monitoring notice adds its sentence about retention and AI exclusions.</summary>
+    public const string DataHandling = "dataHandling";
+    /// <summary>The redesigned (calm) desktop agent.</summary>
+    public const string AgentCalmUi = "agentCalmUi";
+    /// <summary>2.1 Messaging.</summary>
+    public const string Messaging = "messaging";
 }
 
 /// <summary>GET /workday/me/history?month=YYYY-MM (SPEC 5.6).</summary>

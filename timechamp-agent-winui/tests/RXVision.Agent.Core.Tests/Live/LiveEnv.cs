@@ -382,6 +382,7 @@ public sealed class NoCapturePlatform : RXVision.Agent.Core.Platform.IPlatform, 
     public RXVision.Agent.Core.Platform.ILockProbe Lock => _dev.Lock;
     public RXVision.Agent.Core.Platform.ISleepClock SleepClock => _dev.SleepClock;
     public RXVision.Agent.Core.Platform.IForegroundProbe Foreground => _dev.Foreground;
+    public RXVision.Agent.Core.Platform.ICallWindowProbe CallWindows => _dev.CallWindows;
     public RXVision.Agent.Core.Platform.IScreenCapture Screen => this;
     public RXVision.Agent.Core.Platform.ISecretStore Secrets => _dev.Secrets;
     public RXVision.Agent.Core.Platform.IAutostart Autostart => _dev.Autostart;

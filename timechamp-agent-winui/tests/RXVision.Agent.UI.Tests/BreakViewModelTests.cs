@@ -311,7 +311,7 @@ public class BreakViewModelTests
         Assert.Equal("1h 00m today", vm.FocusTile.Value); // the day's focus time, not activity
         Assert.True(vm.MeetingTile.CanClick);
         Assert.Equal("30m today", vm.MeetingTile.Value);
-        Assert.Equal("Start one, or log an earlier one", vm.MeetingTile.Caption);
+        Assert.Equal("Tap to start one", vm.MeetingTile.Caption);
         Assert.True(vm.ShowTiles);
         Assert.False(vm.IsInMeeting);
     }

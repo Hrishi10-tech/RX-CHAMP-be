@@ -24,6 +24,8 @@
 
       <ScrollViewer Grid.Row="1" Margin="0,16,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="14">
+      <TextBlock Classes="body" Text="{Binding DataHandlingSentence}" FontWeight="SemiBold"
+                 IsVisible="{Binding DataHandlingSentence, Converter={x:Static ObjectConverters.IsNotNull}}" />
       <TextBlock Classes="body" Text="{Binding Intro}" />
 
       <ItemsControl ItemsSource="{Binding Items}" Margin="0,2,0,0">

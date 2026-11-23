@@ -35,6 +35,16 @@ public interface IAgent
     string? UnsignedUpdatesNote { get; }
     /// <summary>The meeting in progress, if it has a record.</summary>
     MeetingRecord? LiveMeeting { get; }
+    /// <summary>The server's last word on the status and the ring (GET /me/day-progress, 3.6), or null before the first answer.</summary>
+    DayProgress? DayProgress { get; }
+    /// <summary>The cards the meeting feature wants shown (3.6), what needs an answer first.</summary>
+    IReadOnlyList<MeetingAlert> MeetingAlerts { get; }
+    /// <summary>Time since the last input, restarted at a meeting's 2 hour fallback.</summary>
+    TimeSpan IdleFor { get; }
+    /// <summary>The monitoring notice waits for an answer; it can sit over a day already running (core review C-R11).</summary>
+    bool NoticePending { get; }
+    /// <summary>A release flag from GET /features (off until the server says on).</summary>
+    bool FeatureOn(string name);
     /// <summary>The person's own items with their approver, pending first.</summary>
     IReadOnlyList<ApprovalItem> MyApprovals { get; }
     string ApiBaseUrl { get; }
@@ -87,6 +97,12 @@ public interface IAgent
     event Action<CurrentPresence>? PresenceChanged;
     event Action? BreaksChanged;
     event Action? WorkdayChanged;
+    /// <summary>A new day progress: the status, the ring and the 2 hour check's times.</summary>
+    event Action? DayProgressChanged;
+    /// <summary>The meeting cards changed.</summary>
+    event Action? MeetingAlertsChanged;
+    /// <summary><see cref="NoticePending"/> changed (UI thread).</summary>
+    event Action? NoticePendingChanged;
     event Action? MeetingsChanged;
     event Action? ApprovalsChanged;
     event Action<ChatMessage>? ChatMessageReceived;
@@ -145,7 +161,17 @@ public interface IAgent
     Task<CommentOutcome> CommentBreakAsync(string breakId, string comment);
     /// <summary>End break (or Meeting ended when no break runs). Confirmed in the UI first.</summary>
     Task<EndOutcome> BackToWorkAsync();
+    /// <summary>End meeting: a status meeting through its route (online), a meeting with an agenda through the journal.</summary>
     Task<EndOutcome> EndMeetingAsync();
+    /// <summary>Start meeting (3.6): <paramref name="source"/> (<see cref="MeetingSources"/>) is all that travels.</summary>
+    Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source);
+    /// <summary>Still in it, on the 2 hour check: the 2 hours start again from now.</summary>
+    Task<MeetingStatusOutcome> ConfirmMeetingAsync();
+    /// <summary>Not now on a suggestion, or the Back to Working card once read.</summary>
+    void DismissMeetingAlert(MeetingAlertKind kind);
+    /// <summary>The panel closed: the card that only informs has been read.</summary>
+    void MeetingPanelClosed();
+    /// <summary>A meeting with its agenda, people and minutes sender (4.0, journaled: works offline; goes to the approver).</summary>
     Task<MeetingOutcome> StartMeetingAsync(string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender);
     Task<MeetingOutcome> LogPastMeetingAsync(DateTimeOffset startedAt, int durationMin, string agenda, IReadOnlyList<MeetingParticipant> participants, string momSender);
     Task<AwayOutcome> AnswerAwayAsync(AwayAnswer answer);

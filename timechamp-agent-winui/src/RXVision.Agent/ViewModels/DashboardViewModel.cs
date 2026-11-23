@@ -46,8 +46,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         NextTile.Command = new AsyncRelayCommand(_actions.NextBreakAsync, () => NextTile.CanClick && !IsBusy);
         FocusTile = new TileViewModel("Focus work", "indigo", "Icon.Focus");
         FocusTile.Command = new AsyncRelayCommand(_actions.BackToWorkAsync, () => FocusTile.CanClick && !IsBusy);
-        MeetingTile = new TileViewModel("Meeting", "violet", "Icon.Meeting");
-        MeetingTile.Command = new AsyncRelayCommand(_actions.StartMeetingAsync, () => MeetingTile.CanClick && !IsBusy);
+        MeetingTile = new TileViewModel("Start meeting", "violet", "Icon.Meeting");
+        MeetingTile.Command = new AsyncRelayCommand(() => _actions.StartMeetingAsync(), () => MeetingTile.CanClick && !IsBusy);
+        MeetingCards = new MeetingCardsViewModel(agent, actions);
 
         Chat = new ChatViewModel(agent, log);
         History = new HistoryViewModel(agent, log);
@@ -61,6 +62,8 @@ public sealed partial class DashboardViewModel : ObservableObject
     public TileViewModel NextTile { get; }
     public TileViewModel FocusTile { get; }
     public TileViewModel MeetingTile { get; }
+    /// <summary>Start meeting?, End meeting?, Still in a meeting? and You're back to Working (3.6).</summary>
+    public MeetingCardsViewModel MeetingCards { get; }
     public ActiveBreakViewModel ActiveBreak { get; } = new();
     public TodayViewModel Today { get; } = new();
     public ChatViewModel Chat { get; }
@@ -276,7 +279,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(BackToWorkCommand), nameof(EndBreakCommand), nameof(PauseBreakCommand),
-        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand), nameof(AddLateReasonCommand))]
+        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand), nameof(AddLateReasonCommand), nameof(RecordMeetingCommand))]
     private bool _isBusy;
 
     partial void OnIsBusyChanged(bool value)
@@ -316,6 +319,10 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(NotBusy))]
     private Task EndMeetingAsync() => _actions.EndMeetingAsync();
+
+    /// <summary>The 4.0 meeting dialog: a meeting with its agenda, people and minutes (works offline), or an earlier one.</summary>
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private Task RecordMeetingAsync() => _actions.RecordMeetingAsync();
 
     private bool NotBusy() => !IsBusy;
 
@@ -473,8 +480,10 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (IsOnBreak) ActiveBreak.Update(active!, _agent.BusinessTime, _actions.Approver, now);
         else ActiveBreak.CanPause = false;
         PauseBreakCommand.NotifyCanExecuteChanged();
-        IsInMeeting = running && !IsOnBreak && presence.Status == PresenceStatus.Meeting;
+        IsInMeeting = running && !IsOnBreak
+            && DayStatusReader.Of(state, _agent.DayProgress, presence.Status, panel.Active is not null) == DayStatus.InMeeting;
         if (IsInMeeting) UpdateMeeting(presence, now);
+        MeetingCards.Update(panelOpen: true);
 
         var focus = _agent.FocusSec;
         UpdateFocus(state, workday, focus, presence);
@@ -607,9 +616,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     private void UpdateMeeting(CurrentPresence presence, DateTimeOffset now)
     {
         var live = _agent.LiveMeeting;
-        var since = live?.StartedAt is { } s && s != default ? s : presence.Since ?? now - TimeSpan.FromSeconds(presence.ElapsedSec);
+        var since = live?.StartedAt is { } s && s != default ? s
+            : _agent.DayProgress?.MeetingStartedAt
+            ?? presence.Since ?? now - TimeSpan.FromSeconds(presence.ElapsedSec);
         MeetingTimer = Fmt.Clock(now - since);
         MeetingStarted = $"Started {_agent.BusinessTime(since)}";
+        // In a meeting (3.6) has no agenda and no people; a meeting recorded with its details has both.
         MeetingAgenda = live?.Agenda is { Length: > 0 } agenda ? agenda
             : string.IsNullOrWhiteSpace(presence.Note) ? "In a meeting" : presence.Note!.Trim();
         var people = live?.Participants ?? new List<MeetingParticipant>();
@@ -719,7 +731,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         var meetingSec = _agent.Totals.MeetingSec;
         if (IsBiometric) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Your day is on the biometric device", TileLook.Disabled, false);
         else if (!running) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", ended, TileLook.Disabled, false);
-        else MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Start one, or log an earlier one", TileLook.Idle, true);
+        else MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Tap to start one", TileLook.Idle, true);
     }
 
     private void UpdateSchedule(BreakPanel panel, DateTimeOffset now)
@@ -815,6 +827,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         Overlay?.Cancel();
         Chat.Reset();
+        MeetingCards.Reset();
         Leave.Reset();
         Calendar.Reset();
         Instructions.Reset();

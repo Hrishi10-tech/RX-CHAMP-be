@@ -226,6 +226,76 @@ public sealed class FakeAgent : IAgent
     public string? UnsignedUpdatesNote { get; set; }
     public MeetingRecord? LiveMeeting { get; set; }
 
+    // ---- 3.6: the status, the ring, the meeting cards, the flags ----
+    public DayProgress? DayProgress { get; set; }
+    public List<MeetingAlert> Alerts { get; set; } = new();
+    public IReadOnlyList<MeetingAlert> MeetingAlerts => Alerts;
+    public TimeSpan IdleFor { get; set; }
+    private bool _noticePending;
+    public bool NoticePending
+    {
+        get => _noticePending;
+        set { _noticePending = value; NoticePendingChanged?.Invoke(); }
+    }
+    public event Action? NoticePendingChanged;
+    public HashSet<string> FlagsOn { get; } = new();
+    public bool FeatureOn(string name) => FlagsOn.Contains(name);
+    public Queue<MeetingStatusOutcome> MeetingStatusOutcomes { get; } = new();
+    public List<string> MeetingStartSources { get; } = new();
+    public int ConfirmCalls { get; private set; }
+    public List<MeetingAlertKind> DismissedAlerts { get; } = new();
+    public int PanelClosedCalls { get; private set; }
+    public event Action? DayProgressChanged;
+    public event Action? MeetingAlertsChanged;
+    public void RaiseDayProgress() => DayProgressChanged?.Invoke();
+    public void RaiseMeetingAlerts() => MeetingAlertsChanged?.Invoke();
+
+    public Task<MeetingStatusOutcome> StartMeetingStatusAsync(string source)
+    {
+        MeetingStartSources.Add(source);
+        var outcome = MeetingStatusOutcomes.Count > 0 ? MeetingStatusOutcomes.Dequeue() : new MeetingStatusOutcome.Done(Progress(DayProgressStatus.Meeting));
+        if (outcome is MeetingStatusOutcome.Done done)
+        {
+            DayProgress = done.Progress;
+            Presence = new CurrentPresence { Status = done.Progress.InMeeting ? PresenceStatus.Meeting : PresenceStatus.Working, Since = Now };
+        }
+        return Task.FromResult(outcome);
+    }
+
+    public Task<MeetingStatusOutcome> ConfirmMeetingAsync()
+    {
+        ConfirmCalls++;
+        var outcome = MeetingStatusOutcomes.Count > 0 ? MeetingStatusOutcomes.Dequeue() : new MeetingStatusOutcome.Done(Progress(DayProgressStatus.Meeting));
+        if (outcome is MeetingStatusOutcome.Done done) DayProgress = done.Progress;
+        return Task.FromResult(outcome);
+    }
+
+    public void DismissMeetingAlert(MeetingAlertKind kind)
+    {
+        DismissedAlerts.Add(kind);
+        Alerts.RemoveAll(a => a.Kind == kind);
+    }
+
+    public void MeetingPanelClosed()
+    {
+        PanelClosedCalls++;
+        Alerts.RemoveAll(a => a.Kind == MeetingAlertKind.BackToWorking);
+    }
+
+    /// <summary>A day progress as the server answers it, 5h 12m into an 8 hour target, with the check's times counted from <see cref="Now"/>.</summary>
+    public DayProgress Progress(string status, int workedSec = 5 * 3600 + 12 * 60, DateTimeOffset? meetingFrom = null) => new()
+    {
+        Status = status,
+        Date = "2026-10-13",
+        WorkedSec = workedSec,
+        TargetSec = 8 * 3600,
+        TargetFromShift = true,
+        OverSec = Math.Max(0, workedSec - 8 * 3600),
+        MeetingStartedAt = status == DayProgressStatus.Meeting ? meetingFrom ?? Now : null,
+        MeetingPromptAt = status == DayProgressStatus.Meeting ? (meetingFrom ?? Now).AddHours(2) : null,
+        MeetingFallbackAt = status == DayProgressStatus.Meeting ? (meetingFrom ?? Now).AddHours(2).AddMinutes(10) : null,
+    };
+
     // ---- 4.0 ----
     /// <summary>Focus time now: set by a test, else the work day's clock.</summary>
     public int? FocusOverride { get; set; }
@@ -546,6 +616,7 @@ public sealed class FakeAgent : IAgent
         {
             LiveMeeting = null;
             Presence = new CurrentPresence { Status = PresenceStatus.Working };
+            if (DayProgress is { InMeeting: true }) DayProgress = Progress(DayProgressStatus.Working);
         }
         return Task.FromResult(outcome);
     }

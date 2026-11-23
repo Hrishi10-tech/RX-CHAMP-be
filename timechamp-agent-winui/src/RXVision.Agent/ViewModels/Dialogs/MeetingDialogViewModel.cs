@@ -149,7 +149,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
 
     public string Note => IsPast
         ? $"This time is already in your focus time. {Capital(_context.Approver)} approves or rejects it; a rejection takes these minutes off."
-        : $"Your focus time keeps counting while you are in it. Tap Meeting ended when you are back. {Capital(_context.Approver)} approves or rejects it after.";
+        : $"Your focus time keeps counting while you are in it. Tap End meeting when you are back. {Capital(_context.Approver)} approves or rejects it after.";
 
     public string NoStartOptionsText => _context.DayStartedAt is { } started
         ? $"Your day started at {_context.Hm(started)}. A meeting can be logged once it has run for 5 minutes."

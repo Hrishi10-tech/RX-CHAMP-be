@@ -46,6 +46,21 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+    // ---- user32 : the call detectors' window read ----------------------------------------
+
+    internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern int GetClassNameW(IntPtr hWnd, [Out] char[] lpClassName, int nMaxCount);
+
     // ---- user32 : lock (input desktop) ---------------------------------------------------
 
     /// <summary>DESKTOP_SWITCHDESKTOP: requested only to learn whether it is refused.</summary>
@@ -161,6 +176,14 @@ internal static class NativeMethods
     internal static extern bool MessageBeep(uint uType);
 
     // ---- helpers -------------------------------------------------------------------------
+
+    /// <summary>A window's class name, or null.</summary>
+    internal static string? ClassNameOf(IntPtr hWnd)
+    {
+        var buffer = new char[256];
+        var copied = GetClassNameW(hWnd, buffer, buffer.Length);
+        return copied <= 0 ? null : new string(buffer, 0, copied);
+    }
 
     /// <summary>Reads the foreground window title into a bounded buffer. Never throws.</summary>
     internal static string? ForegroundTitle(IntPtr hWnd, int maxChars = 512)

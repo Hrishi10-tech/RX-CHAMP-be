@@ -7,6 +7,7 @@ using System.Text.Json;
 using RXVision.Agent.Core.Platform;
 using RXVision.Agent.Core.Session;
 using RXVision.Agent.Core.Util;
+using RXVision.Agent.Core.Workday;
 
 namespace RXVision.Agent.Core.Api;
 
@@ -498,6 +499,28 @@ public sealed class ApiClient : IDisposable
 
     public Task<ApiResult<BreakHistory>> GetBreakHistoryAsync(int days = 14, CancellationToken ct = default) =>
         SendJsonAsync<BreakHistory>(HttpMethod.Get, $"breaks/me/history?days={Math.Clamp(days, 1, 31)}", null, ct);
+
+    // ---- The status and the ring (3.6) -----------------------------------------------------
+
+    /// <summary>GET /me/day-progress: the status, the ring and the meeting check's two times.</summary>
+    public Task<ApiResult<DayProgress>> GetDayProgressAsync(CancellationToken ct = default) =>
+        SendJsonAsync<DayProgress>(HttpMethod.Get, "me/day-progress", null, ct);
+
+    /// <summary>GET /features: the release flags, read at sign-in and hourly (core review C-R04).</summary>
+    public Task<ApiResult<FeatureFlags>> GetFeaturesAsync(CancellationToken ct = default) =>
+        SendJsonAsync<FeatureFlags>(HttpMethod.Get, "features", null, ct);
+
+    /// <summary>POST /meetings/status/start. <paramref name="source"/> is the only field: nothing else travels (D-20).</summary>
+    public Task<ApiResult<DayProgress>> StartMeetingStatusAsync(string source, CancellationToken ct = default) =>
+        SendJsonAsync<DayProgress>(HttpMethod.Post, "meetings/status/start", new { source }, ct);
+
+    /// <summary>POST /meetings/status/end: no body. Ends whichever meeting runs; safe to repeat.</summary>
+    public Task<ApiResult<DayProgress>> EndMeetingStatusAsync(CancellationToken ct = default) =>
+        SendJsonAsync<DayProgress>(HttpMethod.Post, "meetings/status/end", null, ct);
+
+    /// <summary>POST /meetings/status/confirm: no body. Still in it: the 2 hours start again from now.</summary>
+    public Task<ApiResult<DayProgress>> ConfirmMeetingStatusAsync(CancellationToken ct = default) =>
+        SendJsonAsync<DayProgress>(HttpMethod.Post, "meetings/status/confirm", null, ct);
 
     // ---- Meetings (3.1) -----------------------------------------------------------------
 

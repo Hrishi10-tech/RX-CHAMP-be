@@ -96,7 +96,7 @@ public sealed class BreakActions
         }
         if (_agent.Presence.Status == PresenceStatus.Meeting)
         {
-            await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then start your break.");
+            await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start your break.");
             return;
         }
         if (!panel.Scheduled)
@@ -257,7 +257,7 @@ public sealed class BreakActions
             }
             if (_agent.Presence.Status == PresenceStatus.Meeting)
             {
-                await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then take your break.");
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then take your break.");
                 return;
             }
             var dialog = QuickDialog();
@@ -577,8 +577,12 @@ public sealed class BreakActions
 
     // ---- Meetings ---------------------------------------------------------------------
 
-    /// <summary>The meeting dialog: Starting now, or Already happened. Cancel starts nothing.</summary>
-    public Task StartMeetingAsync() =>
+    /// <summary>
+    /// Start meeting (3.6), from the button or a suggestion the person tapped: In a meeting at
+    /// once, no form, no approval. It needs the server; with no answer nothing starts and the
+    /// person may try again (or record the meeting with its details, which works offline).
+    /// </summary>
+    public Task StartMeetingAsync(string source = MeetingSources.Button) =>
         RunFlowAsync(async () =>
         {
             if (!await EnsureWorkingDayAsync()) return;
@@ -587,9 +591,69 @@ public sealed class BreakActions
                 await _dialogs.AlertAsync("You're on a break", "End your break first, then start the meeting.");
                 return;
             }
-            if (_agent.Presence.Status == PresenceStatus.Meeting)
+            if (Status == DayStatus.InMeeting)
             {
-                await _dialogs.AlertAsync("You're in a meeting", "Tap Meeting ended first, then start the next one.");
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start the next one.");
+                return;
+            }
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var outcome = await Busy(() => _agent.StartMeetingStatusAsync(source));
+                switch (outcome)
+                {
+                    case MeetingStatusOutcome.Offline offline:
+                        if (!await _dialogs.ConfirmAsync("The meeting isn't started yet", offline.Message, "Try again", "Cancel")) return;
+                        continue;
+                    case MeetingStatusOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Couldn't start the meeting", MeetingMessage(refused.Code, refused.Message, null));
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>Still in it, on the 2 hour check. A tap that lost the race reads Working, with its card.</summary>
+    public Task ConfirmMeetingAsync() =>
+        RunFlowAsync(async () =>
+        {
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var outcome = await Busy(_agent.ConfirmMeetingAsync);
+                switch (outcome)
+                {
+                    case MeetingStatusOutcome.Offline offline:
+                        if (!await _dialogs.ConfirmAsync("Couldn't reach RX Vision", offline.Message, "Try again", "Cancel")) return;
+                        continue;
+                    case MeetingStatusOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Try again in a moment", refused.Message);
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>The person's status as the icon, the panel and the menus read it (3.6).</summary>
+    private DayStatus Status => DayStatusReader.Of(_agent.State, _agent.DayProgress, _agent.Presence.Status, _agent.BreakPanel.Active is not null);
+
+    /// <summary>
+    /// The 4.0 meeting dialog: Starting now (a meeting with its agenda, people and who mails the
+    /// minutes, journaled so it works offline, and approved after) or Already happened. Cancel
+    /// starts nothing.
+    /// </summary>
+    public Task RecordMeetingAsync() =>
+        RunFlowAsync(async () =>
+        {
+            if (!await EnsureWorkingDayAsync()) return;
+            if (_agent.BreakPanel.Active is not null || IsAway(_agent.Presence.Status))
+            {
+                await _dialogs.AlertAsync("You're on a break", "End your break first, then start the meeting.");
+                return;
+            }
+            if (Status == DayStatus.InMeeting)
+            {
+                await _dialogs.AlertAsync("You're in a meeting", "Tap End meeting first, then start the next one.");
                 return;
             }
 
@@ -644,18 +708,32 @@ public sealed class BreakActions
             "DAY_NOT_STARTED" => "Start your day first.",
             "DAY_ENDED" => "Your working day has ended.",
             "ON_BREAK" => "End your break first.",
-            "MEETING_IN_PROGRESS" => "You're already in a meeting. Tap Meeting ended first.",
+            "MEETING_IN_PROGRESS" => "You're already in a meeting. Tap End meeting first.",
             _ => string.IsNullOrWhiteSpace(message) ? "That meeting couldn't be saved." : message,
         };
     }
 
-    /// <summary>Meeting ended.</summary>
+    /// <summary>End meeting: back to Working.</summary>
     public Task EndMeetingAsync() => RunFlowAsync(EndMeetingCoreAsync);
 
     private async Task EndMeetingCoreAsync()
     {
-        var outcome = await Busy(_agent.EndMeetingAsync);
-        if (outcome is EndOutcome.Refused refused) await _dialogs.AlertAsync("Couldn't end the meeting", refused.Message);
+        for (var attempt = 0; attempt < MaxAttempts; attempt++)
+        {
+            var outcome = await Busy(_agent.EndMeetingAsync);
+            switch (outcome)
+            {
+                case EndOutcome.Offline offline:
+                    // In a meeting (3.6) ends only with the server's answer: it still runs.
+                    if (!await _dialogs.ConfirmAsync("Your meeting is still running", offline.Message, "Try again", "Cancel")) return;
+                    continue;
+                case EndOutcome.Refused refused:
+                    await _dialogs.AlertAsync("Couldn't end the meeting", refused.Message);
+                    return;
+                default:
+                    return;
+            }
+        }
     }
 
     // ---- The working day --------------------------------------------------------------------
@@ -785,7 +863,7 @@ public sealed class BreakActions
             }
             if (_agent.Presence.Status == PresenceStatus.Meeting)
             {
-                await _dialogs.AlertAsync("Finish this first", "Tap Meeting ended, then end your day.");
+                await _dialogs.AlertAsync("Finish this first", "Tap End meeting, then end your day.");
                 return;
             }
 

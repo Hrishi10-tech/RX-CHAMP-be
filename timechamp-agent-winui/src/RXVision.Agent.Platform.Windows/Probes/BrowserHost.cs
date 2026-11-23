@@ -23,6 +23,7 @@ internal sealed class BrowserHost
     private const int UIA_ControlTypePropertyId = 30003;
     private const int UIA_ValueValuePropertyId = 30045;
     private const int UIA_EditControlTypeId = 50004;
+    private const int UIA_TabItemControlTypeId = 50019;
     private const int UIA_ToolBarControlTypeId = 50021;
 
     private const uint ConnectionTimeoutMs = 2000;
@@ -112,6 +113,48 @@ internal sealed class BrowserHost
         _cache[key] = (host, DateTime.UtcNow);
         if (_cache.Count > 256) PruneCache();
         return host;
+    }
+
+    /// <summary>
+    /// The tab names of one browser window, read only while a call in this browser is tracked. The
+    /// first tab item is found with FindFirst, which stops at the tab strip, ahead of the page; its
+    /// siblings are the other tabs. Nothing inside a page is read, and nothing is kept.
+    /// </summary>
+    public IReadOnlyList<string> TabTitles(IntPtr hWnd)
+    {
+        var automation = Automation();
+        if (automation is null || hWnd == IntPtr.Zero) return Array.Empty<string>();
+        var owned = new List<object>();
+        T? Own<T>(T? comObject) where T : class
+        {
+            if (comObject is not null) owned.Add(comObject);
+            return comObject;
+        }
+
+        var titles = new List<string>();
+        try
+        {
+            var root = Own(automation.ElementFromHandle(hWnd));
+            if (root is null) return titles;
+            var tabItem = Own(automation.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_TabItemControlTypeId))!;
+            var first = Own(root.FindFirst(TreeScope.TreeScope_Subtree, tabItem));
+            if (first is null) return titles;
+            var parent = Own(Own(automation.ControlViewWalker)!.GetParentElement(first));
+            var tabs = Own(parent?.FindAll(TreeScope.TreeScope_Children, tabItem));
+            for (var i = 0; tabs is not null && i < tabs.Length; i++)
+            {
+                if (Own(tabs.GetElement(i))?.CurrentName is { Length: > 0 } name) titles.Add(name);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"browser: tab read failed: {ex.Message}");
+        }
+        finally
+        {
+            foreach (var comObject in owned) Release(comObject);
+        }
+        return titles;
     }
 
     private static string? ReadAddressValue(IUIAutomation2 automation, IntPtr hWnd)

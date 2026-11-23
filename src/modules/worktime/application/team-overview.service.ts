@@ -53,6 +53,8 @@ export interface TeamPersonView {
   lateStartMin: number | null;
   /** 3.2: why the day started late, once given. */
   lateReason: string | null;
+  /** 3.4: leave that day ("Half day (first half)", "CL/SL"), or null. */
+  leave: { label: string; categories: string; full: boolean; pendingDays: number } | null;
 }
 
 export interface TeamView {
@@ -315,6 +317,15 @@ export class TeamOverviewService {
       agentVersion: l.facts?.agentVersion ?? null,
       lateStartMin: s.lateStart?.minutes ?? null,
       lateReason: s.lateStart?.reason ?? null,
+      leave:
+        s.leave && (s.leave.days > 0 || s.leave.pendingDays > 0)
+          ? {
+              label: s.leave.label,
+              categories: s.leave.categories,
+              full: s.leave.full,
+              pendingDays: s.leave.pendingDays,
+            }
+          : null,
     };
   }
 

@@ -1,3 +1,4 @@
+import { attendanceByBiometric } from '@shared/exceptions/attendance-by-biometric';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
@@ -14,6 +15,7 @@ const VIEW = { date: '2026-10-14', state: 'ENDED' };
 
 function sessions() {
   return {
+    assertAgentDay: jest.fn().mockResolvedValue(undefined),
     autoCloseIfStale: jest.fn().mockResolvedValue(false),
     findOpen: jest.fn().mockResolvedValue(null),
     startDay: jest.fn(),
@@ -102,6 +104,25 @@ describe('EndDayFlow', () => {
       endedAt: NOW.toISOString(),
       workday: VIEW,
     });
+  });
+
+  it('C-682: biometric staff hear it before any comment is judged or any gate is asked', async () => {
+    const { flow, s, skips, workday } = setup();
+    s.assertAgentDay.mockRejectedValue(attendanceByBiometric('end'));
+    const comments = [{ breakId: 'b1', comment: 'Client escalation call' }];
+    await expect(flow.execute(me, { comments }, 'AGENT_31', NOW)).rejects.toMatchObject({
+      status: 409,
+      code: 'ATTENDANCE_BY_BIOMETRIC',
+      message:
+        'Your attendance is recorded by the biometric device: your day ends with your last punch there.',
+    });
+    expect(s.assertAgentDay).toHaveBeenCalledWith('u1', 'end');
+    expect(skips.planAutoSkipsFor).not.toHaveBeenCalled();
+    expect(skips.checkEndDayComments).not.toHaveBeenCalled();
+    expect(skips.writeEndDayComments).not.toHaveBeenCalled();
+    expect(workday.assertNoOverdueApprovals).not.toHaveBeenCalled();
+    expect(workday.assertSkipsCommented).not.toHaveBeenCalled();
+    expect(s.endDay).not.toHaveBeenCalled();
   });
 
   it('a refused End Day writes nothing: no auto-skip, no comment, no End Day (re-audit M1)', async () => {
@@ -265,6 +286,20 @@ describe('StartDayFlow', () => {
       resumed: true,
       workday: { state: 'OPEN' },
     });
+  });
+
+  it('C-681: biometric staff hear it before the late start asks them for a note', async () => {
+    const { flow, s, lateStart } = setup();
+    s.assertAgentDay.mockRejectedValue(attendanceByBiometric('start'));
+    await expect(flow.execute(me, {}, 'AGENT_31', NOW)).rejects.toMatchObject({
+      status: 409,
+      code: 'ATTENDANCE_BY_BIOMETRIC',
+      message:
+        'Your attendance is recorded by the biometric device: your day starts with your first punch there.',
+    });
+    expect(s.assertAgentDay).toHaveBeenCalledWith('u1', 'start');
+    expect(lateStart.gate).not.toHaveBeenCalled();
+    expect(s.startDay).not.toHaveBeenCalled();
   });
 
   it('never trusts an older or future start, and repeats quietly when already open', async () => {

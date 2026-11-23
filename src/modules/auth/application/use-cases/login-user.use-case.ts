@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   AccountDisabledError,
   InvalidCredentialsError,
@@ -37,9 +38,7 @@ const AGENT_USER_AGENT = /^RXVisionAgent\//;
 const KNOWN_ADDRESS_MS = 30 * 24 * 3_600_000;
 
 function tooManyFromAddress(minutes: number): TooManyAttemptsError {
-  return new TooManyAttemptsError(
-    `Too many failed sign-ins from your network. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
-  );
+  return new TooManyAttemptsError(API_COPY.networkSignInPaused(minutes));
 }
 
 @Injectable()
@@ -99,9 +98,7 @@ export class LoginUserUseCase {
     this.attempts.recordSuccess(address);
 
     if (!user.isActive()) {
-      throw new AccountDisabledError(
-        'Your account has been blocked. Contact your manager or an administrator.',
-      );
+      throw new AccountDisabledError(API_COPY.accountOff);
     }
 
     const accessToken = await this.tokens.signAccessToken({

@@ -7,7 +7,9 @@ describe('LoginAttempts', () => {
     for (let i = 0; i < LoginAttempts.MAX_FAILURES - 1; i++) a.recordFailure('Jane@X.test', t0 + i);
     expect(() => a.assertAllowed('jane@x.test', t0 + 100)).not.toThrow();
     a.recordFailure('jane@x.test', t0 + 200);
-    expect(() => a.assertAllowed('JANE@x.test', t0 + 300)).toThrow(/paused for 15 minutes/);
+    expect(() => a.assertAllowed('JANE@x.test', t0 + 300)).toThrow(
+      'Try again in 15 minutes. Sign-in is paused for now.',
+    );
     expect(() =>
       a.assertAllowed('jane@x.test', t0 + 200 + LoginAttempts.LOCK_MS + 1),
     ).not.toThrow();

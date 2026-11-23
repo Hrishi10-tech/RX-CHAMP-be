@@ -59,7 +59,7 @@ export function wfhDecidedCopy(i: {
   }
   return {
     title: `Work from home not approved: ${span}`,
-    body: `${i.byName} rejected ${wfhWhat(i.request).toLowerCase()}. Note: ${sentence(i.note ?? '')}`,
+    body: `${i.byName} did not approve ${wfhWhat(i.request).toLowerCase()}. Note: ${sentence(i.note ?? '')}`,
   };
 }
 
@@ -103,6 +103,6 @@ export function wfhScheduledCopy(i: {
 export function wfhAutoEndedCopy(i: { endedAt: string }): Copy {
   return {
     title: 'Work from home day ended',
-    body: `Your work from home day was not ended, so it was ended at ${i.endedAt}, the end of your shift.`,
+    body: `We ended your work from home day at ${i.endedAt}, the end of your shift.`,
   };
 }

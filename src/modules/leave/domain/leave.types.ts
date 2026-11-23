@@ -53,10 +53,17 @@ export const PART_LABEL: Record<LeavePart, string> = {
 export const STATUS_LABEL: Record<LeaveStatus, string> = {
   PENDING: 'Waiting for approval',
   APPROVED: 'Approved',
-  REJECTED: 'Rejected',
+  REJECTED: 'Not approved',
   CANCELLED: 'Cancelled',
   REVOKED: 'Revoked',
 };
+
+/** C-800, C-944: a request no longer open, in a sentence ("This request is already cancelled."). */
+export function alreadyStatus(status: LeaveStatus): string {
+  return status === 'REJECTED'
+    ? 'was not approved'
+    : `is already ${STATUS_LABEL[status].toLowerCase()}`;
+}
 
 /** A day is four quarters; every amount is a whole number of them. */
 export const UNITS_PER_DAY = 4;

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   ConflictError,
   ForbiddenError,
@@ -175,7 +176,7 @@ export class BreakApprovalsUseCase {
     const record = await this.records.findById(id);
     const subject = record ? await this.people.findAnyByIds([record.userId]) : [];
     if (!record || !BreakApprovalPolicy.canView(me, record, subject[0])) {
-      throw new NotFoundError('Unknown break');
+      throw new NotFoundError(API_COPY.breakNotFound);
     }
     if (!BreakApprovalPolicy.canDecide(me, record, subject[0]))
       throw new ForbiddenError('This break is not yours to decide.');
@@ -222,7 +223,7 @@ export class BreakApprovalsUseCase {
     const record = await this.records.findById(id);
     const [subject] = record ? await this.people.findAnyByIds([record.userId]) : [];
     if (!record || !BreakApprovalPolicy.canView(me, record, subject)) {
-      throw new NotFoundError('Unknown break');
+      throw new NotFoundError(API_COPY.breakNotFound);
     }
     if (record.userId === me.id) throw new ForbiddenError("You can't decide your own break.");
     if (!BreakApprovalPolicy.canDecide(me, record, subject)) {

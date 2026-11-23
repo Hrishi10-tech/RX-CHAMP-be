@@ -121,7 +121,7 @@ export class MonthLockService {
       const sessions = await this.store.openSessionsInMonth(companyId, month, BLOCKER_LIMIT);
       throw new ConflictError(
         `${result.count === 1 ? '1 working day dated in ' + month + ' is' : `${result.count} working days dated in ${month} are`} ` +
-          'still open. Lock the month once they have ended (End Day, or the automatic close).',
+          'still open. Lock the month once they have ended (End day, or the automatic close).',
         'OPEN_SESSIONS',
       ).withDetails({ count: result.count, sessions });
     }

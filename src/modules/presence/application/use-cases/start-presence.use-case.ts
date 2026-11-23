@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { attendanceByBiometric } from '@shared/exceptions/attendance-by-biometric';
 import {
@@ -51,7 +52,7 @@ export class StartPresenceUseCase {
       if (open) date = open.date;
     } else if (await this.dayEnds.findEnd(userId, date)) {
       // Nothing more may be recorded once the user has signed off for the day.
-      throw new ConflictException('Your working day has already ended. Tracking resumes tomorrow.');
+      throw new ConflictException(API_COPY.dayEnded);
     }
 
     const { opened } = await this.sessions.switchTo({ userId, type: dto.type, note, date }, now);

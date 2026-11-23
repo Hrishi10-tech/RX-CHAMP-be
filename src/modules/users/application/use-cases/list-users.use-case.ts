@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ForbiddenError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { isOrgAdmin } from '@shared/rbac/roles.enum';
@@ -64,10 +65,7 @@ export class ListUsersUseCase {
 
   async execute(me: AuthenticatedUser, query: ListUsersQueryDto = {}): Promise<ListUsersResult> {
     if (query.gender && !isOrgAdmin(me.role)) {
-      throw new ForbiddenError(
-        'Only the organisation admin or a Super Admin can filter by gender.',
-        'GENDER_FORBIDDEN',
-      );
+      throw new ForbiddenError(API_COPY.genderFilterByAdmin, 'GENDER_FORBIDDEN');
     }
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;

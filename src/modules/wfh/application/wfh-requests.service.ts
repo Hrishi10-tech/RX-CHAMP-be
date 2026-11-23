@@ -20,6 +20,7 @@ import {
 } from '@modules/leave/application/leave-people.service';
 import { leaveOn } from '@modules/leave/domain/day-leave';
 import {
+  alreadyStatus,
   daysOf,
   formatDays,
   isStatus,
@@ -420,10 +421,7 @@ export class WfhRequestsService {
     const { row, wasApproved } = await this.repo.inUserLock(found.userId, async (tx) => {
       const cur = (await tx.findRequest(id))!;
       if (cur.status !== 'PENDING' && cur.status !== 'APPROVED') {
-        throw new ConflictError(
-          `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'NOT_CANCELLABLE',
-        );
+        throw new ConflictError(`This request ${alreadyStatus(cur.status)}.`, 'NOT_CANCELLABLE');
       }
       if (cur.status === 'APPROVED' && cur.startDate < today) {
         throw new ConflictError(
@@ -486,10 +484,7 @@ export class WfhRequestsService {
     const row = await this.repo.inUserLock(target.id, async (tx) => {
       const cur = (await tx.findRequest(id))!;
       if (cur.status !== 'PENDING') {
-        throw new ConflictError(
-          `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'ALREADY_DECIDED',
-        );
+        throw new ConflictError(`This request ${alreadyStatus(cur.status)}.`, 'ALREADY_DECIDED');
       }
       for (const month of monthsOf(cur.days, cur.startDate))
         await tx.assertMonthOpen(`${month}-01`, cur.userId);
@@ -560,7 +555,7 @@ export class WfhRequestsService {
         throw new ConflictError(
           cur.status === 'PENDING'
             ? 'This request is still waiting: reject it instead.'
-            : `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
+            : `This request ${alreadyStatus(cur.status)}.`,
           'NOT_APPROVED',
         );
       }

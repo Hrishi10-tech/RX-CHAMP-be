@@ -20,7 +20,6 @@ const general: ShiftRecord = {
   workDays: [1, 2, 3, 4, 5, 6],
   ringLeadMin: 1,
   ringDurationMin: 5,
-  ringSound: true,
   reasonOnEarly: true,
   reasonOnLate: true,
   reasonMinChars: 10,

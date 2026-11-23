@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuditLogService } from '@shared/audit/audit-log.service';
 import { effectiveAvatarId } from '@shared/avatars/person-avatar';
+import { API_COPY } from '@shared/copy/api-copy';
 import { AvatarChangedEvent } from '@shared/events/avatar-changed.event';
 import {
   ConflictError,
@@ -81,10 +82,7 @@ export class CreateUsersUseCase {
   ): Promise<CreateUsersResult> {
     const org = this.access.assertCanCreate(me);
     if (!isOrgAdmin(me.role) && incoming.some((row) => row.gender !== undefined)) {
-      throw new ForbiddenError(
-        'Only the organisation admin or a Super Admin can set gender.',
-        'GENDER_FORBIDDEN',
-      );
+      throw new ForbiddenError(API_COPY.genderSetByAdmin, 'GENDER_FORBIDDEN');
     }
     const created: PublicUser[] = [];
     const errors: CreateUsersResult['errors'] = [];

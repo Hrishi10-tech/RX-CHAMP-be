@@ -603,7 +603,7 @@ describe('MonthLockService (per organisation, 4.0)', () => {
       .catch((x: unknown) => x);
     expect(err).toMatchObject({ status: 409, code: 'OPEN_SESSIONS', details: { count: 1 } });
     expect((err as Error).message).toBe(
-      '1 working day dated in 2026-09 is still open. Lock the month once they have ended (End Day, or the automatic close).',
+      '1 working day dated in 2026-09 is still open. Lock the month once they have ended (End day, or the automatic close).',
     );
   });
 

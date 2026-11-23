@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { TooManyAttemptsError } from '@shared/exceptions/app.exception';
 
 interface Entry {
@@ -34,9 +35,7 @@ export class LoginAttempts {
     if (!e) return;
     if (e.lockedUntil > now) {
       const minutes = Math.max(1, Math.ceil((e.lockedUntil - now) / 60_000));
-      throw new TooManyAttemptsError(
-        `Too many wrong passwords. Sign-in is paused for ${minutes} minute${minutes === 1 ? '' : 's'}.`,
-      );
+      throw new TooManyAttemptsError(API_COPY.signInPaused(minutes));
     }
   }
 

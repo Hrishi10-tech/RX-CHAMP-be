@@ -21,7 +21,6 @@ import { ShiftValidationView, ShiftView } from '../shifts.types';
 const RULE_DEFAULTS = {
   ringLeadMin: 1,
   ringDurationMin: 5,
-  ringSound: true,
   reasonOnEarly: true,
   reasonOnLate: true,
   reasonMinChars: 10,
@@ -186,7 +185,6 @@ export class ManageShiftsUseCase {
       workDays: dto.workDays,
       ringLeadMin: dto.ringLeadMin ?? RULE_DEFAULTS.ringLeadMin,
       ringDurationMin: dto.ringDurationMin ?? RULE_DEFAULTS.ringDurationMin,
-      ringSound: dto.ringSound ?? RULE_DEFAULTS.ringSound,
       reasonOnEarly: dto.reasonOnEarly ?? RULE_DEFAULTS.reasonOnEarly,
       reasonOnLate: dto.reasonOnLate ?? RULE_DEFAULTS.reasonOnLate,
       reasonMinChars: dto.reasonMinChars ?? RULE_DEFAULTS.reasonMinChars,

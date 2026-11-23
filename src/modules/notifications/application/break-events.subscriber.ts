@@ -1,9 +1,17 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { time12InZone } from '@shared/utils/timezone';
 import { BreakApprovalRequestedEvent } from '@modules/shifts/domain/events/break-approval-requested.event';
 import { BreakDecidedEvent } from '@modules/shifts/domain/events/break-decided.event';
 import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
 import { ApprovalsDigestEvent } from '@modules/worktime/domain/events/approvals-digest.event';
+import {
+  autoSkipRequestedCopy,
+  Copy,
+  NO_NOTE_YET,
+  NOTICE,
+  skipRequestedCopy,
+} from '@modules/worktime/domain/notice-copy';
 import { NOTIFICATION_REPOSITORY, NotificationRepository } from '../domain/notification.repository';
 import { NotificationsGateway } from '../presentation/notifications.gateway';
 import { NotificationMapper } from './notification.mapper';
@@ -33,7 +41,42 @@ export function effectSentence(effect: BreakDecidedEvent['effect']): string | nu
 }
 
 function breakName(kind: RecordKind | null): string {
-  return kind ? RECORD_LABEL[kind].toLowerCase() : 'an unscheduled break';
+  return kind ? RECORD_LABEL[kind].toLowerCase() : 'unscheduled break';
+}
+
+/** C-860 to C-865: a break taken, or one that ran over. */
+function takenCopy(e: BreakApprovalRequestedEvent): Copy {
+  let title: string;
+  if (e.overrun) {
+    title = `${e.subjectName}'s ${breakName(e.kind)} was extended`;
+  } else if (e.timing === 'LATE' || e.timing === 'EARLY') {
+    title = `${e.subjectName} started the ${breakName(e.kind)} ${e.minutesOff} min ${e.timing === 'LATE' ? 'after its time' : 'early'}`;
+  } else {
+    title = `${e.subjectName} took a break outside the break windows`;
+  }
+  return { title, body: e.reason ? `Reason: ${e.reason}` : NO_NOTE_YET };
+}
+
+/**
+ * What the approver reads. A skip only comes this way when it is sent again to a new approver
+ * (ApprovalRerouteSubscriber), and then reads as it did the first time (C-868 to C-871).
+ */
+function requestNotice(e: BreakApprovalRequestedEvent): Copy & { type: string } {
+  const name = e.subjectName;
+  switch (e.outcome) {
+    case 'SKIPPED':
+      return {
+        type: NOTICE.SKIP_REQUESTED,
+        ...skipRequestedCopy({ name, kind: e.kind, reason: e.reason }),
+      };
+    case 'AUTO_SKIPPED':
+      return {
+        type: NOTICE.AUTO_SKIP_REQUESTED,
+        ...autoSkipRequestedCopy({ name, kind: e.kind, at: time12InZone(e.startedAt) }),
+      };
+    default:
+      return { type: 'BREAK_APPROVAL_REQUESTED', ...takenCopy(e) };
+  }
 }
 
 function plural(n: number, word: string): string {
@@ -79,24 +122,16 @@ export class BreakEventsSubscriber implements OnModuleInit {
   }
 
   async requested(e: BreakApprovalRequestedEvent): Promise<void> {
-    let title: string;
-    if (e.overrun) {
-      title = `${e.subjectName}'s ${breakName(e.kind)} ran over`;
-    } else if (e.timing === 'LATE' || e.timing === 'EARLY') {
-      title = `${e.subjectName} started the ${breakName(e.kind)} ${e.minutesOff} min ${e.timing === 'LATE' ? 'late' : 'early'}`;
-    } else {
-      title = `${e.subjectName} took a break outside the break windows`;
-    }
-    const body = e.reason ? `Reason: ${e.reason}` : 'No reason given. Review it in Approvals.';
+    const { type, title, body } = requestNotice(e);
     for (const id of new Set(e.recipientIds)) {
       if (id === e.subjectId) continue;
-      await this.push(id, 'BREAK_APPROVAL_REQUESTED', title, body, e.subjectId);
+      await this.push(id, type, title, body, e.subjectId);
     }
     this.logger.debug(`break ${e.recordId} sent to ${e.recipientIds.length} approver(s)`);
   }
 
   async decided(e: BreakDecidedEvent): Promise<void> {
-    const verdict = e.decision === 'APPROVED' ? 'approved' : 'rejected';
+    const verdict = e.decision === 'APPROVED' ? 'approved' : 'not approved';
     const what =
       e.outcome && e.outcome !== 'TAKEN' ? `skipped ${breakName(e.kind)}` : breakName(e.kind);
     const title = `Your ${what} on ${shortDate(e.date)} was ${verdict}`;
@@ -111,7 +146,7 @@ export class BreakEventsSubscriber implements OnModuleInit {
     if (e.pending <= 0) return;
     const title = `${plural(e.pending, 'approval')} waiting`;
     const body =
-      `${e.pending} pending, ${e.dueSoon} due within 24 hours, ${e.overdue} overdue. ` +
+      `${e.pending} pending, ${e.dueSoon} due within 24 hours, ${e.overdue} past their time. ` +
       'Review them in Approvals.';
     await this.push(e.recipientId, 'BREAK_APPROVALS_DIGEST', title, body, null);
   }

@@ -76,3 +76,19 @@ describe('ChangePasswordUseCase: the other devices (3.6)', () => {
     expect(refreshTokens.issue).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ChangePasswordUseCase: an account that is off (C-675)', () => {
+  it('is told who can turn it back on', async () => {
+    const useCase = new ChangePasswordUseCase(
+      { findById: jest.fn(async () => ({ isActive: () => false })) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(useCase.execute(me, 'old', 'new-password', false, meta)).rejects.toMatchObject({
+      status: 401,
+      message: 'Ask the organisation admin to turn your account back on.',
+    });
+  });
+});

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   ConflictError,
   ForbiddenError,
@@ -49,6 +50,7 @@ import {
   meetingCategory,
   meetingDetail,
   meetingTitle,
+  ownBreakTitle,
   wholeMinutes,
 } from '../domain/approval-copy';
 import {
@@ -342,7 +344,7 @@ export class ApprovalsService {
       fromDate: addDaysToKey(today, -(span - 1)),
       take: 300,
     });
-    return { items: await this.views(me, refs, now) };
+    return { items: await this.views(me, refs, now, true) };
   }
 
   /** Items of these people dated in a range, for reports (no paging). */
@@ -427,9 +429,9 @@ export class ApprovalsService {
       return this.awayItem(me, row, now);
     }
     const m = await this.meetings.findById(id);
-    if (!m) throw new NotFoundError('Unknown meeting');
+    if (!m) throw new NotFoundError(API_COPY.meetingNotFound);
     if (m.kind === 'STATUS') {
-      throw new ConflictError('This meeting needs no approval.', 'NOT_DECIDED');
+      throw new ConflictError(API_COPY.meetingNeedsNoApproval, 'NOT_DECIDED');
     }
     const subject = await this.subjectOf(me, m.userId, 'meeting');
     if (!BreakApprovalPolicy.canDecide(me, m, subject))
@@ -601,10 +603,10 @@ export class ApprovalsService {
     if (type === 'away')
       return { type: 'AWAY', row: await this.decideAway(me, id, status, note, now) };
     const found = await this.meetings.findById(id);
-    if (!found) throw new NotFoundError('Unknown meeting');
+    if (!found) throw new NotFoundError(API_COPY.meetingNotFound);
     // A status meeting is never decided (D-20): nobody can reject it off focus or pay.
     if (found.kind === 'STATUS') {
-      throw new ConflictError('This meeting needs no approval.', 'ALREADY_DECIDED');
+      throw new ConflictError(API_COPY.meetingNeedsNoApproval, 'ALREADY_DECIDED');
     }
     const subject = await this.subjectOf(me, found.userId, 'meeting');
     // A meeting whose presence session closed another way is ended first.
@@ -618,7 +620,7 @@ export class ApprovalsService {
     if (m.approvalStatus !== 'PENDING') {
       throw new ConflictError(
         m.approvalStatus === 'NOT_REQUIRED'
-          ? 'This meeting needs no approval.'
+          ? API_COPY.meetingNeedsNoApproval
           : `Already ${m.approvalStatus.toLowerCase()}.`,
         'ALREADY_DECIDED',
       );
@@ -697,15 +699,23 @@ export class ApprovalsService {
     return (await this.build(me, [], [row], [], [{ type: 'MEETING', id: row.id }], now))[0];
   }
 
-  /** Loads the referenced records in bulk and builds their views in `refs` order. */
-  async views(me: AuthenticatedUser, refs: ApprovalRef[], now: Date): Promise<ApprovalItemView[]> {
+  /**
+   * Loads the referenced records in bulk and builds their views in `refs` order. `own`: the
+   * person's own list (GET /approvals/me), in the words they read; approvers keep theirs.
+   */
+  async views(
+    me: AuthenticatedUser,
+    refs: ApprovalRef[],
+    now: Date,
+    own = false,
+  ): Promise<ApprovalItemView[]> {
     if (!refs.length) return [];
     const [breaks, meetings, away] = await Promise.all([
       this.breaks.listByIds(refs.filter((r) => r.type === 'BREAK').map((r) => r.id)),
       this.meetings.listByIds(refs.filter((r) => r.type === 'MEETING').map((r) => r.id)),
       this.away.listByIds(refs.filter((r) => r.type === 'AWAY').map((r) => r.id)),
     ]);
-    return this.build(me, breaks, meetings, away, refs, now);
+    return this.build(me, breaks, meetings, away, refs, now, own);
   }
 
   private async build(
@@ -715,6 +725,7 @@ export class ApprovalsService {
     away: AwayRow[],
     refs: ApprovalRef[],
     now: Date,
+    own = false,
   ): Promise<ApprovalItemView[]> {
     const ids = new Set<string>();
     for (const r of [...breaks, ...meetings, ...away]) {
@@ -767,6 +778,7 @@ export class ApprovalsService {
               tz,
               now,
               afterSkip.get(r.id) ?? null,
+              own,
             ),
           );
         }
@@ -802,6 +814,7 @@ export class ApprovalsService {
     tz: string,
     now: Date,
     afterSkip: AfterSkipActivity | null = null,
+    own = false,
   ): ApprovalItemView {
     const view = ShiftMapper.recordView(r, now, names);
     const category = breakCategory({
@@ -823,8 +836,8 @@ export class ApprovalsService {
       category,
       user: personLite(people.get(r.userId), r.userId),
       date: r.date,
-      title: breakTitle(category, text),
-      detail: breakDetail(category, text, tz, now),
+      title: own ? ownBreakTitle(category, text) : breakTitle(category, text),
+      detail: breakDetail(category, text, tz, now, own),
       reason: category === 'BREAK_OVERRUN' ? (r.overrunReason ?? r.reason) : r.reason,
       needsComment: needsComment(r),
       participants: [],

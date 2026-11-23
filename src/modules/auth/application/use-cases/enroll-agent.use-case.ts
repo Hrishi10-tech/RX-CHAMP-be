@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { AccountDisabledError, InvalidCredentialsError } from '@shared/exceptions/app.exception';
 import { EnrollmentClaims, TOKEN_SERVICE, TokenService } from '@shared/security/token.service.port';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
@@ -66,9 +67,7 @@ export class EnrollAgentUseCase {
     // A current enrollment token already proved who this is, so naming the real
     // reason leaks nothing, and it stops the agent retrying against a blocked account.
     if (!user.isActive()) {
-      throw new AccountDisabledError(
-        'Your account has been blocked. Contact your manager or an administrator.',
-      );
+      throw new AccountDisabledError(API_COPY.accountOff);
     }
 
     const accessToken = await this.tokens.signAccessToken({

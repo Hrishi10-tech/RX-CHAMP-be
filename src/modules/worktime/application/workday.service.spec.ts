@@ -24,7 +24,7 @@ const me = (id: string, role: Role, over: Partial<AuthenticatedUser> = {}): Auth
     ...over,
   }) as AuthenticatedUser;
 
-/** The constructor's eleven collaborators, each replaceable. */
+/** The constructor's collaborators, each replaceable. */
 function build(over: Partial<Record<string, unknown>> = {}) {
   const deps = {
     sessions: {},
@@ -43,6 +43,7 @@ function build(over: Partial<Record<string, unknown>> = {}) {
     config: { get: jest.fn() },
     plans: {},
     punches: { punchesOf: jest.fn().mockResolvedValue(new Map()) },
+    features: { isOn: jest.fn(() => false) },
     ...over,
   };
   const svc = new WorkdayService(
@@ -58,9 +59,30 @@ function build(over: Partial<Record<string, unknown>> = {}) {
     deps.config as never,
     deps.plans as never,
     deps.punches as never,
+    deps.features as never,
   );
   return { svc, deps };
 }
+
+describe('WorkdayService guide', () => {
+  function guideWith(redFlags: boolean) {
+    const { svc } = build({
+      people: { findById: jest.fn().mockResolvedValue(null) },
+      days: { context: jest.fn().mockResolvedValue({}) },
+      features: { isOn: jest.fn((name: string) => name === 'redFlags' && redFlags) },
+    });
+    return svc.guide(me('u1', Role.USER), NOW);
+  }
+
+  it('names file-transfer events only while red flags are on (C-714, C-917)', async () => {
+    const off = await guideWith(false);
+    const on = await guideWith(true);
+    expect(off.items[6].body).not.toContain('file-transfer');
+    expect(on.items[6].body).toContain('and any file-transfer events');
+    expect(on.items.map((i) => i.title)).toEqual(off.items.map((i) => i.title));
+    expect(on.numbers).toEqual(off.numbers);
+  });
+});
 
 describe('WorkdayService End Day gates', () => {
   function setup(overdue = { count: 0, oldestDueAt: null as Date | null }, block = true) {
@@ -100,7 +122,7 @@ describe('WorkdayService End Day gates', () => {
     await expect(svc.assertCanEndDay(me('m1', Role.MANAGER), NOW)).rejects.toMatchObject({
       status: 409,
       code: 'APPROVALS_OVERDUE',
-      message: '3 approvals are past 48 hours. Decide them in the portal to end your day.',
+      message: 'Decide 3 approvals in the portal to end your day. They are past 48 hours.',
       details: { count: 3, oldestDueAt: oldest.toISOString() },
     });
     expect(settings.get).toHaveBeenCalledWith('co-1');
@@ -118,7 +140,7 @@ describe('WorkdayService End Day gates', () => {
   it('says "1 approval is" for one', async () => {
     const { svc } = setup({ count: 1, oldestDueAt: null });
     await expect(svc.assertCanEndDay(me('m1', Role.MANAGER), NOW)).rejects.toMatchObject({
-      message: '1 approval is past 48 hours. Decide them in the portal to end your day.',
+      message: 'Decide 1 approval in the portal to end your day. It is past 48 hours.',
       details: { count: 1, oldestDueAt: null },
     });
   });

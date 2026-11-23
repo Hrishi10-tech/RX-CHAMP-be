@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
+import { time12InZone } from '@shared/utils/timezone';
 import { DayEndedEvent } from '@modules/activity/domain/events/day-ended.event';
 import { NOTIFICATION_REPOSITORY, NotificationRepository } from '../domain/notification.repository';
 import { NotificationMapper } from './notification.mapper';
@@ -34,13 +35,9 @@ export class DayEndedSubscriber implements OnModuleInit {
     if (!to.length) return;
 
     // Formatted in the business timezone, not the host's. Without an explicit zone
-    // this used the server clock — UTC in production — so a sign-off at 6:38 PM IST
+    // this used the server clock (UTC in production), so a sign-off at 6:38 PM IST
     // reached the manager as "1:08 PM", exactly 5h30m out.
-    const at = event.endedAt.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone: this.config.get<string>('timezone') ?? 'Asia/Kolkata',
-    });
+    const at = time12InZone(event.endedAt, this.config.get<string>('timezone') ?? 'Asia/Kolkata');
 
     for (const userId of to) {
       const saved = await this.notifications.create({

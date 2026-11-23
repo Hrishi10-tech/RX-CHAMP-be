@@ -109,7 +109,9 @@ export class UpsertShiftDto {
   @Max(30)
   ringDurationMin?: number;
 
-  @ApiPropertyOptional({ default: true })
+  @ApiPropertyOptional({
+    description: 'Accepted and ignored (3.6, brief 1.2): no alert makes a sound. Answers say false',
+  })
   @IsOptional()
   @IsBoolean()
   ringSound?: boolean;

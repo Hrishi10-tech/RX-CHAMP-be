@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-  UnprocessableError,
-} from '@shared/exceptions/app.exception';
+import { API_COPY } from '@shared/copy/api-copy';
+import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
 import { ApprovalChange } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
@@ -131,15 +127,12 @@ export class SkipsService {
     await this.sessions.assertAgentDay(me.id, 'act');
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.people.findById(me.id);
-    if (!person) throw new NotFoundError('User not found');
+    if (!person) throw new NotFoundError(API_COPY.profileNotFound);
     const day = await this.days.dayFor(person, now);
     const shift = day.resolved.shift;
     const slot = day.slots.find((s) => s.kind === dto.kind);
     if (!shift || !slot) {
-      throw new ConflictError(
-        `No ${lower(dto.kind)} is scheduled for you today.`,
-        'BREAK_NOT_SCHEDULED',
-      );
+      throw new ConflictError(API_COPY.breakNotScheduled(lower(dto.kind)), 'BREAK_NOT_SCHEDULED');
     }
     if (!slot.allowSkip) {
       throw new ConflictError(`The ${lower(dto.kind)} cannot be skipped.`, 'SKIP_NOT_ALLOWED');
@@ -147,16 +140,13 @@ export class SkipsService {
 
     const taken = await this.records.listForUserOnDate(person.id, day.dateKey);
     if (taken.some((r) => r.kind === dto.kind)) {
-      throw new ConflictError(
-        `Your ${lower(dto.kind)} already has a record today.`,
-        'BREAK_ALREADY_TAKEN',
-      );
+      throw new ConflictError(API_COPY.breakHasRecord(lower(dto.kind)), 'BREAK_ALREADY_TAKEN');
     }
     const order = BREAK_KINDS.indexOf(dto.kind);
     const later = taken.find((r) => isScheduledKind(r.kind) && BREAK_KINDS.indexOf(r.kind) > order);
     if (later && isScheduledKind(later.kind)) {
       throw new ConflictError(
-        `You've already taken your ${lower(later.kind)}, so the ${lower(dto.kind)} is no longer available.`,
+        API_COPY.breakOrder(lower(later.kind), lower(dto.kind)),
         'BREAK_ORDER',
       );
     }
@@ -165,13 +155,13 @@ export class SkipsService {
     const phase = phaseAt(slot, now);
     if (phase === 'UPCOMING') {
       throw new ConflictError(
-        `Your ${lower(dto.kind)} opens at ${time12InZone(slot.windowOpen, tz)}.`,
+        API_COPY.breakOpensAt(lower(dto.kind), time12InZone(slot.windowOpen, tz)),
         'BREAK_NOT_OPEN',
       ).withDetails({ opensAt: slot.windowOpen.toISOString() });
     }
     if (phase === 'CLOSED') {
       throw new ConflictError(
-        `The ${lower(dto.kind)} window closed at ${time12InZone(slot.windowClose, tz)}.`,
+        API_COPY.breakWindowClosed(lower(dto.kind), time12InZone(slot.windowClose, tz)),
         'BREAK_WINDOW_CLOSED',
       ).withDetails({ closedAt: slot.windowClose.toISOString() });
     }
@@ -190,10 +180,7 @@ export class SkipsService {
     }
     const current = await this.presence.findOpen(person.id);
     if (current && (current.type === 'BREAK' || current.type === 'LUNCH')) {
-      throw new ConflictError(
-        "You're on a break. End it before skipping another.",
-        'ALREADY_ON_BREAK',
-      );
+      throw new ConflictError(API_COPY.onBreak, 'ALREADY_ON_BREAK');
     }
 
     // 4.0: nobody reviews an Admin's or a Super Admin's breaks (NOT_REQUIRED).
@@ -202,7 +189,7 @@ export class SkipsService {
     const reason = cleanReason(dto.reason);
     if (reviewed && !(await this.enough('BREAK_SKIP', reason, shift.reasonMinChars))) {
       throw new UnprocessableError(
-        `Say why you are skipping the ${lower(dto.kind)} (at least ${shift.reasonMinChars} characters).`,
+        API_COPY.noteForManager(shift.reasonMinChars),
         'REASON_REQUIRED',
       ).withDetails({ minChars: shift.reasonMinChars });
     }
@@ -229,15 +216,9 @@ export class SkipsService {
     if (!result.ok) {
       switch (result.code) {
         case 'BREAK_ALREADY_TAKEN':
-          throw new ConflictError(
-            `Your ${lower(dto.kind)} already has a record today.`,
-            'BREAK_ALREADY_TAKEN',
-          );
+          throw new ConflictError(API_COPY.breakHasRecord(lower(dto.kind)), 'BREAK_ALREADY_TAKEN');
         case 'ALREADY_ON_BREAK':
-          throw new ConflictError(
-            "You're on a break. End it before skipping another.",
-            'ALREADY_ON_BREAK',
-          );
+          throw new ConflictError(API_COPY.onBreak, 'ALREADY_ON_BREAK');
         default:
           throw dayClosedError(result.code);
       }
@@ -260,12 +241,10 @@ export class SkipsService {
   ): Promise<{ record: BreakRecordView }> {
     const record = await this.records.findById(id);
     // Someone else's break reads as unknown, so ids cannot be probed (4.0 audit L2).
-    if (!record || record.userId !== me.id) throw new NotFoundError('Unknown break');
+    if (!record || record.userId !== me.id) throw new NotFoundError(API_COPY.breakNotFound);
     if (!isSkipRecord(record) || record.reason) {
       throw new ConflictError(
-        isSkipRecord(record)
-          ? 'This skip already has a reason.'
-          : 'Only a skipped break takes a comment.',
+        isSkipRecord(record) ? API_COPY.skipHasReason : 'Only a skipped break takes a comment.',
         'COMMENT_NOT_NEEDED',
       );
     }
@@ -278,7 +257,7 @@ export class SkipsService {
       ).withDetails({ minChars });
     }
     const updated = await this.records.addComment(id, text as string, now);
-    if (!updated) throw new ConflictError('This skip already has a reason.', 'COMMENT_NOT_NEEDED');
+    if (!updated) throw new ConflictError(API_COPY.skipHasReason, 'COMMENT_NOT_NEEDED');
     await this.commented(updated, me.id);
     return { record: ShiftMapper.recordView(updated, now) };
   }

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AVATAR_SIZES, AvatarCatalog, libraryOf } from '@shared/avatars/avatar-catalog';
+import { API_COPY } from '@shared/copy/api-copy';
 import { AvatarChangedEvent } from '@shared/events/avatar-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import {
@@ -74,17 +75,14 @@ export class AvatarService {
   ): Promise<MyAvatarView> {
     this.assertMayChange(me, userAgent);
     const entry = this.catalog.find(avatarId);
-    if (!entry) throw new ValidationError('That is not one of the avatars.', 'AVATAR_UNKNOWN');
+    if (!entry) throw new ValidationError(API_COPY.avatarUnknown, 'AVATAR_UNKNOWN');
     const user = await this.load(me.id);
     const library = libraryOf(user.gender);
     if (!library) {
-      throw new ConflictError(
-        'Your avatar can be chosen once your admin has set up your profile.',
-        'GENDER_NOT_SET',
-      );
+      throw new ConflictError(API_COPY.avatarProfileNotSetUp, 'GENDER_NOT_SET');
     }
     if (entry.gender !== library) {
-      throw new ForbiddenError('You can pick only from your own avatars.', 'AVATAR_OTHER_LIBRARY');
+      throw new ForbiddenError(API_COPY.avatarOtherLibrary, 'AVATAR_OTHER_LIBRARY');
     }
     return this.view(await this.store(user, entry.id));
   }
@@ -102,10 +100,7 @@ export class AvatarService {
   async resetFor(me: AuthenticatedUser, targetId: string): Promise<UserAvatarResetView> {
     const target = this.access.assertCanEdit(me, await this.users.findById(targetId));
     if (!canSetGender(me, target)) {
-      throw new ForbiddenError(
-        'Only the organisation admin or a Super Admin can reset an avatar.',
-        'AVATAR_RESET_FORBIDDEN',
-      );
+      throw new ForbiddenError(API_COPY.avatarResetByAdmin, 'AVATAR_RESET_FORBIDDEN');
     }
     const saved = await this.store(target, null);
     return { userId: saved.id, avatarId: this.effective(saved) };
@@ -122,7 +117,7 @@ export class AvatarService {
 
   private async load(id: string): Promise<User> {
     const user = await this.users.findById(id);
-    if (!user) throw new NotFoundError('Unknown user');
+    if (!user) throw new NotFoundError(API_COPY.profileNotFound);
     return user;
   }
 

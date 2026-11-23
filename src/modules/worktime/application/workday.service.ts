@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ConflictError } from '@shared/exceptions/app.exception';
+import { FeatureFlagsService } from '@shared/features/feature-flags.service';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
 import { approverScopeOf } from './approver-scope';
@@ -126,6 +128,7 @@ export class WorkdayService {
     private readonly config: ConfigService,
     private readonly plans: DayPlanService,
     @Inject(PUNCHES_READER) private readonly punches: PunchesReader,
+    private readonly features: FeatureFlagsService,
   ) {}
 
   /** GET /workday/me/today: closes a stale session and auto-skips first (lazily). */
@@ -332,7 +335,8 @@ export class WorkdayService {
       ringLeadMin: shift?.ringLeadMin ?? 1,
       ringDurationMin: shift?.ringDurationMin ?? 5,
     };
-    return { items: staffGuide(numbers), numbers };
+    const items = staffGuide(numbers, { fileTransfers: this.features.isOn('redFlags') });
+    return { items, numbers };
   }
 
   /** The day ended within LAST_ENDED_WITHIN_MS before now (not `date`), with its focus. */
@@ -373,8 +377,7 @@ export class WorkdayService {
     const overdue = await this.approvals.overdueIn(scope, now);
     if (overdue.count > 0) {
       throw new ConflictError(
-        `${overdue.count === 1 ? '1 approval is' : `${overdue.count} approvals are`} past ` +
-          `${settings.approvalSlaHours} hours. Decide them in the portal to end your day.`,
+        API_COPY.approvalsToDecide(overdue.count, settings.approvalSlaHours),
         'APPROVALS_OVERDUE',
       ).withDetails({
         count: overdue.count,

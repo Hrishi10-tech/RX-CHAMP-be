@@ -4,6 +4,7 @@ import {
   ForbiddenError,
   UnprocessableError,
 } from '@shared/exceptions/app.exception';
+import { API_COPY } from '@shared/copy/api-copy';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { PresenceBridge } from '@modules/shifts/application/presence-bridge.service';
 import {
@@ -50,6 +51,8 @@ export class StartDayFlow {
     now: Date,
     caps: AgentCaps = NO_AGENT_CAPS,
   ): Promise<StartDayResponse> {
+    // Biometric staff hear this before any other rule: no note or gate can open their day.
+    await this.sessions.assertAgentDay(me.id, 'start');
     const startedAt = boundedStartedAt(dto.startedAt, now);
     // A session left open from an earlier day closes first, so "first start of the
     // day" is judged on the day being started.
@@ -126,6 +129,8 @@ export class EndDayFlow {
     now: Date,
     withGates: boolean,
   ): Promise<EndDayResponse> {
+    // Biometric staff hear this before any other rule: no comment or gate can end their day.
+    await this.sessions.assertAgentDay(me.id, 'end');
     await this.sessions.autoCloseIfStale(me.id, now);
     // Everything is judged before anything is written, so a refused End Day leaves
     // no comment, no auto-skip, no notice and no End Day mark behind (re-audit M1):
@@ -136,7 +141,8 @@ export class EndDayFlow {
     const open = await this.sessions.findOpen(me.id);
     if (open && open.startedAt.getTime() > now.getTime()) {
       throw new UnprocessableError(
-        'This End Day is older than the start of the open working day.',
+        'Check the clock on this computer, then try again. That End day is earlier than the ' +
+          'start of your day.',
         'EVENT_TIME_INVALID',
       );
     }
@@ -156,10 +162,7 @@ export class EndDayFlow {
     await this.skips.writeEndDayComments(me, comments, now);
     const result = await this.sessions.endDay(me.id, generation, now);
     if (result.kind === 'NOT_STARTED') {
-      throw new ConflictError(
-        'Your day has not started, so there is nothing to end.',
-        'DAY_NOT_STARTED',
-      );
+      throw new ConflictError(API_COPY.nothingToEnd, 'DAY_NOT_STARTED');
     }
     if (result.kind !== 'ALREADY_ENDED' && result.newlyEnded) {
       await this.endDay.finish(me.id, result.date, result.endedAt);

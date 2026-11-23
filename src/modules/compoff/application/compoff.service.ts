@@ -40,6 +40,7 @@ import {
 } from '@modules/leave/domain/comp-off';
 import { LEAVE_REPOSITORY, LeaveRepository } from '@modules/leave/domain/leave.repository';
 import {
+  alreadyStatus,
   daysOf,
   formatDays,
   isStatus,
@@ -439,10 +440,7 @@ export class CompOffService {
     const saved = await this.repo.inUserLock(found.userId, async (tx) => {
       const cur = (await tx.findCredit(id))!;
       if (cur.status !== 'PENDING') {
-        throw new ConflictError(
-          `This claim is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'NOT_CANCELLABLE',
-        );
+        throw new ConflictError(`This claim ${alreadyStatus(cur.status)}.`, 'NOT_CANCELLABLE');
       }
       return tx.updateCredit(id, { status: 'CANCELLED', cancelledAt: now });
     });
@@ -505,10 +503,7 @@ export class CompOffService {
     const saved = await this.repo.inUserLock(target.id, async (tx) => {
       const cur = (await tx.findCredit(id))!;
       if (cur.status !== 'PENDING') {
-        throw new ConflictError(
-          `This claim is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'ALREADY_DECIDED',
-        );
+        throw new ConflictError(`This claim ${alreadyStatus(cur.status)}.`, 'ALREADY_DECIDED');
       }
       if (!approve) {
         return tx.updateCredit(id, {
@@ -562,7 +557,7 @@ export class CompOffService {
         throw new ConflictError(
           cur.status === 'PENDING'
             ? 'This claim is still waiting: reject it instead.'
-            : `This claim is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
+            : `This claim ${alreadyStatus(cur.status)}.`,
           'NOT_APPROVED',
         );
       }

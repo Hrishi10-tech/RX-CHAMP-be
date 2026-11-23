@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ValidationError } from '@shared/exceptions/app.exception';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { SETTINGS_STORE, SettingsStore } from '@modules/settings/domain/settings.store';
@@ -97,9 +98,7 @@ export class BiometricSettingsService {
       integrationOn?: unknown;
     };
     if (integrationOn !== undefined && typeof integrationOn !== 'boolean') {
-      throw new ValidationError('integrationOn must be on or off.').withDetails({
-        field: 'integrationOn',
-      });
+      throw new ValidationError(API_COPY.pickOnOrOff).withDetails({ field: 'integrationOn' });
     }
     const current = biometricFromStored(await this.store.read(keys.settings));
     const result = applyBiometricPatch(current, rest);

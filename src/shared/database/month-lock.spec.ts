@@ -4,13 +4,18 @@ import { assertMonthOpen, isMonthLocked, lockMonthExclusive, monthOf } from './m
  * A fake transaction: users belong to organisations (`companies`), and `locked`
  * lists the organisation-months with a lock row ("org:YYYY-MM").
  */
-function tx(locked: string[], companies: Record<string, string | null> = { u1: 'org-a', u2: 'org-b' }) {
+function tx(
+  locked: string[],
+  companies: Record<string, string | null> = { u1: 'org-a', u2: 'org-b' },
+) {
   const calls: string[] = [];
   return {
     calls,
     client: {
       $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
-        const kind = strings.join('?').includes('pg_advisory_xact_lock_shared') ? 'shared-lock' : 'exclusive-lock';
+        const kind = strings.join('?').includes('pg_advisory_xact_lock_shared')
+          ? 'shared-lock'
+          : 'exclusive-lock';
         calls.push(`${kind}:${String(values[0])}`);
         return [{ ok: 1 }];
       }),
@@ -21,11 +26,17 @@ function tx(locked: string[], companies: Record<string, string | null> = { u1: '
         }),
       },
       monthLock: {
-        findUnique: jest.fn(async ({ where }: { where: { companyId_month: { companyId: string; month: string } } }) => {
-          const { companyId, month } = where.companyId_month;
-          calls.push(`find:${companyId}:${month}`);
-          return locked.includes(`${companyId}:${month}`) ? { month } : null;
-        }),
+        findUnique: jest.fn(
+          async ({
+            where,
+          }: {
+            where: { companyId_month: { companyId: string; month: string } };
+          }) => {
+            const { companyId, month } = where.companyId_month;
+            calls.push(`find:${companyId}:${month}`);
+            return locked.includes(`${companyId}:${month}`) ? { month } : null;
+          },
+        ),
       },
     },
   };
@@ -63,6 +74,8 @@ describe('month locks inside a transaction (per organisation)', () => {
     await expect(assertMonthOpen(t.client as never, '2026-08-15', 'u1')).rejects.toMatchObject({
       status: 409,
       code: 'MONTH_LOCKED',
+      // C-700: the month by name in the words, the key as data.
+      message: 'Ask the organisation admin to unlock August 2026. It is locked for payroll.',
       details: { month: '2026-08' },
     });
     await expect(assertMonthOpen(t.client as never, '2026-09-15', 'u1')).resolves.toBeUndefined();

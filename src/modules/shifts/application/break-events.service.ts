@@ -60,6 +60,8 @@ export class BreakEvents {
           overrun ? record.overrunReason : record.reason,
           overrun,
           new Date(),
+          outcomeOf(record),
+          record.startedAt,
         ),
       );
     } catch (err) {

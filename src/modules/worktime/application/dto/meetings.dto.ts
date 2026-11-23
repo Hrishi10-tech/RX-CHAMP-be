@@ -8,14 +8,17 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
+  Length,
   Max,
   MaxLength,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { API_COPY } from '@shared/copy/api-copy';
 import { IsId } from '@shared/validation/is-id';
 import { STATUS_START_SOURCES, StatusStartSource } from '../../domain/meeting-status';
+import { AGENDA_MAX } from '../../domain/meetings';
 
 export class MeetingParticipantDto {
   @ApiPropertyOptional({ description: 'A person picked from /meetings/participants' })
@@ -32,10 +35,10 @@ export class MeetingParticipantDto {
 
 /** POST /meetings/start */
 export class StartMeetingDto {
-  @ApiProperty({ example: 'Sprint review', minLength: 1, maxLength: 300 })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(300)
+  @ApiProperty({ example: 'Sprint review', minLength: 1, maxLength: AGENDA_MAX })
+  // One check, one sentence, for anything that is not a text of 1 to 300 characters. The service
+  // says the same of what is left once the text is cleaned, and names the field.
+  @Length(1, AGENDA_MAX, { message: API_COPY.meetingAgenda(AGENDA_MAX) })
   agenda!: string;
 
   @ApiProperty({ type: [MeetingParticipantDto], maxItems: 30 })
@@ -60,7 +63,7 @@ export class StartMeetingDto {
 /** POST /meetings/past */
 export class LogPastMeetingDto extends StartMeetingDto {
   @ApiProperty({ example: '2026-10-14T05:30:00.000Z' })
-  @IsISO8601()
+  @IsISO8601({}, { message: API_COPY.pickMeetingStart })
   startedAt!: string;
 
   @ApiProperty({ minimum: 5, maximum: 480, example: 45 })

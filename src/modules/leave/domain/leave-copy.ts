@@ -74,7 +74,7 @@ export function leaveDecidedCopy(i: {
   return {
     title: `Leave not approved: ${span}`,
     body:
-      `${what(i.request)}, rejected by ${i.byName}` +
+      `${what(i.request)}, not approved by ${i.byName}` +
       (i.note ? `: ${sentence(i.note)}` : '.') +
       ` The days are back in your balance. ${left}`,
   };

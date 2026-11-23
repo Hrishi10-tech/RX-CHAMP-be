@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import {
   NOTIFICATION_REPOSITORY,
@@ -12,7 +13,7 @@ export class MarkNotificationReadUseCase {
   constructor(@Inject(NOTIFICATION_REPOSITORY) private readonly repo: NotificationRepository) {}
   async execute(userId: string, id: string): Promise<NotificationView> {
     const updated = await this.repo.markRead(userId, id);
-    if (!updated) throw new NotFoundError('Unknown notification');
+    if (!updated) throw new NotFoundError(API_COPY.noticeNotFound);
     return NotificationMapper.toView(updated);
   }
 }

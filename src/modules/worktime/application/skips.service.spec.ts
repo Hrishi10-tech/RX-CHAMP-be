@@ -28,7 +28,6 @@ const general: ShiftRecord = {
   workDays: [1, 2, 3, 4, 5, 6],
   ringLeadMin: 1,
   ringDurationMin: 5,
-  ringSound: true,
   reasonOnEarly: true,
   reasonOnLate: true,
   reasonMinChars: 10,
@@ -618,9 +617,12 @@ describe('SkipsService auto-skip', () => {
       approverRole: 'MANAGER',
       approverId: null,
     });
-    expect(notices()[0]).toMatchObject({ type: 'AUTO_SKIP_REQUESTED', recipientIds: ['mgr'] });
-    // The notice names the auto-skip time in 12-hour form.
-    expect(notices()[0].body).not.toMatch(/\b(1[3-9]|2[0-3]):\d{2}\b/);
+    expect(notices()[0]).toMatchObject({
+      type: 'AUTO_SKIP_REQUESTED',
+      recipientIds: ['mgr'],
+      // C-871: the time the service sends, on the 12 hour clock.
+      body: 'No break was taken by 12:00 PM. Review it in Approvals.',
+    });
   });
 
   it("auto-skips route like skips: a manager's to the Admin, an Admin's need no approval", async () => {

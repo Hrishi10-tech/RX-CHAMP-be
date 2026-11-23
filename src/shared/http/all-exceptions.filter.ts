@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
+import { API_COPY } from '../copy/api-copy';
 import { AppException } from '../exceptions/app.exception';
 import { DomainException } from '../exceptions/domain.exception';
 
@@ -120,20 +121,20 @@ function normalizeException(exception: unknown): {
 
   if (exception instanceof Prisma.PrismaClientKnownRequestError) {
     if (exception.code === 'P2002') {
-      return { status: 409, code: 'CONFLICT', message: 'Resource already exists' };
+      return { status: 409, code: 'CONFLICT', message: API_COPY.alreadySaved };
     }
     if (exception.code === 'P2025') {
-      return { status: 404, code: 'NOT_FOUND', message: 'Resource not found' };
+      return { status: 404, code: 'NOT_FOUND', message: API_COPY.notFound };
     }
     // A malformed id reached a uuid column: nothing by that id exists.
     if (exception.code === 'P2023') {
-      return { status: 404, code: 'NOT_FOUND', message: 'Resource not found' };
+      return { status: 404, code: 'NOT_FOUND', message: API_COPY.notFound };
     }
   }
 
   return {
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     code: 'INTERNAL_ERROR',
-    message: 'Something went wrong',
+    message: API_COPY.tryAgain,
   };
 }

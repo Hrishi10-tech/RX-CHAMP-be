@@ -89,7 +89,7 @@ describe('socket handshakes and the auth epoch (F-12)', () => {
 
     await new ChatGateway(jwt, config, service).handleConnection(socket as never);
 
-    expect(socket.sent).toEqual([['unauthorized', { message: 'Not signed in' }]]);
+    expect(socket.sent).toEqual([['unauthorized', { message: 'Sign in again to carry on.' }]]);
     expect(socket.disconnect).toHaveBeenCalledWith(true);
     expect(socket.rooms).toEqual([]);
     expect(service.watch).not.toHaveBeenCalled();

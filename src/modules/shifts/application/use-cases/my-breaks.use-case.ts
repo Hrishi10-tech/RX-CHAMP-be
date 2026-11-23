@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
@@ -31,6 +32,7 @@ import {
   DEFAULT_REASON_MIN_CHARS,
   isScheduledKind,
   QUICK_BREAK_MINUTES,
+  RING_SOUND_ANSWER,
 } from '../../domain/shift.types';
 import { WORKED_DAYS_READER, WorkedDaysReader } from '../../domain/worked-days.reader';
 import { BreakApprovalPolicy } from '../break-approval.policy';
@@ -88,7 +90,7 @@ export class MyBreaksUseCase {
 
   private async person(id: string): Promise<ShiftPerson> {
     const p = await this.people.findById(id);
-    if (!p) throw new NotFoundError('User not found');
+    if (!p) throw new NotFoundError(API_COPY.profileNotFound);
     return p;
   }
 
@@ -171,7 +173,7 @@ export class MyBreaksUseCase {
             rules: {
               ringLeadMin: shift.ringLeadMin,
               ringDurationMin: shift.ringDurationMin,
-              ringSound: shift.ringSound,
+              ringSound: RING_SOUND_ANSWER,
               reasonOnEarly: reviewed && shift.reasonOnEarly,
               reasonOnLate: reviewed && shift.reasonOnLate,
               reasonMinChars: shift.reasonMinChars,
@@ -203,10 +205,7 @@ export class MyBreaksUseCase {
     const label = BREAK_LABEL[dto.kind];
 
     if (!shift || !slot) {
-      throw new ConflictError(
-        `No ${lower(dto.kind)} is scheduled for you today.`,
-        'BREAK_NOT_SCHEDULED',
-      );
+      throw new ConflictError(API_COPY.breakNotScheduled(lower(dto.kind)), 'BREAK_NOT_SCHEDULED');
     }
 
     const taken = (await this.records.listForUserOnDate(person.id, day.dateKey)).filter(
@@ -227,16 +226,13 @@ export class MyBreaksUseCase {
         ),
     );
     if (taken.some((r) => r.kind === dto.kind)) {
-      throw new ConflictError(
-        `You've already taken your ${lower(dto.kind)} today.`,
-        'BREAK_ALREADY_TAKEN',
-      );
+      throw new ConflictError(API_COPY.breakAlreadyTaken(lower(dto.kind)), 'BREAK_ALREADY_TAKEN');
     }
     const order = BREAK_KINDS.indexOf(dto.kind);
     const later = taken.find((r) => isScheduledKind(r.kind) && BREAK_KINDS.indexOf(r.kind) > order);
     if (later && isScheduledKind(later.kind)) {
       throw new ConflictError(
-        `You've already taken your ${lower(later.kind)}, so the ${lower(dto.kind)} is no longer available.`,
+        API_COPY.breakOrder(lower(later.kind), lower(dto.kind)),
         'BREAK_ORDER',
       );
     }
@@ -244,13 +240,13 @@ export class MyBreaksUseCase {
     const phase = phaseAt(slot, now);
     if (phase === 'UPCOMING') {
       throw new ConflictError(
-        `Your ${lower(dto.kind)} opens at ${time12InZone(slot.windowOpen, tz)}.`,
+        API_COPY.breakOpensAt(lower(dto.kind), time12InZone(slot.windowOpen, tz)),
         'BREAK_NOT_OPEN',
       ).withDetails({ opensAt: slot.windowOpen.toISOString() });
     }
     if (phase === 'CLOSED') {
       throw new ConflictError(
-        `The ${lower(dto.kind)} window closed at ${time12InZone(slot.windowClose, tz)}. It counts as skipped.`,
+        API_COPY.breakWindowClosedSkipped(lower(dto.kind), time12InZone(slot.windowClose, tz)),
         'BREAK_WINDOW_CLOSED',
       ).withDetails({ closedAt: slot.windowClose.toISOString() });
     }
@@ -261,10 +257,11 @@ export class MyBreaksUseCase {
     const reason = cleanReason(dto.reason);
     const presetKind: PresetKind = judged.timing === 'LATE' ? 'BREAK_LATE' : 'BREAK_EARLY';
     if (reasonRequired && !(await this.enough(presetKind, reason, shift.reasonMinChars))) {
-      const when = judged.timing === 'LATE' ? 'late' : 'early';
+      // By the clock, not the timing: a ring that leads by more than its length is over before
+      // the due time, and that start is judged LATE with the due time still to come.
+      const due = now < slot.scheduledStart ? API_COPY.breakIsDue : API_COPY.breakWasDue;
       throw new UnprocessableError(
-        `You're starting the ${lower(dto.kind)} ${judged.minutesOff} min ${when}. ` +
-          `Add a reason for your manager (at least ${shift.reasonMinChars} characters).`,
+        due(lower(dto.kind), time12InZone(slot.scheduledStart, tz), shift.reasonMinChars),
         'REASON_REQUIRED',
       ).withDetails({
         timing: judged.timing,
@@ -310,18 +307,12 @@ export class MyBreaksUseCase {
     if (!outcome.ok) {
       switch (outcome.reason) {
         case 'DAY_ENDED':
-          throw new ConflictError(
-            'Your working day has already ended. Breaks resume tomorrow.',
-            'DAY_ENDED',
-          );
+          throw new ConflictError(API_COPY.breaksNextDay, 'DAY_ENDED');
         case 'ALREADY_ON_BREAK':
-          throw new ConflictError(
-            "You're already on a break. End it before starting another.",
-            'ALREADY_ON_BREAK',
-          );
+          throw new ConflictError(API_COPY.alreadyOnBreak, 'ALREADY_ON_BREAK');
         default:
           throw new ConflictError(
-            `You've already taken your ${lower(dto.kind)} today.`,
+            API_COPY.breakAlreadyTaken(lower(dto.kind)),
             'BREAK_ALREADY_TAKEN',
           );
       }
@@ -364,19 +355,19 @@ export class MyBreaksUseCase {
   private refuse(result: Extract<BreakMoveResult, { ok: false }>): never {
     switch (result.code) {
       case 'ON_BREAK':
-        throw new ConflictError("You're already on a break. End it first.", 'ON_BREAK');
+        throw new ConflictError(API_COPY.alreadyOnBreak, 'ON_BREAK');
       case 'IN_MEETING':
-        throw new ConflictError("You're in a meeting. End the meeting first.", 'IN_MEETING');
+        throw new ConflictError(API_COPY.inMeeting, 'IN_MEETING');
       case 'DAY_NOT_STARTED':
-        throw new ConflictError('Start your day first.', 'DAY_NOT_STARTED');
+        throw new ConflictError(API_COPY.dayNotStarted, 'DAY_NOT_STARTED');
       case 'DAY_ENDED':
-        throw new ConflictError('Your working day has already ended.', 'DAY_ENDED');
+        throw new ConflictError(API_COPY.dayEnded, 'DAY_ENDED');
       case 'NOT_ACTIVE':
-        throw new ConflictError('That break is not running.', 'NOT_ACTIVE');
+        throw new ConflictError(API_COPY.breakNotRunning, 'NOT_ACTIVE');
       case 'NOT_PAUSABLE':
-        throw new ConflictError('A quick break cannot be paused. End it instead.', 'NOT_PAUSABLE');
+        throw new ConflictError(API_COPY.quickBreakNoPause, 'NOT_PAUSABLE');
       case 'NOT_PAUSED':
-        throw new ConflictError('That break is not paused.', 'NOT_PAUSED');
+        throw new ConflictError(API_COPY.breakNotPaused, 'NOT_PAUSED');
       case 'RESUME_WINDOW_CLOSED': {
         const until = result.record?.windowClose;
         throw new ConflictError(
@@ -387,7 +378,7 @@ export class MyBreaksUseCase {
         );
       }
       default:
-        throw new NotFoundError('Unknown break');
+        throw new NotFoundError(API_COPY.breakNotFound);
     }
   }
 
@@ -555,8 +546,7 @@ export class MyBreaksUseCase {
     ) {
       const overMin = Math.max(1, Math.round(overrunSec / 60));
       throw new UnprocessableError(
-        `Say why you were back ${overMin} min late (at least ${minChars} characters), ` +
-          'or leave the minutes out.',
+        API_COPY.overrunNote(overMin, minChars),
         'REASON_REQUIRED',
       ).withDetails({ minChars, overrunSec });
     }

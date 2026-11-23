@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { API_COPY } from '@shared/copy/api-copy';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
 import { AccessTokenPayload, epochOf } from '@shared/security/token.service.port';
 import { AUTH_USER_READER, AuthUserReader, AuthUserRecord } from '../domain/auth-user-reader.port';
@@ -36,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // enrollment token if a misconfiguration ever signed one with this secret) is
     // never an API credential.
     if (payload.typ !== undefined) {
-      throw new UnauthorizedError('Not signed in');
+      throw new UnauthorizedError();
     }
 
     // 4.0: a Super Admin (and the 3.3 Super Manager) acts inside the organisation
@@ -48,7 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       Array.isArray(orgHeader) ? orgHeader[0] : orgHeader,
     );
     if (!user || user.status !== 'ACTIVE') {
-      throw new UnauthorizedError('Account is no longer active');
+      throw new UnauthorizedError(API_COPY.accountOff);
     }
     // Minted before the person's sessions were ended (sign out everywhere, a role
     // or manager change, their own sign-out of other devices): no longer a

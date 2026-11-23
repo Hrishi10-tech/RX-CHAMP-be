@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { OtherDevicesSignedOutEvent } from '@shared/events/other-devices-signed-out.event';
 import { UnauthorizedError, ValidationError } from '@shared/exceptions/app.exception';
@@ -39,7 +40,7 @@ export class ChangePasswordUseCase {
     meta: RefreshTokenMeta,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const user = await this.users.findById(me.id);
-    if (!user || !user.isActive()) throw new UnauthorizedError('Account is no longer active');
+    if (!user || !user.isActive()) throw new UnauthorizedError(API_COPY.accountOff);
 
     if (!(await this.hasher.compare(currentPassword ?? '', user.passwordHash))) {
       throw new ValidationError('Your current password is not right.', 'WRONG_PASSWORD');

@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
+import { minutes } from '@shared/copy/fills';
 import { LeaveDaysService } from '@modules/leave/application/leave-days.service';
 import { DayLeave, leaveOn, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
@@ -6,7 +8,7 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
-import { appTimezone, hmInZone } from '@shared/utils/timezone';
+import { appTimezone, time12InZone } from '@shared/utils/timezone';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import { DayPlanService } from './day-plan.service';
 import { ReasonPresetsService } from '@modules/settings/application/reason-presets.service';
@@ -140,7 +142,7 @@ export class LateStartService {
     const reason = clean(lateReason);
     if (reason && reason.length > LATE_REASON_MAX_CHARS) {
       throw new UnprocessableError(
-        `Keep the reason under ${LATE_REASON_MAX_CHARS} characters.`,
+        API_COPY.reasonTooLong(LATE_REASON_MAX_CHARS),
         'REASON_TOO_LONG',
       ).withDetails({ maxChars: LATE_REASON_MAX_CHARS });
     }
@@ -148,8 +150,7 @@ export class LateStartService {
     if (caps.lateStartReason && late.reasonRequired && !enough) {
       const presets = await this.presets.get();
       throw new UnprocessableError(
-        `You're starting ${late.minutes} minutes after your shift start (${hmInZone(late.shiftStart, appTimezone())}). ` +
-          `Say why (at least ${late.minChars} characters).`,
+        API_COPY.startNote(time12InZone(late.shiftStart, appTimezone()), late.minChars),
         'LATE_REASON_REQUIRED',
       ).withDetails({
         date: late.date,
@@ -171,7 +172,7 @@ export class LateStartService {
   async remind(userId: string, late: LateFirstStart): Promise<void> {
     if (!late.reasonRequired) return;
     try {
-      const copy = lateStartReasonCopy({ minutes: late.minutes, graceMin: late.graceMin });
+      const copy = lateStartReasonCopy({ graceMin: late.graceMin });
       await this.events.publish(
         NoticeEvent.eventName,
         new NoticeEvent([userId], NOTICE.LATE_START_REASON, copy.title, copy.body),
@@ -201,7 +202,7 @@ export class LateStartService {
     now: Date,
   ): Promise<{ date: string; lateStart: LateStartDetail }> {
     const person = await this.people.findById(me.id);
-    if (!person) throw new NotFoundError('User not found');
+    if (!person) throw new NotFoundError(API_COPY.profileNotFound);
     const date = dto.date ?? (await this.dayKeys.dayKeyAt(me.id, now));
     const [sessions, pc] = await Promise.all([
       this.sessions.listForUserOnDate(me.id, date),
@@ -210,7 +211,7 @@ export class LateStartService {
     const settings = pc.settingsOf(person.companyId);
     const first = [...sessions].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())[0];
     if (!first) {
-      throw new ConflictError('That day has no Start Day, so there is no late start.', 'NOT_LATE');
+      throw new ConflictError(API_COPY.noNoteNeeded, 'NOT_LATE');
     }
     const plan = pc.plan(person, date);
     const shift = plan.shift;
@@ -226,7 +227,7 @@ export class LateStartService {
     });
     if (!detail) {
       throw new ConflictError(
-        `That day started within ${settings.lateStartGraceMin} minutes of the shift start. No reason is needed.`,
+        `That day started within ${minutes(settings.lateStartGraceMin)} of the shift start. No reason is needed.`,
         'NOT_LATE',
       );
     }
@@ -234,18 +235,18 @@ export class LateStartService {
     const reason = clean(dto.reason);
     if (!reason || !(await this.presets.accepts('LATE_DAY_START', reason, minChars))) {
       throw new UnprocessableError(
-        `Say why you started late (at least ${minChars} characters).`,
+        API_COPY.noteForManager(minChars),
         'REASON_REQUIRED',
       ).withDetails({ minChars });
     }
     if ((reason as string).length > LATE_REASON_MAX_CHARS) {
       throw new UnprocessableError(
-        `Keep the reason under ${LATE_REASON_MAX_CHARS} characters.`,
+        API_COPY.reasonTooLong(LATE_REASON_MAX_CHARS),
         'REASON_TOO_LONG',
       ).withDetails({ maxChars: LATE_REASON_MAX_CHARS });
     }
     const saved = await this.sessions.setLateReason(first.id, reason as string, now);
-    if (!saved) throw new NotFoundError('That day could not be found.');
+    if (!saved) throw new NotFoundError(API_COPY.dayNotFound);
     return {
       date,
       lateStart: lateStartDetail({

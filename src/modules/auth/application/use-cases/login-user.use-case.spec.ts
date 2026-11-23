@@ -68,7 +68,7 @@ describe('LoginUserUseCase', () => {
     expect(err).toBeInstanceOf(AccountDisabledError);
     expect(err.code).toBe('ACCOUNT_DISABLED');
     expect(err.status).toBe(403);
-    expect(err.message).toMatch(/blocked/i);
+    expect(err.message).toBe('Ask the organisation admin to turn your account back on.');
   });
 
   it('rejects a wrong password', async () => {
@@ -183,7 +183,9 @@ describe('LoginUserUseCase', () => {
       hasher.compare.mockClear();
       const err = await guarded.execute('person99@x.test', 'Winter2026!', office).catch((e) => e);
       expect(err).toMatchObject({ status: 429, code: 'TOO_MANY_ATTEMPTS' });
-      expect(err.message).toMatch(/failed sign-ins from your network/);
+      expect(err.message).toBe(
+        'Try again in 10 minutes. Sign-in from your network is paused for now.',
+      );
       expect(hasher.compare).not.toHaveBeenCalled();
       // Even the right password, for an account never signed in from here.
       hasher.compare.mockResolvedValue(true);

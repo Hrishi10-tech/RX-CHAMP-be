@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   ConflictError,
   ForbiddenError,
@@ -103,9 +104,7 @@ export class WfhSchedulesService {
     const kp = checkKindPart(input.kind, input.part);
     if (!kp.ok) throw new ValidationError(kp.message).withDetails({ field: kp.field });
     if (typeof input.fromDate !== 'string' || !isValidDateKey(input.fromDate)) {
-      throw new ValidationError('The first day must be a real day (YYYY-MM-DD).').withDetails({
-        field: 'fromDate',
-      });
+      throw new ValidationError(API_COPY.pickFirstDay).withDetails({ field: 'fromDate' });
     }
     if (input.fromDate < today) {
       throw new ValidationError('A schedule starts today or later.').withDetails({
@@ -115,14 +114,10 @@ export class WfhSchedulesService {
     let toDate: string | null = null;
     if (input.toDate !== undefined && input.toDate !== null && input.toDate !== '') {
       if (typeof input.toDate !== 'string' || !isValidDateKey(input.toDate)) {
-        throw new ValidationError('The last day must be a real day (YYYY-MM-DD).').withDetails({
-          field: 'toDate',
-        });
+        throw new ValidationError(API_COPY.pickLastDay).withDetails({ field: 'toDate' });
       }
       if (input.toDate < input.fromDate) {
-        throw new ValidationError('The last day is before the first day.').withDetails({
-          field: 'toDate',
-        });
+        throw new ValidationError(API_COPY.pickLastDayAfterFirst).withDetails({ field: 'toDate' });
       }
       toDate = input.toDate;
     }

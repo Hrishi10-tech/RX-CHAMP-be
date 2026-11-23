@@ -25,7 +25,13 @@ const staff = { id: 'u1', role: 'USER', department: 'Billing', companyId: null, 
 const me = (role = Role.USER) => ({ id: 'u1', role }) as AuthenticatedUser;
 
 function setup(
-  opts: { workday?: boolean; sessions?: unknown[]; open?: unknown; require?: boolean } = {},
+  opts: {
+    workday?: boolean;
+    sessions?: unknown[];
+    open?: unknown;
+    require?: boolean;
+    grace?: number;
+  } = {},
 ) {
   const sessions = {
     findOpen: jest.fn().mockResolvedValue(opts.open ?? null),
@@ -53,7 +59,7 @@ function setup(
   };
   const settings = {
     get: jest.fn().mockResolvedValue({
-      lateStartGraceMin: 10,
+      lateStartGraceMin: opts.grace ?? 10,
       requireLateStartReason: opts.require ?? true,
     }),
   };
@@ -69,7 +75,7 @@ function setup(
   const plans = {
     context: jest.fn(async () => ({
       settingsOf: () => ({
-        lateStartGraceMin: 10,
+        lateStartGraceMin: opts.grace ?? 10,
         requireLateStartReason: opts.require ?? true,
       }),
       plan: () => ({ shift: SHIFT, isWorkingDay: opts.workday ?? true }),
@@ -184,6 +190,16 @@ describe('LateStartService.addReason (portal)', () => {
       status: 422,
       code: 'REASON_REQUIRED',
     });
+  });
+
+  it.each([
+    [10, 'That day started within 10 minutes of the shift start. No reason is needed.'],
+    [1, 'That day started within 1 minute of the shift start. No reason is needed.'],
+  ])('C-687 with a grace of %i', async (grace, message) => {
+    const { svc } = setup({ sessions: [{ id: 's1', startedAt: ist('10:00') }], grace });
+    await expect(
+      svc.addReason(me(), { reason: 'Doctor appointment' }, ist('12:00')),
+    ).rejects.toMatchObject({ status: 409, code: 'NOT_LATE', message });
   });
 
   it('takes a preset in the portal too', async () => {

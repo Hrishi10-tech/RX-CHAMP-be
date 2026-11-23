@@ -32,6 +32,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { API_COPY } from '@shared/copy/api-copy';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { RolesGuard } from '@shared/rbac/roles.guard';
 import { Roles } from '@shared/rbac/roles.decorator';
@@ -274,7 +275,10 @@ export class CalendarController {
     const companyId = requireOrg(me);
     const person = await this.facts.find(userId);
     if (!person || person.companyId !== companyId || !canSeePerson(me, person)) {
-      throw new NotFoundException('Unknown person');
+      // C-911: someone else's calendar never says "your profile".
+      throw new NotFoundException(
+        userId === me.id ? API_COPY.profileNotFound : API_COPY.personNotFound,
+      );
     }
     return envelope(
       await this.calendar.personYear(

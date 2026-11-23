@@ -1,8 +1,10 @@
 import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
+import { minutes, monthName } from '@shared/copy/fills';
 
 /**
  * Titles and bodies of the 3.1 notifications (SPEC 3.10). Short sentences naming
- * the person; no em dash, no exclamation mark; times already formatted HH:MM.
+ * the person; no em dash, no exclamation mark; times already formatted by `time12InZone`
+ * ("1:45 PM"). Wording: brief 1.5, COPY_DECK B9 and B10.
  */
 
 export const NOTICE = {
@@ -27,27 +29,7 @@ export interface Copy {
   body: string;
 }
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 const SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "2026-09" -> "September 2026". */
-export function monthName(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  return m >= 1 && m <= 12 ? `${MONTHS[m - 1]} ${y}` : month;
-}
 
 /** "2026-10-13" -> "13 Oct". */
 export function shortDay(dateKey: string): string {
@@ -74,6 +56,9 @@ export function namesList(names: string[]): string {
   return `${unique[0]}, ${unique[1]} and ${unique.length - 2} others`;
 }
 
+/** C-865: a request with no note from the person yet. */
+export const NO_NOTE_YET = 'Review it in Approvals. No note yet.';
+
 /** Ends free text with a full stop unless it already ends a sentence. */
 export function asSentence(text: string): string {
   const t = text.trim();
@@ -87,9 +72,7 @@ export function skipRequestedCopy(p: {
 }): Copy {
   return {
     title: `${p.name} skipped the ${lowerLabel(p.kind)}`,
-    body: p.reason
-      ? `Reason: ${asSentence(p.reason)} Review it in Approvals.`
-      : 'No reason given. Review it in Approvals.',
+    body: p.reason ? `Reason: ${asSentence(p.reason)} Review it in Approvals.` : NO_NOTE_YET,
   };
 }
 
@@ -99,7 +82,7 @@ export function autoSkipRequestedCopy(p: {
   at: string;
 }): Copy {
   return {
-    title: `${p.name}'s ${lowerLabel(p.kind)} was auto-skipped`,
+    title: `${p.name}'s ${lowerLabel(p.kind)} was skipped automatically`,
     body: `No break was taken by ${p.at}. Review it in Approvals.`,
   };
 }
@@ -136,7 +119,7 @@ export function meetingDecidedCopy(p: {
   note: string | null;
 }): Copy {
   return {
-    title: `Your meeting on ${shortDay(p.date)} was ${p.approved ? 'approved' : 'rejected'}`,
+    title: `Your meeting on ${shortDay(p.date)} was ${p.approved ? 'approved' : 'not approved'}`,
     body: p.note ? `${p.deciderName}: ${p.note}` : `By ${p.deciderName}.`,
   };
 }
@@ -144,14 +127,14 @@ export function meetingDecidedCopy(p: {
 export function dueSoonCopy(count: number): Copy {
   return {
     title: `${approvalsAre(count)} due within 12 hours`,
-    body: "Decide them in Approvals before they go to your organisation's Admin.",
+    body: 'Decide them in Approvals before they go to the organisation admin.',
   };
 }
 
 export function overdueCopy(count: number, slaHours: number): Copy {
   return {
     title: `${approvalsAre(count)} past ${slaHours} hours`,
-    body: "Your organisation's Admin has been told. Decide them in Approvals.",
+    body: 'Decide them in Approvals. They now show for the organisation admin too.',
   };
 }
 
@@ -172,18 +155,36 @@ export function monthlyReportCopy(month: string, scope: 'TEAM' | 'ALL'): Copy {
   };
 }
 
-export function dayAutoClosedSelfCopy(p: { closedAt: string }): Copy {
-  return {
-    title: `Your day was closed at ${p.closedAt}`,
-    body: 'End Day was not pressed, so the day was closed at your last keyboard or mouse input.',
-  };
+/**
+ * What set the moment of an automatic close: the last keyboard or mouse input (null), or a
+ * status meeting (D-22), still running at the hard stop or ended with no input after it.
+ */
+export type AutoCloseMeeting = 'RUNNING' | 'ENDED' | null;
+
+/** C-813, C-814; a status meeting: C-919, C-920. */
+export function dayAutoClosedSelfCopy(p: { closedAt: string; meeting?: AutoCloseMeeting }): Copy {
+  const body =
+    p.meeting === 'RUNNING'
+      ? "Tap Start day if you're still working. Your meeting time up to then counts."
+      : p.meeting === 'ENDED'
+        ? 'We closed it at the end of your meeting.'
+        : 'We closed it at your last keyboard or mouse input.';
+  return { title: `Your day was closed for you at ${p.closedAt}`, body };
 }
 
-export function dayAutoClosedManagerCopy(p: { name: string; closedAt: string }): Copy {
-  return {
-    title: `${p.name}'s day was closed automatically`,
-    body: `End Day was not pressed. The day was closed at the last input, ${p.closedAt}.`,
-  };
+/** C-884, C-885; a status meeting: C-921, C-922. */
+export function dayAutoClosedManagerCopy(p: {
+  name: string;
+  closedAt: string;
+  meeting?: AutoCloseMeeting;
+}): Copy {
+  const body =
+    p.meeting === 'RUNNING'
+      ? `They were in a meeting. The day was closed at ${p.closedAt}, and that time counts.`
+      : p.meeting === 'ENDED'
+        ? `The day was closed at the end of their meeting, ${p.closedAt}.`
+        : `The day was closed at the last input, ${p.closedAt}.`;
+  return { title: `${p.name}'s day was closed automatically`, body };
 }
 
 /** To the person whose focus time the Super Manager changed by hand (3.3). */
@@ -194,32 +195,34 @@ export function focusAdjustedCopy(i: {
   voided: boolean;
 }): Copy {
   const min = Math.round(Math.abs(i.deltaSec) / 60);
+  const amount = minutes(min);
   const day = shortDay(i.date);
   if (i.voided) {
     return {
       title: `Adjustment undone: ${day}`,
       body:
-        `The ${min} minutes ${i.deltaSec < 0 ? 'taken off' : 'added to'} your focus time for ${day} ` +
-        'have been undone. That day is back to what the app recorded.',
+        `The ${amount} ${i.deltaSec < 0 ? 'taken off' : 'added to'} your focus time for ${day} ` +
+        `${min === 1 ? 'has' : 'have'} been undone. That day is back to what the app recorded.`,
     };
   }
   return {
     title: `Focus time adjusted: ${day}`,
     body:
-      `The Super Manager ${i.deltaSec < 0 ? `took ${min} minutes off` : `added ${min} minutes to`} ` +
+      `The Super Manager ${i.deltaSec < 0 ? `took ${amount} off` : `added ${amount} to`} ` +
       `your focus time for ${day}: ${i.reason}`,
   };
 }
 
 /**
- * To the person (3.2): a late start with no reason yet, from an agent that cannot ask.
- * 4.0: Staff do not use the portal, so the reason reaches the manager another way.
+ * To the person (3.2): a late start with no reason yet, from an agent that cannot ask. C-815,
+ * C-816 in 4.0's words: Staff do not use the portal, and their department's managers read it.
  */
-export function lateStartReasonCopy(i: { minutes: number; graceMin: number }): Copy {
+export function lateStartReasonCopy(i: { graceMin: number }): Copy {
   return {
-    title: `You started ${i.minutes} minutes late`,
+    title: 'Add a note about your start today',
     body:
-      `Your day started more than ${i.graceMin} minutes after your shift start. ` +
-      'Let your manager know why. Updating RX Vision on this computer lets it ask you next time.',
+      "Let your department's managers know why. Updating RX Vision on this computer lets it " +
+      'ask you next time. ' +
+      `Your day started more than ${minutes(i.graceMin)} after your shift start.`,
   };
 }

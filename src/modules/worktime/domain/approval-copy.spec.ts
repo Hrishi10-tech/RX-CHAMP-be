@@ -1,3 +1,4 @@
+import { monthName } from '@shared/copy/fills';
 import {
   APPROVAL_CATEGORIES,
   approvalEffect,
@@ -12,6 +13,7 @@ import {
   meetingDetail,
   meetingTitle,
   MINUS,
+  ownBreakTitle,
   wholeMinutes,
 } from './approval-copy';
 import {
@@ -21,7 +23,6 @@ import {
   dueSoonCopy,
   escalatedCopy,
   meetingDecidedCopy,
-  monthName,
   monthlyReportCopy,
   namesList,
   overdueCopy,
@@ -162,7 +163,9 @@ describe('titles and details', () => {
   it('names late and early starts', () => {
     const late = { ...base, minutesOff: 20, startedAt: ist('11:20'), endedAt: ist('11:35') };
     expect(breakTitle('BREAK_LATE', late)).toBe('Morning break started 20 min late');
-    expect(breakDetail('BREAK_LATE', late, TZ, now)).toBe('Started 11:20 AM · due 11:00 AM · 15 min');
+    expect(breakDetail('BREAK_LATE', late, TZ, now)).toBe(
+      'Started 11:20 AM · due 11:00 AM · 15 min',
+    );
     expect(breakDetail('BREAK_LATE', { ...late, endedAt: null }, TZ, now)).toBe(
       'Started 11:20 AM · due 11:00 AM · on a break now',
     );
@@ -175,6 +178,76 @@ describe('titles and details', () => {
     expect(breakTitle('BREAK_UNSCHEDULED', { ...base, kind: null, presenceType: 'LUNCH' })).toBe(
       'Unscheduled lunch',
     );
+  });
+
+  describe("the person's own list: brief 1.5's words and the 12 hour clock (C-938 to C-942)", () => {
+    const lunch = {
+      ...base,
+      kind: 'LUNCH' as const,
+      presenceType: 'LUNCH' as const,
+      startedAt: ist('13:05'),
+      endedAt: ist('13:50'),
+      scheduledStart: ist('13:00'),
+      durationMin: 30,
+      windowOpen: ist('12:30'),
+      windowClose: ist('14:00'),
+      overrunSec: 15 * 60,
+    };
+
+    it('overrun: extended, never "late"; the agent still finds the word lunch', () => {
+      expect(ownBreakTitle('BREAK_OVERRUN', lunch)).toBe('Lunch break extended by 15 min');
+      expect(breakDetail('BREAK_OVERRUN', lunch, TZ, now, true)).toBe(
+        '1:05 PM to 1:50 PM · 45 min of 30',
+      );
+      expect(ownBreakTitle('BREAK_OVERRUN', { ...lunch, kind: null, presenceType: 'BREAK' })).toBe(
+        'Break extended by 15 min',
+      );
+    });
+
+    it('a start after its time', () => {
+      const late = { ...base, minutesOff: 20, startedAt: ist('11:20'), endedAt: ist('11:35') };
+      expect(ownBreakTitle('BREAK_LATE', late)).toBe('Morning break started 20 min after its time');
+      expect(breakDetail('BREAK_LATE', late, TZ, now, true)).toBe(
+        'Started 11:20 AM · due 11:00 AM · 15 min',
+      );
+      expect(breakDetail('BREAK_LATE', { ...late, endedAt: null }, TZ, now, true)).toBe(
+        'Started 11:20 AM · due 11:00 AM · on a break now',
+      );
+    });
+
+    it('skips', () => {
+      const auto = { ...base, startedAt: ist('12:00'), endedAt: ist('12:00') };
+      expect(ownBreakTitle('BREAK_AUTO_SKIP', auto)).toBe('Morning break skipped for you');
+      expect(breakDetail('BREAK_AUTO_SKIP', auto, TZ, now, true)).toBe(
+        'Skipped for you at 12:00 PM · window 10:30 AM to 12:00 PM',
+      );
+      expect(ownBreakTitle('BREAK_SKIP', base)).toBe('Morning break skipped');
+      expect(breakDetail('BREAK_SKIP', base, TZ, now, true)).toBe(
+        'Skipped at 11:02 AM · window 10:30 AM to 12:00 PM',
+      );
+    });
+
+    it('what already reads well keeps its words; the clock still moves', () => {
+      const early = { ...base, minutesOff: 10, startedAt: ist('10:50'), endedAt: ist('11:05') };
+      expect(ownBreakTitle('BREAK_EARLY', early)).toBe('Morning break started 10 min early');
+      expect(ownBreakTitle('BREAK_OUTSIDE', { ...base, kind: null })).toBe(
+        'Break outside the break windows',
+      );
+      const plain = { ...base, kind: null, endedAt: ist('11:17') };
+      expect(breakDetail('BREAK_UNSCHEDULED', plain, TZ, now, true)).toBe(
+        '11:02 AM to 11:17 AM · 15 min',
+      );
+    });
+
+    it('meetings, on the 12 hour clock', () => {
+      const ran = { startedAt: ist('10:00'), endedAt: ist('10:45'), durationSec: 2700 };
+      expect(meetingDetail({ ...ran, participants: 3 }, TZ)).toBe(
+        '10:00 AM to 10:45 AM · 45 min · 3 people',
+      );
+      expect(meetingDetail({ ...ran, endedAt: null, participants: 1 }, TZ)).toBe(
+        'Started 10:00 AM · in progress · 1 person',
+      );
+    });
   });
 
   it('names meetings', () => {
@@ -198,15 +271,39 @@ describe('titles and details', () => {
 describe('times read as 12-hour h:mm AM/PM (4.0)', () => {
   it('formats midnight, noon and afternoon times without a 24-hour clock', () => {
     const r = { ...base, kind: null, startedAt: ist('00:05'), endedAt: ist('12:30') };
-    expect(breakDetail('BREAK_UNSCHEDULED', r, TZ, ist('14:00'))).toBe('12:05 AM to 12:30 PM · 745 min');
-    expect(breakDetail('BREAK_OUTSIDE', { ...r, startedAt: ist('15:00'), endedAt: null }, TZ, ist('16:00'))).toBe(
-      'Started 3:00 PM · on a break now',
+    expect(breakDetail('BREAK_UNSCHEDULED', r, TZ, ist('14:00'))).toBe(
+      '12:05 AM to 12:30 PM · 745 min',
     );
+    expect(
+      breakDetail(
+        'BREAK_OUTSIDE',
+        { ...r, startedAt: ist('15:00'), endedAt: null },
+        TZ,
+        ist('16:00'),
+      ),
+    ).toBe('Started 3:00 PM · on a break now');
     const texts = [
       breakDetail('BREAK_SKIP', base, TZ, ist('14:00')),
-      breakDetail('BREAK_OVERRUN', { ...base, startedAt: ist('13:05'), endedAt: ist('13:50') }, TZ, ist('14:00')),
-      meetingDetail({ startedAt: ist('16:00'), endedAt: ist('17:15'), durationSec: 4500, participants: 0 }, TZ),
-      awayDetail({ startedAt: ist('14:05'), endedAt: ist('14:30'), seconds: 1500, participants: 0, momSender: null }, TZ),
+      breakDetail(
+        'BREAK_OVERRUN',
+        { ...base, startedAt: ist('13:05'), endedAt: ist('13:50') },
+        TZ,
+        ist('14:00'),
+      ),
+      meetingDetail(
+        { startedAt: ist('16:00'), endedAt: ist('17:15'), durationSec: 4500, participants: 0 },
+        TZ,
+      ),
+      awayDetail(
+        {
+          startedAt: ist('14:05'),
+          endedAt: ist('14:30'),
+          seconds: 1500,
+          participants: 0,
+          momSender: null,
+        },
+        TZ,
+      ),
     ];
     for (const t of texts) {
       expect(t).toMatch(/\d{1,2}:\d{2} (AM|PM)/);
@@ -215,8 +312,16 @@ describe('times read as 12-hour h:mm AM/PM (4.0)', () => {
   });
 
   it('an overrun still open is measured to now', () => {
-    const open = { ...base, kind: 'LUNCH' as const, startedAt: ist('13:00'), endedAt: null, durationMin: 30 };
-    expect(breakDetail('BREAK_OVERRUN', open, TZ, ist('13:45'))).toBe('1:00 PM to 1:45 PM · 45 min of 30');
+    const open = {
+      ...base,
+      kind: 'LUNCH' as const,
+      startedAt: ist('13:00'),
+      endedAt: null,
+      durationMin: 30,
+    };
+    expect(breakDetail('BREAK_OVERRUN', open, TZ, ist('13:45'))).toBe(
+      '1:00 PM to 1:45 PM · 45 min of 30',
+    );
   });
 });
 
@@ -229,7 +334,13 @@ describe('away items (4.0)', () => {
     expect(awayCategory('CUSTOM')).toBe('AWAY_CUSTOM');
     expect(awayCategory(null)).toBe('AWAY_OTHER');
     expect(awayCategory('SOMETHING_NEW')).toBe('AWAY_OTHER');
-    for (const c of ['AWAY_THINKING', 'AWAY_MEETING', 'AWAY_HARDWARE', 'AWAY_OTHER', 'AWAY_CUSTOM']) {
+    for (const c of [
+      'AWAY_THINKING',
+      'AWAY_MEETING',
+      'AWAY_HARDWARE',
+      'AWAY_OTHER',
+      'AWAY_CUSTOM',
+    ]) {
       expect(APPROVAL_CATEGORIES).toContain(c);
     }
   });
@@ -246,28 +357,69 @@ describe('away items (4.0)', () => {
   it('titles an away item by its minutes and label (a renamed or custom label wins)', () => {
     expect(awayTitle(null, 'THINKING', 25 * 60)).toBe('Away 25 min: Thinking');
     expect(awayTitle('  ', 'MEETING', 10 * 60)).toBe('Away 10 min: Short meeting');
-    expect(awayTitle('Soldering the gateway', 'CUSTOM', 30)).toBe('Away 1 min: Soldering the gateway');
+    expect(awayTitle('Soldering the gateway', 'CUSTOM', 30)).toBe(
+      'Away 1 min: Soldering the gateway',
+    );
     expect(awayTitle(null, null, 0)).toBe('Away 0 min: Other work');
   });
 
   it('details an away item with 12-hour times, people and the minutes sender', () => {
     expect(
-      awayDetail({ startedAt: ist('14:05'), endedAt: ist('14:30'), seconds: 1500, participants: 0, momSender: null }, TZ),
+      awayDetail(
+        {
+          startedAt: ist('14:05'),
+          endedAt: ist('14:30'),
+          seconds: 1500,
+          participants: 0,
+          momSender: null,
+        },
+        TZ,
+      ),
     ).toBe('2:05 PM to 2:30 PM · 25 min');
     expect(
-      awayDetail({ startedAt: ist('09:50'), endedAt: ist('10:10'), seconds: 1200, participants: 1, momSender: 'Asha' }, TZ),
+      awayDetail(
+        {
+          startedAt: ist('09:50'),
+          endedAt: ist('10:10'),
+          seconds: 1200,
+          participants: 1,
+          momSender: 'Asha',
+        },
+        TZ,
+      ),
     ).toBe('9:50 AM to 10:10 AM · 20 min · 1 person · minutes by Asha');
     // No end yet: the end is the start plus the seconds.
     expect(
-      awayDetail({ startedAt: ist('11:00'), endedAt: null, seconds: 600, participants: 3, momSender: null }, TZ),
+      awayDetail(
+        { startedAt: ist('11:00'), endedAt: null, seconds: 600, participants: 3, momSender: null },
+        TZ,
+      ),
     ).toBe('11:00 AM to 11:10 AM · 10 min · 3 people');
   });
 
   it('an away item adds focus when approved (PLUS) and changes nothing when rejected', () => {
-    for (const c of ['AWAY_THINKING', 'AWAY_MEETING', 'AWAY_HARDWARE', 'AWAY_OTHER', 'AWAY_CUSTOM'] as const) {
-      expect(approvalEffect(c, 'PENDING', 20)).toEqual({ mode: 'PLUS', minutes: 20, text: '+20 min if approved' });
-      expect(approvalEffect(c, 'APPROVED', 20)).toEqual({ mode: 'PLUS', minutes: 20, text: '+20 min added' });
-      expect(approvalEffect(c, 'REJECTED', 20)).toEqual({ mode: 'NONE', minutes: 0, text: 'No change to focus time' });
+    for (const c of [
+      'AWAY_THINKING',
+      'AWAY_MEETING',
+      'AWAY_HARDWARE',
+      'AWAY_OTHER',
+      'AWAY_CUSTOM',
+    ] as const) {
+      expect(approvalEffect(c, 'PENDING', 20)).toEqual({
+        mode: 'PLUS',
+        minutes: 20,
+        text: '+20 min if approved',
+      });
+      expect(approvalEffect(c, 'APPROVED', 20)).toEqual({
+        mode: 'PLUS',
+        minutes: 20,
+        text: '+20 min added',
+      });
+      expect(approvalEffect(c, 'REJECTED', 20)).toEqual({
+        mode: 'NONE',
+        minutes: 0,
+        text: 'No change to focus time',
+      });
       expect(approvalEffect(c, 'NOT_REQUIRED', 20).mode).toBe('NONE');
     }
   });
@@ -295,8 +447,8 @@ describe('notification copy', () => {
       title: 'Asha Rao skipped the morning break',
       body: 'Reason: Client call. Review it in Approvals.',
     });
-    expect(texts[2].title).toBe("Asha Rao's lunch break was auto-skipped");
-    expect(texts[3].title).toBe('Your meeting on 13 Oct was rejected');
+    expect(texts[2].title).toBe("Asha Rao's lunch break was skipped automatically");
+    expect(texts[3].title).toBe('Your meeting on 13 Oct was not approved');
     expect(texts[4].title).toBe('1 approval is due within 12 hours');
     expect(texts[5].title).toBe('3 approvals are past 48 hours');
     expect(texts[6].body).toBe(

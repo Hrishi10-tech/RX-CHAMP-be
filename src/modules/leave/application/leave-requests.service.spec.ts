@@ -88,3 +88,54 @@ describe('LeaveRequestsService.views: taking back (3.6)', () => {
     expect(repo.lockedMonths).toHaveBeenCalledWith([], []);
   });
 });
+
+describe('LeaveRequestsService: a request no longer open', () => {
+  function withRow(over: Record<string, unknown>) {
+    const found = row(over);
+    const tx = { findRequest: jest.fn(async () => found) };
+    const repo = {
+      findRequest: jest.fn(async () => found),
+      inUserLock: jest.fn(async (_id: string, run: (t: typeof tx) => unknown) => run(tx)),
+    };
+    const svc = new LeaveRequestsService(
+      repo as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return svc;
+  }
+
+  it('C-944: cancelling one that was rejected says it was not approved', async () => {
+    const svc = withRow({ status: 'REJECTED' });
+    await expect(
+      svc.cancel({ id: 'u1', role: Role.USER } as never, 'l1', NOW),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'NOT_CANCELLABLE',
+      message: 'This request was not approved.',
+    });
+  });
+
+  it('C-800: cancelling one already cancelled says so', async () => {
+    const svc = withRow({ status: 'CANCELLED' });
+    await expect(
+      svc.cancel({ id: 'u1', role: Role.USER } as never, 'l1', NOW),
+    ).rejects.toMatchObject({
+      code: 'NOT_CANCELLABLE',
+      message: 'This request is already cancelled.',
+    });
+  });
+
+  it('C-801: approved leave that has begun', async () => {
+    const svc = withRow({ status: 'APPROVED', startDate: '2026-11-02' });
+    await expect(
+      svc.cancel({ id: 'u1', role: Role.USER } as never, 'l1', NOW),
+    ).rejects.toMatchObject({
+      code: 'LEAVE_STARTED',
+      message:
+        'Ask your approver to revoke it if it should not count. This leave has already begun.',
+    });
+  });
+});

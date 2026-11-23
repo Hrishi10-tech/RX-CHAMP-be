@@ -128,8 +128,34 @@ describe('WorkSessionsService auto-close', () => {
     expect(repo.autoClose).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }), now);
   });
 
+  it('a close during a status meeting says so, not "your last keyboard or mouse input" (D-22)', async () => {
+    const { svc, repo, published } = setup();
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '11:00')]]));
+    const now = ist('2026-10-13', '23:05');
+    repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', now]]));
+
+    expect(await svc.autoCloseAll(now)).toBe(1);
+
+    const notices = published()
+      .filter((x) => x.name === NoticeEvent.eventName)
+      .map((x) => x.payload as NoticeEvent);
+    expect(notices[0]).toMatchObject({
+      recipientIds: ['u1'],
+      type: 'DAY_AUTO_CLOSED',
+      title: 'Your day was closed for you at 11:05 PM',
+      body: "Tap Start day if you're still working. Your meeting time up to then counts.",
+    });
+    expect(notices[1]).toMatchObject({
+      recipientIds: ['m1'],
+      type: 'DAY_AUTO_CLOSED',
+      title: "Asha Rao's day was closed automatically",
+      body: 'They were in a meeting. The day was closed at 11:05 PM, and that time counts.',
+    });
+  });
+
   it('hard stop: a status meeting that ended counts as the last input', async () => {
-    const { svc, repo } = setup();
+    const { svc, repo, published } = setup();
     repo.listOpen.mockResolvedValue([session()]);
     repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '11:00')]]));
     repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', ist('2026-10-13', '17:30')]]));
@@ -140,6 +166,40 @@ describe('WorkSessionsService auto-close', () => {
       expect.objectContaining({ id: 's1' }),
       ist('2026-10-13', '17:30'),
     );
+    const notices = published()
+      .filter((x) => x.name === NoticeEvent.eventName)
+      .map((x) => x.payload as NoticeEvent);
+    expect(notices[0]).toMatchObject({
+      title: 'Your day was closed for you at 5:30 PM',
+      body: 'We closed it at the end of your meeting.',
+    });
+    expect(notices[1]).toMatchObject({
+      body: 'The day was closed at the end of their meeting, 5:30 PM.',
+    });
+  });
+
+  it('input after a status meeting: the close is at that input, and the notice says so', async () => {
+    const { svc, repo, published } = setup();
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '18:10')]]));
+    repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', ist('2026-10-13', '17:30')]]));
+
+    expect(await svc.autoCloseAll(ist('2026-10-14', '08:00'))).toBe(1);
+
+    expect(repo.autoClose).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      ist('2026-10-13', '18:10'),
+    );
+    const notices = published()
+      .filter((x) => x.name === NoticeEvent.eventName)
+      .map((x) => x.payload as NoticeEvent);
+    expect(notices[0]).toMatchObject({
+      title: 'Your day was closed for you at 6:10 PM',
+      body: 'We closed it at your last keyboard or mouse input.',
+    });
+    expect(notices[1]).toMatchObject({
+      body: 'The day was closed at the last input, 6:10 PM.',
+    });
   });
 
   it('forgotten End Day: idle counts from the end of a status meeting, not before', async () => {
@@ -202,13 +262,14 @@ describe('WorkSessionsService auto-close', () => {
     expect(notices[0]).toMatchObject({
       recipientIds: ['u1'],
       type: 'DAY_AUTO_CLOSED',
-      // 4.0: 12-hour times in every backend-built string.
-      title: 'Your day was closed at 5:45 PM',
+      title: 'Your day was closed for you at 5:45 PM',
+      body: 'We closed it at your last keyboard or mouse input.',
     });
     expect(notices[1]).toMatchObject({
       recipientIds: ['m1'],
       type: 'DAY_AUTO_CLOSED',
       title: "Asha Rao's day was closed automatically",
+      body: 'The day was closed at the last input, 5:45 PM.',
       fromUserId: 'u1',
     });
   });

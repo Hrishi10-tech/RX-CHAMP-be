@@ -60,7 +60,8 @@ export class UpdateUserDto {
   })
   @IsOptional()
   @IsIn([Role.MANAGER, Role.USER], {
-    message: "role must be MANAGER or USER. An organisation's Admin is created from Organisations.",
+    message:
+      "Pick MANAGER or USER for the role. An organisation's admin is created from Organisations.",
   })
   role?: Role;
 

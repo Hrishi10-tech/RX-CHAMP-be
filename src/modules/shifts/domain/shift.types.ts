@@ -80,10 +80,16 @@ export function breakAllowsSkip(b: Pick<ShiftBreakDef, 'kind' | 'allowSkip'>): b
   return b.allowSkip ?? defaultAllowSkip(b.kind);
 }
 
+/**
+ * Brief 1.2 (O-07): no alert makes a sound. 3.1 agents chime by `rules.ringSound`, so every
+ * answer that gives clients the field says false and they go silent. The `ring_sound` column
+ * stays, unread and unwritten; an old portal that still sends the field is accepted and ignored.
+ */
+export const RING_SOUND_ANSWER = false;
+
 export interface ShiftRules {
   ringLeadMin: number;
   ringDurationMin: number;
-  ringSound: boolean;
   reasonOnEarly: boolean;
   reasonOnLate: boolean;
   reasonMinChars: number;

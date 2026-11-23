@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuditEntry, AuditLogService } from '@shared/audit/audit-log.service';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ConflictError, ForbiddenError, ValidationError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
@@ -223,8 +224,5 @@ export class UpdateUserUseCase {
 }
 
 function genderForbidden(): ForbiddenError {
-  return new ForbiddenError(
-    'Only the organisation admin or a Super Admin can set gender.',
-    'GENDER_FORBIDDEN',
-  );
+  return new ForbiddenError(API_COPY.genderSetByAdmin, 'GENDER_FORBIDDEN');
 }

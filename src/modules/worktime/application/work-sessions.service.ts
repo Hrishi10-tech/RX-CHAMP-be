@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { ConflictError } from '@shared/exceptions/app.exception';
 import { attendanceByBiometric } from '@shared/exceptions/attendance-by-biometric';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
@@ -31,7 +32,12 @@ import {
   latestEndOf,
 } from '../domain/auto-close';
 import { START_DAY_BACKDATE_MS } from '../domain/meetings';
-import { dayAutoClosedManagerCopy, dayAutoClosedSelfCopy, NOTICE } from '../domain/notice-copy';
+import {
+  AutoCloseMeeting,
+  dayAutoClosedManagerCopy,
+  dayAutoClosedSelfCopy,
+  NOTICE,
+} from '../domain/notice-copy';
 import { WFH_NOTICE, wfhAutoEndedCopy } from '@modules/wfh/domain/wfh-copy';
 import {
   EndDayTxResult,
@@ -377,11 +383,12 @@ export class WorkSessionsService {
     let closed = closedWfh;
     for (const { session, latestEnd } of stale) {
       try {
+        const until = meetingUntil.get(session.id) ?? null;
         const closeAt = autoCloseAt({
           startedAt: session.startedAt,
           latestEnd,
           lastInput: lastInputs.get(session.id) ?? null,
-          meetingUntil: meetingUntil.get(session.id) ?? null,
+          meetingUntil: until,
         });
         const res = await this.sessions.autoClose(session, closeAt);
         this.latestEndCache.delete(session.id);
@@ -395,6 +402,7 @@ export class WorkSessionsService {
           closeAt,
           res.newlyEnded,
           byId.get(session.userId) ?? null,
+          autoCloseMeeting(until, closeAt, now),
         );
       } catch (err) {
         this.logger.warn(`auto-close of session ${session.id} failed: ${(err as Error).message}`);
@@ -489,6 +497,7 @@ export class WorkSessionsService {
     closeAt: Date,
     newlyEnded: boolean,
     person: ShiftPerson | null,
+    meeting: AutoCloseMeeting,
   ): Promise<void> {
     const name = person ? personName(person) : 'A team member';
     try {
@@ -501,14 +510,14 @@ export class WorkSessionsService {
         );
       }
       const at = time12InZone(closeAt, this.timezone);
-      const self = dayAutoClosedSelfCopy({ closedAt: at });
+      const self = dayAutoClosedSelfCopy({ closedAt: at, meeting });
       await this.events.publish(
         NoticeEvent.eventName,
         new NoticeEvent([session.userId], NOTICE.DAY_AUTO_CLOSED, self.title, self.body, null),
       );
       const overseers = await this.overseersOf(person);
       if (overseers.length) {
-        const mgr = dayAutoClosedManagerCopy({ name, closedAt: at });
+        const mgr = dayAutoClosedManagerCopy({ name, closedAt: at, meeting });
         await this.events.publish(
           NoticeEvent.eventName,
           new NoticeEvent(overseers, NOTICE.DAY_AUTO_CLOSED, mgr.title, mgr.body, session.userId),
@@ -537,12 +546,15 @@ export class WorkSessionsService {
   }
 }
 
+/** Whether a status meeting, not an input, set the moment of this close (see `autoCloseAt`). */
+function autoCloseMeeting(until: Date | null, closeAt: Date, now: Date): AutoCloseMeeting {
+  if (until?.getTime() !== closeAt.getTime()) return null;
+  return until.getTime() === now.getTime() ? 'RUNNING' : 'ENDED';
+}
+
 /** 409 for an action on a day that is not open. */
 export function dayClosedError(code: 'DAY_NOT_STARTED' | 'DAY_ENDED'): ConflictError {
   return code === 'DAY_NOT_STARTED'
-    ? new ConflictError('Your day has not started. Press Start Day first.', 'DAY_NOT_STARTED')
-    : new ConflictError(
-        'Your working day has already ended. Press Start Day to resume.',
-        'DAY_ENDED',
-      );
+    ? new ConflictError(API_COPY.dayNotStarted, 'DAY_NOT_STARTED')
+    : new ConflictError(API_COPY.dayEnded, 'DAY_ENDED');
 }

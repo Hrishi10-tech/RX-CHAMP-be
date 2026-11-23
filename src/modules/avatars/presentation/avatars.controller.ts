@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AvatarCatalog } from '@shared/avatars/avatar-catalog';
+import { API_COPY } from '@shared/copy/api-copy';
 import { NotFoundError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
@@ -49,7 +50,7 @@ export class AvatarsController {
   @ApiOperation({ summary: 'One generated avatar image, cacheable for ever (the URL has a hash)' })
   file(@Param('size') size: string, @Param('id') id: string, @Res() res: Response) {
     const path = this.catalog.webpPath(Number(size), id);
-    if (!path) throw new NotFoundError('Unknown avatar');
+    if (!path) throw new NotFoundError(API_COPY.avatarNotFound);
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.type('image/webp').sendFile(path, { cacheControl: false });
   }

@@ -24,7 +24,6 @@ const general: ShiftRecord = {
   workDays: [1, 2, 3, 4, 5, 6],
   ringLeadMin: 1,
   ringDurationMin: 5,
-  ringSound: true,
   reasonOnEarly: true,
   reasonOnLate: true,
   reasonMinChars: 10,
@@ -270,6 +269,9 @@ describe('MyBreaksUseCase', () => {
       code: 'REASON_REQUIRED',
       status: 422,
       details: { timing: 'LATE', minutesOff: 20, minChars: 10 },
+      message:
+        "Your morning break was due at 11:00 AM. Add a short note for your department's managers " +
+        '(10 characters or more).',
     });
     await expect(
       useCase.start(me('staff', Role.USER), { kind: 'MORNING', reason: 'too short' }),
@@ -378,10 +380,40 @@ describe('MyBreaksUseCase', () => {
       overrunReason: false,
     });
     const staff = await useCase.today(me('staff', Role.USER));
+    // Brief 1.2 (O-07): agents in the field chime by this field. Nobody hears one any more.
+    expect(sa.shift?.rules.ringSound).toBe(false);
+    expect(staff.shift?.rules.ringSound).toBe(false);
     expect(staff.shift?.rules).toMatchObject({
       reasonOnEarly: true,
       reasonOnLate: true,
       overrunReason: true,
+    });
+  });
+
+  it('C-729, C-730: the sentence follows the clock, also when the ring ends before the due time', async () => {
+    const longLead = { ...general, ringLeadMin: 10, ringDurationMin: 5 };
+    shiftsRepo.list.mockResolvedValue([longLead]);
+    shiftsRepo.findById.mockResolvedValue(longLead);
+    const note = "Add a short note for your department's managers (10 characters or more).";
+    const asked = { code: 'REASON_REQUIRED', details: { minChars: 10 } };
+
+    at('12:45'); // Before the ring: early.
+    await expect(useCase.start(me('staff', Role.USER), { kind: 'LUNCH' })).rejects.toMatchObject({
+      ...asked,
+      message: `Your lunch break is due at 1:00 PM. ${note}`,
+      details: { timing: 'EARLY', minutesOff: 15 },
+    });
+    at('12:57'); // The ring is over and the due time still to come: judged late, as ever.
+    await expect(useCase.start(me('staff', Role.USER), { kind: 'LUNCH' })).rejects.toMatchObject({
+      ...asked,
+      message: `Your lunch break is due at 1:00 PM. ${note}`,
+      details: { timing: 'LATE', minutesOff: 1 },
+    });
+    at('13:00'); // From the due time on, it was due.
+    await expect(useCase.start(me('staff', Role.USER), { kind: 'LUNCH' })).rejects.toMatchObject({
+      ...asked,
+      message: `Your lunch break was due at 1:00 PM. ${note}`,
+      details: { timing: 'LATE' },
     });
   });
 
@@ -452,10 +484,12 @@ describe('MyBreaksUseCase', () => {
     records.startScheduled.mockResolvedValueOnce({ ok: false, reason: 'DAY_ENDED' });
     await expect(useCase.start(me('staff', Role.USER), { kind: 'MORNING' })).rejects.toMatchObject({
       code: 'DAY_ENDED',
+      message: 'Breaks start again with your next working day.',
     });
     records.startScheduled.mockResolvedValueOnce({ ok: false, reason: 'ALREADY_ON_BREAK' });
     await expect(useCase.start(me('staff', Role.USER), { kind: 'MORNING' })).rejects.toMatchObject({
       code: 'ALREADY_ON_BREAK',
+      message: "Tap Resume work first. You're already on break.",
     });
   });
 
@@ -584,6 +618,8 @@ describe('MyBreaksUseCase', () => {
         status: 422,
         code: 'REASON_REQUIRED',
         details: { minChars: 10, overrunSec: 600 },
+        message:
+          'Add a short note to count these 10 min (10 characters or more), or leave them out.',
       });
       expect(presence.endOpen).not.toHaveBeenCalled();
       expect(records.finishBreak).not.toHaveBeenCalled();
@@ -878,9 +914,9 @@ describe('MyBreaksUseCase', () => {
     });
 
     it.each([
-      ['NOT_ACTIVE', 'That break is not running.'],
-      ['NOT_PAUSABLE', 'A quick break cannot be paused. End it instead.'],
-      ['NOT_FOUND', 'Unknown break'],
+      ['NOT_ACTIVE', "That break isn't running. Refresh and try again."],
+      ['NOT_PAUSABLE', "End the quick break instead. A quick break can't be paused."],
+      ['NOT_FOUND', "We can't find that break. Refresh and try again."],
     ])('pause refused with %s', async (code, message) => {
       at('13:10');
       records.pause.mockResolvedValue({ ok: false, code });

@@ -1,4 +1,5 @@
 import {
+  alreadyStatus,
   daysOf,
   formatDays,
   FULL_MASK,
@@ -6,6 +7,7 @@ import {
   leadingQuarters,
   maskOf,
   PART_MASK,
+  STATUS_LABEL,
   trailingQuarters,
   unitsOfDays,
   unitsOfMask,
@@ -508,6 +510,21 @@ describe('parts of the day', () => {
   });
 });
 
+describe('a request no longer open, as the person reads it', () => {
+  it('C-943: a rejected request is "Not approved", as its notice says', () => {
+    expect(STATUS_LABEL.REJECTED).toBe('Not approved');
+  });
+
+  it.each([
+    ['REJECTED', 'This request was not approved.'],
+    ['APPROVED', 'This request is already approved.'],
+    ['CANCELLED', 'This request is already cancelled.'],
+    ['REVOKED', 'This request is already revoked.'],
+  ] as const)('C-800, C-944: %s', (status, sentence) => {
+    expect(`This request ${alreadyStatus(status)}.`).toBe(sentence);
+  });
+});
+
 describe('notice copy', () => {
   const request = {
     category: 'CLSL' as const,
@@ -540,7 +557,7 @@ describe('notice copy', () => {
       availableUnits: 44,
     });
     expect(no.title).toBe('Leave not approved: Mon 9 Nov');
-    expect(no.body).toContain('rejected by Bala K: Release week.');
+    expect(no.body).toContain('not approved by Bala K: Release week.');
     const adj = leaveAdjustedCopy({
       category: 'ELPL',
       year: 2026,

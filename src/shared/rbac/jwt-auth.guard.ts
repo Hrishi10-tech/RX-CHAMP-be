@@ -1,5 +1,6 @@
 import { ExecutionContext, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { API_COPY } from '../copy/api-copy';
 import { AppException, UnauthorizedError } from '../exceptions/app.exception';
 
 @Injectable()
@@ -9,10 +10,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // client's fault and must not read as "signed out": agents treat 401 as a
     // lost session and stop tracking. Report it as 503 so they retry instead.
     if (err && !(err instanceof AppException)) {
-      throw new ServiceUnavailableException('Service temporarily unavailable, please retry');
+      throw new ServiceUnavailableException(API_COPY.unavailable);
     }
     if (err || !user) {
-      throw err instanceof AppException ? err : new UnauthorizedError('Not signed in');
+      throw err instanceof AppException ? err : new UnauthorizedError();
     }
     return user;
   }

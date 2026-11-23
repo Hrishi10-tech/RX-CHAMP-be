@@ -63,8 +63,11 @@ export class CompaniesController {
     summary: '(3.x alias) Organisations with manager and people counts (Admin, Manager: their own)',
   })
   async list(@CurrentUser() me: AuthenticatedUser, @Query() query: ListCompaniesQueryDto) {
-    const onlyIds =
-      seesEveryOrg(me.role) ? (orgOf(me) ? [orgOf(me)!] : undefined) : [requireOrg(me)];
+    const onlyIds = seesEveryOrg(me.role)
+      ? orgOf(me)
+        ? [orgOf(me)!]
+        : undefined
+      : [requireOrg(me)];
     const { companies, total, page, limit } = await this.listCompanies.execute(query, onlyIds);
     const totalPages = Math.ceil(total / limit);
     return envelope(companies, { meta: { total, page, limit, totalPages } });
@@ -108,7 +111,7 @@ export class CompaniesController {
   @ApiOperation({ summary: '(removed in 4.0) answers 410 GONE' })
   managerUsers(): never {
     throw new GoneError(
-      "Reporting lines were replaced by departments in 4.0. Use GET /users?departmentId=... for a department's staff.",
+      'List the users of a department instead (departmentId). Departments replaced reporting lines in 4.0.',
     );
   }
 }

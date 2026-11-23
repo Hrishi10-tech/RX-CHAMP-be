@@ -49,7 +49,7 @@ export function decidedCopy(i: {
   if (!i.approved) {
     return {
       title: `Comp off not approved: ${day}`,
-      body: `${i.byName} rejected your comp off claim for ${day}. Note: ${sentence(i.note ?? '')}`,
+      body: `${i.byName} did not approve your comp off claim for ${day}. Note: ${sentence(i.note ?? '')}`,
     };
   }
   const less = i.units < i.askedUnits ? ` (you asked for ${formatDays(i.askedUnits)})` : '';
@@ -91,9 +91,9 @@ export function revokedCopy(i: {
 
 export function expiringCopy(i: { units: number; expiresOn: string; workedDate: string }): Copy {
   return {
-    title: `Comp off lapses on ${leaveDay(i.expiresOn)}`,
+    title: `Take your comp off by ${leaveDay(i.expiresOn)}`,
     body:
-      `${formatDays(i.units)} of comp off for ${leaveDay(i.workedDate)} is not taken yet and lapses after ` +
-      `${leaveDay(i.expiresOn)}. Apply for it in RX Vision, Leave.`,
+      `Apply for it in RX Vision, Leave. ${formatDays(i.units)} of comp off for ${leaveDay(i.workedDate)} ` +
+      `is not taken yet and lapses after ${leaveDay(i.expiresOn)}.`,
   };
 }

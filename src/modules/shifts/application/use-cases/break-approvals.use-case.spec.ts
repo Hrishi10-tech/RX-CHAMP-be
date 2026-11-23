@@ -365,7 +365,7 @@ describe('BreakApprovalsUseCase', () => {
     expect(res.approved).toEqual(['r-1']);
     expect(res.skipped).toEqual([
       { id: 'r-2', reason: 'Already approved.' },
-      { id: 'r-3', reason: 'Unknown break' },
+      { id: 'r-3', reason: "We can't find that break. Refresh and try again." },
     ]);
   });
 

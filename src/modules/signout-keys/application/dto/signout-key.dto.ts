@@ -15,7 +15,7 @@ const SCOPES = ['USERS', 'DEPARTMENTS', 'ORG'] as const;
 
 export class CreateSignOutKeyDto {
   @ApiProperty({ enum: SCOPES, description: 'Who the key lets sign out' })
-  @IsIn(SCOPES as unknown as string[], { message: 'scope must be USERS, DEPARTMENTS or ORG' })
+  @IsIn(SCOPES as unknown as string[], { message: 'Pick USERS, DEPARTMENTS or ORG for the scope.' })
   scope!: 'USERS' | 'DEPARTMENTS' | 'ORG';
 
   @ApiPropertyOptional({ type: [String], description: 'USERS: the people (1..500)' })

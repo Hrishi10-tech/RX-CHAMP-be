@@ -1,3 +1,4 @@
+import { API_COPY } from '@shared/copy/api-copy';
 import { addDaysToKey, isoWeekdayOfKey, isValidDateKey } from '@shared/utils/timezone';
 import { LeavePolicy } from './leave-policy';
 import {
@@ -115,14 +116,14 @@ export function checkRequest(
   }
 
   if (typeof input.startDate !== 'string' || !isValidDateKey(input.startDate)) {
-    return fail('startDate', 'VALIDATION_ERROR', 'The first day must be a real day (YYYY-MM-DD).');
+    return fail('startDate', 'VALIDATION_ERROR', API_COPY.pickFirstDay);
   }
   const startDate = input.startDate;
   let endDate = startDate;
   const end = input.endDate;
   if (end !== undefined && end !== null && end !== '') {
     if (typeof end !== 'string' || !isValidDateKey(end)) {
-      return fail('endDate', 'VALIDATION_ERROR', 'The last day must be a real day (YYYY-MM-DD).');
+      return fail('endDate', 'VALIDATION_ERROR', API_COPY.pickLastDay);
     }
     endDate = end;
   }
@@ -134,7 +135,7 @@ export function checkRequest(
     );
   }
   if (endDate < startDate) {
-    return fail('endDate', 'VALIDATION_ERROR', 'The last day is before the first day.');
+    return fail('endDate', 'VALIDATION_ERROR', API_COPY.pickLastDayAfterFirst);
   }
   if (spanDays(startDate, endDate) > MAX_RANGE_DAYS) {
     return fail(

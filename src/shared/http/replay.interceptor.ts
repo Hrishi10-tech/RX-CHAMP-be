@@ -163,12 +163,18 @@ export class ReplayInterceptor implements NestInterceptor {
     routePath: string,
   ): Promise<Begun> {
     if (!UUID.test(eventId)) {
-      throw new ValidationError('X-Client-Event-Id must be a UUID.', 'VALIDATION_ERROR');
+      throw new ValidationError(
+        'Send X-Client-Event-Id as a random id, such as 3f1c9a2e-1b7d-4c55-9e2a-6f0b8d4c7a11.',
+        'VALIDATION_ERROR',
+      );
     }
     const now = new Date();
     let eventAt = eventAtHeader ? new Date(eventAtHeader) : now;
     if (Number.isNaN(eventAt.getTime())) {
-      throw new UnprocessableError('X-Event-At must be an ISO 8601 time.', 'EVENT_TIME_INVALID');
+      throw new UnprocessableError(
+        'Send X-Event-At as a date and time, such as 2026-11-09T13:45:00+05:30.',
+        'EVENT_TIME_INVALID',
+      );
     }
 
     const existing = await this.prisma.agentEvent.findUnique({

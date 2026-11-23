@@ -10,6 +10,7 @@ import {
 import {
   BREAK_LABEL,
   BreakSlot,
+  RING_SOUND_ANSWER,
   ShiftBreakDef,
   ShiftRecord,
   breakAllowsSkip,
@@ -62,7 +63,7 @@ export class ShiftMapper {
       rules: {
         ringLeadMin: shift.ringLeadMin,
         ringDurationMin: shift.ringDurationMin,
-        ringSound: shift.ringSound,
+        ringSound: RING_SOUND_ANSWER,
         reasonOnEarly: shift.reasonOnEarly,
         reasonOnLate: shift.reasonOnLate,
         reasonMinChars: shift.reasonMinChars,

@@ -5,6 +5,7 @@ import { OnGatewayInit } from '@nestjs/websockets';
 import { Namespace, Socket } from 'socket.io';
 import { epochOf } from '@shared/security/token.service.port';
 import { SocketHandshakeAuth, SocketIdentity, SocketTokenClaims } from './socket.types';
+import { API_COPY } from '@shared/copy/api-copy';
 import { SocketAccessService, accountRoom } from './socket-access.service';
 import { LiveSection, membersRoom } from './socket-rooms';
 
@@ -55,7 +56,7 @@ export abstract class AuthenticatedGateway implements OnGatewayInit {
     const who = this.access.originAllowed(origin) ? this.authenticate(client) : null;
     const account = who ? await this.access.admit(who.userId, who.epoch) : null;
     if (!who || !account) {
-      client.emit('unauthorized', { message: 'Not signed in' });
+      client.emit('unauthorized', { message: API_COPY.signInAgain });
       client.disconnect(true);
       return null;
     }

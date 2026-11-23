@@ -1,3 +1,5 @@
+import { API_COPY } from '../copy/api-copy';
+
 export class AppException extends Error {
   /** Extra machine-readable context for clients (e.g. a required minimum length). */
   public details?: Record<string, unknown>;
@@ -25,13 +27,13 @@ export class ValidationError extends AppException {
 }
 
 export class UnauthorizedError extends AppException {
-  constructor(message = 'Not signed in', code = 'UNAUTHORIZED') {
+  constructor(message: string = API_COPY.signInAgain, code = 'UNAUTHORIZED') {
     super(401, code, message);
   }
 }
 
 export class InvalidCredentialsError extends AppException {
-  constructor(message = 'Invalid email or password') {
+  constructor(message: string = API_COPY.checkCredentials) {
     super(401, 'INVALID_CREDENTIALS', message);
   }
 }
@@ -49,7 +51,7 @@ export class AccountDisabledError extends AppException {
 }
 
 export class NotFoundError extends AppException {
-  constructor(message = 'Resource not found', code = 'NOT_FOUND') {
+  constructor(message: string = API_COPY.notFound, code = 'NOT_FOUND') {
     super(404, code, message);
   }
 }

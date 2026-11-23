@@ -6,6 +6,10 @@ import { RecordKind, RECORD_LABEL } from '@modules/shifts/domain/shift.types';
  * lines a manager reads (SPEC 3.4). Pure. Copy rules: plain English, no em dash,
  * no exclamation mark, negatives with a real minus sign, times as h:mm AM in the
  * business timezone (4.0).
+ *
+ * The person's own waiting list (GET /approvals/me) reads the same items in brief 1.5's words:
+ * `ownBreakTitle` and the `own` line of each break detail (C-938 to C-942). 4.0 already has every
+ * time on the 12 hour clock, for approvers too.
  */
 
 export type ApprovalCategory =
@@ -196,9 +200,13 @@ export interface BreakTextInput {
   overrunSec: number;
 }
 
+function breakLabel(r: BreakTextInput): string {
+  return r.kind ? RECORD_LABEL[r.kind] : r.presenceType === 'LUNCH' ? 'Lunch' : 'Break';
+}
+
 /** "Morning break skipped", "Back 15 min late from lunch", "Lunch break started 20 min late". */
 export function breakTitle(category: ApprovalCategory, r: BreakTextInput): string {
-  const label = r.kind ? RECORD_LABEL[r.kind] : r.presenceType === 'LUNCH' ? 'Lunch' : 'Break';
+  const label = breakLabel(r);
   switch (category) {
     case 'BREAK_SKIP':
       return `${label} skipped`;
@@ -217,28 +225,43 @@ export function breakTitle(category: ApprovalCategory, r: BreakTextInput): strin
   }
 }
 
-function windowText(r: BreakTextInput, tz: string): string {
-  return r.windowOpen && r.windowClose
-    ? ` · window ${hmInZone(r.windowOpen, tz)} to ${hmInZone(r.windowClose, tz)}`
-    : '';
+/** The same break as the person reads it on their own list. */
+export function ownBreakTitle(category: ApprovalCategory, r: BreakTextInput): string {
+  const label = breakLabel(r);
+  switch (category) {
+    case 'BREAK_AUTO_SKIP':
+      return `${label} skipped for you`;
+    case 'BREAK_OVERRUN':
+      return `${label} extended by ${wholeMinutes(r.overrunSec)} min`;
+    case 'BREAK_LATE':
+      return `${label} started ${r.minutesOff} min after its time`;
+    default:
+      return breakTitle(category, r);
+  }
 }
 
-/** One line: when and how long, e.g. "Skipped at 11:02 · window 10:30 to 12:00". */
+/**
+ * One line: when and how long, e.g. "Skipped at 11:02 AM · window 10:30 AM to 12:00 PM". `own`:
+ * the person's own list, "Skipped for you at ..." where an approver reads "Auto-skipped at ...".
+ */
 export function breakDetail(
   category: ApprovalCategory,
   r: BreakTextInput,
   tz: string,
   now: Date,
+  own = false,
 ): string {
   const at = (d: Date) => hmInZone(d, tz);
+  const windowText =
+    r.windowOpen && r.windowClose ? ` · window ${at(r.windowOpen)} to ${at(r.windowClose)}` : '';
   const tookMin = r.endedAt
     ? wholeMinutes((r.endedAt.getTime() - r.startedAt.getTime()) / 1000)
     : null;
   switch (category) {
     case 'BREAK_SKIP':
-      return `Skipped at ${at(r.startedAt)}${windowText(r, tz)}`;
+      return `Skipped at ${at(r.startedAt)}${windowText}`;
     case 'BREAK_AUTO_SKIP':
-      return `Auto-skipped at ${at(r.startedAt)}${windowText(r, tz)}`;
+      return `${own ? 'Skipped for you' : 'Auto-skipped'} at ${at(r.startedAt)}${windowText}`;
     case 'BREAK_OVERRUN': {
       const end = r.endedAt ?? now;
       const took = wholeMinutes((end.getTime() - r.startedAt.getTime()) / 1000);
@@ -264,17 +287,16 @@ export function meetingTitle(agenda: string): string {
   return `Meeting: ${a.length > 80 ? `${a.slice(0, 79)}…` : a}`;
 }
 
-/** "10:00 to 10:45 · 45 min · 3 people", or "Started 10:00 · in progress". */
+/** "10:00 AM to 10:45 AM · 45 min · 3 people", or "Started 10:00 AM · in progress". */
 export function meetingDetail(
   m: { startedAt: Date; endedAt: Date | null; durationSec: number; participants: number },
   tz: string,
 ): string {
+  const at = (d: Date) => hmInZone(d, tz);
   const people =
     m.participants > 0
       ? ` · ${m.participants === 1 ? '1 person' : `${m.participants} people`}`
       : '';
-  if (!m.endedAt) return `Started ${hmInZone(m.startedAt, tz)} · in progress${people}`;
-  return `${hmInZone(m.startedAt, tz)} to ${hmInZone(m.endedAt, tz)} · ${wholeMinutes(
-    m.durationSec,
-  )} min${people}`;
+  if (!m.endedAt) return `Started ${at(m.startedAt)} · in progress${people}`;
+  return `${at(m.startedAt)} to ${at(m.endedAt)} · ${wholeMinutes(m.durationSec)} min${people}`;
 }

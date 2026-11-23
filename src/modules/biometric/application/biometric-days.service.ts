@@ -22,6 +22,7 @@ import {
   BiometricRepository,
   PunchRecord,
 } from '../domain/biometric.repository';
+import { noCheckoutManagerCopy, noCheckoutSelfCopy } from '../domain/biometric-copy';
 import { DayPlan, planBiometricDay } from '../domain/punch';
 import { BiometricSettingsService } from './biometric-settings.service';
 
@@ -255,26 +256,28 @@ export class BiometricDaysService {
           appTimezone(),
         );
         const day = leaveDay(dayKey);
+        const self = noCheckoutSelfCopy({ day, at });
         await this.events.publish(
           NoticeEvent.eventName,
           new NoticeEvent(
             [person.id],
             BIOMETRIC_NOTICE.BIOMETRIC_NO_CHECKOUT,
-            `No check-out on ${day}`,
-            `No check-out was recorded on ${day}, so the day was closed at ${at}. If you left later, tell your manager so the missing punch can be added.`,
+            self.title,
+            self.body,
             null,
           ),
         );
         // 4.0: the managers of their department, else the organisation's admins.
         const to = (await this.overseersOf(person)).filter((id) => id !== person.id);
         if (to.length) {
+          const mgr = noCheckoutManagerCopy({ name, day, at });
           await this.events.publish(
             NoticeEvent.eventName,
             new NoticeEvent(
               to,
               BIOMETRIC_NOTICE.BIOMETRIC_NO_CHECKOUT,
-              `${name}: no check-out on ${day}`,
-              `${name} has no check-out on ${day}, so the day was closed at ${at}. The organisation admin can add the missing punch in Attendance.`,
+              mgr.title,
+              mgr.body,
               person.id,
             ),
           );

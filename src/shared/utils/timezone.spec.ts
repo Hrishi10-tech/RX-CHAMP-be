@@ -1,6 +1,7 @@
 import {
   addDaysToKey,
   appTimezone,
+  time12InZone,
   dateKeyInZone,
   hmInZone,
   hmToMinutes,
@@ -91,6 +92,16 @@ describe('timezone helpers', () => {
     it('wraps minutes into a day', () => {
       expect(minutesToHm(-20)).toBe('23:40');
       expect(minutesToHm(1440 + 75)).toBe('01:15');
+    });
+
+    it('text people read: 12 hour, no leading zero, in the zone asked for', () => {
+      // 08:15 UTC is 1:45 PM in India and 4:15 AM in New York that day.
+      expect(time12InZone(new Date('2026-10-13T08:15:00Z'), IST)).toBe('1:45 PM');
+      expect(time12InZone(new Date('2026-10-13T08:15:00Z'), NY)).toBe('4:15 AM');
+      expect(time12InZone(new Date('2026-10-13T18:35:00Z'), IST)).toBe('12:05 AM');
+      expect(time12InZone(new Date('2026-10-13T06:30:00Z'), IST)).toBe('12:00 PM');
+      expect(time12InZone(new Date('2026-10-13T04:00:00Z'), IST)).toBe('9:30 AM');
+      expect(time12InZone(new Date('2026-10-13T18:29:00Z'), IST)).toBe('11:59 PM');
     });
 
     it('validates real calendar days only', () => {

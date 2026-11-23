@@ -706,6 +706,54 @@ describe('ApprovalsService views and lists', () => {
     });
   });
 
+  it("GET /approvals/me reads in the person's words; an approver's list keeps its own", async () => {
+    const { svc, reader, breaks, meetings } = setup();
+    const overrun = skip({
+      id: 'b2',
+      kind: 'LUNCH',
+      presenceType: 'LUNCH',
+      outcome: 'TAKEN',
+      overrunAsked: true,
+      overrunSec: 15 * 60,
+      durationMin: 30,
+      startedAt: ist('13:05'),
+      endedAt: ist('13:50'),
+    });
+    const auto = skip({
+      id: 'b3',
+      outcome: 'AUTO_SKIPPED',
+      reason: null,
+      startedAt: ist('12:00'),
+      endedAt: ist('12:00'),
+    });
+    const refs = [
+      { type: 'BREAK' as const, id: 'b2' },
+      { type: 'BREAK' as const, id: 'b3' },
+      { type: 'MEETING' as const, id: 'm1' },
+    ];
+    reader.list.mockResolvedValue({ refs, total: 3 });
+    breaks.listByIds.mockResolvedValue([overrun, auto]);
+    meetings.listByIds.mockResolvedValue([meeting()]);
+
+    const { items: own } = await svc.mine(me('staff', Role.USER), 7, NOW);
+    expect(own.map((i) => [i.title, i.detail])).toEqual([
+      ['Lunch break extended by 15 min', '1:05 PM to 1:50 PM · 45 min of 30'],
+      [
+        'Morning break skipped for you',
+        'Skipped for you at 12:00 PM · window 10:30 AM to 12:00 PM',
+      ],
+      ['Meeting: Client call', '10:00 AM to 10:45 AM · 45 min · 1 person'],
+    ]);
+
+    // 4.0: approvers read every time on the 12 hour clock too.
+    const asApprover = await svc.views(MGR, refs, NOW);
+    expect(asApprover.map((i) => [i.title, i.detail])).toEqual([
+      ['Back 15 min late from lunch', '1:05 PM to 1:50 PM · 45 min of 30'],
+      ['Morning break auto-skipped', 'Auto-skipped at 12:00 PM · window 10:30 AM to 12:00 PM'],
+      ['Meeting: Client call', '10:00 AM to 10:45 AM · 45 min · 1 person'],
+    ]);
+  });
+
   it('a lock of another organisation does not lock this one', async () => {
     const { svc, reader, breaks } = setup();
     breaks.listByIds.mockResolvedValue([skip({ id: 'b-old', date: '2026-09-28' })]);

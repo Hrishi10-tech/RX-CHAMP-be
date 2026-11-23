@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   AppException,
   ConflictError,
@@ -32,6 +33,7 @@ import {
   LeaveTx,
 } from '../domain/leave.repository';
 import {
+  alreadyStatus,
   CATEGORY_LABEL,
   daysOf,
   formatDays,
@@ -486,7 +488,7 @@ export class LeaveRequestsService {
   /** POST /leave/requests/:id/cancel: the person takes back a pending request, or approved leave not yet begun. */
   async cancel(me: AuthenticatedUser, id: string, now: Date): Promise<LeaveRequestView> {
     const found = await this.repo.findRequest(id);
-    if (!found) throw new NotFoundError('Unknown leave request');
+    if (!found) throw new NotFoundError(API_COPY.leaveRequestNotFound);
     if (found.userId !== me.id) {
       throw new ForbiddenError(
         'You can cancel only your own leave. An approver can revoke approved leave.',
@@ -496,16 +498,10 @@ export class LeaveRequestsService {
     const { row, wasApproved } = await this.repo.inUserLock(found.userId, async (tx) => {
       const cur = (await tx.findRequest(id))!;
       if (cur.status !== 'PENDING' && cur.status !== 'APPROVED') {
-        throw new ConflictError(
-          `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'NOT_CANCELLABLE',
-        );
+        throw new ConflictError(`This request ${alreadyStatus(cur.status)}.`, 'NOT_CANCELLABLE');
       }
       if (cur.status === 'APPROVED' && cur.startDate < today) {
-        throw new ConflictError(
-          'This leave has already begun. Ask your approver to revoke it if it should not count.',
-          'LEAVE_STARTED',
-        );
+        throw new ConflictError(API_COPY.leaveStarted, 'LEAVE_STARTED');
       }
       for (const month of monthsOf(cur.days, cur.startDate))
         await tx.assertMonthOpen(`${month}-01`, cur.userId);
@@ -531,12 +527,12 @@ export class LeaveRequestsService {
     id: string,
   ): Promise<{ req: LeaveRequestRecord; target: ShiftPerson }> {
     const req = await this.repo.findRequest(id);
-    if (!req) throw new NotFoundError('Unknown leave request');
+    if (!req) throw new NotFoundError(API_COPY.leaveRequestNotFound);
     const target = (await this.people.any([req.userId])).get(req.userId);
     if (!target) throw new NotFoundError('Unknown person');
     if (req.userId === me.id) throw new ForbiddenError('You cannot decide your own leave.');
     // 4.0: outside the caller's organisation or departments it does not exist for them.
-    if (!this.people.canSee(me, target)) throw new NotFoundError('Unknown leave request');
+    if (!this.people.canSee(me, target)) throw new NotFoundError(API_COPY.leaveRequestNotFound);
     if (!canDecide(deciderOf(me), req, target)) {
       throw new ForbiddenError(
         me.role === Role.MANAGER
@@ -564,10 +560,7 @@ export class LeaveRequestsService {
     const outcome = await this.repo.inUserLock(target.id, async (tx) => {
       const cur = (await tx.findRequest(id))!;
       if (cur.status !== 'PENDING') {
-        throw new ConflictError(
-          `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
-          'ALREADY_DECIDED',
-        );
+        throw new ConflictError(`This request ${alreadyStatus(cur.status)}.`, 'ALREADY_DECIDED');
       }
       for (const month of monthsOf(cur.days, cur.startDate))
         await tx.assertMonthOpen(`${month}-01`, cur.userId);
@@ -703,7 +696,7 @@ export class LeaveRequestsService {
         throw new ConflictError(
           cur.status === 'PENDING'
             ? 'This request is still waiting: reject it instead.'
-            : `This request is already ${STATUS_LABEL[cur.status].toLowerCase()}.`,
+            : `This request ${alreadyStatus(cur.status)}.`,
           'NOT_APPROVED',
         );
       }
@@ -736,7 +729,7 @@ export class LeaveRequestsService {
   /** GET /leave/requests/:id: the person's own, or one in the caller's scope. */
   async get(me: AuthenticatedUser, id: string, now: Date): Promise<LeaveRequestView> {
     const row = await this.repo.findRequest(id);
-    if (!row) throw new NotFoundError('Unknown leave request');
+    if (!row) throw new NotFoundError(API_COPY.leaveRequestNotFound);
     if (row.userId !== me.id) await this.people.visible(me, row.userId);
     return (await this.views(me, [row], now))[0];
   }

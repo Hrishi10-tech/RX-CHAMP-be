@@ -188,7 +188,7 @@ export class SignOutKeysService {
         if (userIds.length || departmentIds.length) throw this.mixed();
         break;
       default:
-        throw new ValidationError('scope must be USERS, DEPARTMENTS or ORG.').withDetails({
+        throw new ValidationError('Pick USERS, DEPARTMENTS or ORG for the scope.').withDetails({
           field: 'scope',
         });
     }
@@ -256,7 +256,7 @@ export class SignOutKeysService {
 
   private mixed(): ValidationError {
     return new ValidationError(
-      'Give people for a USERS key, departments for a DEPARTMENTS key, and neither for an ORG key.',
+      'Pick people for a USERS key, departments for a DEPARTMENTS key, and neither for an ORG key.',
     );
   }
 

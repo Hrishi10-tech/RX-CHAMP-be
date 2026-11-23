@@ -1,4 +1,6 @@
 import { Prisma } from '@prisma/client';
+import { API_COPY } from '@shared/copy/api-copy';
+import { monthName } from '@shared/copy/fills';
 import { ConflictError } from '@shared/exceptions/app.exception';
 
 /**
@@ -23,10 +25,9 @@ export function monthOf(dateKey: string): string {
 }
 
 export function monthLockedError(month: string): ConflictError {
-  return new ConflictError(
-    `${month} is locked for payroll. The organisation admin must unlock it before anything in it changes.`,
-    'MONTH_LOCKED',
-  ).withDetails({ month });
+  return new ConflictError(API_COPY.monthLocked(monthName(month)), 'MONTH_LOCKED').withDetails({
+    month,
+  });
 }
 
 /** The organisation a person belongs to, read inside the transaction. */

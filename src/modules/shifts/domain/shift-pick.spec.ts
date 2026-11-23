@@ -20,7 +20,6 @@ function shift(
     workDays,
     ringLeadMin: 1,
     ringDurationMin: 5,
-    ringSound: true,
     reasonOnEarly: true,
     reasonOnLate: true,
     reasonMinChars: 10,

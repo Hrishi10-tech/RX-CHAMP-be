@@ -5,6 +5,8 @@ import { MeetingRecordRow, MIN_LIVE_MEETING_SEC } from './meeting-record.reposit
  * Meeting and Start Day rules (SPEC 1.6, 3.1), as pure functions.
  */
 
+export const AGENDA_MAX = 300;
+
 export type PastMeetingCode =
   | 'MEETING_OUTSIDE_DAY'
   | 'MEETING_IN_FUTURE'

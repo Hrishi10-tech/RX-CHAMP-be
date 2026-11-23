@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import {
   ConflictError,
   NotFoundError,
@@ -27,14 +28,12 @@ import {
   MeetingRecordRow,
 } from '../domain/meeting-record.repository';
 import { STATUS_MEETING_LABEL, statusCutoff, StatusStartSource } from '../domain/meeting-status';
-import { cleanParticipants, cleanText } from '../domain/meetings';
+import { AGENDA_MAX, cleanParticipants, cleanText } from '../domain/meetings';
 import { meetingRequestedCopy, NOTICE } from '../domain/notice-copy';
 import { WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
 import { LogPastMeetingDto, StartMeetingDto } from './dto/meetings.dto';
 import { dayClosedError, WorkSessionsService } from './work-sessions.service';
 import { CurrentPresenceLite, MeetingRecordView } from './worktime.types';
-
-export const AGENDA_MAX = 300;
 
 /** A meeting record as clients see it (SPEC 3.3). */
 export function meetingView(
@@ -75,12 +74,9 @@ function statusStartRefused(
 ): ConflictError {
   switch (code) {
     case 'ON_BREAK':
-      return new ConflictError(
-        "You're on a break. Resume work before starting a meeting.",
-        'ON_BREAK',
-      );
+      return new ConflictError(API_COPY.resumeBeforeMeeting, 'ON_BREAK');
     case 'MEETING_IN_PROGRESS':
-      return new ConflictError("You're already in a meeting.", 'MEETING_IN_PROGRESS');
+      return new ConflictError(API_COPY.endMeetingFirst, 'MEETING_IN_PROGRESS');
     default:
       return dayClosedError(code);
   }
@@ -110,7 +106,7 @@ export class MeetingsService {
 
   private async person(id: string): Promise<ShiftPerson> {
     const p = await this.people.findById(id);
-    if (!p) throw new NotFoundError('User not found');
+    if (!p) throw new NotFoundError(API_COPY.profileNotFound);
     return p;
   }
 
@@ -135,10 +131,11 @@ export class MeetingsService {
     }
     const agenda = cleanText(dto.agenda);
     if (!agenda || agenda.length > AGENDA_MAX) {
-      throw new ValidationError(
-        `Give the meeting an agenda (1 to ${AGENDA_MAX} characters).`,
-        'VALIDATION_ERROR',
-      ).withDetails({ field: 'agenda' });
+      throw new ValidationError(API_COPY.meetingAgenda(AGENDA_MAX), 'VALIDATION_ERROR').withDetails(
+        {
+          field: 'agenda',
+        },
+      );
     }
     const ids = (dto.participants ?? []).map((p) => p.id).filter((x): x is string => !!x);
     const known = ids.length
@@ -176,15 +173,9 @@ export class MeetingsService {
     if (!result.ok) {
       switch (result.code) {
         case 'ON_BREAK':
-          throw new ConflictError(
-            "You're on a break. End it before starting a meeting.",
-            'ON_BREAK',
-          );
+          throw new ConflictError(API_COPY.resumeBeforeMeeting, 'ON_BREAK');
         case 'MEETING_IN_PROGRESS':
-          throw new ConflictError(
-            "You're already in a meeting. End it before starting another.",
-            'MEETING_IN_PROGRESS',
-          );
+          throw new ConflictError(API_COPY.endMeetingFirst, 'MEETING_IN_PROGRESS');
         default:
           throw dayClosedError(result.code);
       }
@@ -224,9 +215,9 @@ export class MeetingsService {
   ): Promise<{ meeting: MeetingRecordView | null; discarded: boolean }> {
     const found = await this.meetings.findById(id);
     // Someone else's meeting reads as unknown, so ids cannot be probed (4.0 audit L2).
-    if (!found || found.userId !== me.id) throw new NotFoundError('Unknown meeting');
+    if (!found || found.userId !== me.id) throw new NotFoundError(API_COPY.meetingNotFound);
     const result = await this.meetings.endLive(id, me.id, now);
-    if (!result) throw new NotFoundError('Unknown meeting');
+    if (!result) throw new NotFoundError(API_COPY.meetingNotFound);
     if (result.kind === 'UNCHANGED')
       return { meeting: meetingView(result.record, now), discarded: false };
     void this.presence.broadcast(me.id, null, now);
@@ -342,10 +333,7 @@ export class MeetingsService {
     const { agenda, participants, momSender } = await this.details(me, dto, !!opts.agent40);
     const startedAt = new Date(dto.startedAt);
     if (Number.isNaN(startedAt.getTime())) {
-      throw new ValidationError(
-        'startedAt must be an ISO-8601 instant.',
-        'VALIDATION_ERROR',
-      ).withDetails({
+      throw new ValidationError(API_COPY.pickMeetingStart, 'VALIDATION_ERROR').withDetails({
         field: 'startedAt',
       });
     }
@@ -370,10 +358,10 @@ export class MeetingsService {
       if ('code' in result) throw dayClosedError(result.code);
       const c = result.conflict;
       const message = {
-        MEETING_IN_FUTURE: 'That meeting ends after now. Log only meetings that have happened.',
-        MEETING_OUTSIDE_DAY: "That meeting is not inside today's working time (Start Day to now).",
-        MEETING_OVERLAPS_BREAK: 'That meeting overlaps a break or lunch.',
-        MEETING_OVERLAPS_MEETING: 'That meeting overlaps another meeting.',
+        MEETING_IN_FUTURE: API_COPY.meetingInFuture,
+        MEETING_OUTSIDE_DAY: API_COPY.meetingOutsideDay,
+        MEETING_OVERLAPS_BREAK: API_COPY.meetingOverlapsBreak,
+        MEETING_OVERLAPS_MEETING: API_COPY.meetingOverlapsMeeting,
       }[c.code];
       const err = new UnprocessableError(message, c.code);
       throw c.with ? err.withDetails({ with: c.with }) : err;

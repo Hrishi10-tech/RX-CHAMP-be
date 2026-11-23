@@ -2,7 +2,8 @@
  * Reason presets (3.2): the quick answers offered next to every comment box, one
  * list per kind of comment, edited by a Super Admin. Picking a preset fills the box;
  * the person can still type their own words. Stored as one JSON value
- * (app_settings key `reasonPresets`); a kind never saved shows its defaults.
+ * (app_settings key `reasonPresets`) holding only the lists someone saved: every other
+ * kind shows its defaults, whatever they are by then.
  */
 
 export const REASON_PRESETS_KEY = 'reasonPresets';
@@ -68,17 +69,12 @@ export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
   BREAK_EARLY: ['A client call starts soon', 'A meeting starts soon', 'Finished my task early'],
   BREAK_LATE: ['On a client call', 'In a meeting', 'Finishing an urgent task'],
   BREAK_SKIP: ['Client call', 'Deadline', 'Not needed today', 'Already rested'],
-  SKIP_COMMENT: ['On a client call', 'In a meeting', 'Deadline', 'Forgot to take it'],
-  BREAK_OVERRUN: [
-    'A call ran over',
-    'Queue at the canteen',
-    'Helped a colleague',
-    'Lost track of time',
-  ],
+  SKIP_COMMENT: ['On a client call', 'In a meeting', 'Deadline', 'Busy at the time'],
+  BREAK_OVERRUN: ['A call ran over', 'Queue at the canteen', 'Helped a colleague', 'Time ran on'],
   MEETING_AGENDA: ['Client call', 'Team stand-up', 'Review meeting', 'Training'],
   DECISION_NOTE: [
     'Approved, thanks for the note',
-    'Please take breaks on time',
+    "Thanks. Let's keep breaks to their times.",
     'Let us talk about this',
   ],
   LEAVE_REASON: [
@@ -99,6 +95,27 @@ export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
   COMPOFF_REASON: ['Release or deployment', 'Client visit', 'Audit', 'Urgent support', 'Event'],
 };
 
+/**
+ * Default lists of 3.2 to 3.5 that brief 1.5 retired (C-753, C-754, C-756). Saving one list used
+ * to store a copy of all of them, so a stored list exactly like one of these was never chosen by
+ * anyone: it reads as not saved and shows today's defaults. A list someone changed stays theirs.
+ * Nothing rewrites the stored row.
+ */
+const RETIRED_DEFAULTS: Partial<Record<PresetKind, string[]>> = {
+  SKIP_COMMENT: ['On a client call', 'In a meeting', 'Deadline', 'Forgot to take it'],
+  BREAK_OVERRUN: [
+    'A call ran over',
+    'Queue at the canteen',
+    'Helped a colleague',
+    'Lost track of time',
+  ],
+  DECISION_NOTE: [
+    'Approved, thanks for the note',
+    'Please take breaks on time',
+    'Let us talk about this',
+  ],
+};
+
 export const PRESETS_PER_KIND_MAX = 12;
 export const PRESET_TEXT_MAX = 80;
 
@@ -116,15 +133,25 @@ function cleanList(list: unknown): string[] | null {
   return out;
 }
 
+function isRetiredDefault(kind: PresetKind, list: string[]): boolean {
+  const retired = RETIRED_DEFAULTS[kind];
+  return !!retired && retired.length === list.length && retired.every((t, i) => t === list[i]);
+}
+
+function storedObject(stored: unknown): Record<string, unknown> {
+  return stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {};
+}
+
 /** The stored value with defaults filled in (anything malformed falls back). */
 export function presetsFromStored(stored: unknown): ReasonPresets {
-  const src = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {};
+  const src = storedObject(stored);
   const out = {} as ReasonPresets;
   for (const kind of PRESET_KINDS) {
     const list = cleanList(src[kind]);
-    out[kind] = list
-      ? list.slice(0, PRESETS_PER_KIND_MAX).map((t) => t.slice(0, PRESET_TEXT_MAX))
-      : [...DEFAULT_REASON_PRESETS[kind]];
+    out[kind] =
+      list && !isRetiredDefault(kind, list)
+        ? list.slice(0, PRESETS_PER_KIND_MAX).map((t) => t.slice(0, PRESET_TEXT_MAX))
+        : [...DEFAULT_REASON_PRESETS[kind]];
   }
   return out;
 }
@@ -184,6 +211,25 @@ export function applyPresetsPatch(
     changed.push(kind);
   }
   return { ok: true, value: next, changed };
+}
+
+/**
+ * The row to store after a patch applied to `value`: what was stored, with the patched kinds
+ * replaced. A list sent back to its defaults (null) leaves the row, so it follows them from then
+ * on, and a list nobody touched never enters it.
+ */
+export function storedAfterPatch(
+  stored: unknown,
+  patch: Record<string, unknown>,
+  value: ReasonPresets,
+  changed: PresetKind[],
+): Record<string, unknown> {
+  const next = { ...storedObject(stored) };
+  for (const kind of changed) {
+    if (patch[kind] === null) delete next[kind];
+    else next[kind] = value[kind];
+  }
+  return next;
 }
 
 /** A text as presets are compared: trimmed, single spaces, case ignored. */

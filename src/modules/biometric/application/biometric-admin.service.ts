@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { monthLockedError } from '@shared/database/month-lock';
 import {
   ConflictError,
   ForbiddenError,
@@ -477,10 +478,7 @@ export class BiometricAdminService {
       now,
     );
     if ((await this.repo.lockedMonths(companyId, [owned.dayKey.slice(0, 7)])).size) {
-      throw new ConflictError(
-        `${owned.dayKey.slice(0, 7)} is locked for payroll. Unlock the month first.`,
-        'MONTH_LOCKED',
-      ).withDetails({ month: owned.dayKey.slice(0, 7) });
+      throw monthLockedError(owned.dayKey.slice(0, 7));
     }
     const result = await this.ingest.ingest(
       companyId,
@@ -528,10 +526,7 @@ export class BiometricAdminService {
     if (p.voidedAt) throw new ConflictError('This punch is already voided.', 'ALREADY_VOIDED');
     const text = note(reason, 'reason', 'the reason for voiding it');
     if (p.userId && (await this.repo.lockedMonths(companyId, [p.dayKey.slice(0, 7)])).size) {
-      throw new ConflictError(
-        `${p.dayKey.slice(0, 7)} is locked for payroll. Unlock the month first.`,
-        'MONTH_LOCKED',
-      ).withDetails({ month: p.dayKey.slice(0, 7) });
+      throw monthLockedError(p.dayKey.slice(0, 7));
     }
     const saved = await this.repo.voidPunch(id, me.id, text, now);
     if (saved.userId) await this.days.rebuild(saved.userId, [saved.dayKey], now);

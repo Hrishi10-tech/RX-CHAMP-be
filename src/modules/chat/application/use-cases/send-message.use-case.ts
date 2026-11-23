@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { ForbiddenError } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -27,9 +28,7 @@ export class SendMessageUseCase {
     // Only your contacts (see the contacts reader, 4.0 rules). Without this, any
     // account could message any user id and raise a notification there.
     if (!(await this.contacts.canMessage(me, dto.toUserId))) {
-      throw new ForbiddenError(
-        'You can only message your own team, their managers and your organisation admin.',
-      );
+      throw new ForbiddenError(API_COPY.chatContacts);
     }
 
     const saved = await this.repo.create({

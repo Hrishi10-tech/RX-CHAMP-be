@@ -11,6 +11,7 @@ import {
   REASON_PRESETS_KEY,
   ReasonPresets,
   reasonAccepted,
+  storedAfterPatch,
 } from '../domain/reason-presets';
 import { SETTINGS_STORE, SettingsStore } from '../domain/settings.store';
 
@@ -66,14 +67,18 @@ export class ReasonPresetsService {
 
   /** Each kind given replaces its list (null: back to the defaults). */
   async update(patch: Record<string, unknown>, updatedById: string): Promise<ReasonPresetsView> {
-    const current = presetsFromStored(await this.store.read(REASON_PRESETS_KEY));
-    const result = applyPresetsPatch(current, patch);
+    const stored = await this.store.read(REASON_PRESETS_KEY);
+    const result = applyPresetsPatch(presetsFromStored(stored), patch);
     if (!result.ok) {
       throw new ValidationError(result.message, 'VALIDATION_ERROR').withDetails({
         field: result.field,
       });
     }
-    await this.store.write(REASON_PRESETS_KEY, result.value, updatedById);
+    await this.store.write(
+      REASON_PRESETS_KEY,
+      storedAfterPatch(stored, patch, result.value, result.changed),
+      updatedById,
+    );
     this.cached = { value: result.value, at: Date.now() };
     if (result.changed.length) {
       this.logger.log(`reason presets changed by ${updatedById}: ${result.changed.join(', ')}`);

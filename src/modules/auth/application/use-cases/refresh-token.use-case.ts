@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { API_COPY } from '@shared/copy/api-copy';
 import { UnauthorizedError } from '@shared/exceptions/app.exception';
 import { TOKEN_SERVICE, TokenService } from '@shared/security/token.service.port';
 import { AUTH_USER_READER, AuthUserReader } from '../../domain/auth-user-reader.port';
@@ -18,14 +19,14 @@ export class RefreshTokenUseCase {
   ) {}
 
   async execute(rawRefreshToken: string | undefined, meta: RefreshTokenMeta): Promise<AuthTokens> {
-    if (!rawRefreshToken) throw new UnauthorizedError('Missing refresh token');
+    if (!rawRefreshToken) throw new UnauthorizedError();
 
     const rotated = await this.refreshTokens.rotate(rawRefreshToken, meta);
-    if (!rotated) throw new UnauthorizedError('Invalid or expired refresh token');
+    if (!rotated) throw new UnauthorizedError();
 
     const user = await this.users.loadById(rotated.userId);
     if (!user || user.status !== 'ACTIVE') {
-      throw new UnauthorizedError('Account is no longer active');
+      throw new UnauthorizedError(API_COPY.accountOff);
     }
 
     const accessToken = await this.tokens.signAccessToken({

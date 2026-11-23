@@ -34,7 +34,7 @@ export class AgentActivatedSubscriber implements OnModuleInit {
         userId,
         type: 'AGENT_ACTIVATED',
         title: `${event.userName} activated RX Vision`,
-        body: 'Their device is now set up — attendance, activity and screen monitoring are active.',
+        body: 'Their device is now set up: attendance, activity and screen monitoring are active.',
         fromUserId: event.userId,
       });
       this.gateway.emitToUser(userId, NotificationMapper.toView(saved));

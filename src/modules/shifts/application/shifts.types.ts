@@ -30,6 +30,9 @@ export interface ShiftBreakView {
   ringEnd: string;
 }
 
+/** A shift's rules as clients read them (see RING_SOUND_ANSWER). */
+export type ShiftRulesView = ShiftRules & { ringSound: false };
+
 export interface ShiftView {
   id: string;
   companyId: string | null;
@@ -40,7 +43,7 @@ export interface ShiftView {
   overnight: boolean;
   workDays: number[];
   isDefault: boolean;
-  rules: ShiftRules;
+  rules: ShiftRulesView;
   breaks: ShiftBreakView[];
   usage: {
     /** Active people this shift applies to today. */
@@ -228,7 +231,7 @@ export interface MyBreakDayView {
   dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null; worked: boolean } | null;
   /** The person pressed End Day: no break can start until tomorrow. */
   dayEnded: boolean;
-  shift: (ShiftRef & { rules: ShiftRules }) | null;
+  shift: (ShiftRef & { rules: ShiftRulesView }) | null;
   source: ShiftSource;
   breaks: BreakSlotView[];
   /** Breaks that matched no slot (started by older agents). */

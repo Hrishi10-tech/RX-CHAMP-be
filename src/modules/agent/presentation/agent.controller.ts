@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import archiver from 'archiver';
 import { randomBytes } from 'crypto';
+import { API_COPY } from '@shared/copy/api-copy';
 import { JwtAuthGuard } from '@shared/rbac/jwt-auth.guard';
 import { CurrentUser } from '@shared/rbac/current-user.decorator';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -176,7 +177,7 @@ export class AgentController {
     const info = await this.storeFor(platform).info();
     if (!info.available) {
       throw new NotFoundException(
-        `The ${isMacPlatform(platform) ? 'macOS' : 'Windows'} agent is not available on the server yet.`,
+        API_COPY.agentNotOnServer(isMacPlatform(platform) ? 'macOS' : 'Windows'),
       );
     }
     if (userId) await this.buildConfig(me, userId);
@@ -237,7 +238,7 @@ export class AgentController {
     const info = await store.info();
     if (!info.available) {
       throw new NotFoundException(
-        `The ${isMacPlatform(platform) ? 'macOS' : 'Windows'} agent is not available on the server yet.`,
+        API_COPY.agentNotOnServer(isMacPlatform(platform) ? 'macOS' : 'Windows'),
       );
     }
 

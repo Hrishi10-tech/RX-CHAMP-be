@@ -5,6 +5,7 @@ import {
   UnprocessableError,
   ValidationError,
 } from '@shared/exceptions/app.exception';
+import { API_COPY } from '@shared/copy/api-copy';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -90,7 +91,7 @@ export class AwayService {
   /** The open working day and a start bounded by it (and not in the future). */
   private async bounds(userId: string, startedAt: Date, now: Date, reasonKey?: string) {
     if (Number.isNaN(startedAt.getTime())) {
-      throw new ValidationError('startedAt must be an ISO-8601 instant.').withDetails({
+      throw new ValidationError(API_COPY.pickMeetingStart).withDetails({
         field: 'startedAt',
       });
     }

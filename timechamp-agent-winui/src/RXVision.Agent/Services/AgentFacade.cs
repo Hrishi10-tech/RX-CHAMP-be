@@ -91,6 +91,7 @@ public sealed class AgentFacade : IAgent, IDisposable
     public int ChatUnread => _host.ChatUnread;
     public BreakPanel BreakPanel => _host.BreakPanel;
     public DateTimeOffset Now => _host.Clock.UtcNow;
+    public IClock Clock => _host.Clock.Local;
     public UpdateOffer? PendingUpdate => _host.PendingUpdate;
     public int PendingSamples => _host.PendingSamples;
     public DateTimeOffset LastSampleSent => _host.LastSampleSent;
@@ -195,7 +196,6 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<KeyOutcome> QuitCheckAsync(string key) => Task.Run(() => _host.QuitCheckAsync(key));
     public Task<bool> ContinueShiftAsync() => Task.Run(_host.ContinueShiftAsync);
     public void DeclineShift() => _host.DeclineShift();
-    public void AcknowledgeRing() => _host.AcknowledgeRing();
     public void Shutdown() => _host.Shutdown();
 
     public void Dispose() => _host.Dispose();

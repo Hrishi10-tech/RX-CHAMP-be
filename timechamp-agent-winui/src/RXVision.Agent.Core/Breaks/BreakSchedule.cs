@@ -96,7 +96,7 @@ public sealed record ActiveBreakView(
     /// <summary>When this stretch began (after a resume, later than <see cref="StartedAt"/>).</summary>
     DateTimeOffset? SegmentStartedAt = null);
 
-public sealed record RingView(string Kind, string Label, DateTimeOffset RingEnd, bool Sound);
+public sealed record RingView(string Kind, string Label, DateTimeOffset RingEnd);
 
 public sealed record BreakPanel(
     bool Scheduled,
@@ -246,7 +246,7 @@ public static class BreakSchedule
         {
             // Not for a break End Day just skipped (the person was asked about it there).
             var ringing = slots.FirstOrDefault(s => s.State == SlotState.Due && s.PendingAutoSkip is null);
-            if (ringing is not null) ring = new RingView(ringing.Kind, ringing.Label, ringing.RingEnd, rules.RingSound);
+            if (ringing is not null) ring = new RingView(ringing.Kind, ringing.Label, ringing.RingEnd);
         }
 
         SlotView? Tile(Func<SlotView, bool> match)

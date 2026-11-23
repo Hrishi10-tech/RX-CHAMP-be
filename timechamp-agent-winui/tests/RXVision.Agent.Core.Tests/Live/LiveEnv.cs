@@ -387,7 +387,6 @@ public sealed class NoCapturePlatform : RXVision.Agent.Core.Platform.IPlatform, 
     public RXVision.Agent.Core.Platform.ISecretStore Secrets => _dev.Secrets;
     public RXVision.Agent.Core.Platform.IAutostart Autostart => _dev.Autostart;
     public RXVision.Agent.Core.Platform.IPermissions Permissions => _dev.Permissions;
-    public RXVision.Agent.Core.Platform.ISoundPlayer Sound => _dev.Sound;
     public RXVision.Agent.Core.Platform.IScreenInfo ScreenInfo => _dev.ScreenInfo;
     public RXVision.Agent.Core.Platform.IUpdateInstaller Updater => _dev.Updater;
     public RXVision.Agent.Core.Platform.IShell Shell => _dev.Shell;

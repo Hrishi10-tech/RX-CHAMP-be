@@ -177,7 +177,6 @@ public sealed class ShiftRules
 {
     public int RingLeadMin { get; set; } = 1;
     public int RingDurationMin { get; set; } = 5;
-    public bool RingSound { get; set; } = true;
     public bool ReasonOnEarly { get; set; } = true;
     public bool ReasonOnLate { get; set; } = true;
     public int ReasonMinChars { get; set; } = 10;

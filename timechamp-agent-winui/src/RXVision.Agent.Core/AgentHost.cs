@@ -147,8 +147,6 @@ public sealed class AgentHost : IDisposable
     private readonly SemaphoreSlim _dayGate = new(1, 1);
     private CancellationTokenSource _lifetime = new();
     private string? _ringKey;
-    private DateTimeOffset _lastChime = DateTimeOffset.MinValue;
-    private readonly HashSet<string> _acknowledgedRings = new();
     // The business date the minute timer last saw (core review C-R07: business midnight, not the PC's).
     private string _localDate = "";
 
@@ -3124,7 +3122,7 @@ public sealed class AgentHost : IDisposable
         }), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>Raises RingChanged on transitions and plays the chime while ringing (until acknowledged).</summary>
+    /// <summary>Raises RingChanged on transitions. No sound (3.6): the icon's badge and the break card say it.</summary>
     private readonly object _ringGate = new();
 
     private void CheckRing()
@@ -3145,15 +3143,7 @@ public sealed class AgentHost : IDisposable
         {
             _ringKey = key;
             Ring = ring;
-            _lastChime = DateTimeOffset.MinValue;
             RingChanged?.Invoke(ring);
-        }
-        bool chime;
-        lock (_acknowledgedRings) chime = ring is { Sound: true } && !_acknowledgedRings.Contains(key!);
-        if (chime && DateTimeOffset.UtcNow - _lastChime >= TimeSpan.FromSeconds(20))
-        {
-            _lastChime = DateTimeOffset.UtcNow;
-            try { _platform.Sound.PlayChime(); } catch { }
         }
         WatchClosedWindows(panel, now);
     }
@@ -3177,14 +3167,6 @@ public sealed class AgentHost : IDisposable
             _closedWindows[key] = (seen.Attempts + 1, now);
             _ = SafeAsync("breaks", FetchBreaksAsync);
         }
-    }
-
-    /// <summary>The person opened the agent while it rang: stop the sound (the ring stays visible).</summary>
-    public void AcknowledgeRing()
-    {
-        if (Ring is not { } r) return;
-        var date = _day.View.Breaks?.Date ?? "";
-        lock (_acknowledgedRings) _acknowledgedRings.Add($"{date}|{r.Kind}");
     }
 
     // ---- Sign-out and quit (4.0: an admin's key) ----------------------------------------
@@ -3382,7 +3364,6 @@ public sealed class AgentHost : IDisposable
         SetNoticePending(false);
         StopStoreRetry();
         lock (_ringGate) _closedWindows.Clear();
-        lock (_acknowledgedRings) _acknowledgedRings.Clear();
         lock (_toldScopes) _toldScopes.Clear();
         _heldEndDay = null;
         if (Ring is not null)

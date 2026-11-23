@@ -2,7 +2,7 @@
 
   <!-- macOS implementations of the platform seam (IPlatform): idle, lock, sleep,
        front app and window title, browser URL, screen capture, Keychain secrets,
-       LaunchAgent start-at-login, permissions (Screen Recording), chime,
+       LaunchAgent start-at-login, permissions (Screen Recording),
        self-update. Plain net8.0 so it builds on any OS; OS calls only run on macOS
        and are marked [SupportedOSPlatform("macos")]. -->
   <PropertyGroup>

@@ -35,7 +35,6 @@ public sealed class E2EPlatform : IPlatform, IScreenCapture
     ISecretStore IPlatform.Secrets => Secrets;
     public IAutostart Autostart => Dev.Autostart;
     public IPermissions Permissions => Dev.Permissions;
-    public ISoundPlayer Sound => Dev.Sound;
     public IScreenInfo ScreenInfo => Dev.ScreenInfo;
     public IUpdateInstaller Updater => Dev.Updater;
     public IShell Shell => Dev.Shell;

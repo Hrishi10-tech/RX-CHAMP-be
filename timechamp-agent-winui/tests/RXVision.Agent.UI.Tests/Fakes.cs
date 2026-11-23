@@ -323,6 +323,9 @@ public sealed class FakeAgent : IAgent
     public BreakDay? Day { get; set; } = Days.General();
     public BreakPanel BreakPanel => BreakSchedule.Compute(Day, Now);
     public DateTimeOffset Now { get; set; }
+    /// <summary>The one clock: tests move it through <see cref="ManualClock"/>; <see cref="Now"/> stays what they set.</summary>
+    public Core.Util.ManualClock ManualClock { get; } = new(Ist.At("00:00"));
+    public Core.Util.IClock Clock => ManualClock;
     public UpdateOffer? PendingUpdate { get; set; }
     public int PendingSamples { get; set; }
     public DateTimeOffset LastSampleSent { get; set; } = Ist.At("10:44");
@@ -375,7 +378,6 @@ public sealed class FakeAgent : IAgent
         new() { Id = "u-1", Name = "Asha Kumar", Department = "Engineering" },
     };
     public int WorkdayRefreshes { get; private set; }
-    public int AcknowledgedRings { get; private set; }
     public List<(string Email, string Password, string? Server)> SignInCalls { get; } = new();
     public string? SignInError { get; set; }
 
@@ -662,12 +664,14 @@ public sealed class FakeAgent : IAgent
 
     public Task RefreshPresenceAsync() => Task.CompletedTask;
 
+    /// <summary>What a read of GET /me/day-progress answers (the core reads it in 4.0; tests set it by hand).</summary>
+    public Func<DayProgress?>? DayProgressSource { get; set; }
+
     public Task RefreshWorkdayAsync()
     {
         WorkdayRefreshes++;
         return Task.CompletedTask;
     }
-    public void AcknowledgeRing() => AcknowledgedRings++;
     public void Shutdown() { }
 }
 

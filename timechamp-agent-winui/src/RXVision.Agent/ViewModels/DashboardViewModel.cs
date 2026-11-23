@@ -7,6 +7,7 @@ using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Platform;
 using RXVision.Agent.Core.Util;
 using RXVision.Agent.Core.Workday;
+using RXVision.Agent.Icon;
 using RXVision.Agent.Services;
 using RXVision.Agent.ViewModels.Dialogs;
 
@@ -30,15 +31,20 @@ public sealed partial class DashboardViewModel : ObservableObject
     private readonly IAgent _agent;
     private readonly BreakActions _actions;
     private readonly ILog _log;
+    private readonly DayMeter _meter;
     private DateTimeOffset _permissionCheckedAt = DateTimeOffset.MinValue;
     private bool _screenRecordingDismissed;
     private string _peopleKey = "";
 
-    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log)
+    /// <param name="alerts">The cards on top of the panel, shared with the icon's badge (3.6).</param>
+    /// <param name="meter">The one value the ring and these progress lines both read (3.6).</param>
+    public DashboardViewModel(IAgent agent, BreakActions actions, ILog log, AlertCenter? alerts = null, DayMeter? meter = null)
     {
         _agent = agent;
         _actions = actions;
         _log = log;
+        Alerts = alerts ?? new AlertCenter();
+        _meter = meter ?? new DayMeter(agent);
 
         QuickTile = new TileViewModel("Quick break", "amber", "Icon.Coffee");
         QuickTile.Command = new AsyncRelayCommand(_actions.QuickBreakAsync, () => QuickTile.CanClick && !IsBusy);
@@ -48,7 +54,6 @@ public sealed partial class DashboardViewModel : ObservableObject
         FocusTile.Command = new AsyncRelayCommand(_actions.BackToWorkAsync, () => FocusTile.CanClick && !IsBusy);
         MeetingTile = new TileViewModel("Start meeting", "violet", "Icon.Meeting");
         MeetingTile.Command = new AsyncRelayCommand(() => _actions.StartMeetingAsync(), () => MeetingTile.CanClick && !IsBusy);
-        MeetingCards = new MeetingCardsViewModel(agent, actions);
 
         Chat = new ChatViewModel(agent, log);
         History = new HistoryViewModel(agent, log);
@@ -62,8 +67,11 @@ public sealed partial class DashboardViewModel : ObservableObject
     public TileViewModel NextTile { get; }
     public TileViewModel FocusTile { get; }
     public TileViewModel MeetingTile { get; }
-    /// <summary>Start meeting?, End meeting?, Still in a meeting? and You're back to Working (3.6).</summary>
-    public MeetingCardsViewModel MeetingCards { get; }
+    /// <summary>
+    /// The alerts (3.6): newest on top, their actions ready. The meeting cards (Start meeting?,
+    /// End meeting?, Still in a meeting?, You're back to Working) come through here too.
+    /// </summary>
+    public AlertCenter Alerts { get; }
     public ActiveBreakViewModel ActiveBreak { get; } = new();
     public TodayViewModel Today { get; } = new();
     public ChatViewModel Chat { get; }
@@ -91,6 +99,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>"Day started 9:24 AM", or null before Start Day.</summary>
     [ObservableProperty] private string? _dayStartedText;
     [ObservableProperty] private string _syncText = "";
+    /// <summary>"3h 30m of 8h", or "Target reached · 8h 00m today". The same value as the ring (3.6).</summary>
+    [ObservableProperty] private string _progressLine = "";
+    /// <summary>"4h 30m to go", or "+15 min over target".</summary>
+    [ObservableProperty] private string _progressNote = "";
+    /// <summary>The day has a total to show.</summary>
+    [ObservableProperty] private bool _showProgress;
     [ObservableProperty] private SyncTone _syncTone;
     [ObservableProperty] private string _syncToolTip = "";
 
@@ -471,6 +485,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             ? $"Day started {_agent.BusinessTime(started)}"
             : null;
         UpdateSync(state);
+        UpdateProgress();
         UpdateTotals();
 
         var active = panel.Active ?? (running && presence.Status is PresenceStatus.Break or PresenceStatus.Lunch
@@ -483,7 +498,6 @@ public sealed partial class DashboardViewModel : ObservableObject
         IsInMeeting = running && !IsOnBreak
             && DayStatusReader.Of(state, _agent.DayProgress, presence.Status, panel.Active is not null) == DayStatus.InMeeting;
         if (IsInMeeting) UpdateMeeting(presence, now);
-        MeetingCards.Update(panelOpen: true);
 
         var focus = _agent.FocusSec;
         UpdateFocus(state, workday, focus, presence);
@@ -822,12 +836,21 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (IsLeavePage) _ = Leave.LoadAsync();
     }
 
+    /// <summary>The ring's value in words: the same reading as the icon (3.6).</summary>
+    private void UpdateProgress()
+    {
+        _meter.Follow();
+        var reading = _meter.Reading;
+        ProgressLine = reading.PanelLine;
+        ProgressNote = reading.PanelNote;
+        ShowProgress = reading.Status != IconStatus.NotStarted;
+    }
+
     /// <summary>Clears what belonged to the person who signed out.</summary>
     public void Reset()
     {
         Overlay?.Cancel();
         Chat.Reset();
-        MeetingCards.Reset();
         Leave.Reset();
         Calendar.Reset();
         Instructions.Reset();

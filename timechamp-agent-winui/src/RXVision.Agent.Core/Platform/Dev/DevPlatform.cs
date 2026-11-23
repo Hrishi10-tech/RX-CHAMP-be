@@ -7,7 +7,7 @@ namespace RXVision.Agent.Core.Platform.Dev;
 /// everything works, nothing is real. Values can be steered from tests.
 /// </summary>
 public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISleepClock, IForegroundProbe, ICallWindowProbe,
-    IScreenCapture, ISecretStore, IAutostart, IPermissions, ISoundPlayer, IScreenInfo, IUpdateInstaller, IShell, ILegacyMigration
+    IScreenCapture, ISecretStore, IAutostart, IPermissions, IScreenInfo, IUpdateInstaller, IShell, ILegacyMigration
 {
     private readonly ConcurrentDictionary<string, byte[]> _secrets = new();
     private bool _locked;
@@ -36,7 +36,6 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     public ISecretStore? SecretsOverride { get; set; }
     public IAutostart Autostart => this;
     public IPermissions Permissions => this;
-    public ISoundPlayer Sound => this;
     public IScreenInfo ScreenInfo => this;
     public IUpdateInstaller Updater => this;
     public IShell Shell => this;
@@ -61,7 +60,6 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     public TimeSpan? NextSleep { get; set; }
     public TimeSpan ProbeDelay { get; set; } = TimeSpan.Zero;
     public bool AutostartOn { get; private set; }
-    public int Chimes { get; private set; }
     public List<string> OpenedUrls { get; } = new();
     public List<string> RevealedFiles { get; } = new();
 
@@ -134,7 +132,6 @@ public sealed class DevPlatform : IPlatform, IPaths, IIdleProbe, ILockProbe, ISl
     public void OpenScreenRecordingSettings() { }
     public void OpenAccessibilitySettings() { }
 
-    public void PlayChime() => Chimes++;
 
     public bool IsFullScreenAppInFront() => false;
 

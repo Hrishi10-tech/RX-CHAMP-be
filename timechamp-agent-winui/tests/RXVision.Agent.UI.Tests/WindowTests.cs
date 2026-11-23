@@ -22,36 +22,12 @@ public class WindowTests
         }
     }
 
-    [AvaloniaFact]
-    public void The_button_grows_for_the_ring_label_and_shrinks_back()
-    {
-        var agent = new FakeAgent("10:59:30");
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var window = new BubbleWindow { DataContext = vm };
-        window.Show();
-        Settle();
-        Assert.Equal(140, window.ClientSize.Width);
-        Assert.Equal(116, window.ClientSize.Height);
-
-        agent.SetNow("11:10");
-        vm.Update(agent);
-        Settle();
-        Assert.False(vm.HasRingLabel);
-        Assert.Equal(88, window.ClientSize.Width);
-        Assert.Equal(88, window.ClientSize.Height);
-        window.Close();
-    }
-
     private static (BubbleWindow Window, Services.UiSettingsStore Store, string Dir) ShowBubble()
     {
         var dir = Path.Combine(Path.GetTempPath(), "rxv-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var store = new Services.UiSettingsStore(dir, Core.Util.NullLog.Instance);
-        var vm = new BubbleViewModel();
-        vm.Update(new FakeAgent("10:20"));
-        var window = new BubbleWindow { DataContext = vm };
-        window.UsePlacement(new Services.BubblePlacement(store));
+        var window = new IconRig(new FakeAgent("10:20")).Window(new Services.BubblePlacement(store));
         window.Show();
         Settle();
         return (window, store, dir);
@@ -67,12 +43,13 @@ public class WindowTests
         window.DragEnded += () => drags++;
         var before = window.Anchor;
 
-        window.MouseDown(new Point(44, 44), Avalonia.Input.MouseButton.Left);
-        window.MouseMove(new Point(44, 20));
-        window.MouseMove(new Point(30, -16));
+        window.MouseMove(new Point(36, 36));
+        window.MouseDown(new Point(36, 36), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(36, 12));
+        window.MouseMove(new Point(22, -24));
         Settle();
-        // The window has followed: the pointer is over the face again.
-        window.MouseUp(new Point(44, 44), Avalonia.Input.MouseButton.Left);
+        // The window has followed: the pointer is over the icon again.
+        window.MouseUp(new Point(36, 36), Avalonia.Input.MouseButton.Left);
         Settle();
 
         Assert.Equal(0, clicks);
@@ -98,9 +75,10 @@ public class WindowTests
         window.Clicked += () => clicks++;
         window.DragEnded += () => drags++;
         var before = window.Anchor;
-        window.MouseDown(new Point(44, 44), Avalonia.Input.MouseButton.Left);
-        window.MouseMove(new Point(45, 45));
-        window.MouseUp(new Point(45, 45), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(36, 36));
+        window.MouseDown(new Point(36, 36), Avalonia.Input.MouseButton.Left);
+        window.MouseMove(new Point(37, 37));
+        window.MouseUp(new Point(37, 37), Avalonia.Input.MouseButton.Left);
         Settle();
         Assert.Equal(1, clicks);
         Assert.Equal(0, drags);
@@ -112,24 +90,26 @@ public class WindowTests
     [AvaloniaFact]
     public void The_toast_sits_beside_the_button_and_never_covers_it()
     {
-        // Ringing: the button is at its widest, with the label under the face.
-        var agent = new FakeAgent("10:59:30");
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var bubble = new BubbleWindow { DataContext = vm };
+        // Half way up the screen, where the card can centre on it.
+        var dir = Path.Combine(Path.GetTempPath(), "rxv-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var placement = new Services.BubblePlacement(new Services.UiSettingsStore(dir, Core.Util.NullLog.Instance));
+        var bubble = new IconRig(new FakeAgent("10:59:30")).Window(placement);
+        var screen = bubble.Screens.Primary!;
+        placement.Save(screen, new PixelPoint(screen.WorkingArea.Right - 72, screen.WorkingArea.Y + screen.WorkingArea.Height / 2));
         bubble.Show();
         Settle();
         var footprint = bubble.Footprint;
         Assert.Equal(bubble.Position, footprint.Position);
-        Assert.Equal(140, footprint.Width / bubble.DesktopScaling, 0);
+        Assert.Equal(72, footprint.Width / bubble.DesktopScaling, 0);
 
         var toast = new ToastWindow
         {
             Animate = false,
-            DataContext = new ToastViewModel(ToastKind.BreakDue, "ring:MORNING")
+            DataContext = new ToastViewModel(ToastKind.Message, "chat:m-1")
             {
-                Heading = "Morning break is due now", Title = "Morning break", Stamp = "11:00",
-                Body = "Rings till 11:04. Start it now and no reason is needed.", PrimaryText = "Take it", SecondaryText = "Open RX Vision",
+                Heading = "New message", Title = "Maya Reddy", Stamp = "11:00",
+                Body = "Can you join the 4 pm call?", PrimaryText = "View messages", SecondaryText = "Open RX Vision",
             },
         };
         toast.ShowBeside(footprint, bubble.Anchor);

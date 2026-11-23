@@ -203,8 +203,13 @@
             <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto"
                   MinHeight="{Binding #LeftScroll.Bounds.Height, Converter={x:Static conv:OffsetConverter.Minus32}}">
               <StackPanel Grid.Row="0">
-              <!-- Start meeting?, End meeting?, Still in a meeting? and You're back to Working (3.6) -->
-              <views:MeetingCardsView DataContext="{Binding MeetingCards}" IsVisible="{Binding HasCards}" />
+              <!-- The alerts (3.6): the break ring, a skipped break, the Start day nudge, notifications,
+                   and the meeting cards (Start meeting?, End meeting?, Still in a meeting?, You're back to Working). -->
+              <views:AlertCardsView Name="AlertCards" />
+              <StackPanel Margin="2,0,2,12" Spacing="2" IsVisible="{Binding ShowProgress}">
+                <TextBlock Name="ProgressLineText" Text="{Binding ProgressLine}" FontSize="15" FontWeight="Bold" />
+                <TextBlock Classes="muted" Text="{Binding ProgressNote}" FontSize="13" IsVisible="{Binding ProgressNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
               <Panel>
                 <!-- Not started: the day begins with this button. -->
                 <Border Classes="startpanel" IsVisible="{Binding IsNotStarted}">

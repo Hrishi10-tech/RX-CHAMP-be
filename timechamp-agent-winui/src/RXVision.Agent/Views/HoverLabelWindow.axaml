@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="RXVision.Agent.Views.HoverLabelWindow"
+        Title="RX Vision"
+        SystemDecorations="None"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        CanResize="False"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="Manual"
+        IsHitTestVisible="False">
+  <Border Name="Pill" Height="29" Padding="12,0" CornerRadius="10" Background="#0F131A" BorderBrush="#3A4356" BorderThickness="1">
+    <TextBlock Name="Text" FontSize="12" FontWeight="Medium" Foreground="#E8EBF0" VerticalAlignment="Center" />
+  </Border>
+</Window>

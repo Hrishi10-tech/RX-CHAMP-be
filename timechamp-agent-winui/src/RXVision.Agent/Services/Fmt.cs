@@ -89,6 +89,13 @@ public static class Fmt
         return minutes >= 60 ? $"{minutes / 60}h {minutes % 60:00}m" : $"{minutes}m";
     }
 
+    /// <summary>The ring's time: "0h 00m", "5h 12m". Whole minutes rounded down, as <see cref="Focus"/>.</summary>
+    public static string HoursMinutes(int seconds)
+    {
+        var minutes = Math.Max(0, seconds) / 60;
+        return $"{minutes / 60}h {minutes % 60:00}m";
+    }
+
     /// <summary>"Tue 13 Oct" from the server's "2026-10-13"; the text as it came when it is not a date.</summary>
     public static string DayLabel(string? isoDate) =>
         DateTime.TryParseExact(isoDate, "yyyy-MM-dd", Inv, DateTimeStyles.None, out var d) ? d.ToString("ddd d MMM", Inv) : isoDate ?? "";

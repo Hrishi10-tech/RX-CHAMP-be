@@ -108,16 +108,23 @@ public class HeldEndDayTests
     }
 
     [Fact]
-    public void The_toast_offers_to_add_the_comments()
+    public void The_card_offers_to_add_the_comments_until_it_is_resolved()
     {
+        // 3.6: an "!" card on the panel and the icon (it was a toast).
         var agent = new FakeAgent("21:05");
-        var added = false;
-        var toast = Toasts.EndDayHeld(agent, Held(), add: () => added = true, open: () => { });
-        Assert.Equal("Your End Day at 6:30 PM needs a comment", toast.Title);
-        Assert.Equal("A skipped break needs a comment before your day can end then. Until you add it, your day stays open.", toast.Body);
-        Assert.Equal("Add comments", toast.PrimaryText);
-        toast.OnPrimary!();
-        Assert.True(added);
+        agent.HeldEndDay = Held();
+        var center = new AlertCenter();
+        var alerts = new DayAlerts(agent, center, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), _ => { });
+        alerts.OnEndDayHeld(agent.HeldEndDay);
+        var card = Assert.Single(center.Cards);
+        Assert.Equal("Your End Day at 6:30 PM needs a comment", card.Title);
+        Assert.Equal("A skipped break needs a comment before your day can end then. Until you add it, your day stays open.", card.Body);
+        Assert.Equal("Add comments", card.PrimaryText);
+        Assert.True(card.IsAction);
+
+        agent.HeldEndDay = null;
+        alerts.Sync();
+        Assert.Empty(center.Cards);
     }
 }
 

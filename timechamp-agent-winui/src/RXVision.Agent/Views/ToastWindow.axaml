@@ -67,12 +67,10 @@
     </StackPanel>
     <StackPanel Spacing="10" IsVisible="{Binding IsCard}">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <Border Classes="headicon" Classes.due="{Binding IsBreakDue}" Classes.bad="{Binding IsRejected}" VerticalAlignment="Center">
+        <Border Classes="headicon" VerticalAlignment="Center">
           <Panel>
             <PathIcon Classes="i" Data="{StaticResource Icon.Chat}" IsVisible="{Binding IsMessage}" />
-            <PathIcon Classes="i" Data="{StaticResource Icon.Bell}" IsVisible="{Binding IsBreakDue}" />
-            <PathIcon Classes="i" Data="{StaticResource Icon.Info}" IsVisible="{Binding IsDecision}" />
-            <PathIcon Classes="i" Data="{StaticResource Icon.Play}" IsVisible="{Binding IsDay}" />
+            <PathIcon Classes="i" Data="{StaticResource Icon.Info}" IsVisible="{Binding IsInfo}" />
           </Panel>
         </Border>
         <TextBlock Grid.Column="1" Margin="9,0,8,0" Text="{Binding Heading}" FontSize="14" FontWeight="SemiBold"
@@ -89,14 +87,8 @@
             <TextBlock Text="{Binding Initials}" FontSize="13" FontWeight="SemiBold" Foreground="#4F46E5"
                        HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
-          <Border CornerRadius="18" Background="#FBEACF" IsVisible="{Binding IsBreakDue}">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="18" Height="18" Foreground="#B45309" />
-          </Border>
-          <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsDecision}">
+          <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsInfo}">
             <PathIcon Classes="i" Data="{StaticResource Icon.Person}" Width="18" Height="18" Foreground="#4F46E5" />
-          </Border>
-          <Border CornerRadius="18" Background="#EEF0FE" IsVisible="{Binding IsDay}">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="18" Height="18" Foreground="#4F46E5" />
           </Border>
         </Panel>
         <StackPanel Grid.Column="1" Margin="11,0,0,0" Spacing="3">
@@ -111,7 +103,7 @@
       </Grid>
 
       <UniformGrid Rows="1" Margin="-3,0">
-        <Button Classes.soft="{Binding !HasStrongPrimary}" Classes.primary="{Binding HasStrongPrimary}" Margin="3,0" MinHeight="34" CornerRadius="8"
+        <Button Classes="soft" Margin="3,0" MinHeight="34" CornerRadius="8"
                 HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding PrimaryCommand}" />
         <Button Classes="secondary" Margin="3,0" HorizontalAlignment="Stretch" MinHeight="34" CornerRadius="8"
                 Content="{Binding SecondaryText}" Command="{Binding SecondaryCommand}" IsVisible="{Binding HasSecondary}" />

@@ -58,6 +58,8 @@ public interface IAgent
     BreakPanel BreakPanel { get; }
     /// <summary>Now, on the server's clock (what breaks and focus time are judged by).</summary>
     DateTimeOffset Now { get; }
+    /// <summary>The computer's own clock, for the icon's rhythm and timers (its monotonic time never jumps).</summary>
+    Core.Util.IClock Clock { get; }
     UpdateOffer? PendingUpdate { get; }
     int PendingSamples { get; }
     DateTimeOffset LastSampleSent { get; }
@@ -194,7 +196,6 @@ public interface IAgent
     Task<bool> ContinueShiftAsync();
     /// <summary>4.1 shared computer: "No": signed out at the shift end.</summary>
     void DeclineShift();
-    void AcknowledgeRing();
     void Shutdown();
 }
 

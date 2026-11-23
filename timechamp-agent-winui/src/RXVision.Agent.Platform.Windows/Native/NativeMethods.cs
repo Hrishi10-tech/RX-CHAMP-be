@@ -159,22 +159,6 @@ internal static class NativeMethods
     [DllImport("shell32.dll")]
     internal static extern int SHQueryUserNotificationState(out int pquns);
 
-    // ---- winmm / user32 : chime ----------------------------------------------------------
-
-    internal const uint SND_ASYNC = 0x0001;
-    internal const uint SND_NODEFAULT = 0x0002;
-    internal const uint SND_FILENAME = 0x00020000;
-
-    [DllImport("winmm.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool PlaySoundW(string? pszSound, IntPtr hmod, uint fdwSound);
-
-    internal const uint MB_OK = 0x00000000;
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool MessageBeep(uint uType);
-
     // ---- helpers -------------------------------------------------------------------------
 
     /// <summary>A window's class name, or null.</summary>

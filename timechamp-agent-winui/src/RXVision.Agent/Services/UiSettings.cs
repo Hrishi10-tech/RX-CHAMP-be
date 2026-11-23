@@ -21,6 +21,15 @@ public sealed class BubbleSpot
     public int Y { get; set; }
 }
 
+/// <summary>The last ended day's numbers, only so the ring can draw while offline.</summary>
+public sealed class LastDayCopy
+{
+    public string UserId { get; set; } = "";
+    public string Date { get; set; } = "";
+    public int WorkedSec { get; set; }
+    public int TargetSec { get; set; }
+}
+
 /// <summary>
 /// Per-person UI conveniences: window placement, the button's spot on each
 /// screen, the last email used. Plain JSON (nothing here is secret); losing the
@@ -34,6 +43,7 @@ public sealed class UiSettings
     /// <summary>The screen the button was last left on.</summary>
     public string? BubbleScreen { get; set; }
     public string? LastEmail { get; set; }
+    public LastDayCopy? LastDay { get; set; }
 }
 
 public sealed class UiSettingsStore

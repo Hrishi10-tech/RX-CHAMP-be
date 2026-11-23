@@ -595,11 +595,16 @@ public class Dashboard40Tests
         Assert.Equal("Something you did couldn't be saved", refused.Title);
         Assert.Equal("That break's window had closed when it reached RX Vision.", refused.Body);
 
-        var active = new ActiveBreakView(BreakKinds.Quick, "Quick break", "BREAK", 10, Ist.At("10:40"), TimeSpan.FromMinutes(13),
-            TimeSpan.FromMinutes(-3), true, "−03:00", false, "NOT_REQUIRED", "UNSCHEDULED", Id: "q", IsQuick: true);
-        var over = Toasts.QuickOver(agent, active, () => { }, () => { });
+        // 3.6: a quick break past its length is an "!" card on the panel and the icon (it was a toast).
+        agent.Day = Agent40Screenshots.WithQuick(Days.General(), "10:40", 10);
+        var center = new AlertCenter();
+        var alerts = new DayAlerts(agent, center, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), _ => { });
+        alerts.Sync();
+        var over = Assert.Single(center.Cards);
         Assert.Equal("Your 10 min quick break is up.", over.Title);
+        Assert.Equal("It keeps counting until you end it. Minutes over come out of your paid buffer.", over.Body);
         Assert.Equal("End break", over.PrimaryText);
+        Assert.True(over.IsAction);
     }
 
     [Fact]
@@ -648,7 +653,7 @@ public class Agent40Screenshots
         return agent;
     }
 
-    private static BreakDay WithQuick(BreakDay day, string from, int planned, string? to = null)
+    internal static BreakDay WithQuick(BreakDay day, string from, int planned, string? to = null)
     {
         var start = Ist.At(from).ToUniversalTime();
         if (to is null)
@@ -883,11 +888,6 @@ public class Agent40Screenshots
         Toasts.ActionRefused(new FakeAgent("10:53"), "Your lunch break couldn't start: its window had closed when it reached RX Vision.", () => { }),
         "40-toast-action-refused");
 
-    [AvaloniaFact]
-    public void Toast_quick_over()
-    {
-        var active = new ActiveBreakView(BreakKinds.Quick, "Quick break", "BREAK", 10, Ist.At("10:40"), TimeSpan.FromMinutes(11),
-            TimeSpan.FromMinutes(-1), true, "−01:00", false, "NOT_REQUIRED", "UNSCHEDULED", Id: "q", IsQuick: true);
-        ShootToast(Toasts.QuickOver(new FakeAgent("10:51"), active, () => { }, () => { }), "40-toast-quick-over");
-    }
+    // The quick break past its length is an alert card now (3.6), drawn on the panel: see
+    // Dashboard40Tests.Toasts_for_a_refused_action_and_a_long_quick_break and the DayAlerts tests.
 }

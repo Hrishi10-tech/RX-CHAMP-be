@@ -8,10 +8,10 @@ internal readonly record struct RunResult(int ExitCode, string StdOut, string St
 }
 
 /// <summary>
-/// Runs a macOS helper binary (osascript, screencapture, open, afplay, ditto,
+/// Runs a macOS helper binary (osascript, screencapture, open, ditto,
 /// xattr, launchctl, plutil) with a hard timeout, killing the whole process tree
 /// if it overruns. Also a fire-and-forget launcher for things we never wait on
-/// (the chime, the update swap script). Never throws: failures come back as a
+/// (the update swap script). Never throws: failures come back as a
 /// non-zero/timed-out result.
 /// </summary>
 internal static class ProcessRunner

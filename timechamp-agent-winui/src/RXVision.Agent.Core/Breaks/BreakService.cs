@@ -75,7 +75,6 @@ public sealed class BreakService
     private BreakDay? _day;
     private bool _serverSupportsSchedule = true;
     private DateTimeOffset _lastRefresh = DateTimeOffset.MinValue;
-    private readonly HashSet<string> _acknowledgedRings = new();
     private readonly HashSet<string> _seenAutoSkips = new();
     // Bumped by Reset (sign-out): a day asked for by the session before is never kept.
     private long _epoch;
@@ -119,21 +118,6 @@ public sealed class BreakService
     /// <summary>The panel as of now (call every second from the UI).</summary>
     public BreakPanel Panel() => BreakSchedule.Compute(Day, _clock.UtcNow);
 
-    /// <summary>Whether the ring for this slot should still make a sound (false once the person opened the agent).</summary>
-    public bool ShouldChime(string kind, string date)
-    {
-        lock (_gate) return !_acknowledgedRings.Contains($"{date}|{kind}");
-    }
-
-    /// <summary>The person has seen the ring (opened the dashboard): stop the sound, keep the visual.</summary>
-    public void AcknowledgeRing(string kind)
-    {
-        lock (_gate)
-        {
-            if (_day is not null) _acknowledgedRings.Add($"{_day.Date}|{kind}");
-        }
-    }
-
     public async Task<bool> RefreshAsync(CancellationToken ct = default)
     {
         if (!_serverSupportsSchedule || !_api.IsSignedIn) return false;
@@ -152,7 +136,6 @@ public sealed class BreakService
                     return false;
                 }
                 _keptSeq = seq;
-                if (_day?.Date != result.Data.Date) _acknowledgedRings.Clear();
                 _day = result.Data;
                 fresh = NewAutoSkipsLocked(result.Data, _clock.UtcNow);
                 _lastRefresh = DateTimeOffset.UtcNow;
@@ -212,7 +195,6 @@ public sealed class BreakService
         lock (_gate)
         {
             _day = null;
-            _acknowledgedRings.Clear();
             _seenAutoSkips.Clear();
             _epoch++;
         }

@@ -29,7 +29,6 @@ public interface IPlatform
     ISecretStore Secrets { get; }
     IAutostart Autostart { get; }
     IPermissions Permissions { get; }
-    ISoundPlayer Sound { get; }
     IScreenInfo ScreenInfo { get; }
     IUpdateInstaller Updater { get; }
     IShell Shell { get; }
@@ -144,12 +143,6 @@ public interface IPermissions
     void RequestScreenRecording();
     void OpenScreenRecordingSettings();
     void OpenAccessibilitySettings();
-}
-
-public interface ISoundPlayer
-{
-    /// <summary>Plays the break chime once (non-blocking).</summary>
-    void PlayChime();
 }
 
 public interface IScreenInfo

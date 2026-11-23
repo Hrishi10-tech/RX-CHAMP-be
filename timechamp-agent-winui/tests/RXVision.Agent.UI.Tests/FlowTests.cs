@@ -1088,7 +1088,7 @@ public class ToastServiceTests
         var presenter = new Presenter();
         var toasts = new ToastService(presenter, () => now);
         toasts.Show(Chat("a", "1"));
-        toasts.Show(new ToastViewModel(ToastKind.BreakDecision, "note:1"));
+        toasts.Show(new ToastViewModel(ToastKind.Info, "note:1"));
         Assert.Equal("chat:a", toasts.Current!.Key);
         Assert.Single(toasts.Queued);
         now += TimeSpan.FromSeconds(10);
@@ -1109,22 +1109,6 @@ public class ToastServiceTests
         Assert.Equal("3 new messages", toasts.Current.Heading);
         Assert.Equal("third", toasts.Current.Body);
         Assert.Empty(toasts.Queued);
-    }
-
-    [Fact]
-    public void The_ring_jumps_the_queue_and_stays()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var toasts = new ToastService(new Presenter(), () => now);
-        toasts.Show(Chat("a", "hi"));
-        toasts.Show(new ToastViewModel(ToastKind.BreakDue, "ring:MORNING") { Sticky = true });
-        Assert.Equal("ring:MORNING", toasts.Current!.Key);
-        Assert.Equal("chat:a", toasts.Queued[0].Key);
-        now += TimeSpan.FromMinutes(4);
-        toasts.Tick();
-        Assert.Equal("ring:MORNING", toasts.Current!.Key);
-        toasts.Withdraw("ring:MORNING");
-        Assert.Equal("chat:a", toasts.Current!.Key);
     }
 
     [Fact]
@@ -1164,9 +1148,9 @@ public class ToastServiceTests
         var toasts = new ToastService(new Presenter());
         var took = 0;
         var opened = 0;
-        var ring = new ToastViewModel(ToastKind.BreakDue, "ring:MORNING") { Sticky = true, OnPrimary = () => took++, OnOpen = () => opened++ };
-        toasts.Show(ring);
-        ring.PrimaryCommand.Execute(null);
+        var note = new ToastViewModel(ToastKind.Info, "day:refused") { OnPrimary = () => took++, OnOpen = () => opened++ };
+        toasts.Show(note);
+        note.PrimaryCommand.Execute(null);
         Assert.Equal(1, took);
         Assert.Equal(0, opened);
         Assert.Null(toasts.Current);
@@ -1182,55 +1166,6 @@ public class ToastServiceTests
 
 public class BubbleAndSignInTests
 {
-    [Fact]
-    public void Bubble_status_follows_the_day()
-    {
-        var agent = new FakeAgent("10:20");
-        var bubble = new BubbleViewModel();
-        bubble.Update(agent);
-        Assert.True(bubble.IsWorking);
-        Assert.False(bubble.IsRinging);
-
-        agent.SetNow("10:59:30");
-        bubble.Update(agent);
-        Assert.True(bubble.IsRinging);
-        Assert.Equal("Morning break due", bubble.RingLabel);
-
-        agent.Day = Days.General().WithActive(Days.Running("MORNING", "11:00"));
-        agent.SetNow("11:05");
-        bubble.Update(agent);
-        Assert.True(bubble.IsAway);
-        Assert.False(bubble.IsRinging);
-        agent.SetNow("11:20");
-        bubble.Update(agent);
-        Assert.True(bubble.IsOverrun);
-
-        agent.Day = Days.General();
-        agent.Presence = new CurrentPresence { Status = PresenceStatus.Meeting };
-        agent.SetNow("10:20");
-        bubble.Update(agent);
-        Assert.True(bubble.IsMeeting);
-
-        agent.State = AgentState.DayEnded;
-        bubble.Update(agent);
-        Assert.True(bubble.IsIdle);
-        Assert.StartsWith("RX Vision: Not tracking.", bubble.ToolTip);
-
-        // Before Start Day: grey, says so, and never rings.
-        agent.State = AgentState.NotStarted;
-        agent.Presence = new CurrentPresence { Status = PresenceStatus.NotStarted };
-        agent.SetNow("10:59:30");
-        bubble.Update(agent);
-        Assert.True(bubble.IsIdle);
-        Assert.False(bubble.IsRinging);
-        Assert.StartsWith("RX Vision: Day not started.", bubble.ToolTip);
-
-        agent.ChatUnread = 12;
-        bubble.Update(agent);
-        Assert.Equal("9+", bubble.UnreadText);
-        Assert.Contains("12 unread messages", bubble.ToolTip);
-    }
-
     [Fact]
     public async Task Sign_in_shows_the_agents_error_and_keeps_the_email()
     {

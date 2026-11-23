@@ -525,63 +525,24 @@ public class ScreenshotTests
     }, "toast-message");
 
     [AvaloniaFact]
-    public void Toast_ring()
-    {
-        var agent = new FakeAgent("10:59:30");
-        ShootToast(Toasts.Ring(agent, agent.Ring!, () => { }, () => { }, () => { }), "toast-ring");
-    }
-
-    [AvaloniaFact]
-    public void Toast_auto_skipped()
-    {
-        var agent = new FakeAgent("12:02");
-        ShootToast(Toasts.AutoSkipped(agent, Days.Skip("MORNING", "12:00", auto: true), () => { }, () => { }), "toast-auto-skipped");
-    }
-
-    [AvaloniaFact]
-    public void Toast_good_morning()
-    {
-        var agent = new FakeAgent("08:55") { State = AgentState.NotStarted };
-        ShootToast(Toasts.Nudge(agent, new AgentNudge(NudgeKind.Greeting, "2026-10-13"), () => { }, () => { }), "toast-good-morning");
-    }
-
-    [AvaloniaFact]
-    public void Toast_at_your_desk()
-    {
-        var agent = new FakeAgent("09:12") { State = AgentState.NotStarted };
-        ShootToast(Toasts.Nudge(agent, new AgentNudge(NudgeKind.AtDesk, "2026-10-13"), () => { }, () => { }), "toast-at-desk");
-    }
-
-    [AvaloniaFact]
     public void Toast_cue() => ShootToast(Toasts.Cue("Skipped and noted. Keep it steady."), "toast-cue", minBytes: 1_500);
 
-    [AvaloniaFact]
-    public void Toast_decision() => ShootToast(new ToastViewModel(ToastKind.BreakDecision, "note:1")
-    {
-        Heading = "Break update", Title = "Your morning break on 13 Oct was rejected", Stamp = "16:05",
-        Body = "Maya Reddy: Please plan calls around breaks", IsRejected = true,
-    }, "toast-decision");
-
-    [AvaloniaFact]
-    public void Toast_approval_request() => ShootToast(new ToastViewModel(ToastKind.Approval, "note:2")
-    {
-        Heading = "Approval needed", Title = "Asha Kumar started the morning break 12 min late", Stamp = "11:12",
-        Body = "On a customer call until now",
-    }, "toast-approval");
-
-    // ---- The floating button ------------------------------------------------------------------------
+    // ---- The floating icon ------------------------------------------------------------------------
 
     private static void ShootBubble(FakeAgent agent, string name, int unread = 0)
     {
-        agent.ChatUnread = unread;
-        var vm = new BubbleViewModel();
-        vm.Update(agent);
-        var window = new BubbleWindow { DataContext = vm };
+        var rig = new IconRig(agent);
+        rig.Vm.MessageCount = unread; // 4.0: the manager chat's unread count, under any alert
+        rig.DayAlerts.Sync();
+        rig.Vm.Update();
+        rig.Run(1.5); // The badge's pop, the crossfade: to rest.
+        var window = rig.Window();
         window.Show();
         window.Background = Desktop;
         var path = Shots.Save(window, name);
         Assert.True(new FileInfo(path).Length > 2_000);
         window.Close();
+        rig.Dispose();
     }
 
     [AvaloniaFact]

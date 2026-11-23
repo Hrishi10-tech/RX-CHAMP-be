@@ -8,6 +8,7 @@ using RXVision.Agent.Core.Api;
 using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Util;
 using RXVision.Agent.Core.Workday;
+using RXVision.Agent.Icon;
 using RXVision.Agent.Services;
 using RXVision.Agent.ViewModels;
 using RXVision.Agent.Views;
@@ -29,6 +30,9 @@ public sealed class AppController : IDisposable
     private readonly DialogService _dialogs;
     private readonly BreakActions _actions;
     private readonly AgentMenuViewModel _menu;
+    private readonly AlertCenter _alerts;
+    private readonly DayMeter _meter;
+    private readonly DayAlerts _dayAlerts;
     private readonly BubbleViewModel _bubbleVm;
     private readonly DashboardViewModel _dashboardVm;
     private readonly SignInViewModel _signInVm;
@@ -63,7 +67,12 @@ public sealed class AppController : IDisposable
         // actions, which need the dialogs: the dialog service reads it when needed.
         _dialogs = new DialogService(() => _dashboardVm!, () => _dashboard?.IsVisible == true);
         _actions = new BreakActions(_agent, _dialogs, _log);
-        _dashboardVm = new DashboardViewModel(_agent, _actions, _log)
+        // 3.6: one alert centre for the icon's badge and the panel's cards; one day meter for the
+        // ring, the hover label and the panel's progress lines.
+        _alerts = new AlertCenter();
+        _meter = new DayMeter(_agent, _settings);
+        _dayAlerts = new DayAlerts(_agent, _alerts, _actions, OpenUrl);
+        _dashboardVm = new DashboardViewModel(_agent, _actions, _log, _alerts, _meter)
         {
             SignOutRequested = () => _actions.SignOutAsync(),
             QuitRequested = () => _actions.QuitAsync(QuitNowAsync),
@@ -79,7 +88,7 @@ public sealed class AppController : IDisposable
             signOut: () => RunFromMenu(() => { ShowDashboard(); return _actions.SignOutAsync(); }),
             quit: () => RunFromMenu(() => { ShowDashboard(); return _actions.QuitAsync(QuitNowAsync); }));
 
-        _bubbleVm = new BubbleViewModel(_menu);
+        _bubbleVm = new BubbleViewModel(_agent, _meter, _alerts, new AvaloniaDispatcher(), _menu);
         _signInVm = new SignInViewModel(_agent, _settings, _log);
         _noticeVm = new NoticeViewModel(_agent, _log);
         _toasts = new ToastService(new ToastPresenter(this));
@@ -107,9 +116,10 @@ public sealed class AppController : IDisposable
         };
         _agent.MeetingsChanged += Refresh;
         _agent.ApprovalsChanged += Refresh;
-        _agent.RingChanged += OnRingChanged;
-        _agent.BreakAutoSkipped += OnAutoSkipped;
-        _agent.Nudge += OnNudge;
+        // The ring, a break skipped for the person and the Start day nudge are alert cards (3.6): no sound, no toast.
+        _agent.RingChanged += _ => Refresh();
+        _agent.BreakAutoSkipped += _dayAlerts.OnAutoSkipped;
+        _agent.Nudge += _dayAlerts.OnNudge;
         _agent.ActionRefused += OnActionRefused;
         _agent.EndDayHeld += OnEndDayHeld;
         _agent.AwayChanged += UpdateAway;
@@ -117,7 +127,8 @@ public sealed class AppController : IDisposable
         _agent.LeaveChanged += _dashboardVm.OnLeaveChanged;
         _actions.Cue += OnCue;
         _agent.ChatMessageReceived += m => _ = OnChatMessageAsync(m);
-        _agent.ChatUnreadChanged += _ => _bubbleVm.Update(_agent);
+        // 4.0 kept the manager chat's unread count on the button: the icon shows it under any alert.
+        _agent.ChatUnreadChanged += n => _bubbleVm.MessageCount = n;
         _agent.NotificationReceived += OnNotification;
         _agent.UpdateAvailable += _ => Refresh();
         _agent.ExitRequested += OnExitRequested;
@@ -157,6 +168,7 @@ public sealed class AppController : IDisposable
         if (_quitting) return;
         _quitting = true;
         _clock.Stop();
+        _bubbleVm.Dispose();
         try { _agent.Shutdown(); }
         catch (Exception ex) { _log.Warn("ui", "agent shutdown failed", ex); }
         SaveDashboardPlacement();
@@ -200,7 +212,8 @@ public sealed class AppController : IDisposable
         var previous = _shownState;
         _shownState = state;
         UpdateMenu();
-        _bubbleVm.Update(_agent);
+        _dayAlerts.Sync();
+        _bubbleVm.Update();
         switch (state)
         {
             case AgentState.Starting:
@@ -211,6 +224,9 @@ public sealed class AppController : IDisposable
                 HideNotice();
                 CloseAway();
                 _toasts.Clear();
+                _dayAlerts.Reset();
+                _bubbleVm.Reset();
+                _bubbleVm.MessageCount = 0;
                 _dashboardVm.Reset();
                 _openDashboardOnSession = true;
                 ShowSignIn();
@@ -242,9 +258,7 @@ public sealed class AppController : IDisposable
                     if (_openDashboardOnSession) ShowDashboard();
                     _openDashboardOnSession = false;
                 }
-                // The Start Day nudge only: the shift-end question stays until it is answered.
-                if (state != AgentState.NotStarted) _toasts.Withdraw("day:start");
-                if (state != AgentState.Running) _toasts.Withdraw(ToastKind.AutoSkip);
+                // The Start day and skipped-break cards clear themselves (DayAlerts.Sync).
                 Refresh();
                 break;
         }
@@ -272,19 +286,16 @@ public sealed class AppController : IDisposable
         }
     }
 
+    /// <summary>
+    /// The alerts and the icon follow the agent. The meeting cards come through the alert centre
+    /// like every other card: a badge on the icon until the panel opens, never a window (3.6).
+    /// </summary>
     private void Refresh()
     {
-        _bubbleVm.Update(_agent);
+        _dayAlerts.Sync();
+        _bubbleVm.Update();
         UpdateMenu();
-        UpdateMeetingBadge();
         if (_dashboard?.IsVisible == true) _dashboardVm.Refresh();
-    }
-
-    /// <summary>The meeting cards' badge on the button, until the dashboard opens. Never a window: the person opens it when they choose (3.6).</summary>
-    private void UpdateMeetingBadge()
-    {
-        _dashboardVm.MeetingCards.Update(panelOpen: _dashboard?.IsVisible == true);
-        _bubbleVm.AlertBadge = _dashboardVm.MeetingCards.Badge;
     }
 
     private void UpdateMenu()
@@ -300,13 +311,12 @@ public sealed class AppController : IDisposable
         try
         {
             _ticks++;
-            _bubbleVm.Update(_agent);
+            _dayAlerts.Sync();
+            _bubbleVm.Update();
             UpdateMenu();
-            UpdateMeetingBadge();
             _toasts.Tick();
             if (_dashboard?.IsVisible == true) _dashboardVm.Refresh();
             UpdateAway();
-            CheckQuickOver();
             if (_ticks % 3 == 0) _ = CheckFullScreenAsync();
             if (_ticks % 60 == 0 && _dashboard?.IsVisible == true) _ = RefreshDataAsync();
         }
@@ -342,8 +352,15 @@ public sealed class AppController : IDisposable
         if (full == _fullScreen) return;
         _fullScreen = full;
         _toasts.SetSuppressed(full);
-        if (full) _bubble?.Hide();
-        else ShowBubble();
+        if (full)
+        {
+            _bubble?.Hide();
+            _bubbleVm.SetShown(false);
+        }
+        else
+        {
+            ShowBubble();
+        }
     }
 
     // ---- Windows ------------------------------------------------------------------------------
@@ -378,12 +395,12 @@ public sealed class AppController : IDisposable
             SaveDashboardPlacement();
             _dashboardVm.Overlay?.Cancel();
             _dashboardVm.IsOnScreen = false;
+            _bubbleVm.SetPanelOpen(false);
             _agent.MeetingPanelClosed();
         };
         window.Activated += (_, _) =>
         {
             _dashboardVm.IsOnScreen = true;
-            if (_agent.Ring is not null) _agent.AcknowledgeRing();
             if (_agent.ChatUnread > 0) _ = SafeAsync(_dashboardVm.Chat.LoadConversationAsync);
         };
         window.Deactivated += (_, _) => _dashboardVm.IsOnScreen = false;
@@ -392,11 +409,15 @@ public sealed class AppController : IDisposable
 
     private void OnDashboardShown()
     {
-        if (_agent.Ring is not null) _agent.AcknowledgeRing();
-        // Its job is done once the dashboard is open.
-        _toasts.Withdraw(ToastKind.BreakDue);
+        // Opening clears the badge; the newest card is on top with its action ready.
+        _dayAlerts.Sync();
+        _bubbleVm.SetPanelOpen(true);
+        if (_alerts.Cards.Count > 0)
+        {
+            _dashboardVm.ShowDashboardCommand.Execute(null);
+            _dashboard?.FocusTopAlert();
+        }
         _toasts.Withdraw(ToastKind.Message);
-        _toasts.Withdraw("day:start");
         _dashboardVm.Refresh();
         _ = SafeAsync(_dashboardVm.Chat.ActivateAsync);
         _ = RefreshDataAsync();
@@ -460,11 +481,13 @@ public sealed class AppController : IDisposable
             };
         }
         _bubble.ShowQuietly();
+        _bubbleVm.SetShown(true);
     }
 
     private void HideBubble()
     {
         if (_bubble?.IsVisible == true) _bubble.Hide();
+        _bubbleVm.SetShown(false);
     }
 
     private static bool IsOnAnyScreen(Window window)
@@ -538,57 +561,6 @@ public sealed class AppController : IDisposable
 
     // ---- Events from the agent ----------------------------------------------------------------
 
-    private void OnRingChanged(RingView? ring)
-    {
-        _bubbleVm.Update(_agent);
-        Refresh();
-        if (ring is null)
-        {
-            _toasts.Withdraw(ToastKind.BreakDue);
-            return;
-        }
-        if (_dashboard is { IsVisible: true, IsActive: true })
-        {
-            // They are looking at it: the tile pulses, no need for sound or a card.
-            _agent.AcknowledgeRing();
-            return;
-        }
-        var slot = _agent.BreakPanel.Slots.FirstOrDefault(s => s.Kind == ring.Kind);
-        var presenceType = slot?.PresenceType ?? (ring.Kind == BreakKinds.Lunch ? PresenceStatus.Lunch : PresenceStatus.Break);
-        _toasts.Show(Toasts.Ring(_agent, ring,
-            take: () => RunFromMenu(() =>
-            {
-                ShowDashboard();
-                return _actions.TakeAsync(presenceType, ring.Kind, confirm: false);
-            }),
-            skip: () => RunFromMenu(() =>
-            {
-                ShowDashboard();
-                return _actions.SkipAsync(ring.Kind);
-            }),
-            open: ShowDashboard));
-    }
-
-    /// <summary>A window closed untaken while the day ran: one toast, with Add comment.</summary>
-    private void OnAutoSkipped(BreakRecord record)
-    {
-        if (_agent.State != AgentState.Running) return;
-        _toasts.Show(Toasts.AutoSkipped(_agent, record,
-            comment: () => RunFromMenu(() =>
-            {
-                ShowDashboard();
-                return _actions.CommentAsync(record.Id);
-            }),
-            open: ShowDashboard));
-    }
-
-    /// <summary>Good morning (at sign-in or the first unlock of a day), or "You're at your desk".</summary>
-    private void OnNudge(AgentNudge nudge)
-    {
-        if (_agent.State != AgentState.NotStarted) return;
-        _toasts.Show(Toasts.Nudge(_agent, nudge, start: () => RunFromMenu(_actions.StartDayAsync), open: ShowDashboard));
-    }
-
     /// <summary>4.1 shared computer: "Are you taking the next shift?" (a sticky card until answered).</summary>
     private void OnShiftEndQuestion(ShiftQuestion q)
     {
@@ -621,28 +593,12 @@ public sealed class AppController : IDisposable
         Refresh();
     }
 
-    /// <summary>An End Day done offline waits for comments: one toast; End Day (or the dashboard's banner) adds them.</summary>
+    /// <summary>An End Day done offline waits for comments: an "!" card; End Day (or the dashboard's banner) adds them.</summary>
     private void OnEndDayHeld(HeldEndDay held)
     {
-        _toasts.Show(Toasts.EndDayHeld(_agent, held,
-            add: () => RunFromMenu(() => { ShowDashboard(); return _actions.EndDayAsync(); }),
-            open: ShowDashboard));
+        _dayAlerts.OnEndDayHeld(held);
         Refresh();
     }
-
-    /// <summary>A quick break past its planned length: one toast, nothing ends by itself (SPEC 2.3).</summary>
-    private void CheckQuickOver()
-    {
-        if (_agent.State != AgentState.Running) return;
-        var active = _agent.BreakPanel.Active;
-        if (active is not { IsQuick: true, Overrun: true, DurationMin: > 0 }) return;
-        if (!_quickNudged.Add(active.StartedAt.UtcTicks)) return;
-        _toasts.Show(Toasts.QuickOver(_agent, active,
-            end: () => RunFromMenu(() => { ShowDashboard(); return _actions.EndBreakAsync(); }),
-            open: ShowDashboard));
-    }
-
-    private readonly HashSet<long> _quickNudged = new();
 
     // ---- The away pop-up (SPEC 2.5, 8.4) ----------------------------------------------------
 
@@ -710,7 +666,7 @@ public sealed class AppController : IDisposable
             }
             var chat = _agent.Chat;
             chat?.BumpUnread();
-            _bubbleVm.Update(_agent);
+            _bubbleVm.MessageCount = _agent.ChatUnread;
             if (chat is not null && !chat.ContactsLoaded) await chat.LoadContactsAsync();
             var sender = chat?.NameOf(message.FromUserId) ?? "Someone";
             if (sender == "Someone") sender = "Your manager";
@@ -735,44 +691,10 @@ public sealed class AppController : IDisposable
         }
     }
 
+    /// <summary>A notification (leave, comp off, work from home, late start, approvals, ...): an "i" card (3.6).</summary>
     private void OnNotification(NotificationItem item)
     {
-        var (kind, heading) = item.Type switch
-        {
-            "BREAK_DECIDED" => (ToastKind.BreakDecision, "Break update"),
-            "MEETING_DECIDED" => (ToastKind.BreakDecision, "Meeting update"),
-            "BREAK_APPROVAL_REQUESTED" or "SKIP_REQUESTED" or "AUTO_SKIP_REQUESTED"
-                or "SKIP_COMMENT_ADDED" or "MEETING_REQUESTED"
-                or "LEAVE_REQUESTED" or "LEAVE_CANCELLED" or "WFH_REQUESTED" or "WFH_CANCELLED" or "COMPOFF_CLAIMED" => (ToastKind.Approval, "Approval needed"),
-            "LATE_START_REASON" => (ToastKind.Info, "Your start today"),
-            "LEAVE_DECIDED" or "LEAVE_REVOKED" or "LEAVE_ADJUSTED" or "LEAVE_UPDATED" => (ToastKind.Info, "Leave"),
-            "COMPOFF_DECIDED" or "COMPOFF_CREDITED" or "COMPOFF_EXPIRING" => (ToastKind.Info, "Comp off"),
-            "WFH_DECIDED" or "WFH_REVOKED" => (ToastKind.Info, "Work from home"),
-            "BIOMETRIC_NO_CHECKOUT" => (ToastKind.Info, "Your attendance"),
-            "BREAK_APPROVALS_DIGEST" => (ToastKind.Approval, "Approvals"),
-            "APPROVALS_DUE_SOON" => (ToastKind.Approval, "Approvals due soon"),
-            "APPROVALS_OVERDUE" => (ToastKind.Approval, "Approvals overdue"),
-            "APPROVALS_ESCALATED" => (ToastKind.Approval, "Approvals escalated"),
-            "MONTHLY_REPORT_READY" => (ToastKind.Info, "Monthly report"),
-            "DAY_AUTO_CLOSED" => (ToastKind.Info, "Day closed"),
-            "FOCUS_ADJUSTED" => (ToastKind.Info, "Focus time adjusted"),
-            _ => (ToastKind.Info, "RX Vision"),
-        };
-        var rejected = item.Type is "BREAK_DECIDED" or "MEETING_DECIDED" && item.Title.Contains("rejected", StringComparison.OrdinalIgnoreCase);
-        // Approvals are decided in the portal: the card goes straight there when the server says where it is.
-        var portal = kind == ToastKind.Approval ? BreakActions.ApprovalsUrl(_agent.Workday?.PortalUrl) : null;
-        _toasts.Show(new ToastViewModel(kind, "note:" + (string.IsNullOrEmpty(item.Id) ? Guid.NewGuid().ToString() : item.Id))
-        {
-            Heading = heading,
-            Title = item.Title,
-            Stamp = _agent.BusinessTime(item.CreatedAt == default ? DateTimeOffset.UtcNow : item.CreatedAt),
-            Body = item.Body ?? "",
-            IsRejected = rejected,
-            Lifetime = TimeSpan.FromSeconds(12),
-            PrimaryText = portal is null ? "Open RX Vision" : "Open approvals",
-            OnPrimary = portal is null ? null : () => OpenUrl(portal),
-            OnOpen = ShowDashboard,
-        });
+        _dayAlerts.OnNotification(item);
         Refresh();
     }
 
@@ -849,7 +771,11 @@ public sealed class AppController : IDisposable
     // ---- Helpers ------------------------------------------------------------------------------
 
     /// <summary>Runs an action started from a menu, toast or button: never throws, always logs.</summary>
-    private void RunFromMenu(Func<Task> action) => _ = SafeAsync(action);
+    private void RunFromMenu(Func<Task> action)
+    {
+        _bubbleVm.Interaction();
+        _ = SafeAsync(action);
+    }
 
     private async Task SafeAsync(Func<Task> action)
     {
@@ -887,14 +813,14 @@ public sealed class AppController : IDisposable
         public void Hide() => _app._toastWindow?.Hide();
     }
 
-    /// <summary>The button's window and face centre, or where they would be while the button is hidden.</summary>
+    /// <summary>The icon's window and centre, or where they would be while the icon is hidden.</summary>
     private (PixelRect Avoid, PixelPoint Centre) ToastAnchor(Window reference)
     {
         if (_bubble is { IsVisible: true }) return (_bubble.Footprint, _bubble.Anchor);
         var screens = reference.Screens;
         var anchor = new BubblePlacement(_settings).Load(screens.All, screens.Primary);
         var scale = BubblePlacement.ScreenFor(anchor, screens.All)?.Scaling ?? 1;
-        var r = (int)Math.Round(44 * scale);
+        var r = (int)Math.Round(IconGeometry.Canvas / 2 * scale);
         return (new PixelRect(anchor.X - r, anchor.Y - r, r * 2, r * 2), anchor);
     }
 

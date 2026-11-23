@@ -44,6 +44,11 @@ public sealed class DashboardHarness
 
     public FakeAgent Agent { get; }
     public BreakActions Actions { get; }
+
+    /// <summary>The alerts feeding this window's cards.</summary>
+    public DayAlerts Alerts() => _dayAlerts ??= new DayAlerts(Agent, Vm.Alerts, Actions, _ => { });
+    private DayAlerts? _dayAlerts;
+
     public DashboardViewModel Vm { get; }
     public DashboardWindow Window { get; }
     public List<string> Cues { get; } = new();
@@ -202,18 +207,17 @@ public class DayFlowTests
     }
 
     [AvaloniaFact]
-    public void Start_the_day_from_the_good_morning_toast()
+    public void Start_the_day_from_the_good_morning_card()
     {
         var agent = NotStarted("08:55");
         var ui = new DashboardHarness(agent);
-        var toast = Toasts.Nudge(agent, new AgentNudge(NudgeKind.Greeting, "2026-10-13"), () => _ = ui.Actions.StartDayAsync(), () => { });
-        var window = new ToastWindow { DataContext = toast, Animate = false };
-        window.ShowBeside(new PixelRect(1690, 470, 88, 88), new PixelPoint(1734, 514));
+        ui.Alerts().OnNudge(new AgentNudge(NudgeKind.Greeting, "2026-10-13"));
         DashboardHarness.Settle();
-        DashboardHarness.ClickOn(window, DashboardHarness.ButtonIn(window, "Start Day"));
+        ui.Click("Start day");
         Assert.Equal(1, agent.StartDayCalls);
         Assert.Equal(AgentState.Running, agent.State);
-        window.Close();
+        ui.Alerts().Sync();
+        Assert.Empty(ui.Vm.Alerts.Cards);
         ui.Close();
     }
 
@@ -403,12 +407,9 @@ public class BreakFlowTests
     {
         var agent = new FakeAgent("10:59:30");
         var ui = new DashboardHarness(agent);
-        var ring = Toasts.Ring(agent, agent.Ring!, () => { }, () => _ = ui.Actions.SkipAsync(agent.Ring!.Kind), () => { });
-        var toast = new ToastWindow { DataContext = ring, Animate = false };
-        toast.ShowBeside(new PixelRect(1690, 470, 88, 88), new PixelPoint(1734, 514));
+        ui.Alerts().Sync();
         DashboardHarness.Settle();
-        DashboardHarness.ClickOn(toast, DashboardHarness.ButtonIn(toast, "Skip break"));
-        toast.Close();
+        ui.Click("Skip this break");
 
         var skip = ui.Dialog<ReasonDialogViewModel>();
         Assert.True(ui.Shows("Skip morning break?"));
@@ -483,15 +484,18 @@ public class BreakFlowTests
         Assert.True(ui.Shows("Auto-skipped"));
         Assert.True(ui.Shows("Auto-skipped at 12:00 PM · add a comment"));
 
-        // The toast's Add comment opens the same dialog; Esc closes it and sends nothing.
-        var toast = Toasts.AutoSkipped(agent, record, () => _ = ui.Actions.CommentAsync(record.Id), () => { });
-        Assert.Equal("Morning break auto-skipped.", toast.Title);
-        toast.PrimaryCommand.Execute(null);
+        // The card's Add comment opens the same dialog; Esc closes it and sends nothing.
+        ui.Alerts().OnAutoSkipped(record);
+        var card = Assert.Single(ui.Vm.Alerts.Cards);
+        Assert.Equal("Morning break skipped for you.", card.Title);
+        card.PrimaryCommand.Execute(null);
         DashboardHarness.Settle();
         Assert.True(ui.Shows("Add a comment"));
         ui.Press(Key.Escape);
         Assert.False(ui.HasDialog);
         Assert.Empty(agent.CommentCalls);
+        ui.Vm.Alerts.Clear(card.Key);
+        DashboardHarness.Settle();
 
         // The row's Add comment.
         ui.Click("Add comment");

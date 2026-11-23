@@ -6,6 +6,7 @@ import {
   ActivitySampleRepository,
 } from '../../domain/activity-sample.repository';
 import { ACTIVITY_ACCESS_READER, ActivityAccessReader } from '../../domain/activity-access.reader';
+import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.repository';
 import { ActivityMapper } from '../activity.mapper';
 import { CurrentActivityView } from '../activity.types';
@@ -21,6 +22,7 @@ export class GetCurrentActivityUseCase {
     @Inject(ACTIVITY_ACCESS_READER) private readonly access: ActivityAccessReader,
     private readonly facts: PersonFactsReader,
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
+    @Inject(MEETING_WINDOW_READER) private readonly meetings: MeetingWindowReader,
   ) {}
 
   async execute(me: AuthenticatedUser, userId: string): Promise<CurrentActivityView> {
@@ -29,7 +31,8 @@ export class GetCurrentActivityUseCase {
     const latest = await this.repo.findLatestForUser(userId);
     // Signed off for the day reads as DAY_ENDED, not as "stopped reporting".
     const ended = await this.workDays.findEnd(userId, localDateString(now));
-    const view = ActivityMapper.toCurrentView(latest, now, ended !== null);
+    const inMeeting = (await this.meetings.usersInMeeting([userId])).has(userId);
+    const view = ActivityMapper.toCurrentView(latest, now, ended !== null, inMeeting);
     // Staff never see activity (SPEC 1.8): the status stays, the app, title and URL go.
     return seesOwnActivity(me.role) ? view : redactCurrent(view);
   }

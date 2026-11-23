@@ -5,6 +5,7 @@ import { BreakRecordView, SkipNeedingComment } from '@modules/shifts/application
 import { BreakKind } from '@modules/shifts/domain/shift.types';
 import { ApprovalCategory, ApprovalEffect } from '../domain/approval-copy';
 import { HourActivity } from '../domain/hourly';
+import type { MeetingEndReason, MeetingKind, StatusStartSource } from '../domain/meeting-status';
 
 /**
  * The 3.1 API shapes (SPEC 3). Every `date` is a business-timezone day key, every
@@ -218,6 +219,12 @@ export interface MeetingRecordView {
   decidedAt: string | null;
   decisionNote: string | null;
   decidedByName: string | null;
+  /** 3.6: DECLARED (agenda, participants, approval) or STATUS ("In a meeting"). */
+  kind: MeetingKind;
+  /** A status meeting: where it started, when it was last confirmed, why it ended. */
+  startSource: StatusStartSource | null;
+  confirmedAt: string | null;
+  endReason: MeetingEndReason | null;
 }
 
 export interface CurrentPresenceLite {

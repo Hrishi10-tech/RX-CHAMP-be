@@ -10,6 +10,8 @@ export interface PresenceContext {
   self: TeamMember;
   /** Who they report to, or null. Used to route live updates + meeting notes. */
   managerId: string | null;
+  /** How their day is recorded (3.5): biometric staff have no breaks or meetings here. */
+  attendanceSource?: 'AGENT' | 'BIOMETRIC';
 }
 
 /**

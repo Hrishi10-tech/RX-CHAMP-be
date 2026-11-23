@@ -1,3 +1,4 @@
+import { ConflictError } from '@shared/exceptions/app.exception';
 import { reasonAccepted } from '@modules/settings/domain/reason-presets';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
@@ -188,7 +189,10 @@ function setup(shift: ShiftRecord = general, presetLists?: Record<string, string
     publish: jest.fn(async (_n: string, _p: unknown) => undefined),
     subscribe: jest.fn(),
   };
-  const sessions = { autoCloseIfStale: jest.fn().mockResolvedValue(false) };
+  const sessions = {
+    assertAgentDay: jest.fn().mockResolvedValue(undefined),
+    autoCloseIfStale: jest.fn().mockResolvedValue(false),
+  };
   const breakEvents = { recipientsFor: jest.fn().mockResolvedValue(['mgr']) };
   const presence = { findOpen: jest.fn().mockResolvedValue(null) };
   const svc = new SkipsService(
@@ -210,13 +214,35 @@ function setup(shift: ShiftRecord = general, presetLists?: Record<string, string
       : undefined) as never,
   );
   const notices = () => events.publish.mock.calls.map(([, p]) => p as NoticeEvent);
-  return { svc, records, skipsRepo, sessionsRepo, events, presence, breakEvents, notices };
+  return {
+    svc,
+    records,
+    skipsRepo,
+    sessionsRepo,
+    sessions,
+    events,
+    presence,
+    breakEvents,
+    notices,
+  };
 }
 
 const staff = me('staff', Role.USER);
 const REASON = 'Client escalation call';
 
 describe('SkipsService.skip', () => {
+  it('biometric staff have no break flow: 409 before anything is written (D-23)', async () => {
+    const { svc, sessions, skipsRepo } = setup();
+    sessions.assertAgentDay.mockRejectedValueOnce(
+      new ConflictError('By the device.', 'ATTENDANCE_BY_BIOMETRIC'),
+    );
+    await expect(
+      svc.skip(staff, { kind: 'MORNING', reason: REASON }, 'AGENT_31', ist('11:02')),
+    ).rejects.toMatchObject({ status: 409, code: 'ATTENDANCE_BY_BIOMETRIC' });
+    expect(sessions.assertAgentDay).toHaveBeenCalledWith('staff', 'act');
+    expect(skipsRepo.createSkip).not.toHaveBeenCalled();
+  });
+
   it("skips an open window: SKIPPED now, timing judged, routed to the department's managers, who are told", async () => {
     const { svc, skipsRepo, notices } = setup();
     const res = await svc.skip(

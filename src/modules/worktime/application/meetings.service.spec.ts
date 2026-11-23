@@ -1,9 +1,11 @@
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { ConflictError } from '@shared/exceptions/app.exception';
 import { NoticeEvent } from '@shared/events/notice.event';
+import { WorkdayChangedEvent } from '@shared/events/workday-changed.event';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { MeetingRecordRow } from '../domain/meeting-record.repository';
-import { MeetingsService } from './meetings.service';
+import { MeetingsService, meetingView } from './meetings.service';
 
 const ist = (hm: string) => {
   const [h, m] = hm.split(':').map(Number);
@@ -125,6 +127,10 @@ function setup() {
     })),
     heal: jest.fn().mockResolvedValue({ healed: [], discarded: 0 }),
     listForUserOnDate: jest.fn().mockResolvedValue([]),
+    findRunning: jest.fn().mockResolvedValue(null),
+    confirmStatus: jest.fn().mockResolvedValue({ kind: 'NONE' }),
+    listStatusUnanswered: jest.fn().mockResolvedValue([]),
+    endStatusUnanswered: jest.fn().mockResolvedValue(null),
   };
   const peopleReader = {
     findById: jest.fn(async (id: string) => people[id] ?? null),
@@ -139,12 +145,16 @@ function setup() {
     subscribe: jest.fn(),
   };
   const sessions = {
+    assertAgentDay: jest.fn().mockResolvedValue(undefined),
     autoCloseIfStale: jest.fn().mockResolvedValue(false),
     todayFor: jest.fn().mockResolvedValue('2026-10-14'),
     findOpen: jest.fn().mockResolvedValue(null),
   };
   const breakEvents = { recipientsFor: jest.fn().mockResolvedValue(['mgr']) };
-  const presence = { broadcast: jest.fn().mockResolvedValue(undefined) };
+  const presence = {
+    broadcast: jest.fn().mockResolvedValue(undefined),
+    endOpen: jest.fn().mockResolvedValue(null),
+  };
   const svc = new MeetingsService(
     repo as never,
     peopleReader as never,
@@ -502,5 +512,227 @@ describe('MeetingsService.heal', () => {
     await svc.heal(['staff'], NOW);
     expect(repo.heal).toHaveBeenCalledWith(['staff']);
     expect(notices()).toHaveLength(1);
+  });
+});
+
+describe('MeetingsService: biometric staff (D-23)', () => {
+  const refused = new ConflictError('By the device.', 'ATTENDANCE_BY_BIOMETRIC');
+
+  it('a live meeting is refused before anything opens', async () => {
+    const { svc, repo, sessions } = setup();
+    sessions.assertAgentDay.mockRejectedValue(refused);
+    await expect(
+      svc.start(me('staff', Role.USER), { agenda: 'Review', participants: [] }, 'LEGACY', NOW),
+    ).rejects.toMatchObject({ status: 409, code: 'ATTENDANCE_BY_BIOMETRIC' });
+    expect(sessions.assertAgentDay).toHaveBeenCalledWith('staff', 'act');
+    expect(repo.startLive).not.toHaveBeenCalled();
+  });
+
+  it('a logged meeting is refused too', async () => {
+    const { svc, repo, sessions } = setup();
+    sessions.assertAgentDay.mockRejectedValue(refused);
+    await expect(
+      svc.logPast(
+        me('staff', Role.USER),
+        {
+          agenda: 'Review',
+          participants: [],
+          startedAt: ist('09:00').toISOString(),
+          durationMin: 30,
+        },
+        'LEGACY',
+        NOW,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'ATTENDANCE_BY_BIOMETRIC' });
+    expect(repo.createPast).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeetingsService status meetings (D-20)', () => {
+  const STAFF = me('staff', Role.USER);
+  const running = (over: Partial<MeetingRecordRow> = {}) =>
+    meeting({
+      kind: 'STATUS',
+      startSource: 'BUTTON',
+      confirmedAt: ist('09:00'),
+      agenda: '',
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+      approverId: null,
+      dueAt: null,
+      endedAt: null,
+      durationSec: null,
+      ...over,
+    });
+
+  it('starts with only its source: no agenda, no participants, no approver', async () => {
+    const { svc, repo, presence, notices } = setup();
+    await svc.statusStart(STAFF, 'SUGGESTION', NOW);
+    const [input, generation] = repo.startLive.mock.calls[0];
+    expect(input).toEqual({
+      userId: 'staff',
+      date: '2026-10-14',
+      agenda: '',
+      participants: [],
+      approvalStatus: 'NOT_REQUIRED',
+      routing: { approverRole: null, approverId: null },
+      status: { source: 'SUGGESTION' },
+    });
+    // Never an implicit day: every caller is held to an open one.
+    expect(generation).toBe('AGENT_31');
+    expect(presence.broadcast).toHaveBeenCalledWith(
+      'staff',
+      expect.objectContaining({ type: 'MEETING', note: null }),
+      NOW,
+    );
+    expect(notices()).toHaveLength(0);
+  });
+
+  it.each([['DAY_NOT_STARTED'], ['DAY_ENDED'], ['ON_BREAK'], ['MEETING_IN_PROGRESS']])(
+    'is refused with 409 %s',
+    async (code) => {
+      const { svc, repo } = setup();
+      repo.startLive.mockResolvedValueOnce({ ok: false, code } as never);
+      await expect(svc.statusStart(STAFF, 'BUTTON', NOW)).rejects.toMatchObject({
+        status: 409,
+        code,
+      });
+    },
+  );
+
+  it('is refused for biometric staff before anything opens', async () => {
+    const { svc, repo, sessions } = setup();
+    sessions.assertAgentDay.mockRejectedValue(
+      new ConflictError('By the device.', 'ATTENDANCE_BY_BIOMETRIC'),
+    );
+    await expect(svc.statusStart(STAFF, 'BUTTON', NOW)).rejects.toMatchObject({
+      status: 409,
+      code: 'ATTENDANCE_BY_BIOMETRIC',
+    });
+    expect(repo.startLive).not.toHaveBeenCalled();
+  });
+
+  it('a forgotten meeting is ended before a new one starts', async () => {
+    const { svc, repo } = setup();
+    repo.listStatusUnanswered.mockResolvedValueOnce([running()]);
+    repo.endStatusUnanswered.mockResolvedValueOnce(running({ endReason: 'NO_ANSWER' }));
+    await svc.statusStart(STAFF, 'BUTTON', NOW);
+    expect(repo.endStatusUnanswered.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.startLive.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('ends the running meeting through the live end, with no notice', async () => {
+    const { svc, repo, notices, presence } = setup();
+    const row = running();
+    repo.findRunning.mockResolvedValue({
+      presenceSessionId: 'ps1',
+      startedAt: ist('10:00'),
+      record: row,
+    });
+    repo.findById.mockResolvedValue(row);
+    repo.endLive.mockResolvedValue({
+      kind: 'ENDED',
+      record: running({ endedAt: NOW, durationSec: 3600, endReason: 'USER' }),
+    });
+    await svc.statusEnd(STAFF, NOW);
+    expect(repo.endLive).toHaveBeenCalledWith('m1', 'staff', NOW);
+    expect(presence.broadcast).toHaveBeenCalledWith('staff', null, NOW);
+    expect(notices()).toHaveLength(0);
+  });
+
+  it('ending with nothing running changes nothing (the fallback may have got there first)', async () => {
+    const { svc, repo, presence } = setup();
+    await svc.statusEnd(STAFF, NOW);
+    expect(repo.endLive).not.toHaveBeenCalled();
+    expect(presence.endOpen).not.toHaveBeenCalled();
+  });
+
+  it('End meeting also ends a meeting started through the older calls', async () => {
+    const { svc, repo, presence } = setup();
+    repo.findRunning.mockResolvedValue({
+      presenceSessionId: 'ps1',
+      startedAt: ist('10:00'),
+      record: null,
+    });
+    await svc.statusEnd(STAFF, NOW);
+    expect(presence.endOpen).toHaveBeenCalledWith('staff', NOW);
+    expect(repo.endLive).not.toHaveBeenCalled();
+  });
+
+  it('a late "Still in it" leaves the switch back to Working standing', async () => {
+    const { svc, repo } = setup();
+    const row = running();
+    repo.confirmStatus.mockResolvedValue({ kind: 'TOO_LATE', record: row });
+    repo.listStatusUnanswered.mockResolvedValue([row]);
+    await svc.statusConfirm(STAFF, NOW);
+    expect(repo.endStatusUnanswered).toHaveBeenCalledWith('m1', 'staff', NOW);
+  });
+
+  it('a "Still in it" in time ends nothing', async () => {
+    const { svc, repo } = setup();
+    repo.confirmStatus.mockResolvedValue({ kind: 'CONFIRMED', record: running() });
+    await svc.statusConfirm(STAFF, NOW);
+    expect(repo.confirmStatus).toHaveBeenCalledWith('staff', NOW);
+    expect(repo.endStatusUnanswered).not.toHaveBeenCalled();
+  });
+
+  it('the 2 hour check ends each one due, pushes the change and tells nobody else', async () => {
+    const { svc, repo, events, presence } = setup();
+    repo.listStatusUnanswered.mockResolvedValue([
+      running({ id: 'a', userId: 'u1' }),
+      running({ id: 'b', userId: 'u2' }),
+      running({ id: 'c', userId: 'u3' }),
+    ]);
+    repo.endStatusUnanswered
+      .mockResolvedValueOnce(running({ id: 'a', endReason: 'NO_ANSWER' }))
+      // Confirmed a moment ago: the second read under the lock says so.
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('db hiccup'));
+    expect(await svc.endUnanswered(NOW)).toBe(1);
+    // Anything confirmed at or before 2 h 10 min ago.
+    expect(repo.listStatusUnanswered).toHaveBeenCalledWith(
+      new Date(NOW.getTime() - 130 * 60_000),
+      null,
+    );
+    expect(presence.broadcast).toHaveBeenCalledTimes(1);
+    expect(presence.broadcast).toHaveBeenCalledWith('u1', null, NOW);
+    const pushed = events.publish.mock.calls.filter(([n]) => n === WorkdayChangedEvent.eventName);
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0][1]).toMatchObject({ userIds: ['u1'], reason: 'MEETING' });
+    expect(events.publish.mock.calls.filter(([n]) => n === NoticeEvent.eventName)).toHaveLength(0);
+  });
+
+  it('every read of a day applies the check for its people first', async () => {
+    const { svc, repo } = setup();
+    await svc.heal(['staff'], NOW);
+    expect(repo.listStatusUnanswered).toHaveBeenCalledWith(expect.any(Date), ['staff']);
+    expect(repo.listStatusUnanswered.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.heal.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('old clients read a label as its agenda; new ones the kind, source and end', () => {
+    expect(
+      meetingView(
+        running({ startSource: 'SUGGESTION', endedAt: NOW, durationSec: 60, endReason: 'BREAK' }),
+        NOW,
+      ),
+    ).toMatchObject({
+      agenda: 'In a meeting',
+      participants: [],
+      kind: 'STATUS',
+      startSource: 'SUGGESTION',
+      confirmedAt: ist('09:00').toISOString(),
+      endReason: 'BREAK',
+      approvalStatus: 'NOT_REQUIRED',
+    });
+    expect(meetingView(meeting(), NOW)).toMatchObject({
+      agenda: 'Sprint review',
+      kind: 'DECLARED',
+      startSource: null,
+      confirmedAt: null,
+      endReason: null,
+    });
   });
 });

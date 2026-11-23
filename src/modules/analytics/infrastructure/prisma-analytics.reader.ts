@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@shared/database/prisma.service';
+import { addDaysToKey, appTimezone, startOfDayInZone } from '@shared/utils/timezone';
 import { ActivitySampleRecord } from '@modules/activity/domain/activity-sample.repository';
+import { MeetingWindow } from '@modules/activity/domain/meeting-window.reader';
+import { meetingWindowsBetween } from '@modules/activity/infrastructure/prisma-meeting-window.reader';
 import {
   AnalyticsReader,
   AnalyticsWindow,
@@ -21,7 +24,13 @@ export class PrismaAnalyticsReader implements AnalyticsReader {
   }
 
   async loadWindow(userId: string, dates: string[]): Promise<AnalyticsWindow> {
-    const [samples, online, presence] = await Promise.all([
+    const tz = appTimezone();
+    const boundsOf = (d: string) => ({
+      from: startOfDayInZone(d, tz),
+      to: startOfDayInZone(addDaysToKey(d, 1), tz),
+    });
+    const sorted = [...dates].sort();
+    const [samples, online, presence, meetings] = await Promise.all([
       this.prisma.activitySample.findMany({
         where: { userId, date: { in: dates } },
         orderBy: { at: 'asc' },
@@ -36,6 +45,14 @@ export class PrismaAnalyticsReader implements AnalyticsReader {
         orderBy: { startedAt: 'asc' },
         select: { date: true, type: true, startedAt: true, endedAt: true, durationSec: true },
       }),
+      sorted.length
+        ? meetingWindowsBetween(
+            this.prisma,
+            userId,
+            boundsOf(sorted[0]).from,
+            boundsOf(sorted[sorted.length - 1]).to,
+          )
+        : Promise.resolve<MeetingWindow[]>([]),
     ]);
 
     const samplesByDate = new Map<string, ActivitySampleRecord[]>();
@@ -76,6 +93,13 @@ export class PrismaAnalyticsReader implements AnalyticsReader {
       presenceByDate.set(r.date, list);
     }
 
-    return { samplesByDate, onlineByDate, presenceByDate };
+    const meetingsByDate = new Map(
+      dates.map((d) => {
+        const { from, to } = boundsOf(d);
+        return [d, meetings.filter((m) => m.start < to && (m.end === null || m.end > from))];
+      }),
+    );
+
+    return { samplesByDate, onlineByDate, presenceByDate, meetingsByDate };
   }
 }

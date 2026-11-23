@@ -5,7 +5,8 @@
  *               (no shift, or a day off: startedAt + 14h)
  *   stale     = now > latestEnd
  *   closed at = the last non-idle input inside the session, clamped to
- *               [startedAt, latestEnd]; startedAt when there was none.
+ *               [startedAt, latestEnd]; startedAt when there was none. The end of a status
+ *               meeting (now while it runs) counts as input and is not clamped (3.6).
  *
  * One addition the spec leaves open: latestEnd is never earlier than startedAt +
  * autoCloseAfterShiftEndMin. Without it, a session resumed after the shift's
@@ -87,13 +88,28 @@ export function isStale(latestEnd: Date, now: Date): boolean {
   return now.getTime() > latestEnd.getTime();
 }
 
+/**
+ * A status meeting is work without typing (D-22): its end, or now while it runs, counts as
+ * input. `meetingUntil` is that instant, or null with no status meeting that day.
+ */
+export function lastInputWithMeeting(
+  lastInput: Date | null,
+  meetingUntil: Date | null,
+): Date | null {
+  if (!lastInput || !meetingUntil) return lastInput ?? meetingUntil;
+  return lastInput.getTime() >= meetingUntil.getTime() ? lastInput : meetingUntil;
+}
+
 export function autoCloseAt(input: {
   startedAt: Date;
   latestEnd: Date;
   lastInput: Date | null;
+  /** D-22: never cut short by the close, so it is not held to `latestEnd` either. */
+  meetingUntil?: Date | null;
 }): Date {
   const start = input.startedAt.getTime();
-  if (!input.lastInput) return new Date(start);
+  const meeting = input.meetingUntil?.getTime() ?? null;
+  if (!input.lastInput) return new Date(meeting ?? start);
   const clamped = Math.min(Math.max(input.lastInput.getTime(), start), input.latestEnd.getTime());
-  return new Date(clamped);
+  return new Date(meeting === null ? clamped : Math.max(clamped, meeting));
 }

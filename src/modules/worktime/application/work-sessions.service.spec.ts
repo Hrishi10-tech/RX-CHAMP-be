@@ -51,6 +51,7 @@ function setup(
     listOpen: jest.fn().mockResolvedValue([]),
     lastInputs: jest.fn().mockResolvedValue(new Map()),
     usersInLiveMeeting: jest.fn().mockResolvedValue(new Set()),
+    statusMeetingsUntil: jest.fn().mockResolvedValue(new Map()),
     autoClose: jest.fn().mockResolvedValue({ closed: true, newlyEnded: true }),
     startDay: jest.fn(),
     endDay: jest.fn(),
@@ -110,6 +111,69 @@ function setup(
 }
 
 describe('WorkSessionsService auto-close', () => {
+  it('hard stop: a running status meeting is never cut short, it ends now (D-22)', async () => {
+    const { svc, repo } = setup();
+    repo.listOpen.mockResolvedValue([session()]);
+    // Nobody has typed since 11:00; the meeting is still running well past the hard stop.
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '11:00')]]));
+    const now = ist('2026-10-13', '23:05');
+    repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', now]]));
+
+    expect(await svc.autoCloseAll(now)).toBe(1);
+
+    expect(repo.statusMeetingsUntil).toHaveBeenCalledWith(
+      [expect.objectContaining({ sessionId: 's1', userId: 'u1' })],
+      now,
+    );
+    expect(repo.autoClose).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }), now);
+  });
+
+  it('hard stop: a status meeting that ended counts as the last input', async () => {
+    const { svc, repo } = setup();
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '11:00')]]));
+    repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', ist('2026-10-13', '17:30')]]));
+
+    expect(await svc.autoCloseAll(ist('2026-10-14', '08:00'))).toBe(1);
+
+    expect(repo.autoClose).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      ist('2026-10-13', '17:30'),
+    );
+  });
+
+  it('forgotten End Day: idle counts from the end of a status meeting, not before', async () => {
+    const { svc, repo } = setup();
+    const settings = { forgottenEndDayIdleMin: 30, autoCloseAfterShiftEndMin: 240 };
+    (svc as unknown as { settings: { get: jest.Mock } }).settings.get.mockResolvedValue(settings);
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '15:00')]]));
+    repo.statusMeetingsUntil.mockResolvedValue(new Map([['s1', ist('2026-10-13', '19:00')]]));
+
+    // 19:20, past the shift end: last typed at 15:00 but in a meeting until 19:00. Not due.
+    expect(await svc.autoCloseAll(ist('2026-10-13', '19:20'))).toBe(0);
+    expect(repo.autoClose).not.toHaveBeenCalled();
+
+    // 19:30: due, and it closes at the end of the meeting.
+    expect(await svc.autoCloseAll(ist('2026-10-13', '19:30'))).toBe(1);
+    expect(repo.autoClose).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      ist('2026-10-13', '19:00'),
+    );
+  });
+
+  it('forgotten End Day: never closes while a meeting runs', async () => {
+    const { svc, repo } = setup();
+    const settings = { forgottenEndDayIdleMin: 30, autoCloseAfterShiftEndMin: 240 };
+    (svc as unknown as { settings: { get: jest.Mock } }).settings.get.mockResolvedValue(settings);
+    repo.listOpen.mockResolvedValue([session()]);
+    repo.usersInLiveMeeting.mockResolvedValue(new Set(['u1']));
+    repo.lastInputs.mockResolvedValue(new Map([['s1', ist('2026-10-13', '15:00')]]));
+
+    expect(await svc.autoCloseAll(ist('2026-10-13', '20:00'))).toBe(0);
+    expect(repo.autoClose).not.toHaveBeenCalled();
+  });
+
   it('closes a stale session at the last input and tells the person and their department managers', async () => {
     const { svc, repo, published } = setup();
     repo.listOpen.mockResolvedValue([session()]);

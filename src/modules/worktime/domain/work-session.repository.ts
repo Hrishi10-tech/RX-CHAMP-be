@@ -185,6 +185,12 @@ export interface WorkSessionRepository {
   markExtended(sessionId: string, at: Date): Promise<Date | null>;
   /** Which of these people have a live meeting running now (presence MEETING still open). */
   usersInLiveMeeting(userIds: string[]): Promise<Set<string>>;
+  /**
+   * 3.6 (D-22): the end of each session's last status meeting (now while it runs), keyed
+   * by sessionId; it counts as input, so the automatic close never cuts one short.
+   * Sessions with none are left out.
+   */
+  statusMeetingsUntil(queries: LastInputQuery[], now: Date): Promise<Map<string, Date>>;
   /** Stores why the day started late on that session (the day's first). */
   setLateReason(sessionId: string, reason: string, at: Date): Promise<WorkSessionRecord | null>;
 }

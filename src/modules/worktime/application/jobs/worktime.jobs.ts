@@ -25,6 +25,7 @@ import {
 import { ApprovalsDigestEvent } from '../../domain/events/approvals-digest.event';
 import { dueSoonCopy, escalatedCopy, NOTICE, overdueCopy } from '../../domain/notice-copy';
 import { DayDataService } from '../day-data.service';
+import { MeetingsService } from '../meetings.service';
 import { SkipsService } from '../skips.service';
 import { WorkSessionsService } from '../work-sessions.service';
 
@@ -111,6 +112,27 @@ export class AutoCloseJob extends GuardedJob {
   async run(now: Date = new Date()): Promise<void> {
     await this.guarded('auto-close', async () => {
       await this.sessions.autoCloseAll(now);
+    });
+  }
+}
+
+/**
+ * Every minute: the 2 hour check of status meetings (3.6, D-22). One not confirmed for
+ * 2 hours and 10 minutes ends at exactly that moment and the person is back to Working.
+ * `now` is injectable, so a test can run it on any clock.
+ */
+@Injectable()
+export class StatusMeetingCheckJob extends GuardedJob {
+  protected readonly logger = new Logger(StatusMeetingCheckJob.name);
+  constructor(private readonly meetings: MeetingsService) {
+    super();
+  }
+
+  @Cron('* * * * *', { name: 'status-meeting-check', timeZone: appTimezone() })
+  async run(now: Date = new Date()): Promise<void> {
+    await this.guarded('status meeting check', async () => {
+      const ended = await this.meetings.endUnanswered(now);
+      if (ended > 0) this.logger.log(`${ended} status meeting(s) with no answer: back to Working`);
     });
   }
 }

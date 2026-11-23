@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -14,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsId } from '@shared/validation/is-id';
+import { STATUS_START_SOURCES, StatusStartSource } from '../../domain/meeting-status';
 
 export class MeetingParticipantDto {
   @ApiPropertyOptional({ description: 'A person picked from /meetings/participants' })
@@ -77,3 +79,13 @@ export class ParticipantsQueryDto {
   @MaxLength(100)
   q?: string;
 }
+
+/** POST /meetings/status/start: where it started, and nothing else travels (D-20). */
+export class StartStatusMeetingDto {
+  @ApiProperty({ enum: STATUS_START_SOURCES, example: 'BUTTON' })
+  @IsIn(STATUS_START_SOURCES as StatusStartSource[])
+  source!: StatusStartSource;
+}
+
+/** POST /meetings/status/end and /confirm take no fields at all. */
+export class StatusMeetingActionDto {}

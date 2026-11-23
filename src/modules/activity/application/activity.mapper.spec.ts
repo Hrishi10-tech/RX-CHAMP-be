@@ -234,6 +234,39 @@ describe('ActivityMapper.computeDaily — meetings count as active', () => {
     expect(daily.idleSec).toBe(240);
   });
 
+  it('counts a meeting still running past midnight up to now, on the day it began', () => {
+    // 23:30 to now, 00:10: nobody touched the keyboard, and the meeting has not ended yet.
+    const start = new Date('2026-07-16T18:00:00.000Z'); // 23:30 in Kolkata
+    const flags = Array.from({ length: 30 }, (_, i) =>
+      sample(new Date(start.getTime() + i * 60_000), true),
+    );
+    const daily = ActivityMapper.computeDaily(
+      flags,
+      localDateString(start),
+      DEFAULT_WORKING_BASIS_SEC,
+      new Date('2026-07-16T18:40:00.000Z'),
+      null,
+      [{ start, end: null }],
+    );
+    expect(daily.idleSec).toBe(0);
+    expect(daily.activeSec).toBe(1800);
+  });
+
+  it('a meeting left open since before today does not cover today', () => {
+    // Still open at 10:00 today, begun 17 hours ago: no working day runs that long.
+    const today = new Date('2026-07-17T04:30:00.000Z'); // 10:00 in Kolkata
+    const daily = ActivityMapper.computeDaily(
+      Array.from({ length: 4 }, (_, i) => sample(new Date(today.getTime() + i * 60_000), true)),
+      localDateString(today),
+      DEFAULT_WORKING_BASIS_SEC,
+      new Date(today.getTime() + 300_000),
+      null,
+      [{ start: new Date(today.getTime() - 17 * 3_600_000), end: null }],
+    );
+    expect(daily.activeSec).toBe(0);
+    expect(daily.idleSec).toBe(240);
+  });
+
   it('treats a meeting still running today as ongoing', () => {
     // Pinned to midday so the samples ten minutes earlier share "today" whatever
     // the clock says when the suite runs (it used to fail just after midnight).
@@ -334,6 +367,32 @@ describe('ActivityMapper.statusOf — DAY_ENDED', () => {
 // The agent reports its own window by process name, `TimeChampAgent`. Renaming is
 // done where names are served, so stored history reads correctly too — and old and
 // new names must collapse into one row rather than appearing twice.
+describe('ActivityMapper: never idle in a meeting (D-22)', () => {
+  const now = new Date('2026-07-16T10:00:30.000Z');
+  const at = new Date('2026-07-16T10:00:00.000Z');
+
+  it('an idle or locked sample reads as active while the person is in a meeting', () => {
+    expect(ActivityMapper.statusOf(sample(at, true), now)).toBe('IDLE');
+    expect(ActivityMapper.statusOf(sample(at, true), now, false, true)).toBe('ACTIVE');
+    expect(ActivityMapper.statusOf(sample(at, false, true), now, false, true)).toBe('ACTIVE');
+    expect(ActivityMapper.toCurrentView(sample(at, true), now, false, true)).toMatchObject({
+      status: 'ACTIVE',
+      idle: false,
+    });
+    expect(ActivityMapper.toCurrentView(sample(at, true), now)).toMatchObject({
+      status: 'IDLE',
+      idle: true,
+    });
+  });
+
+  it('an ended day or a silent agent stays what it is', () => {
+    expect(ActivityMapper.statusOf(sample(at, true), now, true, true)).toBe('DAY_ENDED');
+    expect(ActivityMapper.statusOf(null, now, false, true)).toBe('OFFLINE');
+    const later = new Date('2026-07-16T12:00:00.000Z');
+    expect(ActivityMapper.statusOf(sample(at, true), later, false, true)).toBe('OFFLINE');
+  });
+});
+
 describe('ActivityMapper — the agent is shown under the product name', () => {
   const day = new Date('2026-08-24T10:00:00.000Z');
 

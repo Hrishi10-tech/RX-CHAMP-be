@@ -7,7 +7,8 @@ export const IDLE_READER = Symbol('IDLE_READER');
  * `ActivitySample` rows (samples flagged `idle` = no mouse/keyboard input past
  * the agent's idle threshold, e.g. 5 min). Presence has no idle concept of its
  * own — the online-session stream drops idle time — so we surface it here for
- * the manager timeline/history views.
+ * the manager timeline/history views. Time inside a meeting is never idle (3.6,
+ * D-22): it is left out of everything read here.
  */
 export interface IdleReader {
   /** Idle intervals for a user on a local day (each sample → [at, at+duration]). */

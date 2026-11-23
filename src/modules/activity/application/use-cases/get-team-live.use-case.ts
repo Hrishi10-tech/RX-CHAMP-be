@@ -7,6 +7,7 @@ import {
   ActivitySampleRepository,
 } from '../../domain/activity-sample.repository';
 import { ACTIVITY_ACCESS_READER, ActivityAccessReader } from '../../domain/activity-access.reader';
+import { MEETING_WINDOW_READER, MeetingWindowReader } from '../../domain/meeting-window.reader';
 import { WORK_DAY_REPOSITORY, WorkDayRepository } from '../../domain/work-day.repository';
 import { ActivityMapper } from '../activity.mapper';
 import { TeamMemberActivityView } from '../activity.types';
@@ -19,6 +20,7 @@ export class GetTeamLiveUseCase {
     @Inject(ACTIVITY_SAMPLE_REPOSITORY) private readonly repo: ActivitySampleRepository,
     @Inject(ACTIVITY_ACCESS_READER) private readonly access: ActivityAccessReader,
     @Inject(WORK_DAY_REPOSITORY) private readonly workDays: WorkDayRepository,
+    @Inject(MEETING_WINDOW_READER) private readonly meetings: MeetingWindowReader,
   ) {}
 
   async execute(me: AuthenticatedUser): Promise<TeamMemberActivityView[]> {
@@ -37,6 +39,7 @@ export class GetTeamLiveUseCase {
     const ended = await this.workDays.findEndsForUsers(ids, today);
     // PC login time, shown beside the live status.
     const logins = await this.workDays.findLoginsForUsers(ids, today);
+    const inMeeting = await this.meetings.usersInMeeting(ids);
 
     return reports.map((member) =>
       ActivityMapper.toTeamMemberView(
@@ -45,6 +48,7 @@ export class GetTeamLiveUseCase {
         now,
         ended.has(member.id),
         logins.get(member.id) ?? null,
+        inMeeting.has(member.id),
       ),
     );
   }

@@ -259,6 +259,29 @@ describe('computeFocus', () => {
     ).toMatchObject({ focusSec: 9 * 3600 - 45 * MIN, rejectedMinusSec: 45 * MIN });
   });
 
+  it('a status meeting needs no approval, so it counts in full and nothing can take it off', () => {
+    const meeting = { type: 'MEETING' as const, startedAt: ist('10:00'), endedAt: ist('12:00') };
+    const f = computeFocus(
+      input({
+        presence: [meeting],
+        meetingRecords: [
+          {
+            mode: 'LIVE',
+            approvalStatus: 'NOT_REQUIRED',
+            startedAt: ist('10:00'),
+            endedAt: ist('12:00'),
+          },
+        ],
+      }),
+    );
+    expect(f).toMatchObject({
+      focusSec: 9 * 3600,
+      meetingSec: 120 * MIN,
+      rejectedMinusSec: 0,
+      pendingMinusSec: 0,
+    });
+  });
+
   it('adds past meetings to the meeting time once, from the record', () => {
     const f = computeFocus(
       input({

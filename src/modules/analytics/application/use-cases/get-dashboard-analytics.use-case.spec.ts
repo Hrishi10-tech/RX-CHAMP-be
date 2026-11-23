@@ -27,6 +27,7 @@ function setup() {
     loadWindow: jest.fn().mockResolvedValue({
       samplesByDate: new Map([[DAY, samples]]),
       onlineByDate: new Map(),
+      meetingsByDate: new Map(),
       presenceByDate: new Map([
         [
           DAY,

@@ -7,6 +7,7 @@ import {
   AutoCloseJob,
   AutoSkipJob,
   HourlyCacheJob,
+  StatusMeetingCheckJob,
 } from './worktime.jobs';
 
 type Published = [string, unknown];
@@ -395,5 +396,20 @@ describe('HourlyCacheJob', () => {
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
     job.onModuleDestroy();
+  });
+});
+
+describe('StatusMeetingCheckJob', () => {
+  it('runs the 2 hour check on the clock it is given', async () => {
+    const meetings = { endUnanswered: jest.fn().mockResolvedValue(2) };
+    const job = new StatusMeetingCheckJob(meetings as never);
+    const clock = new Date('2026-11-05T12:10:00Z');
+    await job.run(clock);
+    expect(meetings.endUnanswered).toHaveBeenCalledWith(clock);
+  });
+
+  it('never throws out of the cron', async () => {
+    const meetings = { endUnanswered: jest.fn().mockRejectedValue(new Error('db down')) };
+    await expect(new StatusMeetingCheckJob(meetings as never).run()).resolves.toBeUndefined();
   });
 });

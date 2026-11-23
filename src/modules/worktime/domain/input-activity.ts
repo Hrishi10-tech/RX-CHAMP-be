@@ -139,6 +139,19 @@ export function inputIntervals(samples: readonly InputSample[], now: Date): Inpu
   return { active: activeFinal, idle: normalize(subtract(normalize(idle), activeFinal)) };
 }
 
+/**
+ * Meeting time is working time, never idle (brief 1.8, D-22): idle inside a meeting counts
+ * as active. Time no sample covers stays no data.
+ */
+export function withMeetings(input: InputIntervals, meetings: Interval[]): InputIntervals {
+  const spans = normalize(meetings);
+  if (!spans.length) return input;
+  return {
+    active: normalize([...input.active, ...intersect(input.idle, spans)]),
+    idle: subtract(input.idle, spans),
+  };
+}
+
 /** Milliseconds of `list` that fall inside `windows`. */
 export function overlapIn(list: Interval[], windows: Interval[]): number {
   return lengthMs(intersect(list, windows));
@@ -221,9 +234,11 @@ export function afterSkipActivity(
   window: { from: Date; to: Date; basis: 'SKIPPED_AT' | 'BREAK_START' },
   samples: readonly InputSample[],
   now: Date,
+  /** The person's meetings around the window: skipped for a meeting is not walking away. */
+  meetings: Interval[] = [],
 ): AfterSkipActivity {
   const w = { start: window.from.getTime(), end: window.to.getTime() };
-  const intervals = inputIntervals(samples, now);
+  const intervals = withMeetings(inputIntervals(samples, now), meetings);
   const b = breakdownIn(intervals, [w], now);
   let verdict: AfterSkipVerdict;
   if (now.getTime() < w.end + IDLE_LEAD_IN_SEC * 1000) {

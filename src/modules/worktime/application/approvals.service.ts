@@ -76,6 +76,8 @@ import {
   SAMPLE_CAP_SEC,
 } from '../domain/input-activity';
 import { INPUT_SAMPLES_READER, InputSamplesReader } from '../domain/input-samples.reader';
+import { Interval, span } from '../domain/intervals';
+import { WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
 import { ApprovalPathType, ApprovalsListQueryDto } from './dto/approvals.dto';
 import { meetingView, MeetingsService } from './meetings.service';
 import {
@@ -139,6 +141,7 @@ export class ApprovalsService {
     private readonly meetingService: MeetingsService,
     private readonly settings: AppSettingsService,
     @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
+    @Inject(WORKTIME_READER) private readonly worktime: WorktimeReader,
     // 3.2: a decision-note preset picked as-is is enough for a rejection.
     @Optional() private readonly presets?: ReasonPresetsService,
   ) {}
@@ -177,12 +180,42 @@ export class ApprovalsService {
           to: new Date(w.to.getTime() + IDLE_LEAD_IN_SEC * 1000),
         })),
       );
+      const meetings = await this.meetingsAround(windows, now);
       for (const { row, w } of windows) {
-        out.set(row.id, afterSkipActivity(w, samples.get(row.id) ?? [], now));
+        out.set(
+          row.id,
+          afterSkipActivity(w, samples.get(row.id) ?? [], now, meetings.get(row.userId)),
+        );
       }
     } catch (err) {
       // Best-effort: the approvals list must never fail because of this hint.
       this.logger.warn(`after-skip activity unavailable: ${(err as Error).message}`);
+    }
+    return out;
+  }
+
+  /** Each person's meetings around these windows: live ones and logged ones not rejected. */
+  private async meetingsAround(
+    windows: { row: BreakRecordRow; w: { from: Date; to: Date } }[],
+    now: Date,
+  ): Promise<Map<string, Interval[]>> {
+    const out = new Map<string, Interval[]>();
+    const add = (userId: string, i: Interval) => out.set(userId, [...(out.get(userId) ?? []), i]);
+    const userIds = [...new Set(windows.map(({ row }) => row.userId))];
+    const dates = windows.map(({ row }) => row.date).sort();
+    const from = new Date(Math.min(...windows.map(({ w }) => w.from.getTime())));
+    const to = new Date(Math.max(...windows.map(({ w }) => w.to.getTime())));
+    const [presence, records] = await Promise.all([
+      this.worktime.presenceOverlapping(userIds, from, to),
+      this.meetings.listForUsersBetween(userIds, dates[0], dates[dates.length - 1]),
+    ]);
+    for (const p of presence) {
+      if (p.type === 'MEETING') add(p.userId, span(p.startedAt, p.endedAt, now));
+    }
+    for (const m of records) {
+      if (m.mode === 'PAST' && m.approvalStatus !== 'REJECTED') {
+        add(m.userId, span(m.startedAt, m.endedAt, now));
+      }
     }
     return out;
   }
@@ -393,6 +426,9 @@ export class ApprovalsService {
     }
     const m = await this.meetings.findById(id);
     if (!m) throw new NotFoundError('Unknown meeting');
+    if (m.kind === 'STATUS') {
+      throw new ConflictError('This meeting needs no approval.', 'NOT_DECIDED');
+    }
     const subject = await this.subjectOf(me, m.userId, 'meeting');
     if (!BreakApprovalPolicy.canDecide(me, m, subject))
       throw new ForbiddenError('This meeting is not yours to decide.');
@@ -564,6 +600,10 @@ export class ApprovalsService {
       return { type: 'AWAY', row: await this.decideAway(me, id, status, note, now) };
     const found = await this.meetings.findById(id);
     if (!found) throw new NotFoundError('Unknown meeting');
+    // A status meeting is never decided (D-20): nobody can reject it off focus or pay.
+    if (found.kind === 'STATUS') {
+      throw new ConflictError('This meeting needs no approval.', 'ALREADY_DECIDED');
+    }
     const subject = await this.subjectOf(me, found.userId, 'meeting');
     // A meeting whose presence session closed another way is ended first.
     if (found.mode === 'LIVE' && !found.endedAt)

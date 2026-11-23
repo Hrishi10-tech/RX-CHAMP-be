@@ -3,6 +3,7 @@ import { Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
 import { assertMonthOpen } from '@shared/database/month-lock';
 import { RequestClock } from '@shared/tenancy';
+import { endStatusMeetingOf } from '@shared/database/status-meeting';
 import { AppSettingsService } from '@modules/settings/application/app-settings.service';
 import {
   ApprovalFilter,
@@ -266,6 +267,8 @@ export class PrismaBreakRecordRepository implements BreakRecordRepository {
             where: { id: open.id },
             data: { endedAt: now, durationSec: elapsedSec(open.startedAt, now) },
           });
+          // Taking a break ends a meeting first; a status meeting records why (3.6).
+          await endStatusMeetingOf(tx, open.id, now, 'BREAK');
         }
 
         const session = await tx.presenceSession.create({

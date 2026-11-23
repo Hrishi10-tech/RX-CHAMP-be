@@ -26,6 +26,65 @@ function sample(durationSec: number, idle = false, locked = false): ActivitySamp
   };
 }
 
+describe('ReportActivityUseCase: in a meeting, whenever it began (D-22)', () => {
+  it('the push never says idle in a meeting begun before midnight', async () => {
+    jest
+      .useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+      .setSystemTime(new Date(AT).getTime() + 30_000);
+    const idle = sample(0, true);
+    const repo = {
+      findLatestForUser: jest.fn().mockResolvedValue(null),
+      listForUserByDate: jest.fn().mockResolvedValue([idle]),
+      stampDuration: jest.fn(),
+      create: jest.fn().mockResolvedValue(idle),
+    };
+    const access = {
+      findSelf: jest.fn().mockResolvedValue({
+        id: 'user-1',
+        firstName: 'Uma',
+        lastName: 'S',
+        email: 'uma@test',
+        department: null,
+        managerId: 'mgr-1',
+        screenshotsEnabled: true,
+        role: 'USER',
+      }),
+    };
+    const workDays = {
+      findEnd: jest.fn().mockResolvedValue(null),
+      recordLogin: jest.fn(),
+      findLogin: jest.fn().mockResolvedValue(null),
+    };
+    const gateway = {
+      emitToUser: jest.fn(),
+      emitForSubject: jest.fn().mockResolvedValue(undefined),
+    };
+    const events = { publish: jest.fn().mockResolvedValue(undefined) };
+    // Filed under yesterday, and this day's windows may not hold it: the live answer decides.
+    const meetings = {
+      listForUserByDate: jest.fn().mockResolvedValue([]),
+      usersInMeeting: jest.fn().mockResolvedValue(new Set(['user-1'])),
+    };
+    const useCase = new ReportActivityUseCase(
+      repo as never,
+      access as never,
+      workDays as never,
+      meetings as never,
+      gateway as never,
+      events as never,
+    );
+
+    await useCase.execute('user-1', { at: AT, idle: true });
+    expect(meetings.usersInMeeting).toHaveBeenCalledWith(['user-1']);
+    expect(gateway.emitForSubject.mock.calls[0][1].status).toBe('ACTIVE');
+
+    meetings.usersInMeeting.mockResolvedValue(new Set());
+    await useCase.execute('user-1', { at: AT, idle: true });
+    expect(gateway.emitForSubject.mock.calls[1][1].status).toBe('IDLE');
+    jest.useRealTimers();
+  });
+});
+
 describe('ReportActivityUseCase — End Day capture gate', () => {
   const repo = {
     findLatestForUser: jest.fn(),
@@ -42,7 +101,10 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
     findLogin: jest.fn().mockResolvedValue(null),
     findLoginsForUsers: jest.fn(),
   } as any;
-  const meetings = { listForUserByDate: jest.fn() } as any;
+  const meetings = {
+    listForUserByDate: jest.fn(),
+    usersInMeeting: jest.fn().mockResolvedValue(new Set()),
+  } as any;
   const gateway = {
     emitToUser: jest.fn(),
     emitForSubject: jest.fn().mockResolvedValue(undefined),
@@ -62,6 +124,7 @@ describe('ReportActivityUseCase — End Day capture gate', () => {
     jest.clearAllMocks();
     useCase = new ReportActivityUseCase(repo, access, workDays, meetings, gateway, events);
     meetings.listForUserByDate.mockResolvedValue([]); // no meetings unless a test adds one
+    meetings.usersInMeeting.mockResolvedValue(new Set());
     repo.findLatestForUser.mockResolvedValue(null); // no previous sample to stamp
     repo.create.mockResolvedValue(sample(0)); // the freshly-created (open) sample
     repo.listForUserByDate.mockResolvedValue([]); // day rollup source (overridden per test)
@@ -358,7 +421,10 @@ describe('ReportActivityUseCase — clock checks', () => {
     recordLogin: jest.fn(),
     findLogin: jest.fn().mockResolvedValue(null),
   } as any;
-  const meetings = { listForUserByDate: jest.fn().mockResolvedValue([]) } as any;
+  const meetings = {
+    listForUserByDate: jest.fn().mockResolvedValue([]),
+    usersInMeeting: jest.fn().mockResolvedValue(new Set()),
+  } as any;
   const gateway = {
     emitToUser: jest.fn(),
     emitForSubject: jest.fn().mockResolvedValue(undefined),

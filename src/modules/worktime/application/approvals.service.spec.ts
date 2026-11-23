@@ -177,6 +177,7 @@ function setup() {
   const meetings = {
     findById: jest.fn().mockResolvedValue(meeting()),
     listByIds: jest.fn().mockResolvedValue([]),
+    listForUsersBetween: jest.fn().mockResolvedValue([]),
     decide: jest.fn(async (_id: string, _expected: string[], d: Decision) =>
       meeting({
         approvalStatus: d.status as MeetingRecordRow['approvalStatus'],
@@ -224,6 +225,7 @@ function setup() {
     forUser: jest.fn().mockResolvedValue({ approvalSlaHours: 24 }),
   };
   const samples = { samplesInWindows: jest.fn(async () => new Map()) };
+  const worktime = { presenceOverlapping: jest.fn().mockResolvedValue([]) };
   const svc = new ApprovalsService(
     reader as never,
     breaks as never,
@@ -235,6 +237,7 @@ function setup() {
     meetingService as never,
     settings as never,
     samples as never,
+    worktime as never,
   );
   const notices = () =>
     events.publish.mock.calls
@@ -256,6 +259,7 @@ function setup() {
     notices,
     pushes,
     samples,
+    worktime,
   };
 }
 
@@ -425,6 +429,36 @@ describe('ApprovalsService deciding meetings', () => {
     await expect(svc.approve(MGR, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
       code: 'ALREADY_DECIDED',
     });
+  });
+
+  it('a status meeting can never be decided or reopened, by anyone (D-20)', async () => {
+    const { svc, meetings } = setup();
+    const status = meeting({
+      kind: 'STATUS',
+      mode: 'LIVE',
+      approvalStatus: 'NOT_REQUIRED',
+      approverRole: null,
+      approverId: null,
+    });
+    meetings.findById.mockResolvedValue(status);
+    for (const who of [MGR, SA]) {
+      await expect(svc.approve(who, 'meeting', 'm1', undefined, NOW)).rejects.toMatchObject({
+        status: 409,
+        code: 'ALREADY_DECIDED',
+      });
+      await expect(svc.reject(who, 'meeting', 'm1', 'Not a meeting', NOW)).rejects.toMatchObject({
+        status: 409,
+        code: 'ALREADY_DECIDED',
+      });
+      await expect(svc.reopen(who, 'meeting', 'm1', NOW)).rejects.toMatchObject({
+        status: 409,
+        code: 'NOT_DECIDED',
+      });
+    }
+    expect(meetings.decide).not.toHaveBeenCalled();
+    // Even one somehow marked rejected cannot be reopened and sent round again.
+    meetings.findById.mockResolvedValue({ ...status, approvalStatus: 'REJECTED' });
+    await expect(svc.reopen(SA, 'meeting', 'm1', NOW)).rejects.toMatchObject({ status: 409 });
   });
 
   it('reopens: only the decider or an Admin / Super Admin, only a decided meeting', async () => {

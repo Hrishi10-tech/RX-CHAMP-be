@@ -11,6 +11,9 @@ describe('workdayChangeOf (3.4)', () => {
     expect(workdayChangeOf('POST', '/api/v1/presence/end')).toBe('PRESENCE');
     expect(workdayChangeOf('POST', '/api/v1/meetings/start')).toBe('MEETING');
     expect(workdayChangeOf('POST', '/api/v1/meetings/0b1c/end')).toBe('MEETING');
+    expect(workdayChangeOf('POST', '/api/v1/meetings/status/start')).toBe('MEETING');
+    expect(workdayChangeOf('POST', '/api/v1/meetings/status/end')).toBe('MEETING');
+    expect(workdayChangeOf('POST', '/api/v1/meetings/status/confirm')).toBe('MEETING');
   });
 
   it('ignores reads, heartbeats, samples and everything else', () => {

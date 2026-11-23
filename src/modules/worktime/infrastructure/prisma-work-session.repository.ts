@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, WorkSession } from '@prisma/client';
 import { assertMonthOpen } from '@shared/database/month-lock';
 import { PrismaService } from '@shared/database/prisma.service';
+import { endStatusMeetingOf } from '@shared/database/status-meeting';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { DayKeyFn } from '@modules/shifts/application/shift-day.resolver';
 import { AgentGeneration } from '../domain/agent-generation';
 import { realLastInput } from '../domain/auto-close';
 import { IDLE_LEAD_IN_SEC, LOCK_SCREEN_APP_NAME } from '../domain/input-activity';
+import { STATUS_MEETING_UNCONFIRMED_MS } from '../domain/meeting-status';
+import { MIN_LIVE_MEETING_SEC } from '../domain/meeting-record.repository';
 import {
   AutoCloseTxResult,
   EndDayTxResult,
@@ -45,8 +48,16 @@ function elapsedSec(from: Date, to: Date): number {
   return Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
 }
 
-/** Closes every open break, lunch or meeting of the person at `at` (never before it started). */
-export async function closeOpenPresence(tx: Tx, userId: string, at: Date): Promise<number> {
+/**
+ * Closes every open break, lunch or meeting of the person at `at` (never before it
+ * started). A status meeting ends with its presence, for `why` (3.6).
+ */
+export async function closeOpenPresence(
+  tx: Tx,
+  userId: string,
+  at: Date,
+  why: 'END_DAY' | 'AUTO_CLOSED',
+): Promise<number> {
   const open = await tx.presenceSession.findMany({ where: { userId, endedAt: null } });
   for (const s of open) {
     const end = at.getTime() < s.startedAt.getTime() ? s.startedAt : at;
@@ -54,6 +65,7 @@ export async function closeOpenPresence(tx: Tx, userId: string, at: Date): Promi
       where: { id: s.id },
       data: { endedAt: end, durationSec: elapsedSec(s.startedAt, end) },
     });
+    if (s.type === 'MEETING') await endStatusMeetingOf(tx, s.id, end, why);
   }
   return open.length;
 }
@@ -248,7 +260,7 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
           where: { id: open.id },
           data: { endedAt: now, endReason: 'USER' },
         });
-        await closeOpenPresence(tx, userId, now);
+        await closeOpenPresence(tx, userId, now, 'END_DAY');
         const newlyEnded = await markDayEnded(tx, userId, open.date, now);
         // A session that ran past midnight, or a night shift's early hours.
         for (const day of new Set([today, calendar])) {
@@ -279,7 +291,7 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
         return { kind: 'ALREADY_ENDED' as const, date: today, endedAt: lastToday.endedAt };
       }
       if (legacy) {
-        await closeOpenPresence(tx, userId, now);
+        await closeOpenPresence(tx, userId, now, 'END_DAY');
         const newlyEnded = await markDayEnded(tx, userId, today, now);
         if (calendar !== today) await markDayEnded(tx, userId, calendar, now);
         return { kind: 'MARKED' as const, date: today, endedAt: now, newlyEnded };
@@ -345,7 +357,7 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
         where: { id: session.id },
         data: { endedAt: at, endReason: 'AUTO_CLOSED' },
       });
-      await closeOpenPresence(tx, session.userId, at);
+      await closeOpenPresence(tx, session.userId, at, 'AUTO_CLOSED');
       // Auto-skips owed only because the session was still open (scheduled after
       // the real end) were never owed: they go, unless a manager decided them
       // already (a decision stays; re-audit M2).
@@ -475,6 +487,41 @@ export class PrismaWorkSessionRepository implements WorkSessionRepository {
       distinct: ['userId'],
     });
     return new Set(rows.map((r) => r.userId));
+  }
+
+  async statusMeetingsUntil(queries: LastInputQuery[], now: Date): Promise<Map<string, Date>> {
+    const out = new Map<string, Date>();
+    if (!queries.length) return out;
+    const rows = await this.prisma.meetingRecord.findMany({
+      where: {
+        kind: 'STATUS',
+        userId: { in: [...new Set(queries.map((q) => q.userId))] },
+        startedAt: { gte: new Date(Math.min(...queries.map((q) => q.from.getTime()))) },
+      },
+      select: {
+        userId: true,
+        startedAt: true,
+        endedAt: true,
+        durationSec: true,
+        confirmedAt: true,
+        presenceSession: { select: { endedAt: true } },
+      },
+    });
+    for (const q of queries) {
+      for (const m of rows) {
+        if (m.userId !== q.userId || m.startedAt.getTime() < q.from.getTime()) continue;
+        // Under a minute a meeting is discarded: it never happened.
+        if (m.endedAt && (m.durationSec ?? 0) < MIN_LIVE_MEETING_SEC) continue;
+        const running = Math.min(
+          now.getTime(),
+          (m.confirmedAt ?? m.startedAt).getTime() + STATUS_MEETING_UNCONFIRMED_MS,
+        );
+        const until = (m.endedAt ?? m.presenceSession?.endedAt)?.getTime() ?? running;
+        const best = out.get(q.sessionId);
+        if (!best || until > best.getTime()) out.set(q.sessionId, new Date(until));
+      }
+    }
+    return out;
   }
 
   async setLateReason(

@@ -12,7 +12,6 @@ import {
   deltaPct,
   detectFocusSessions,
   lastNDatesEndingAt,
-  meetingWindows,
   presenceTotals,
 } from '../analytics.util';
 
@@ -36,11 +35,12 @@ export class GetDashboardAnalyticsUseCase {
     const dates = lastNDatesEndingAt(day, WINDOW_DAYS);
 
     const win = await this.reader.loadWindow(userId, dates);
+    const meetingsOn = (d: string) => win.meetingsByDate.get(d) ?? [];
 
     // Roll each day up once; the selected day is the last entry.
     const rollups: DayRollup[] = dates.map((d) => {
       const samples = win.samplesByDate.get(d) ?? [];
-      const meetings = meetingWindows(win.presenceByDate.get(d) ?? []);
+      const meetings = meetingsOn(d);
       const daily = ActivityMapper.computeDaily(
         samples,
         d,
@@ -81,7 +81,7 @@ export class GetDashboardAnalyticsUseCase {
       DEFAULT_WORKING_BASIS_SEC,
       now,
       null,
-      meetingWindows(win.presenceByDate.get(day) ?? []),
+      meetingsOn(day),
     );
     const selectedPresence = presenceTotals(win.presenceByDate.get(day) ?? [], now);
 

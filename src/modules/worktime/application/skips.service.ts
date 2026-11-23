@@ -126,6 +126,8 @@ export class SkipsService {
     generation: AgentGeneration,
     now: Date,
   ): Promise<{ record: BreakRecordView }> {
+    // Biometric staff have no break flow (3.5): a skip would count against a day of punches.
+    await this.sessions.assertAgentDay(me.id, 'act');
     await this.sessions.autoCloseIfStale(me.id, now);
     const person = await this.people.findById(me.id);
     if (!person) throw new NotFoundError('User not found');

@@ -20,6 +20,7 @@ export interface SampleStats {
   lastActiveAt: Date | null;
   /** Samples stored on `date` (the server's local day, as activity files them). */
   today: number;
+  /** The newest sample says nobody is at the keyboard, and the person is not in a meeting. */
   lastIdle: boolean;
 }
 

@@ -33,7 +33,13 @@ import { GuideItem, staffGuide } from '../domain/staff-guide';
 import { DayDataService } from './day-data.service';
 import { SkipsService } from './skips.service';
 import { WorkSessionsService } from './work-sessions.service';
-import { FocusView, WorkdayTodayView, WorkdayWfhView, WorkSessionView } from './worktime.types';
+import {
+  FocusView,
+  WorkdayState,
+  WorkdayTodayView,
+  WorkdayWfhView,
+  WorkSessionView,
+} from './worktime.types';
 import { unitsOfMask } from '@modules/leave/domain/leave.types';
 import { WFH_SOURCE_LABEL, wfhMaskLabel } from '@modules/wfh/application/wfh-overview.service';
 import { WfhDay } from '@modules/wfh/domain/wfh';
@@ -130,12 +136,10 @@ export class WorkdayService {
   }
 
   /**
-   * The view itself, with no side effects (also returned by Start and End Day).
-   * `forDate`: that working day instead of today's (End Day answers with the day
-   * it just ended, even after midnight or after a night shift).
+   * The day's numbers the panel and the ring share (3.6: one source, so they always match):
+   * which working day it is, its state, focus time and expected time.
    */
-  async view(me: AuthenticatedUser, now: Date, forDate?: string): Promise<WorkdayTodayView> {
-    const tz = appTimezone();
+  async dayCore(me: AuthenticatedUser, now: Date, forDate?: string) {
     const [open, person, ctx] = await Promise.all([
       this.sessions.findOpen(me.id),
       this.people.findById(me.id),
@@ -147,32 +151,55 @@ export class WorkdayService {
     const date =
       forDate ??
       open?.date ??
-      (person ? this.days.dayWith(ctx, person, now).dateKey : dateKeyInZone(now, tz));
-    const [data, settings, skipsNeedingComment, pc, idle, sharedComputer] = await Promise.all([
+      (person ? this.days.dayWith(ctx, person, now).dateKey : dateKeyInZone(now, appTimezone()));
+    const who = person ?? { id: me.id, companyId: me.companyId, department: me.department };
+    const [data, pc] = await Promise.all([
       this.dayData.load([me.id], date, date, now, { heal: true }),
+      this.plans.context([who]),
+    ]);
+    const day = data.day(me.id, date);
+    // 4.0: the organisation's day plan decides the working day, the shift and the target.
+    const plan = pc.plan(who, date);
+    const shift: ShiftRecord | null = person ? plan.shift : null;
+    const workday = plan.isWorkingDay;
+    // Leave (3.4): a part day moves the late-start mark and shrinks what is expected.
+    const leave = workday ? day.leave : undefined;
+    const state: WorkdayState =
+      open && open.date === date ? 'OPEN' : day.sessions.length ? 'ENDED' : 'NOT_STARTED';
+    return {
+      open,
+      person,
+      ctx,
+      date,
+      day,
+      plan,
+      focus: focusOfDay(day, now, plan.bufferMin),
+      shift,
+      workday,
+      leave,
+      state,
+      // 4.0's target, less what leave covers (3.4).
+      expectedSec: workday ? expectedAfterLeave(plan.targetSec, leave) : 0,
+    };
+  }
+
+  /**
+   * The view itself, with no side effects (also returned by Start and End Day).
+   * `forDate`: that working day instead of today's (End Day answers with the day
+   * it just ended, even after midnight or after a night shift).
+   */
+  async view(me: AuthenticatedUser, now: Date, forDate?: string): Promise<WorkdayTodayView> {
+    const tz = appTimezone();
+    const [core, settings, skipsNeedingComment, idle, sharedComputer] = await Promise.all([
+      this.dayCore(me, now, forDate),
       this.settings.get(me.companyId),
       this.skipsQuery.forUser(me.id, now),
-      this.plans.context([
-        person ?? { id: me.id, companyId: me.companyId, department: me.department },
-      ]),
       this.settings.effectiveIdleFor(me.id),
       this.settings.sharedComputerFor(me.id),
     ]);
-    const day = data.day(me.id, date);
-    const plan = pc.plan(
-      person ?? { id: me.id, companyId: me.companyId, department: me.department },
-      date,
-    );
-    const focus = focusOfDay(day, now, plan.bufferMin);
-    const shift: ShiftRecord | null = person ? plan.shift : null;
-    const workday = plan.isWorkingDay;
-    void ctx;
+    const { open, person, ctx, date, day, focus, plan, shift, workday, state, leave } = core;
     const first = day.sessions[0] ?? null;
     const last = day.sessions[day.sessions.length - 1] ?? null;
-    const state =
-      open && open.date === date ? 'OPEN' : day.sessions.length ? 'ENDED' : 'NOT_STARTED';
-    // Leave (3.4): a part day moves the late-start mark and shrinks what is expected.
-    const leave = workday ? day.leave : undefined;
     const bounds = shift ? shiftBounds(shift, date, tz) : null;
     const mark = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, leave);
 
@@ -216,8 +243,7 @@ export class WorkdayService {
         ? null
         : { kind: plan.label ? 'HOLIDAY' : 'WEEKLY_OFF', name: plan.label ?? null },
       shift: shift ? { id: shift.id, name: shift.name, start: shift.start, end: shift.end } : null,
-      // 4.0's target, less what leave covers (3.4).
-      expectedSec: workday ? expectedAfterLeave(plan.targetSec, leave) : 0,
+      expectedSec: core.expectedSec,
       leave: workday ? dayLeaveView(day.leave) : null,
       workingFrom: leave?.mask && !leave.full ? (mark.start?.toISOString() ?? null) : null,
       workingUntil: leave?.mask && !leave.full ? (mark.end?.toISOString() ?? null) : null,

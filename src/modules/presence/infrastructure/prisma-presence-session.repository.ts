@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PresenceSession as PrismaPresenceSession } from '@prisma/client';
 import { PrismaService } from '@shared/database/prisma.service';
+import { endStatusMeetingOf } from '@shared/database/status-meeting';
 import { elapsedSeconds } from '../application/presence-date.util';
 import {
   OpenSessionData,
@@ -45,6 +46,10 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
           where: { id: s.id },
           data: endNoEarlierThanStart(s.startedAt, now),
         });
+        // An older client taking a break ends a status meeting first (3.6).
+        if (s.type === 'MEETING') {
+          await endStatusMeetingOf(tx, s.id, now, data.type === 'MEETING' ? 'USER' : 'BREAK');
+        }
         closed ??= this.toRecord(row);
       }
 
@@ -79,6 +84,7 @@ export class PrismaPresenceSessionRepository implements PresenceSessionRepositor
           where: { id: s.id },
           data: endNoEarlierThanStart(s.startedAt, now),
         });
+        if (s.type === 'MEETING') await endStatusMeetingOf(tx, s.id, now, 'USER');
         newest ??= this.toRecord(row);
       }
       return newest;

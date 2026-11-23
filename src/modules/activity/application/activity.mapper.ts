@@ -6,9 +6,15 @@ import { MeetingWindow } from '../domain/meeting-window.reader';
 import { appDisplayName } from './app-display-name';
 import { clamp, elapsedSeconds, localDateString } from './activity-date.util';
 import { appTimezone } from '@shared/utils/timezone';
+import { NO_SHIFT_SESSION_MS } from '@modules/worktime/domain/auto-close';
 import { hourWindows } from '@modules/worktime/domain/hourly';
-import { InputSample, inputIntervals, overlapIn } from '@modules/worktime/domain/input-activity';
-import { intersect, normalize, subtract } from '@modules/worktime/domain/intervals';
+import {
+  InputSample,
+  inputIntervals,
+  overlapIn,
+  withMeetings,
+} from '@modules/worktime/domain/input-activity';
+import { normalize } from '@modules/worktime/domain/intervals';
 import { LIVE_GRACE_SEC, MAX_GAP_SEC, TOP_N } from './activity.constants';
 import { isLockedSample } from './locked-time.util';
 import {
@@ -56,10 +62,13 @@ export class ActivityMapper {
     sample: ActivitySampleRecord | null,
     now: Date,
     dayEnded = false,
+    inMeeting = false,
   ): ActivityStatus {
     if (dayEnded) return 'DAY_ENDED';
     if (!sample) return 'OFFLINE';
     if (elapsedSeconds(sample.at, now) > LIVE_GRACE_SEC) return 'OFFLINE';
+    // In a meeting the person is working, just not typing: never shown as idle (D-22).
+    if (inMeeting) return 'ACTIVE';
     return sample.idle || isLockedSample(sample) ? 'IDLE' : 'ACTIVE';
   }
 
@@ -67,8 +76,9 @@ export class ActivityMapper {
     sample: ActivitySampleRecord | null,
     now: Date,
     dayEnded = false,
+    inMeeting = false,
   ): CurrentActivityView {
-    const status = this.statusOf(sample, now, dayEnded);
+    const status = this.statusOf(sample, now, dayEnded, inMeeting);
     // Nothing is in the foreground once the day is over, same as being offline.
     if (!sample || status === 'OFFLINE' || status === 'DAY_ENDED') {
       return {
@@ -86,7 +96,7 @@ export class ActivityMapper {
       app: appDisplayName(sample.app),
       title: sample.title,
       url: sample.url,
-      idle: sample.idle || isLockedSample(sample),
+      idle: status === 'IDLE',
       lastSampleAt: sample.at.toISOString(),
       staleSec: elapsedSeconds(sample.at, now),
     };
@@ -98,8 +108,9 @@ export class ActivityMapper {
     now: Date,
     dayEnded = false,
     loginAt: Date | null = null,
+    inMeeting = false,
   ): TeamMemberActivityView {
-    const status = this.statusOf(sample, now, dayEnded);
+    const status = this.statusOf(sample, now, dayEnded, inMeeting);
     const live = sample && status !== 'OFFLINE' && status !== 'DAY_ENDED';
     return {
       userId: member.id,
@@ -160,14 +171,17 @@ export class ActivityMapper {
         .map((m) => {
           const start = m.start.getTime();
           if (m.end) return { start, end: m.end.getTime() };
-          // An unclosed meeting is only trusted while it could still be running
-          // (today, up to now); left open on a past day it is incomplete data.
-          return { start, end: dayIsToday ? asOf.getTime() : start };
+          // An unclosed meeting is only trusted while it could still be running: begun today,
+          // or past midnight no longer ago than a working day can run. Left open longer, it is
+          // incomplete data.
+          const running =
+            (dayIsToday && localDateString(m.start) === date) ||
+            asOf.getTime() - start <= NO_SHIFT_SESSION_MS;
+          return { start, end: running ? asOf.getTime() : start };
         })
         .filter((m) => m.end > m.start),
     );
-    const active = normalize([...intervals.active, ...intersect(intervals.idle, meetingSpans)]);
-    const idle = subtract(intervals.idle, meetingSpans);
+    const { active, idle } = withMeetings(intervals, meetingSpans);
 
     const hourly: HourBucket[] = hourWindows(date, tz).map((w, hour) => ({
       hour,
@@ -247,9 +261,10 @@ export class ActivityMapper {
     now: Date,
     dayEnded = false,
     loginAt: Date | null = null,
+    inMeeting = false,
   ): LiveActivityUpdate {
     return {
-      ...this.toTeamMemberView(member, sample, now, dayEnded, loginAt),
+      ...this.toTeamMemberView(member, sample, now, dayEnded, loginAt, inMeeting),
       activeSec: daily.activeSec,
       idleSec: daily.idleSec,
       topApps: daily.topApps,

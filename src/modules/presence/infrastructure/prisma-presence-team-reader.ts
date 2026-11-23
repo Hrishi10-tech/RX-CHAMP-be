@@ -30,10 +30,15 @@ export class PrismaPresenceTeamReader implements PresenceTeamReader {
         email: true,
         department: true,
         managerId: true,
+        attendanceSource: true,
       },
     });
     if (!row) return null;
-    const { managerId, ...self } = row;
-    return { self, managerId: managerId ?? null };
+    const { managerId, attendanceSource, ...self } = row;
+    return {
+      self,
+      managerId: managerId ?? null,
+      attendanceSource: attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+    };
   }
 }

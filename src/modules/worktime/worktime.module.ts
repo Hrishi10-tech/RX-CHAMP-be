@@ -29,6 +29,7 @@ import { DayPlanService } from './application/day-plan.service';
 import { FocusAdjustmentsService } from './application/focus-adjustments.service';
 import { HistoryService } from './application/history.service';
 import { PersonDaysService } from './application/person-days.service';
+import { DayProgressService } from './application/day-progress.service';
 import { HourlyActivityService } from './application/hourly-activity.service';
 import { LateStartService } from './application/late-start.service';
 import {
@@ -37,6 +38,7 @@ import {
   AutoCloseJob,
   AutoSkipJob,
   HourlyCacheJob,
+  StatusMeetingCheckJob,
 } from './application/jobs/worktime.jobs';
 import { MeetingRerouteSubscriber } from './application/meeting-reroute.subscriber';
 import { MeetingsService } from './application/meetings.service';
@@ -48,6 +50,7 @@ import { WorkdayService } from './application/workday.service';
 import { ApprovalsController } from './presentation/approvals.controller';
 import { AwayController } from './presentation/away.controller';
 import { FocusAdjustmentsController } from './presentation/focus-adjustments.controller';
+import { DayProgressController } from './presentation/day-progress.controller';
 import { MeetingsController } from './presentation/meetings.controller';
 import {
   OverviewController,
@@ -84,6 +87,7 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     AwayController,
     FocusAdjustmentsController,
     OrganisationsOverviewController,
+    DayProgressController,
   ],
   providers: [
     { provide: WORK_SESSION_REPOSITORY, useClass: PrismaWorkSessionRepository },
@@ -122,7 +126,9 @@ import { WfhSessionsService } from './application/wfh-sessions.service';
     ApprovalsSlaJob,
     ApprovalsDigestJob,
     HourlyCacheJob,
+    StatusMeetingCheckJob,
     MeetingRerouteSubscriber,
+    DayProgressService,
   ],
   exports: [
     WorkSessionsService,

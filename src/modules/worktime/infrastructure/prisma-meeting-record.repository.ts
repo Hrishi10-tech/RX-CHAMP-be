@@ -11,8 +11,10 @@ import { pendingClock } from '@modules/shifts/infrastructure/prisma-break-record
 import { isUuid } from '@modules/shifts/infrastructure/prisma-shift.repository';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { AgentGeneration } from '../domain/agent-generation';
+import { statusFallbackAt, statusFallbackDue } from '../domain/meeting-status';
 import { checkPastMeeting, isDiscardedMeeting } from '../domain/meetings';
 import {
+  ConfirmStatusResult,
   CreatePastResult,
   EndLiveResult,
   HealResult,
@@ -22,6 +24,7 @@ import {
   MeetingRecordRow,
   MIN_LIVE_MEETING_SEC,
   NewMeeting,
+  RunningMeeting,
   StartLiveResult,
 } from '../domain/meeting-record.repository';
 import { ensureOpenTx, lockUser } from './prisma-work-session.repository';
@@ -61,6 +64,10 @@ export function meetingFromPrisma(r: MeetingRecord): MeetingRecordRow {
     escalatedAt: r.escalatedAt,
     remindedAt: r.remindedAt,
     createdAt: r.createdAt,
+    kind: r.kind,
+    startSource: r.startSource,
+    confirmedAt: r.confirmedAt,
+    endReason: r.endReason,
   };
 }
 
@@ -182,7 +189,8 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
         data: {
           userId: input.userId,
           type: 'MEETING',
-          note: input.agenda,
+          // A status meeting carries nothing but its start and end (D-20).
+          note: input.status ? null : input.agenda,
           date: dateKeyInZone(now, appTimezone()),
           startedAt: now,
         },
@@ -201,6 +209,9 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
           approverRole: input.routing.approverRole,
           approverId: input.routing.approverId,
           ...clock,
+          ...(input.status
+            ? { kind: 'STATUS' as const, startSource: input.status.source, confirmedAt: now }
+            : {}),
         },
       });
       return {
@@ -241,16 +252,17 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
         }
       }
       const durationSec = seconds(record.startedAt, endedAt);
+      const endReason = record.kind === 'STATUS' ? { endReason: 'USER' as const } : {};
       if (durationSec < MIN_LIVE_MEETING_SEC) {
         await tx.meetingRecord.update({
           where: { id },
-          data: { endedAt, durationSec, ...DISCARD },
+          data: { endedAt, durationSec, ...DISCARD, ...endReason },
         });
         return { kind: 'DISCARDED' as const };
       }
       const updated = await tx.meetingRecord.update({
         where: { id },
-        data: { endedAt, durationSec },
+        data: { endedAt, durationSec, ...endReason },
       });
       return { kind: 'ENDED' as const, record: meetingFromPrisma(updated) };
     });
@@ -346,6 +358,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
       UPDATE meeting_records m
          SET ended_at = ps.ended_at,
              duration_sec = GREATEST(0, ROUND(EXTRACT(EPOCH FROM (ps.ended_at - m.started_at))))::int,
+             end_reason = CASE WHEN m.kind = 'STATUS' THEN 'USER'::"MeetingEndReason" END,
              updated_at = (now() AT TIME ZONE 'UTC')
         FROM presence_sessions ps
        WHERE m.presence_session_id = ps.id
@@ -413,6 +426,8 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
       const res = await tx.meetingRecord.updateMany({
         where: {
           id,
+          // A status meeting is never decided (D-20).
+          kind: 'DECLARED',
           approvalStatus: { in: expected },
           ...(guard ? { approverId: guard.approverId } : {}),
         },
@@ -433,6 +448,102 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
       if (res.count === 0) return null;
       const row = await tx.meetingRecord.findUnique({ where: { id } });
       return row ? meetingFromPrisma(row) : null;
+    });
+  }
+
+  async findRunning(userId: string): Promise<RunningMeeting | null> {
+    const session = await this.prisma.presenceSession.findFirst({
+      where: { userId, type: 'MEETING', endedAt: null },
+      orderBy: { startedAt: 'desc' },
+      include: { meetingRecord: true },
+    });
+    if (!session) return null;
+    return {
+      presenceSessionId: session.id,
+      startedAt: session.startedAt,
+      record: session.meetingRecord ? meetingFromPrisma(session.meetingRecord) : null,
+    };
+  }
+
+  async confirmStatus(userId: string, now: Date): Promise<ConfirmStatusResult> {
+    return this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const record = await tx.meetingRecord.findFirst({
+        where: {
+          userId,
+          kind: 'STATUS',
+          endedAt: null,
+          presenceSession: { is: { endedAt: null } },
+        },
+        orderBy: { startedAt: 'desc' },
+      });
+      if (!record) return { kind: 'NONE' as const };
+      if (record.confirmedAt && statusFallbackDue(record.confirmedAt, now)) {
+        return { kind: 'TOO_LATE' as const, record: meetingFromPrisma(record) };
+      }
+      const updated = await tx.meetingRecord.update({
+        where: { id: record.id },
+        data: { confirmedAt: now },
+      });
+      return { kind: 'CONFIRMED' as const, record: meetingFromPrisma(updated) };
+    });
+  }
+
+  async listStatusUnanswered(cutoff: Date, userIds: string[] | null): Promise<MeetingRecordRow[]> {
+    if (userIds && !userIds.length) return [];
+    const rows = await this.prisma.meetingRecord.findMany({
+      where: {
+        kind: 'STATUS',
+        endedAt: null,
+        confirmedAt: { lte: cutoff },
+        ...(userIds ? { userId: { in: userIds } } : {}),
+      },
+    });
+    return rows.map(meetingFromPrisma);
+  }
+
+  async endStatusUnanswered(
+    id: string,
+    userId: string,
+    now: Date,
+  ): Promise<MeetingRecordRow | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const record = await tx.meetingRecord.findUnique({ where: { id } });
+      // Read again under the lock: a "Still in it" or an end may have just come through.
+      if (!record || record.kind !== 'STATUS' || record.endedAt || !record.confirmedAt) return null;
+      if (!statusFallbackDue(record.confirmedAt, now)) return null;
+      const at = statusFallbackAt(record.confirmedAt);
+      const session = record.presenceSessionId
+        ? await tx.presenceSession.findUnique({ where: { id: record.presenceSessionId } })
+        : null;
+      if (session?.endedAt) {
+        // Its presence closed another way before the job came round: the heal's work.
+        const updated = await tx.meetingRecord.update({
+          where: { id },
+          data: {
+            endedAt: session.endedAt,
+            durationSec: seconds(record.startedAt, session.endedAt),
+            endReason: 'USER',
+          },
+        });
+        return meetingFromPrisma(updated);
+      }
+      if (session) {
+        await tx.presenceSession.update({
+          where: { id: session.id },
+          data: { endedAt: at, durationSec: seconds(session.startedAt, at) },
+        });
+      }
+      const updated = await tx.meetingRecord.update({
+        where: { id },
+        data: {
+          endedAt: at,
+          durationSec: seconds(record.startedAt, at),
+          endReason: 'NO_ANSWER',
+        },
+      });
+      return meetingFromPrisma(updated);
     });
   }
 

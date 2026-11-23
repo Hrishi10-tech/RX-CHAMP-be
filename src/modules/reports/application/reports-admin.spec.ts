@@ -789,6 +789,7 @@ describe('ReportsService (4.0 day plans and per-day engine)', () => {
       personDays as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     return { svc, personDays, scope, store };
   }

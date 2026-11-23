@@ -17,6 +17,8 @@ export const PRESET_KINDS = [
   'MEETING_AGENDA',
   'DECISION_NOTE',
   'LEAVE_REASON',
+  'WFH_REASON',
+  'COMPOFF_REASON',
 ] as const;
 export type PresetKind = (typeof PRESET_KINDS)[number];
 
@@ -48,6 +50,11 @@ export const PRESET_KIND_INFO: Record<PresetKind, { label: string; asked: string
     asked: 'A note to the person when approving or rejecting',
   },
   LEAVE_REASON: { label: 'Reason for leave', asked: 'Why are you taking leave?' },
+  WFH_REASON: { label: 'Reason for work from home', asked: 'Why work from home that day?' },
+  COMPOFF_REASON: {
+    label: 'Comp off claim',
+    asked: 'What did you work on that day? (claiming comp off)',
+  },
 };
 
 export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
@@ -82,6 +89,14 @@ export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
     'Travel',
     'Festival',
   ],
+  WFH_REASON: [
+    'Delivery or repair at home',
+    'Mild illness, can work',
+    'Heavy rain or transport strike',
+    'Family needs me at home',
+    'Focused work on a deadline',
+  ],
+  COMPOFF_REASON: ['Release or deployment', 'Client visit', 'Audit', 'Urgent support', 'Event'],
 };
 
 export const PRESETS_PER_KIND_MAX = 12;

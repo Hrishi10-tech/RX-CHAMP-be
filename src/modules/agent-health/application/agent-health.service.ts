@@ -145,7 +145,9 @@ export class AgentHealthService {
             ? { ...contact.lastRefusal, at: contact.lastRefusal.at.toISOString() }
             : null,
         },
-        flags: healthFlags(facts),
+        attendance: p.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
+        // Biometric staff check in at the device: no agent is expected (3.5).
+        flags: p.attendanceSource === 'BIOMETRIC' ? [] : healthFlags(facts),
       });
     }
     // Problems first, then by name; the portal keeps this order.

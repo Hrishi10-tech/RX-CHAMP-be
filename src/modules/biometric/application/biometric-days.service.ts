@@ -14,6 +14,7 @@ import {
   ShiftPerson,
 } from '@modules/shifts/domain/shift-people.reader';
 import { LateStartService } from '@modules/worktime/application/late-start.service';
+import { WorkSessionsService } from '@modules/worktime/application/work-sessions.service';
 import { latestEndOf } from '@modules/worktime/domain/auto-close';
 import { leaveDay } from '@modules/leave/domain/request-rules';
 import {
@@ -56,6 +57,7 @@ export class BiometricDaysService {
     private readonly settings: BiometricSettingsService,
     private readonly appSettings: AppSettingsService,
     private readonly lateStart: LateStartService,
+    private readonly workSessions: WorkSessionsService,
   ) {}
 
   /** Whether punches shape this person's day on `dayKey` (4.0: people of an organisation only). */
@@ -116,6 +118,9 @@ export class BiometricDaysService {
     );
     const open = wanted.filter((d) => !locked.has(d.slice(0, 7)));
     if (!open.length) return 0;
+    // Work from home on the phone left running past its latest end is ended first (at
+    // the shift end, with its notice), so it neither holds this day open nor closes it.
+    await this.workSessions.autoCloseIfStale(userId, now).catch(() => false);
     const ctx = await this.days.context([userId]);
     const all = await this.repo.punchesOfDays(userId, open);
     let changed = 0;
@@ -243,7 +248,8 @@ export class BiometricDaysService {
           );
         }
       }
-      if (plan.checkoutMissing && res.wasOpen && !res.open) {
+      // Closed with no check-out now: the day was running, or its punches came after the cutoff.
+      if (plan.checkoutMissing && !res.open && (res.wasOpen || res.wasEmpty)) {
         const at = time12InZone(
           plan.sessions[plan.sessions.length - 1].endedAt ?? now,
           appTimezone(),
@@ -255,7 +261,7 @@ export class BiometricDaysService {
             [person.id],
             BIOMETRIC_NOTICE.BIOMETRIC_NO_CHECKOUT,
             `No check-out on ${day}`,
-            `No check-out was recorded on ${day}, so the day was closed at ${at}. If you left later, ask your manager to add the missing punch.`,
+            `No check-out was recorded on ${day}, so the day was closed at ${at}. If you left later, tell your manager so the missing punch can be added.`,
             null,
           ),
         );

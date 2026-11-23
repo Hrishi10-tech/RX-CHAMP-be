@@ -124,6 +124,21 @@ export interface PersonDayReport {
    * and no data (the agent was not reporting). Null when it could not be read.
    */
   input?: { activeSec: number; idleSec: number; noDataSec: number; availableSec: number } | null;
+  /**
+   * A biometric person's punches of the day (3.5), oldest first, voided ones
+   * included; [] for a day recorded by the desktop app.
+   */
+  punches?: DayPunchView[];
+}
+
+/** One punch as the day pages show it (3.5). */
+export interface DayPunchView {
+  at: string;
+  direction: 'IN' | 'OUT' | null;
+  deviceId: string;
+  /** PUSH, PULL, CSV or MANUAL. */
+  source: string;
+  voided: boolean;
 }
 
 export interface MonthTotals {

@@ -423,7 +423,6 @@ export class PrismaBiometricRepository implements BiometricRepository {
           ? { lateReason: existing[0].lateReason, lateReasonAt: existing[0].lateReasonAt }
           : {};
         const plan = planned.map((p) => ({ ...p }));
-        const firstStart = plan[0]?.startedAt ?? null;
         let closedWfhAt: Date | null = null;
 
         const others = await tx.workSession.findMany({
@@ -433,7 +432,7 @@ export class PrismaBiometricRepository implements BiometricRepository {
           if (o.source === 'BIOMETRIC' && o.date < dayKey) {
             // An earlier biometric day that never got its check-out closes at its last punch.
             const last = await tx.biometricPunch.findFirst({
-              where: { userId, dayKey: o.date, voidedAt: null },
+              where: { userId, dayKey: o.date, voidedAt: null, lockedOut: false },
               orderBy: { punchedAt: 'desc' },
             });
             const end = last && last.punchedAt > o.startedAt ? last.punchedAt : o.startedAt;
@@ -442,13 +441,27 @@ export class PrismaBiometricRepository implements BiometricRepository {
               data: { endedAt: end, endReason: 'AUTO_CLOSED' },
             });
             await markDayEnded(tx, userId, o.date, end);
-          } else if (o.source === 'MOBILE_WFH' && firstStart && firstStart > o.startedAt) {
-            // A punch at the office after work from home started on the phone ends it there.
-            await tx.workSession.update({
-              where: { id: o.id },
-              data: { endedAt: firstStart, endReason: 'USER' },
+          } else if (o.source === 'MOBILE_WFH' && o.date === dayKey) {
+            // A punch at the office after work from home started on the phone ends it
+            // there: the first punch after its start (an earlier office punch does not).
+            const after = await tx.biometricPunch.findFirst({
+              where: {
+                userId,
+                dayKey,
+                voidedAt: null,
+                lockedOut: false,
+                punchedAt: { gt: o.startedAt },
+              },
+              orderBy: { punchedAt: 'asc' },
+              select: { punchedAt: true },
             });
-            closedWfhAt = firstStart;
+            if (after) {
+              await tx.workSession.update({
+                where: { id: o.id },
+                data: { endedAt: after.punchedAt, endReason: 'USER' },
+              });
+              closedWfhAt = after.punchedAt;
+            }
           }
         }
         // Anything still open elsewhere (the phone, or the agent before a switch) wins:

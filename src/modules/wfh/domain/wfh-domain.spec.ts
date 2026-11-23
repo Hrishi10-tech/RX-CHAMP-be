@@ -5,6 +5,7 @@ import {
   scheduleCovers,
   scheduleDates,
   scheduleLabel,
+  scheduleLabelInSentence,
   weekOfMonth,
   WfhScheduleRecord,
 } from './wfh';
@@ -62,7 +63,8 @@ describe('work-from-home schedules', () => {
       scheduleLabel(
         schedule({ weekdays: [1, 5], weeks: [2, 4], kind: 'HALF_DAY', part: 'SECOND_HALF' }),
       ),
-    ).toBe('2nd and 4th Monday and Friday, half day (second half)');
+    ).toBe('2nd and 4th Mondays and Fridays, half day (second half)');
+    expect(scheduleLabelInSentence(schedule())).toBe('every Wednesday, full day');
   });
 });
 

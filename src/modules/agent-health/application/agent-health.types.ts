@@ -48,6 +48,8 @@ export interface AgentHealthRow {
   departmentId: string | null;
   companyId: string | null;
   companyName: string | null;
+  /** How the person's day is recorded (3.5): BIOMETRIC staff need no agent, so they carry no flags. */
+  attendance?: 'AGENT' | 'BIOMETRIC';
   agent: {
     /** "3.2.1" from the agent's User-Agent, "legacy" for a 3.0 agent, null when unknown. */
     version: string | null;

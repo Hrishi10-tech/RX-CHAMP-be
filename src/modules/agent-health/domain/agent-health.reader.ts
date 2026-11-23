@@ -11,6 +11,8 @@ export interface AgentHealthPerson {
   departmentId: string | null;
   companyId: string | null;
   companyName: string | null;
+  /** How the day is recorded (3.5). */
+  attendanceSource?: 'AGENT' | 'BIOMETRIC';
 }
 
 export interface SampleStats {

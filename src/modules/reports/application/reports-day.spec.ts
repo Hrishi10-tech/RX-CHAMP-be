@@ -95,6 +95,7 @@ function setup(adjustments: unknown[] = []) {
     {} as never,
     adjustmentViews as never,
     { samplesInWindows: jest.fn(async () => new Map()) } as never,
+    { punchesOf: jest.fn(async () => new Map()) } as never,
   );
   return { svc, adjustmentViews };
 }

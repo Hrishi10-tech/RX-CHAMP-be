@@ -146,15 +146,23 @@ function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/** "Every Wednesday, full day", "1st and 3rd Friday, half day (second half)". */
+/** "Every Wednesday, full day", "1st and 3rd Fridays, half day (second half)". */
 export function scheduleLabel(
   s: Pick<WfhScheduleRecord, 'weekdays' | 'weeks' | 'kind' | 'part'>,
 ): string {
-  const days = joinList([...s.weekdays].sort((a, b) => a - b).map((d) => WEEKDAY_NAME[d] ?? ''));
+  const names = [...s.weekdays].sort((a, b) => a - b).map((d) => WEEKDAY_NAME[d] ?? '');
   const when = s.weeks.length
-    ? `${joinList([...s.weeks].sort((a, b) => a - b).map((w) => ORDINAL[w] ?? `${w}th`))} ${days}`
-    : `Every ${days}`;
+    ? `${joinList([...s.weeks].sort((a, b) => a - b).map((w) => ORDINAL[w] ?? `${w}th`))} ${joinList(names.map((n) => `${n}s`))}`
+    : `Every ${joinList(names)}`;
   return `${when}, ${kindLabel(s.kind, s.part).toLowerCase()}`;
+}
+
+/** The label for the middle of a sentence: "every Wednesday, full day" (weekday names keep their capital). */
+export function scheduleLabelInSentence(
+  s: Pick<WfhScheduleRecord, 'weekdays' | 'weeks' | 'kind' | 'part'>,
+): string {
+  const label = scheduleLabel(s);
+  return label.startsWith('Every ') ? `every ${label.slice(6)}` : label;
 }
 
 // ---- Checks -------------------------------------------------------------------------

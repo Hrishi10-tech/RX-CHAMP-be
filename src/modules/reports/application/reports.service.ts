@@ -20,7 +20,8 @@ import { meetingView, MeetingsService } from '@modules/worktime/application/meet
 import { nameOf, PeopleScopeService } from '@modules/worktime/application/people-scope.service';
 import { asShiftPerson } from '@modules/worktime/application/team-today.service';
 import { APPROVALS_READER, ApprovalsReader } from '@modules/worktime/domain/approvals.reader';
-import { focusOfDay, intervalsOfDay, PersonDayData } from '@modules/worktime/domain/day';
+import { BIOMETRIC_SOURCE, focusOfDay, intervalsOfDay, PersonDayData } from '@modules/worktime/domain/day';
+import { PUNCHES_READER, PunchesReader } from '@modules/worktime/domain/punches.reader';
 import {
   breakdownIn,
   IDLE_LEAD_IN_SEC,
@@ -49,6 +50,7 @@ import {
 } from '../domain/report-builder';
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
 import {
+  DayPunchView,
   MonthSnapshot,
   MonthTotals,
   PersonDayReport,
@@ -99,7 +101,31 @@ export class ReportsService {
     private readonly personDays: PersonDaysService,
     private readonly adjustments: FocusAdjustmentsService,
     @Inject(INPUT_SAMPLES_READER) private readonly samples: InputSamplesReader,
+    @Inject(PUNCHES_READER) private readonly punches: PunchesReader,
   ) {}
+
+  /**
+   * A biometric day's punches (3.5), for the day page and the phone's day sheet:
+   * read when the person checks in by biometric or the day holds a biometric session.
+   */
+  private async punchesOf(
+    person: { attendanceSource?: 'AGENT' | 'BIOMETRIC' },
+    d: PersonDayData,
+    day: string,
+  ): Promise<DayPunchView[]> {
+    const biometric =
+      person.attendanceSource === 'BIOMETRIC' ||
+      d.sessions.some((s) => s.source === BIOMETRIC_SOURCE);
+    if (!biometric) return [];
+    const map = await this.punches.punchesOf([d.userId], day, day);
+    return (map.get(`${d.userId}|${day}`) ?? []).map((p) => ({
+      at: p.at.toISOString(),
+      direction: p.direction,
+      deviceId: p.deviceId,
+      source: p.source,
+      voided: p.voided,
+    }));
+  }
 
   /**
    * Keyboard and mouse input of one day, inside the time available for it (work
@@ -308,6 +334,7 @@ export class ReportsService {
       hourly,
       adjustments: await this.adjustments.views(d.adjustments ?? []),
       input: await this.inputOf(d, now),
+      punches: await this.punchesOf(person, d, day),
     };
   }
 
@@ -405,6 +432,7 @@ export class ReportsService {
       breaks: d.breakRecords.map((r) => ShiftMapper.recordView(r, now)),
       meetings: d.meetingRecords.map((m) => meetingView(m, now, names)),
       adjustments: (await this.adjustments.views(d.adjustments ?? [])).filter((a) => !a.voidedAt),
+      punches: await this.punchesOf(person, d, day),
     };
   }
 
@@ -682,4 +710,6 @@ export interface MyDayReport {
   breaks: PersonDayReport['breaks'];
   meetings: PersonDayReport['meetings'];
   adjustments: NonNullable<PersonDayReport['adjustments']>;
+  /** The day's punches (3.5), a biometric person; [] otherwise. */
+  punches: NonNullable<PersonDayReport['punches']>;
 }

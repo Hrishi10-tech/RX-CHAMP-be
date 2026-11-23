@@ -1,6 +1,6 @@
 import { formatDays } from '@modules/leave/domain/leave.types';
 import { leaveSpan } from '@modules/leave/domain/request-rules';
-import { scheduleLabel, WfhScheduleRecord, wfhWhat } from './wfh';
+import { scheduleLabelInSentence, WfhScheduleRecord, wfhWhat } from './wfh';
 
 /**
  * Notification copy for work from home (3.5). Short sentences naming the person,
@@ -84,19 +84,19 @@ export function wfhScheduledCopy(i: {
   schedule: Pick<WfhScheduleRecord, 'weekdays' | 'weeks' | 'kind' | 'part' | 'fromDate' | 'toDate'>;
   change: 'SET' | 'CHANGED' | 'ENDED';
 }): Copy {
-  const what = scheduleLabel(i.schedule);
+  const what = scheduleLabelInSentence(i.schedule);
   const span = i.schedule.toDate
     ? `from ${leaveSpan(i.schedule.fromDate, i.schedule.fromDate)} to ${leaveSpan(i.schedule.toDate, i.schedule.toDate)}`
     : `from ${leaveSpan(i.schedule.fromDate, i.schedule.fromDate)}`;
   if (i.change === 'ENDED') {
     return {
       title: 'Work from home schedule ended',
-      body: `${i.byName} ended your work from home schedule (${what.toLowerCase()}).`,
+      body: `${i.byName} ended your work from home schedule (${what}).`,
     };
   }
   return {
     title: i.change === 'SET' ? 'Work from home schedule set' : 'Work from home schedule changed',
-    body: `${i.byName} set your work from home: ${what.toLowerCase()}, ${span}. No request is needed for these days.`,
+    body: `${i.byName} set your work from home: ${what}, ${span}. No request is needed for these days.`,
   };
 }
 

@@ -26,6 +26,7 @@ export class PrismaAgentHealthReader implements AgentHealthReader {
         department: true,
         departmentId: true,
         companyId: true,
+        attendanceSource: true,
         role: { select: { name: true } },
         company: { select: { name: true } },
         departmentRef: { select: { name: true, deletedAt: true } },
@@ -44,6 +45,7 @@ export class PrismaAgentHealthReader implements AgentHealthReader {
       departmentId: r.departmentId,
       companyId: r.companyId,
       companyName: r.company?.name ?? null,
+      attendanceSource: r.attendanceSource === 'BIOMETRIC' ? 'BIOMETRIC' : 'AGENT',
     }));
   }
 

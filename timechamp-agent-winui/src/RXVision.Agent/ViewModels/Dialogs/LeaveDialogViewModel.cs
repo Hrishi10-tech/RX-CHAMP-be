@@ -45,6 +45,7 @@ public sealed partial class LeaveDialogViewModel : DialogViewModel
     public LeaveDialogViewModel(LeaveDialogContext context, LeaveDraft? draft = null)
     {
         _context = context;
+        PreviewLines.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPreviewLines));
         foreach (var c in context.Policy.Categories) Categories.Add(new LeaveChoice(c.Category, c.Label, c.Rule));
         foreach (var k in context.Policy.Kinds) Kinds.Add(new LeaveChoice(k.Kind, k.Label));
         foreach (var chip in context.ReasonPresets) Chips.Add(new ChipViewModel(chip, c => Reason = c));
@@ -60,7 +61,6 @@ public sealed partial class LeaveDialogViewModel : DialogViewModel
     }
 
     public override string Title => "Apply for leave";
-    public override double Width => 520;
 
     public ObservableCollection<LeaveChoice> Categories { get; } = new();
     public ObservableCollection<LeaveChoice> Kinds { get; } = new();
@@ -92,6 +92,8 @@ public sealed partial class LeaveDialogViewModel : DialogViewModel
     private string? _previewProblem;
 
     public bool HasPreviewProblem => PreviewProblem is not null;
+    /// <summary>The preview card shows once there is something to say.</summary>
+    public bool HasPreviewLines => PreviewLines.Count > 0;
     public string? RuleText => Category?.Rule;
     public bool IsFullDay => Kind?.Value == LeaveKinds.FullDay;
     public bool HasParts => Parts.Count > 0;

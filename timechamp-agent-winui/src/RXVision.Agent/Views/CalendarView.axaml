@@ -15,8 +15,8 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Border.day.off"><Setter Property="Background" Value="{StaticResource Brush.Field}" /></Style>
-    <Style Selector="Border.day.off TextBlock"><Setter Property="Foreground" Value="{StaticResource Brush.Subtle}" /></Style>
-    <Style Selector="Border.day.holiday"><Setter Property="Background" Value="{StaticResource Brush.BrandSoft}" /></Style>
+    <Style Selector="Border.day.off TextBlock"><Setter Property="Foreground" Value="{StaticResource Brush.Neutral}" /></Style>
+    <Style Selector="Border.day.holiday"><Setter Property="Background" Value="{StaticResource Brush.BrandWash}" /></Style>
     <Style Selector="Border.day.holiday TextBlock"><Setter Property="Foreground" Value="{StaticResource Brush.Brand}" /></Style>
     <Style Selector="Border.day.today">
       <Setter Property="BorderBrush" Value="{StaticResource Brush.Brand}" />
@@ -25,15 +25,15 @@
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="14">
-      <Border Classes="card" Padding="20,16" CornerRadius="20">
+      <Border Classes="card">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <Button Classes="ghost" Command="{Binding PreviousYearCommand}" ToolTip.Tip="Previous year" AutomationProperties.Name="Previous year" VerticalAlignment="Center">
             <PathIcon Classes="i" Data="{StaticResource Icon.ChevronLeft}" Width="16" Height="16" />
           </Button>
           <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="2">
             <TextBlock Classes="h2" HorizontalAlignment="Center" Text="{Binding Year}" />
-            <TextBlock Classes="muted" HorizontalAlignment="Center" Text="{Binding TotalsText}" />
-            <TextBlock Classes="small" HorizontalAlignment="Center" Text="{Binding Summary}" TextWrapping="Wrap"
+            <TextBlock Classes="small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Text="{Binding TotalsShown}" />
+            <TextBlock Classes="small" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Summary}" TextWrapping="Wrap"
                        IsVisible="{Binding Summary, Converter={x:Static ObjectConverters.IsNotNull}}" />
           </StackPanel>
           <Button Grid.Column="2" Classes="ghost" Command="{Binding NextYearCommand}" ToolTip.Tip="Next year" AutomationProperties.Name="Next year" VerticalAlignment="Center">
@@ -47,12 +47,12 @@
       <ItemsControl ItemsSource="{Binding Months}">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
-            <UniformGrid Columns="3" />
+            <UniformGrid Columns="1" />
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:CalendarMonth">
-            <Border Classes="card" Padding="12" Margin="0,0,10,10" VerticalAlignment="Top">
+            <Border Classes="card" Padding="12" Margin="0,0,0,10" VerticalAlignment="Top">
               <StackPanel Spacing="6">
                 <TextBlock Classes="title" Text="{Binding Name}" />
                 <UniformGrid Columns="7">
@@ -84,15 +84,15 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <Border Classes="card" Padding="20,14" IsVisible="{Binding HasHolidays}">
+      <Border Classes="card" IsVisible="{Binding HasHolidays}">
         <StackPanel Spacing="6">
           <TextBlock Classes="title" Text="Holidays" />
           <ItemsControl ItemsSource="{Binding Holidays}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:CalendarHolidayRow">
-                <Grid ColumnDefinitions="110,*" Margin="0,0,0,4">
+                <Grid ColumnDefinitions="96,*" Margin="0,0,0,4">
                   <TextBlock Classes="muted" Text="{Binding Date}" />
-                  <TextBlock Grid.Column="1" FontSize="13" Text="{Binding Label}" />
+                  <TextBlock Grid.Column="1" FontSize="13" Text="{Binding Label}" TextWrapping="Wrap" />
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

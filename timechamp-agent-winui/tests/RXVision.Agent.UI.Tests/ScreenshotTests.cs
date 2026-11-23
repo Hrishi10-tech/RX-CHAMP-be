@@ -112,7 +112,7 @@ public class ScreenshotTests
         vm.ShowInstructionsCommand.ExecuteAsync(null).GetAwaiter().GetResult());
 
     [AvaloniaFact]
-    public Task Menu_open_with_the_pages() => Shoot("menu-open-pages", Agent("10:20"), vm => vm.ToggleMenuCommand.Execute(null));
+    public Task Menu_open_with_the_pages() => Shoot("menu-open-pages", Agent("10:20"), vm => vm.ShowProfileCommand.Execute(null));
 
     [AvaloniaFact]
     public Task Dialog_apply_for_leave() => Shoot("dialog-apply-for-leave", Agent("10:20"), vm =>
@@ -343,9 +343,9 @@ public class ScreenshotTests
 
     [AvaloniaFact]
     public Task Dashboard_confirm_dialog() => Shoot("dialog-end-day", Agent("17:30"), vm =>
-        vm.Overlay = new MessageDialogViewModel("End your working day?",
-            "Your focus time stops now and today's day is saved as it is. If you need to, you can start your day again from here.")
-        { PrimaryText = "End Day", CancelText = "Keep working", IsDanger = true });
+        vm.Overlay = new MessageDialogViewModel("End your day?",
+            "Your focus time stops now and today is saved as it is. You can start your day again from here if you need to.")
+        { PrimaryText = "End day", CancelText = "Keep working" });
 
     [AvaloniaFact]
     public Task Dashboard_meeting_dialog_now() => Shoot("dialog-meeting-now", Agent("10:20"), vm =>
@@ -403,7 +403,7 @@ public class ScreenshotTests
     {
         var agent = new FakeAgent("10:59:30");
         var actions = new BreakActions(agent, new FakeDialogs(), NullLog.Instance);
-        var dialog = actions.SkipDialog(agent.BreakPanel.Slots[0], 10, offerBack: true);
+        var dialog = actions.SkipDialog(agent.BreakPanel.Slots[0], 10);
         dialog.Chips[0].PickCommand.Execute(null);
         vm.Overlay = dialog;
     });

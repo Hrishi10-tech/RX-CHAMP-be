@@ -87,7 +87,7 @@ public class HeldEndDayTests
     public async Task Without_a_held_End_Day_the_day_ends_now()
     {
         var (actions, agent, dialogs) = Setup("18:40");
-        dialogs.Answer(d => Assert.IsType<MessageDialogViewModel>(d).Title == "End your working day?");
+        dialogs.Answer(d => Assert.IsType<MessageDialogViewModel>(d).Title == "End your day?");
         await actions.EndDayAsync();
         Assert.Null(agent.EndDayTimes.Single());
     }

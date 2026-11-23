@@ -6,8 +6,9 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,18" Spacing="12">
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,24,20,16" Spacing="12">
       <TextBlock Classes="h2" Text="{Binding Title}" />
       <Grid ColumnDefinitions="*,12,*">
         <StackPanel Spacing="6">
@@ -27,13 +28,26 @@
       <Grid ColumnDefinitions="*,12,*">
         <StackPanel Spacing="6">
           <TextBlock Classes="label" Text="First day" />
-          <CalendarDatePicker SelectedDate="{Binding FirstDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="yyyy-MM-dd" AutomationProperties.Name="First day" />
+          <CalendarDatePicker SelectedDate="{Binding FirstDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="d MMM yyyy" AutomationProperties.Name="First day" />
         </StackPanel>
         <StackPanel Grid.Column="2" Spacing="6" IsVisible="{Binding LastDayVisible}">
           <TextBlock Classes="label" Text="Last day (optional)" />
-          <CalendarDatePicker SelectedDate="{Binding LastDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="yyyy-MM-dd" AutomationProperties.Name="Last day" />
+          <CalendarDatePicker SelectedDate="{Binding LastDay}" HorizontalAlignment="Stretch" SelectedDateFormat="Custom" CustomDateFormatString="d MMM yyyy" Watermark="Same day" AutomationProperties.Name="Last day" />
         </StackPanel>
       </Grid>
+      <!-- What it costs and who decides, next to the dates that change it, before the reason -->
+      <Border Classes="note" IsVisible="{Binding HasPreviewLines}" AutomationProperties.Name="What this leave charges">
+        <ItemsControl ItemsSource="{Binding PreviewLines}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="13" Margin="0,1" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+      <Border Classes="problem" IsVisible="{Binding HasPreviewProblem}">
+        <TextBlock Text="{Binding PreviewProblem}" TextWrapping="Wrap" />
+      </Border>
       <ItemsControl ItemsSource="{Binding Chips}" IsVisible="{Binding HasChips}" AutomationProperties.Name="Quick reasons">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -51,23 +65,14 @@
         <TextBox Classes="field" Text="{Binding Reason}" MaxLength="300" TextWrapping="Wrap" Height="64" VerticalContentAlignment="Top"
                  Watermark="3 to 300 characters" AutomationProperties.Name="Reason" />
       </StackPanel>
-      <ItemsControl ItemsSource="{Binding PreviewLines}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="x:String">
-            <TextBlock Classes="muted" Text="{Binding}" TextWrapping="Wrap" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-      <Border Classes="problem" IsVisible="{Binding HasPreviewProblem}">
-        <TextBlock Text="{Binding PreviewProblem}" TextWrapping="Wrap" />
-      </Border>
       <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <UniformGrid Rows="1" Margin="-4,0">
-        <Button Classes="primary" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
-        <Button Classes="secondary" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
-      </UniformGrid>
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+      </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

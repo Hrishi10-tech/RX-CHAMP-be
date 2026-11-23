@@ -4,16 +4,6 @@ using RXVision.Agent.Core.Util;
 
 namespace RXVision.Agent.Services;
 
-/// <summary>Where the dashboard was and how big, in physical pixels and DIPs.</summary>
-public sealed class WindowPlacement
-{
-    public int X { get; set; }
-    public int Y { get; set; }
-    public double Width { get; set; }
-    public double Height { get; set; }
-    public bool Maximized { get; set; }
-}
-
 /// <summary>Where the floating button's face centre sits on one screen, in physical pixels.</summary>
 public sealed class BubbleSpot
 {
@@ -31,13 +21,11 @@ public sealed class LastDayCopy
 }
 
 /// <summary>
-/// Per-person UI conveniences: window placement, the button's spot on each
-/// screen, the last email used. Plain JSON (nothing here is secret); losing the
+/// Per-person UI conveniences: the button's spot on each screen, the last email used. Plain JSON (nothing here is secret); losing the
 /// file only means windows come back to their default places.
 /// </summary>
 public sealed class UiSettings
 {
-    public WindowPlacement? Dashboard { get; set; }
     /// <summary>Keyed by screen ("1920x1080@0,0").</summary>
     public Dictionary<string, BubbleSpot> Bubble { get; set; } = new();
     /// <summary>The screen the button was last left on.</summary>

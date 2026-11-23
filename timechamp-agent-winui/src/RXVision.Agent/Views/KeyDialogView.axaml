@@ -6,30 +6,26 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,20" Spacing="12">
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <Border Width="32" Height="32" CornerRadius="10" Background="{StaticResource Brush.IndigoIcon}">
-          <PathIcon Classes="i" Data="{StaticResource Icon.Key}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
-        </Border>
-        <TextBlock Classes="h2" Text="{Binding Title}" VerticalAlignment="Center" />
+  <!-- 4.0: a sign-out or quit key from the admin, drawn as the 3.6 panel's dialogs. -->
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="20,26,20,20" Spacing="10">
+        <TextBlock Classes="h2" Text="{Binding Title}" />
+        <TextBlock Classes="lead" Text="{Binding Message}" />
+        <StackPanel Spacing="6" Margin="0,4,0,0">
+          <TextBlock Classes="label" Text="Sign-out key" />
+          <TextBox Name="KeyBox" Classes="field" Text="{Binding Key}" Watermark="five words and a number" MaxLength="120"
+                   AutomationProperties.Name="Sign-out key" />
+          <TextBlock Classes="small" Text="{Binding Hint}" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
       </StackPanel>
-      <TextBlock Classes="body" Text="{Binding Message}" />
-      <StackPanel Spacing="6">
-        <TextBlock Classes="label" Text="Sign-out key" />
-        <TextBox Name="KeyBox" Classes="field" Text="{Binding Key}" Watermark="five words and a number" MaxLength="120"
-                 AutomationProperties.Name="Sign-out key" />
-        <TextBlock Classes="small" Text="{Binding Hint}" TextWrapping="Wrap" />
-      </StackPanel>
-      <Border Classes="problem" IsVisible="{Binding HasError}">
-        <TextBlock Text="{Binding Error}" />
-      </Border>
-    </StackPanel>
-    <Border Classes="dialogfooter">
-      <UniformGrid Rows="1" Margin="-4,0">
-        <Button Classes="primary" Classes.danger="{Binding IsDanger}" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
-        <Button Classes="secondary" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
-      </UniformGrid>
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+      </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

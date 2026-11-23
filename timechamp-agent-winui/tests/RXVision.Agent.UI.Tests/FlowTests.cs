@@ -14,7 +14,7 @@ public class ReasonDialogTests
     [Fact]
     public async Task Submit_waits_for_the_minimum_length()
     {
-        var dialog = new ReasonDialogViewModel("Morning break, 12 min late", "You're starting your morning break 12 min late. Tell your manager why.", 10);
+        var dialog = new ReasonDialogViewModel("Morning break, 12 min after its time", "Your morning break was due at 11:00 AM. Add a short note for your manager.", 10);
         Assert.False(dialog.SubmitCommand.CanExecute(null));
         Assert.Equal("10 more characters", dialog.CountText);
         Assert.False(dialog.CountOk);
@@ -85,11 +85,11 @@ public class BreakActionsTests
         dialogs.Answer(d =>
         {
             var reason = Assert.IsType<ReasonDialogViewModel>(d);
-            Assert.Equal("Morning break, 12 min late", reason.Title);
-            Assert.Equal("You're starting your morning break 12 min late. Tell your manager why.", reason.Message);
-            Assert.Equal("Late start", reason.TagText);
+            Assert.Equal("Morning break, 12 min after its time", reason.Title);
+            Assert.Equal("Your morning break was due at 11:00 AM. Add a short note for your manager.", reason.Message);
+            Assert.Equal("Starting after its time", reason.TagText);
             Assert.Equal("Due 11:00 AM · window 10:30 AM to 12:00 PM", reason.TagDetail);
-            Assert.Equal("Why are you starting late?", reason.Label);
+            Assert.Equal("What came up?", reason.Label);
             Assert.Equal("Start break", reason.PrimaryText);
             Assert.Equal("Skip break", reason.AltText);
             reason.Text = "On a customer call until now";
@@ -117,11 +117,12 @@ public class BreakActionsTests
         dialogs.Answer(d =>
         {
             var confirm = Assert.IsType<MessageDialogViewModel>(d);
-            Assert.Equal("Start morning break?", confirm.Title);
-            Assert.Equal("15 min. Back by 11:14 AM. Your focus time pauses until you tap End break.", confirm.Message);
+            Assert.Equal("Take your morning break?", confirm.Title);
+            Assert.Equal("15 min, ends at 11:14 AM. Your ring pauses until you resume.", confirm.Message);
             Assert.Equal("Start break", confirm.PrimaryText);
             Assert.Equal("Skip break", confirm.AltText);
-            Assert.Equal("Cancel", confirm.CancelText);
+            Assert.Null(confirm.CancelText);
+            Assert.True(confirm.ShowClose);
             return true;
         });
         await actions.TakeAsync(PresenceStatus.Break);
@@ -135,7 +136,7 @@ public class BreakActionsTests
         dialogs.Answer(d =>
         {
             var confirm = Assert.IsType<MessageDialogViewModel>(d);
-            Assert.Equal("Start lunch break?", confirm.Title);
+            Assert.Equal("Take your lunch break?", confirm.Title);
             Assert.Null(confirm.AltText);
             Assert.Equal("Start lunch", confirm.PrimaryText);
             return false;
@@ -172,7 +173,7 @@ public class BreakActionsTests
                 var reason = Assert.IsType<ReasonDialogViewModel>(d);
                 Assert.Equal("You're 1 min late for your morning break. Add a reason.", reason.Message);
                 Assert.Equal(12, reason.MinChars);
-                Assert.Equal("Morning break, 1 min late", reason.Title);
+                Assert.Equal("Morning break, 1 min after its time", reason.Title);
                 Assert.Null(reason.AltText); // asked again by the server: no Skip here
                 reason.Text = "Was finishing an email";
                 return true;
@@ -192,7 +193,7 @@ public class BreakActionsTests
                .Answer(_ => true);
         await actions.TakeAsync(PresenceStatus.Break);
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[1]);
-        Assert.Equal("Couldn't start your break", alert.Title);
+        Assert.Equal("Try starting your break again", alert.Title);
         Assert.Equal("That break's window has closed.", alert.Message);
         Assert.False(alert.HasCancel);
     }
@@ -256,7 +257,7 @@ public class BreakActionsTests
         Assert.Equal(("Morning break was skipped", "Next: Lunch break at 1:00 PM, opens 12:30 PM."), actions.BlockedText(skipped.Slots[0], skipped));
 
         var auto = BreakSchedule.Compute(Days.General().WithRecord(Days.Skip("MORNING", "12:00", auto: true)), Ist.At("12:10"));
-        Assert.Equal(("Morning break was auto-skipped", "Its window closed before it was taken. Add a comment before you end the day."),
+        Assert.Equal(("Morning break was skipped for you", "Add a comment before you end the day. Its window closed before it was taken."),
             actions.BlockedText(auto.Slots[0], auto));
     }
 
@@ -295,15 +296,13 @@ public class BreakActionsTests
             .Answer(d =>
             {
                 var skip = Assert.IsType<ReasonDialogViewModel>(d);
-                Assert.Equal("Skip morning break?", skip.Title);
+                Assert.Equal("Skip this break?", skip.Title);
+                Assert.Equal("Your next one is at 1:00 PM.", skip.Lead);
                 Assert.Equal("Your focus time keeps running. If your manager rejects the skip, the 15 min come off it.", skip.Message);
-                Assert.Equal("Skip", skip.TagText);
-                Assert.Equal(Tone.Skip, skip.TagTone);
-                Assert.Equal("Due 11:00 AM · open until 12:00 PM", skip.TagDetail);
                 Assert.Equal("Why are you skipping it?", skip.Label);
-                Assert.Equal("Required. 10 characters or more.", skip.Hint);
+                Assert.Equal("10 characters or more, please.", skip.Hint);
                 Assert.Equal("Skip break", skip.PrimaryText);
-                Assert.Equal("Back", skip.CancelText);
+                Assert.Equal("Keep my break", skip.CancelText);
                 Assert.Equal(new[] { "Client call", "Deadline", "Not needed today", "Already rested" }, skip.Chips.Select(c => c.Label));
                 Assert.False(skip.SubmitCommand.CanExecute(null));
                 skip.Chips[0].PickCommand.Execute(null); // "Client call": 11 characters
@@ -326,7 +325,7 @@ public class BreakActionsTests
             .Answer(_ => false)            // Back
             .Answer(d =>
             {
-                Assert.Equal("Start morning break?", d.Title); // the start dialog again
+                Assert.Equal("Take your morning break?", d.Title); // the start dialog again
                 return true;
             });
         await actions.TakeAsync(PresenceStatus.Break);
@@ -339,7 +338,7 @@ public class BreakActionsTests
     {
         var (actions, agent, dialogs) = Setup("11:12");
         dialogs
-            .Alternative(d => Assert.Equal("Morning break, 12 min late", d.Title))
+            .Alternative(d => Assert.Equal("Morning break, 12 min after its time", d.Title))
             .Answer(d => { ((ReasonDialogViewModel)d).Text = "On a client call until noon"; return true; });
         await actions.TakeAsync(PresenceStatus.Break);
         Assert.Equal(("MORNING", (string?)"On a client call until noon"), Assert.Single(agent.SkipCalls));
@@ -381,7 +380,7 @@ public class BreakActionsTests
         await actions.SkipAsync("MORNING");
         Assert.Single(agent.SkipCalls);
         var alert = Assert.IsType<MessageDialogViewModel>(dialogs.Shown[^1]);
-        Assert.Equal("Couldn't skip the break", alert.Title);
+        Assert.Equal("Try skipping again", alert.Title);
         Assert.Equal("That break's window has closed.", alert.Message);
         Assert.Empty(cues);
     }
@@ -400,16 +399,26 @@ public class BreakActionsTests
         Assert.Empty(agent.SkipCalls);
         var alert = Assert.IsType<MessageDialogViewModel>(Assert.Single(dialogs.Shown));
         Assert.Equal("Morning break is already skipped", alert.Title);
-        Assert.Equal("End Day skipped it while it was still open. You can still take it until 12:00 PM; if you don't, add a comment when you end the day.", alert.Message);
+        Assert.Equal("You can still take it until 12:00 PM. If you don't, add a comment when you end the day.", alert.Message);
         Assert.True(agent.BreakPanel.Slots[0].CanStart);
     }
 
     [Fact]
-    public async Task Super_admin_skips_without_a_dialog()
+    public async Task A_Super_Admins_skip_asks_once_with_no_reason_and_no_pay_line()
     {
         var (actions, agent, dialogs) = Setup("10:59:30", role: "SUPER_ADMIN");
+        dialogs.Answer(d =>
+        {
+            var skip = Assert.IsType<ReasonDialogViewModel>(d);
+            Assert.Equal("Skip this break?", skip.Title);
+            Assert.Equal("Your next one is at 1:00 PM.", skip.Lead);
+            Assert.False(skip.AsksReason);
+            Assert.False(skip.HasMessage);
+            Assert.False(skip.HasChips);
+            Assert.True(skip.SubmitCommand.CanExecute(null));
+            return true;
+        });
         await actions.SkipAsync("MORNING");
-        Assert.Empty(dialogs.Shown);
         Assert.Equal(("MORNING", (string?)null), Assert.Single(agent.SkipCalls));
     }
 
@@ -419,6 +428,7 @@ public class BreakActionsTests
         var (actions, _, dialogs) = Setup("10:59:30", role: "SUPER_ADMIN");
         var cues = new List<string>();
         actions.Cue += cues.Add;
+        dialogs.Answer(_ => true).Answer(_ => true).Answer(_ => true);
         await actions.SkipAsync("MORNING");
         await actions.SkipAsync("MORNING");
         await actions.SkipAsync("MORNING");
@@ -428,7 +438,7 @@ public class BreakActionsTests
             "Skipped and noted. Thanks for staying on it.",
             "Skipped and noted. Keep it steady.",
         }, cues);
-        Assert.Empty(dialogs.Shown);
+        Assert.Equal(3, dialogs.Shown.Count);
     }
 
     // ---- Comments on skipped breaks ---------------------------------------------------------
@@ -441,8 +451,8 @@ public class BreakActionsTests
         {
             var comment = Assert.IsType<ReasonDialogViewModel>(d);
             Assert.Equal("Add a comment", comment.Title);
-            Assert.Equal("This skip goes to your manager either way. A comment is needed before you end the day.", comment.Message);
-            Assert.Equal("Auto-skipped", comment.TagText);
+            Assert.Equal("Add a comment before you end the day. This skip goes to your manager either way.", comment.Message);
+            Assert.Equal("Skipped for you", comment.TagText);
             Assert.Equal("Morning break · closed 12:00 PM", comment.TagDetail);
             Assert.Equal("Send comment", comment.PrimaryText);
             Assert.Equal(4, comment.Chips.Count);
@@ -460,7 +470,7 @@ public class BreakActionsTests
         agent.Workday!.SkipsNeedingComment.Add(Days.NeedsComment("EVENING", "17:00", date: "2026-10-12"));
         dialogs.Answer(d =>
         {
-            Assert.Equal("Evening break · Auto-skipped at 5:00 PM on 12 Oct", ((ReasonDialogViewModel)d).TagDetail);
+            Assert.Equal("Evening break · Skipped for you at 5:00 PM on 12 Oct", ((ReasonDialogViewModel)d).TagDetail);
             ((ReasonDialogViewModel)d).Text = "Stayed on the release call";
             return true;
         });
@@ -1019,8 +1029,8 @@ public class MenuStateTests
         Assert.False(s.CanQuickBreak);
         Assert.False(s.CanNextBreak);
         Assert.True(s.CanBackToWork);
-        Assert.Equal("On a break", s.Status);
-        Assert.Equal("At lunch", MenuState.For(AgentState.Running, PresenceStatus.Lunch, true).Status);
+        Assert.Equal("On break", s.Status);
+        Assert.Equal("On break", MenuState.For(AgentState.Running, PresenceStatus.Lunch, true).Status);
     }
 
     [Fact]
@@ -1053,11 +1063,11 @@ public class MenuStateTests
         Assert.Equal(new[] { "quick" }, calls);
         Assert.Equal("RX Vision: Day ended", menu.ToolTip);
         Assert.Equal(4, menu.Items.Count(i => i.IsSeparator) + 1);
-        Assert.Equal(new[] { "Open RX Vision", "Quick break…", "Next break", "Back to work", "End Day", "Start Day", "Sign out…", "Quit RX Vision…" },
+        Assert.Equal(new[] { "Open RX Vision", "Quick break…", "Next break", "Resume work", "End day", "Start day", "Sign out…", "Quit RX Vision…" },
             menu.Items.Where(i => !i.IsSeparator).Select(i => i.Header));
 
         menu.Update(MenuState.For(AgentState.NotStarted, PresenceStatus.NotStarted, false));
-        Assert.Equal("RX Vision: Day not started", menu.ToolTip);
+        Assert.Equal("RX Vision: Not started", menu.ToolTip);
         menu.StartDay.Command.Execute(null);
         menu.EndDay.Command.Execute(null); // disabled before Start Day
         Assert.Equal(new[] { "quick", "start" }, calls);

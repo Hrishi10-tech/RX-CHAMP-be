@@ -52,7 +52,7 @@ public sealed class DayAlerts
         var running = _agent.State == AgentState.Running;
         var status = DayMeter.StatusOf(_agent);
         var panel = _agent.BreakPanel;
-        SyncBreakDue(running, status, panel);
+        SyncBreakDue(panel);
         SyncBreakRunning(running, panel);
         if (_agent.State != AgentState.NotStarted) _center.Clear(StartDayKey);
         SyncSkipped(running, panel);
@@ -69,22 +69,14 @@ public sealed class DayAlerts
 
     // ---- From the schedule ----------------------------------------------------------------------
 
-    /// <summary>Fires at the ring's start while Working or In a meeting; goes when taken, skipped, or the window closes.</summary>
-    private void SyncBreakDue(bool running, IconStatus status, BreakPanel panel)
+    /// <summary>Fires at the ring's start while Working or In a meeting; goes when taken, skipped, or the window closes. Screen A reads the same slot.</summary>
+    private void SyncBreakDue(BreakPanel panel)
     {
-        // Biometric staff have no break buttons and no reminders (3.5).
-        var due = running && !_agent.IsBiometric;
-        if (due && status is IconStatus.Working or IconStatus.Meeting && panel.Ring is { } ring && _dueSlot != ring.Kind
-            && panel.Slots.FirstOrDefault(s => s.Kind == ring.Kind) is { } slot)
-        {
-            _dueSlot = ring.Kind;
-            _center.Raise(BreakDueCard(slot));
-        }
-        if (_dueSlot is null) return;
-        var open = due && panel.Slots.Any(s => s.Kind == _dueSlot && s.CanStart);
-        if (open) return;
-        _dueSlot = null;
+        var slot = _agent.IsBiometric ? null : BreakAlerts.DueSlot(_agent.State, panel, _agent.Workday);
+        if (slot?.Kind == _dueSlot) return;
+        _dueSlot = slot?.Kind;
         _center.Clear(BreakDueKey);
+        if (slot is not null) _center.Raise(BreakDueCard(slot));
     }
 
     private AlertCard BreakDueCard(SlotView slot)
@@ -93,6 +85,7 @@ public sealed class DayAlerts
         var presence = slot.PresenceType;
         return new AlertCard(BreakDueKey, AlertLevel.Action, $"Time for your {Fmt.Lower(slot.Label)}", $"{slot.DurationMin} min, from {slot.LocalStart}.")
         {
+            DrawnByPanel = true,
             PrimaryText = "Take a break",
             OnPrimary = () => _actions.TakeAsync(presence, kind, confirm: false),
             SecondaryText = slot.CanSkip ? "Skip this break" : null,
@@ -126,6 +119,7 @@ public sealed class DayAlerts
         {
             _center.Raise(new AlertCard(BreakEndingKey, AlertLevel.Info, "Break ends in 2 min", "Your ring starts again when you resume.")
             {
+                DrawnByPanel = true,
                 PrimaryText = "Resume now",
                 OnPrimary = _actions.BackToWorkAsync,
             });
@@ -147,6 +141,7 @@ public sealed class DayAlerts
         var ended = _agent.BusinessTime(active.StartedAt.AddMinutes(minutes));
         return new AlertCard(BreakExtendedKey, AlertLevel.Action, "Break extended", $"Your {Fmt.Lower(active.Label)} ended at {ended}.")
         {
+            DrawnByPanel = true,
             PrimaryText = "Resume work",
             OnPrimary = _actions.BackToWorkAsync,
         };
@@ -162,6 +157,7 @@ public sealed class DayAlerts
         var id = record.Id;
         _center.Raise(new AlertCard(SkippedPrefix + id, AlertLevel.Action, $"{label} skipped for you.", "Add a comment before you end your day.")
         {
+            DrawnByPanel = true,
             PrimaryText = "Add comment",
             OnPrimary = () => _actions.CommentAsync(id),
         });
@@ -175,6 +171,9 @@ public sealed class DayAlerts
             var record = panel.Slots.Select(s => s.Record).FirstOrDefault(r => r?.Id == id);
             if (!running || record is { NeedsComment: false }) _center.Clear(card.Key);
         }
+        // One still waiting from before a restart: the panel shows it, so the badge says so.
+        if (running && !_agent.IsBiometric && BreakAlerts.CommentWaiting(panel) is { } waiting && !_center.Has(SkippedPrefix + waiting.Id))
+            OnAutoSkipped(waiting);
     }
 
     /// <summary>The nudge to start the day: "i", until the day has started.</summary>

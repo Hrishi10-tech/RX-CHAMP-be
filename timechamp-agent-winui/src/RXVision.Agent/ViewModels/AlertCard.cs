@@ -48,6 +48,9 @@ public sealed partial class AlertCard : ObservableObject
     /// <summary>The person has opened the panel since it came: no badge for it.</summary>
     public bool Seen { get; set; }
 
+    /// <summary>The panel draws this one as its own screen (AGENT.md section 5, A, C and E): the badge is here, the card is there.</summary>
+    public bool DrawnByPanel { get; init; }
+
     /// <summary>Being read is all it asks: it leaves when the panel that showed it closes.</summary>
     public bool GoneWhenRead { get; init; }
 

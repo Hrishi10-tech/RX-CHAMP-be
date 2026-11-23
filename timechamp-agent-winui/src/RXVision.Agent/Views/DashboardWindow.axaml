@@ -7,601 +7,526 @@
         x:DataType="vm:DashboardViewModel"
         Title="RX Vision"
         Icon="avares://RXVision/Assets/rxvision.ico"
-        Width="1080" Height="700"
-        MinWidth="900" MinHeight="600"
-        Background="{StaticResource Brush.WindowBg}">
+        Width="340" Height="540"
+        CanResize="False"
+        SystemDecorations="None"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
 
   <Window.Resources>
-    <!-- A quick-status tile. -->
-    <DataTemplate x:Key="TileTemplate" x:DataType="vm:TileViewModel">
-      <Button Theme="{StaticResource TileButton}"
-              Classes="tile"
-              Classes.amber="{Binding IsAmber}"
-              Classes.teal="{Binding IsTeal}"
-              Classes.indigo="{Binding IsIndigo}"
-              Classes.violet="{Binding IsViolet}"
-              Classes.open="{Binding IsOpen}"
-              Classes.due="{Binding IsDue}"
-              Classes.active="{Binding IsActive}"
-              Classes.off="{Binding IsDisabled}"
-              Command="{Binding Command}"
-              ToolTip.Tip="{Binding ToolTip}"
-              ToolTip.ShowOnDisabled="True"
-              AutomationProperties.Name="{Binding Title}">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto">
-          <Grid ColumnDefinitions="Auto,*">
-            <Border Classes="iconbox">
-              <PathIcon Classes="i" Data="{Binding Icon, Converter={x:Static conv:IconConverter.Instance}}" />
-            </Border>
-            <Border Grid.Column="1" Classes="chip" IsVisible="{Binding Chip, Converter={x:Static ObjectConverters.IsNotNull}}">
-              <TextBlock Text="{Binding Chip}" />
-            </Border>
-          </Grid>
-          <TextBlock Grid.Row="1" Classes="tiletitle" Text="{Binding Title}" />
-          <TextBlock Grid.Row="2" Classes="tilevalue" Text="{Binding Value}" />
-          <TextBlock Grid.Row="3" Classes="tilecaption" Text="{Binding Caption}" />
-        </Grid>
-      </Button>
+    <!-- Today's actions, outlined (4.0's actions in the 3.6 panel's look): Next break (the next
+         scheduled break, or resume a paused one) and Quick break, then Start meeting, then the
+         4.0 meeting dialog with its agenda and people, which also logs an earlier meeting. -->
+    <DataTemplate x:Key="ActionsTemplate" x:DataType="vm:DashboardViewModel">
+      <Grid ColumnDefinitions="*,10,*" RowDefinitions="Auto,Auto,Auto">
+        <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4" Margin="0,0,0,10" IsVisible="{Binding ShowBreakActions}">
+          <Button Name="NextBreakAction" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding NextTile.Title}" Command="{Binding NextTile.Command}"
+                  ToolTip.Tip="{Binding NextTile.ToolTip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{Binding NextTile.Title}" />
+          <TextBlock Classes="small" Text="{Binding NextTile.Caption}" TextAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding NextTile.ToolTip}" />
+        </StackPanel>
+        <StackPanel Grid.Row="0" Grid.Column="2" Spacing="4" Margin="0,0,0,10" IsVisible="{Binding ShowBreakActions}">
+          <Button Name="QuickBreakAction" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding QuickTile.Title}" Command="{Binding QuickTile.Command}"
+                  ToolTip.Tip="{Binding QuickTile.ToolTip}" ToolTip.ShowOnDisabled="True" AutomationProperties.Name="{Binding QuickTile.Title}" />
+          <TextBlock Classes="small" Text="{Binding QuickTile.Caption}" TextAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding QuickTile.ToolTip}" />
+        </StackPanel>
+        <Button Grid.Row="1" Grid.ColumnSpan="3" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding MeetingTile.Title}"
+                Command="{Binding MeetingTile.Command}" ToolTip.Tip="{Binding MeetingTile.ToolTip}" ToolTip.ShowOnDisabled="True"
+                IsVisible="{Binding ShowPanelStartMeeting}" AutomationProperties.Name="{Binding MeetingTile.Title}" />
+        <Button Grid.Row="2" Grid.ColumnSpan="3" Classes="quiet" Margin="0,8,0,0" Content="Meeting with details, or an earlier one" Command="{Binding RecordMeetingCommand}"
+                IsVisible="{Binding ShowTiles}" AutomationProperties.Name="Meeting with details, or an earlier one" />
+      </Grid>
     </DataTemplate>
   </Window.Resources>
 
-  <Panel>
-    <Grid Name="Body" RowDefinitions="Auto,Auto,*" IsEnabled="{Binding !HasOverlay}">
+  <!-- The panel (be/docs/3.6/AGENT.md section 4): 340 x 540, one column of 298 px between 20 px gutters. -->
+  <Border Classes="panelframe" ClipToBounds="True">
+    <Panel>
+      <Grid Name="Body" RowDefinitions="58,*,Auto" IsEnabled="{Binding !HasOverlay}">
 
-      <!-- ===== Header: menu, who, status, day started, sync ===== -->
-      <Grid Grid.Row="0" Margin="22,14,22,0" ColumnDefinitions="Auto,Auto,*,Auto">
-        <Button Name="MenuButton" Classes="burger" Classes.on="{Binding IsMenuOpen}" Command="{Binding ToggleMenuCommand}"
-                Margin="0,0,12,0" VerticalAlignment="Center" ToolTip.Tip="Menu" AutomationProperties.Name="Menu">
-          <PathIcon Classes="i" Data="{StaticResource Icon.Menu}" Width="18" Height="18" Foreground="{StaticResource Brush.InkSoft}" />
-        </Button>
-        <Border Grid.Column="1" Width="40" Height="40" CornerRadius="20" Background="{StaticResource Brush.Brand}" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Initials}" Foreground="#FFFFFF" FontWeight="SemiBold" FontSize="14"
-                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-        </Border>
-        <StackPanel Grid.Column="2" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="{Binding DisplayName}" FontSize="15.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                     Fill="{Binding StatusKind, Converter={x:Static conv:StatusBrushConverter.Instance}}" />
-            <TextBlock Text="{Binding StatusText}" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource Brush.InkSoft}" />
-            <TextBlock Classes="muted" Text="·" IsVisible="{Binding DayStartedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="13" Height="13" Foreground="{StaticResource Brush.Muted}"
-                      IsVisible="{Binding DayStartedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-            <TextBlock Classes="muted" Text="{Binding DayStartedText}" FontSize="12.5"
-                       IsVisible="{Binding DayStartedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <!-- ===== Header: the product, the tabs, close ===== -->
+        <Grid Margin="20,4,16,0" ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Classes="product" Text="RX Vision" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="0,0,10,0" VerticalAlignment="Center">
+            <Button Classes="paneltab" Classes.on="{Binding IsTodayTab}" Content="Today" Command="{Binding ShowDashboardCommand}" />
+            <Button Classes="paneltab" Classes.on="{Binding IsMessagesTab}" Content="Messages" Command="{Binding ShowMessagesCommand}" />
+            <Button Classes="paneltab" Classes.on="{Binding IsProfileTab}" Content="Profile" Command="{Binding ShowProfileCommand}" />
           </StackPanel>
-        </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-          <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsBusy}" VerticalAlignment="Center">
-            <PathIcon Classes="spinner" Width="14" Height="14" />
-            <TextBlock Classes="muted" Text="Saving..." VerticalAlignment="Center" />
-          </StackPanel>
-          <Border Background="#FFFFFF" CornerRadius="14" Padding="11,6" BorderBrush="{StaticResource Brush.Divider}" BorderThickness="1"
-                  ToolTip.Tip="{Binding SyncToolTip}"
-                  IsVisible="{Binding SyncText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-            <StackPanel Orientation="Horizontal" Spacing="7">
-              <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                       Fill="{Binding SyncTone, Converter={x:Static conv:StatusBrushConverter.Instance}}" />
-              <TextBlock Text="{Binding SyncText}" FontSize="12" Foreground="{StaticResource Brush.InkSoft}" />
-            </StackPanel>
-          </Border>
-        </StackPanel>
-      </Grid>
+          <Button Name="CloseButton" Grid.Column="2" Classes="ghost" VerticalAlignment="Center"
+                  ToolTip.Tip="Close" AutomationProperties.Name="Close">
+            <Path Data="M0,0 L8,8 M8,0 L0,8" Stroke="{StaticResource Brush.TextQuiet}" StrokeThickness="1.5" StrokeLineCap="Round"
+                  Width="8" Height="8" Margin="3" />
+          </Button>
+        </Grid>
 
-      <!-- ===== Banners ===== -->
-      <StackPanel Grid.Row="1" Margin="22,0,22,0">
-        <Border Classes="banner ended" Margin="0,12,0,0" IsVisible="{Binding IsDayEnded}">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <Border Width="30" Height="30" CornerRadius="15" Background="{StaticResource Brush.Brand}" VerticalAlignment="Center">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Check}" Foreground="#FFFFFF" Width="16" Height="16" />
-            </Border>
-            <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Text="{Binding EndedTitle}" FontSize="13.5" FontWeight="SemiBold" Foreground="#312E81" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" Text="{Binding EndedDetail}" TextWrapping="Wrap" />
-            </StackPanel>
-            <Button Grid.Column="2" Classes="primary" Command="{Binding StartDayCommand}" VerticalAlignment="Center" IsVisible="{Binding ShowDayButtons}">
-              <StackPanel Orientation="Horizontal" Spacing="7">
-                <PathIcon Classes="i" Data="{StaticResource Icon.Play}" Foreground="#FFFFFF" Width="14" Height="14" />
-                <TextBlock Text="Start Day" />
-              </StackPanel>
-            </Button>
-          </Grid>
-        </Border>
+        <!-- ===== Today ===== -->
+        <ScrollViewer Grid.Row="1" Name="TodayScroll" IsVisible="{Binding IsTodayTab}"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="20,0,20,16">
 
-        <!-- What the day view says about today (3.2 to 3.5): a day off, leave, work from home -->
-        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding DayOffText, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding DayOffText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding LeaveText, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding LeaveText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding WfhText, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Home}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding WfhText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding CheckoutMissingText, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding CheckoutMissingText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-
-        <!-- A late start still waiting for its note (3.2) -->
-        <Border Classes="banner warn" Margin="0,12,0,0" IsVisible="{Binding HasLateReason}">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="{Binding LateReasonText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-            <Button Grid.Column="1" Classes="primary" Margin="12,0,0,0" Content="Add a note" Command="{Binding AddLateReasonCommand}" VerticalAlignment="Center" />
-          </Grid>
-        </Border>
-
-        <!-- An End Day done offline that waits for comments on skipped breaks -->
-        <Border Classes="banner warn" Margin="0,12,0,0" IsVisible="{Binding HasHeldEndDay}">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Warning}" Foreground="{StaticResource Brush.AmberStrong}" Width="22" Height="22" VerticalAlignment="Center" />
-            <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Text="Your End Day needs comments" FontSize="13.5" FontWeight="SemiBold" Foreground="{StaticResource Brush.AmberInk}" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" Text="{Binding HeldEndDayText}" TextWrapping="Wrap" />
-            </StackPanel>
-            <Button Grid.Column="2" Classes="primary" Content="Add comments" Command="{Binding EndDayCommand}" VerticalAlignment="Center" />
-          </Grid>
-        </Border>
-
-        <Border Classes="banner warn" Margin="0,12,0,0" IsVisible="{Binding ShowScreenRecordingBanner}">
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Warning}" Foreground="{StaticResource Brush.AmberStrong}" Width="22" Height="22" VerticalAlignment="Center" />
-            <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Text="RX Vision needs permission to take screenshots" FontSize="13.5" FontWeight="SemiBold" Foreground="{StaticResource Brush.AmberInk}" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" Text="Turn on screen recording for RX Vision. After allowing it, quit and reopen RX Vision." TextWrapping="Wrap" />
-            </StackPanel>
-            <Button Grid.Column="2" Classes="primary" Content="Allow screen recording" Command="{Binding AllowScreenRecordingCommand}" VerticalAlignment="Center" />
-            <Button Grid.Column="3" Classes="ghost" Margin="8,0,0,0" Command="{Binding DismissScreenRecordingCommand}" ToolTip.Tip="Dismiss" VerticalAlignment="Center">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="14" Height="14" />
-            </Button>
-          </Grid>
-        </Border>
-
-        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding HasUpdate}">
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Download}" Foreground="{StaticResource Brush.Brand}" Width="20" Height="20" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Margin="12,0,12,0" Text="{Binding UpdateText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
-            <Button Grid.Column="2" Classes="soft" Content="{Binding DownloadLabel}" Command="{Binding DownloadUpdateCommand}" VerticalAlignment="Center" />
-            <Button Grid.Column="3" Classes="ghost" Margin="8,0,0,0" Command="{Binding DismissUpdateCommand}" ToolTip.Tip="Dismiss" VerticalAlignment="Center">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="14" Height="14" />
-            </Button>
-          </Grid>
-        </Border>
-      </StackPanel>
-
-      <!-- ===== History and Instructions (the hamburger menu) ===== -->
-      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsHistoryPage}">
-        <views:HistoryView DataContext="{Binding History}" />
-      </Panel>
-      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsLeavePage}">
-        <views:LeaveView DataContext="{Binding Leave}" />
-      </Panel>
-      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsCalendarPage}">
-        <views:CalendarView DataContext="{Binding Calendar}" />
-      </Panel>
-      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsInstructionsPage}">
-        <views:InstructionsView DataContext="{Binding Instructions}" />
-      </Panel>
-
-      <!-- ===== Body ===== -->
-      <Grid Grid.Row="2" Margin="22,12,22,16" ColumnDefinitions="352,*" IsVisible="{Binding IsDashboardPage}">
-
-        <!-- Left: start day or quick status, today's breaks, end day -->
-        <Border Classes="card" Padding="0" CornerRadius="20">
-          <ScrollViewer Name="LeftScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto"
-                  MinHeight="{Binding #LeftScroll.Bounds.Height, Converter={x:Static conv:OffsetConverter.Minus32}}">
-              <StackPanel Grid.Row="0">
-              <!-- The alerts (3.6): the break ring, a skipped break, the Start day nudge, notifications,
-                   and the meeting cards (Start meeting?, End meeting?, Still in a meeting?, You're back to Working). -->
-              <views:AlertCardsView Name="AlertCards" />
-              <StackPanel Margin="2,0,2,12" Spacing="2" IsVisible="{Binding ShowProgress}">
-                <TextBlock Name="ProgressLineText" Text="{Binding ProgressLine}" FontSize="15" FontWeight="Bold" />
-                <TextBlock Classes="muted" Text="{Binding ProgressNote}" FontSize="13" IsVisible="{Binding ProgressNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              </StackPanel>
-              <Panel>
-                <!-- Not started: the day begins with this button. -->
-                <Border Classes="startpanel" IsVisible="{Binding IsNotStarted}">
-                  <StackPanel Spacing="10">
-                    <TextBlock Classes="eyebrow" Text="YOUR DAY HASN'T STARTED" />
-                    <TextBlock Classes="greeting" Text="{Binding GreetingText}" />
-                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding ShiftLine, Converter={x:Static ObjectConverters.IsNotNull}}">
-                      <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Width="14" Height="14" Foreground="{StaticResource Brush.Muted}" />
-                      <TextBlock Classes="muted" FontSize="12.5" Text="{Binding ShiftLine}" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <Button Classes="startday" Command="{Binding StartDayCommand}" Margin="0,6,0,0"
-                            IsVisible="{Binding ShowDayButtons}" AutomationProperties.Name="Start Day">
-                      <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Border Width="34" Height="34" CornerRadius="17" Background="#33FFFFFF">
-                          <PathIcon Classes="i" Data="{StaticResource Icon.Play}" Foreground="#FFFFFF" Width="16" Height="16" />
-                        </Border>
-                        <StackPanel VerticalAlignment="Center">
-                          <TextBlock Text="Start Day" FontSize="17" FontWeight="Bold" />
-                          <TextBlock Text="Focus time starts now" FontSize="11" Foreground="#DAD8F5" />
-                        </StackPanel>
-                      </StackPanel>
-                    </Button>
-                    <TextBlock Classes="body" FontSize="12.5" Text="Nothing is recorded until you press Start Day." IsVisible="{Binding ShowDayButtons}" />
-                    <Border Classes="note" IsVisible="{Binding IsBiometric}">
-                      <TextBlock Text="{Binding BiometricText}" TextWrapping="Wrap" FontSize="12.5" />
-                    </Border>
-                    <Border Classes="note" IsVisible="{Binding DayCheckText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                      <TextBlock Text="{Binding DayCheckText}" TextWrapping="Wrap" FontSize="12.5" />
-                    </Border>
-                    <Border Classes="note" IsVisible="{Binding LastEndedText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                      <TextBlock Text="{Binding LastEndedText}" TextWrapping="Wrap" FontSize="12.5" />
-                    </Border>
+            <!-- Screen E: two minutes before a break ends -->
+            <Border Classes="alertcard" Margin="0,0,0,18" IsVisible="{Binding ActiveBreak.EndsSoon}">
+              <StackPanel Spacing="14">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Classes="iconcircle amber">
+                    <TextBlock Text="i" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="cardtitle" Text="Break ends in 2 min" />
+                    <TextBlock Classes="cardbody" Text="Your ring starts again when you resume." />
                   </StackPanel>
-                </Border>
-
-                <Grid ColumnDefinitions="*,10,*" RowDefinitions="Auto,10,Auto,Auto"
-                      IsVisible="{Binding ShowTiles}" Opacity="{Binding TilesOpacity}">
-                  <ContentControl Grid.Row="0" Grid.Column="0" Content="{Binding QuickTile}" ContentTemplate="{StaticResource TileTemplate}" />
-                  <ContentControl Grid.Row="0" Grid.Column="2" Content="{Binding NextTile}" ContentTemplate="{StaticResource TileTemplate}" />
-                  <ContentControl Grid.Row="2" Grid.Column="0" Content="{Binding FocusTile}" ContentTemplate="{StaticResource TileTemplate}" />
-                  <ContentControl Grid.Row="2" Grid.Column="2" Content="{Binding MeetingTile}" ContentTemplate="{StaticResource TileTemplate}" />
-                  <!-- The 4.0 meeting dialog: agenda, people and minutes (works offline), or an earlier meeting -->
-                  <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Classes="link" Content="Meeting with details, or an earlier one"
-                          Command="{Binding RecordMeetingCommand}" HorizontalAlignment="Right" Margin="0,8,2,0"
-                          IsVisible="{Binding IsRunning}" AutomationProperties.Name="Meeting with details, or an earlier one" />
                 </Grid>
-
-                <!-- On a break: the countdown takes the tiles' place -->
-                <Border Classes="breakpanel" IsVisible="{Binding IsOnBreak}"
-                        Classes.lunch="{Binding ActiveBreak.IsLunch}"
-                        Classes.over="{Binding ActiveBreak.IsOverrun}">
-                  <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Classes="eyebrow" Text="{Binding ActiveBreak.Eyebrow}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Grid.Column="1" FontSize="12" Text="{Binding ActiveBreak.Started}" Foreground="{StaticResource Brush.InkSoft}" VerticalAlignment="Center" />
-                    </Grid>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                      <TextBlock Classes="count" Text="{Binding ActiveBreak.Countdown}" />
-                      <TextBlock Classes="unit" Text="{Binding ActiveBreak.Unit}" VerticalAlignment="Bottom" Margin="0,0,0,11" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ActiveBreak.OverText}" FontSize="13.5" FontWeight="Bold" Foreground="{StaticResource Brush.RedInk}"
-                               IsVisible="{Binding ActiveBreak.OverText, Converter={x:Static ObjectConverters.IsNotNull}}" Margin="0,-6,0,0" />
-                    <ProgressBar Minimum="0" Maximum="1" Value="{Binding ActiveBreak.Progress}"
-                                 Height="8" MinHeight="8" CornerRadius="4"
-                                 IsVisible="{Binding ActiveBreak.HasProgress}" />
-                    <TextBlock Classes="body" FontSize="13" Text="{Binding ActiveBreak.Note}" />
-                    <TextBlock Classes="small" Text="{Binding ActiveBreak.Approval}"
-                               IsVisible="{Binding ActiveBreak.Approval, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
-                      <Button Classes="pause" Classes.lunch="{Binding ActiveBreak.IsLunch}"
-                              Command="{Binding PauseBreakCommand}" IsVisible="{Binding ActiveBreak.CanPause}"
-                              Width="112" Margin="0,0,10,0" AutomationProperties.Name="Pause break"
-                              ToolTip.Tip="Pause: your focus time starts again. Resume before the break's window closes.">
-                        <StackPanel Orientation="Horizontal" Spacing="7">
-                          <PathIcon Classes="i" Data="{StaticResource Icon.Pause}" Width="16" Height="16" />
-                          <TextBlock Text="Pause" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
-                        </StackPanel>
-                      </Button>
-                      <Button Grid.Column="1" Classes="back"
-                              Classes.lunch="{Binding ActiveBreak.IsLunch}"
-                              Classes.over="{Binding ActiveBreak.IsOverrun}"
-                              Command="{Binding EndBreakCommand}"
-                              AutomationProperties.Name="End break">
-                        <StackPanel Orientation="Horizontal" Spacing="9">
-                          <PathIcon Classes="i" Data="{StaticResource Icon.Focus}" Foreground="#FFFFFF" Width="18" Height="18" />
-                          <TextBlock Text="End break" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
-                        </StackPanel>
-                      </Button>
-                    </Grid>
-                  </StackPanel>
-                </Border>
-
-                <!-- In a meeting: its timer, agenda and people take the tiles' place -->
-                <Border Classes="meetingpanel" IsVisible="{Binding IsInMeeting}">
-                  <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Classes="eyebrow" Text="IN A MEETING" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="1" FontSize="12" Text="{Binding MeetingStarted}" Foreground="{StaticResource Brush.InkSoft}" VerticalAlignment="Center" />
-                    </Grid>
-                    <TextBlock Classes="count" Text="{Binding MeetingTimer}" />
-                    <TextBlock Text="{Binding MeetingAgenda}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding MeetingPeopleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                      <ItemsControl ItemsSource="{Binding MeetingPeople}" VerticalAlignment="Center">
-                        <ItemsControl.ItemsPanel>
-                          <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                          </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate x:DataType="vm:MeetingPersonViewModel">
-                            <Border Classes="avatar" ToolTip.Tip="{Binding Name}">
-                              <TextBlock Text="{Binding Initials}" />
-                            </Border>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                      <TextBlock Grid.Column="1" Classes="muted" Margin="14,0,0,0" Text="{Binding MeetingPeopleText}"
-                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    </Grid>
-                    <TextBlock Classes="small" Text="{Binding MeetingMomText}" IsVisible="{Binding MeetingMomText, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                    <TextBlock Classes="small" Text="Your focus time keeps counting in a meeting." />
-                    <Button Classes="meetingend" Command="{Binding EndMeetingCommand}" Margin="0,4,0,0">
-                      <StackPanel Orientation="Horizontal" Spacing="9">
-                        <PathIcon Classes="i" Data="{StaticResource Icon.Check}" Foreground="#FFFFFF" Width="17" Height="17" />
-                        <TextBlock Text="End meeting" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
-                      </StackPanel>
-                    </Button>
-                  </StackPanel>
-                </Border>
-              </Panel>
+                <Button Name="ResumeNow" Classes="primary" HorizontalAlignment="Stretch" Content="Resume now"
+                        Command="{Binding BackToWorkCommand}" Margin="0,0,0,4" />
               </StackPanel>
+            </Border>
+
+            <!-- Screen A: break due -->
+            <Border Classes="alertcard" Margin="0,0,0,18" IsVisible="{Binding BreakDue.IsShown}">
+              <StackPanel>
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Classes="iconcircle">
+                    <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="cardtitle" Text="{Binding BreakDue.Title}" />
+                    <TextBlock Classes="cardbody" Text="{Binding BreakDue.Detail}" />
+                  </StackPanel>
+                </Grid>
+                <Button Name="TakeBreakNow" Classes="primary" HorizontalAlignment="Stretch" Margin="0,14,0,0" Content="Take a break"
+                        Command="{Binding BreakDue.TakeCommand}" />
+                <Button Classes="quiet" Margin="0,6,0,0" Content="Skip this break" Command="{Binding BreakDue.SkipCommand}"
+                        IsVisible="{Binding BreakDue.CanSkip}" />
+              </StackPanel>
+            </Border>
+
+            <!-- Skipped for you: a comment before the day can end -->
+            <Border Classes="alertcard" Margin="0,0,0,18" IsVisible="{Binding HasCommentCard}">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Classes="iconcircle amber">
+                    <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Classes="cardtitle" Text="{Binding CommentCardTitle}" />
+                    <TextBlock Classes="cardbody" Text="Add a comment before you end your day." />
+                  </StackPanel>
+                </Grid>
+                <Button Name="CommentNow" Classes="secondary" HorizontalAlignment="Stretch" Content="Add comment"
+                        Command="{Binding AddCommentFromCardCommand}" Margin="0,0,0,4" />
+              </StackPanel>
+            </Border>
+
+            <!-- Every other alert: "!" before "i", then newest first -->
+            <views:AlertCardsView Name="AlertCards" />
+
+            <!-- What the day view says, and what the agent itself needs -->
+            <StackPanel Spacing="10" Margin="0,0,0,14" IsVisible="{Binding HasNotes}">
+              <Border Classes="banner" IsVisible="{Binding DayOffText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="muted" Text="{Binding DayOffText}" TextWrapping="Wrap" />
+              </Border>
+              <Border Classes="banner" IsVisible="{Binding LeaveText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="muted" Text="{Binding LeaveText}" TextWrapping="Wrap" />
+              </Border>
+              <Border Classes="banner" IsVisible="{Binding WfhText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="muted" Text="{Binding WfhText}" TextWrapping="Wrap" />
+              </Border>
+              <Border Classes="banner" IsVisible="{Binding CheckoutMissingText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="muted" Text="{Binding CheckoutMissingText}" TextWrapping="Wrap" />
+              </Border>
+              <!-- A late start made elsewhere still wants its note -->
+              <Border Classes="banner warn" IsVisible="{Binding LateReasonText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <StackPanel Spacing="10">
+                  <TextBlock Classes="cardbody" Text="{Binding LateReasonText}" />
+                  <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Add the note" Command="{Binding AddLateReasonCommand}" />
+                </StackPanel>
+              </Border>
+              <Border Classes="banner warn" IsVisible="{Binding ShowScreenRecordingBanner}">
+                <StackPanel Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="title" Text="Allow screen recording for RX Vision" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="ghost" Command="{Binding DismissScreenRecordingCommand}" ToolTip.Tip="Dismiss" AutomationProperties.Name="Dismiss">
+                      <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="12" Height="12" />
+                    </Button>
+                  </Grid>
+                  <TextBlock Classes="cardbody" Text="Turn on screen recording for RX Vision. After allowing it, quit and reopen RX Vision." />
+                  <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Allow screen recording" Command="{Binding AllowScreenRecordingCommand}" />
+                </StackPanel>
+              </Border>
+              <Border Classes="banner" IsVisible="{Binding HasUpdate}">
+                <StackPanel Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="cardbody" Text="{Binding UpdateText}" />
+                    <Button Grid.Column="1" Classes="ghost" Margin="6,0,0,0" Command="{Binding DismissUpdateCommand}" ToolTip.Tip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Top">
+                      <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="12" Height="12" />
+                    </Button>
+                  </Grid>
+                  <Button Classes="soft" HorizontalAlignment="Stretch" Content="{Binding DownloadLabel}" Command="{Binding DownloadUpdateCommand}" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+
+            <!-- Screens B, C and F: on a break, the break extended, a break with no length.
+                 The status block keeps its place and its 64 px ring: the ring's clock carries the
+                 break (amber through the break's section; past its closing gap, run over) and the
+                 focus time beside it shows Paused. No countdown. -->
+            <StackPanel IsVisible="{Binding IsOnBreak}">
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,16">
+                <Ellipse Classes="statusdot" Fill="{StaticResource Brush.Amber}" />
+                <TextBlock Classes="status" Text="{Binding ActiveBreak.StatusText}" />
+              </StackPanel>
+              <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
+                <views:PanelIcon Name="BreakRing" State="{Binding BreakIcon}" Avatars="{Binding IconAvatars}" Width="64" Height="64"
+                                 AutomationProperties.Name="{Binding ActiveBreak.RingName}" />
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="progressline" VerticalAlignment="Center" Text="{Binding ActiveBreak.PausedLine}" />
+                    <Border Classes="pausedpill" VerticalAlignment="Center">
+                      <TextBlock Text="Paused" />
+                    </Border>
+                  </StackPanel>
+                  <TextBlock Name="BreakWindow" Classes="muted" Text="{Binding ActiveBreak.WindowLine}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Grid>
+              <StackPanel Spacing="4" Margin="0,16,0,0">
+                <TextBlock Classes="small" Text="{Binding ActiveBreak.TimingLine}" TextWrapping="Wrap"
+                           IsVisible="{Binding ActiveBreak.TimingLine, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="small" Text="{Binding ActiveBreak.Approval}" TextWrapping="Wrap"
+                           IsVisible="{Binding ActiveBreak.Approval, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="small" Text="{Binding ActiveBreak.ExtraMinutes}" TextWrapping="Wrap"
+                           IsVisible="{Binding ActiveBreak.ExtraMinutes, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <!-- 4.0: what the break costs (the paid buffer), a quick break's plan, an away break -->
+                <TextBlock Name="BreakNote" Classes="small" Text="{Binding ActiveBreak.Note}" TextWrapping="Wrap" />
+                <TextBlock Classes="small" Text="{Binding ActiveBreak.Started}" TextWrapping="Wrap" />
+              </StackPanel>
+              <!-- 4.0: a scheduled break can be paused (focus time starts again; resume it from Next break) -->
+              <Button Name="PauseBreakButton" Classes="secondary" HorizontalAlignment="Stretch" Margin="0,14,0,0" Content="Pause break"
+                      Command="{Binding PauseBreakCommand}" IsVisible="{Binding ActiveBreak.CanPause}" AutomationProperties.Name="Pause break"
+                      ToolTip.Tip="Pause: your focus time starts again. Resume before the break's window closes." />
+            </StackPanel>
+
+            <!-- In a meeting: the status line, Started, End meeting. A meeting recorded with its details (4.0's dialog) also shows its agenda, people and minutes -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsInMeeting}" Margin="0,8,0,18">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Ellipse Classes="statusdot" Fill="{StaticResource Brush.Meeting}" />
+                <TextBlock Classes="status" Text="In a meeting" />
+              </StackPanel>
+              <TextBlock Classes="muted" Text="{Binding MeetingStarted}" />
+              <TextBlock Classes="sofar" Text="{Binding MeetingTimer}" />
+              <TextBlock Classes="title" Text="{Binding MeetingAgenda}" FontSize="14" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                         IsVisible="{Binding MeetingAgenda, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding MeetingPeopleText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <ItemsControl ItemsSource="{Binding MeetingPeople}" VerticalAlignment="Center">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MeetingPersonViewModel">
+                      <!-- The avatar seam: initials until the avatars stream draws the person's picture -->
+                      <Border Classes="avatar" Width="24" Height="24" Margin="0,0,-6,0" ToolTip.Tip="{Binding Name}">
+                        <TextBlock Text="{Binding Initials}" />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Grid.Column="1" Classes="small" Margin="14,0,0,0" Text="{Binding MeetingPeopleText}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </Grid>
+              <TextBlock Classes="small" Text="{Binding MeetingMomText}" IsVisible="{Binding MeetingMomText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <TextBlock Classes="small" Text="Your focus time keeps counting in a meeting." />
+              <!-- 4.0: a break waits for End meeting (the day's own rule), so no break buttons here -->
+              <Button Name="EndMeetingButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Content="End meeting" Command="{Binding EndMeetingCommand}"
+                      IsVisible="{Binding ShowPanelEndMeeting}" AutomationProperties.Name="End meeting" />
+            </StackPanel>
+
+            <!-- Not started: the day begins with this button -->
+            <StackPanel Spacing="10" IsVisible="{Binding IsNotStarted}" Margin="0,4,0,18">
+              <TextBlock Classes="muted" Text="Your day hasn't started" />
+              <TextBlock Classes="greeting" Text="{Binding GreetingText}" IsVisible="{Binding ShowGreeting}" />
+              <TextBlock Classes="muted" Text="{Binding ShiftLine}" TextWrapping="Wrap" IsVisible="{Binding ShiftLine, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <Button Name="StartDayButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Command="{Binding StartDayCommand}"
+                      IsVisible="{Binding ShowStartDayButton}" AutomationProperties.Name="Start day" Content="{Binding StartDayLabel}" />
+              <TextBlock Classes="small" Text="Nothing is recorded until you tap Start day." TextWrapping="Wrap" IsVisible="{Binding ShowDayButtons}" />
+              <Border Classes="note" IsVisible="{Binding IsBiometric}">
+                <TextBlock Text="{Binding BiometricText}" TextWrapping="Wrap" FontSize="13" />
+              </Border>
+              <Border Classes="note" IsVisible="{Binding DayCheckText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="{Binding DayCheckText}" TextWrapping="Wrap" FontSize="13" />
+              </Border>
+              <Border Classes="note" IsVisible="{Binding LastEndedText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="{Binding LastEndedText}" TextWrapping="Wrap" FontSize="13" />
+              </Border>
+            </StackPanel>
+
+            <!-- Day ended -->
+            <StackPanel Spacing="10" IsVisible="{Binding IsDayEnded}" Margin="0,4,0,18">
+              <TextBlock Classes="cardtitle" Text="{Binding EndedTitle}" />
+              <TextBlock Classes="muted" Text="{Binding EndedDetail}" TextWrapping="Wrap" />
+              <!-- Outlined: the day is over, so starting again is the exception, never the obvious tap -->
+              <Button Name="RestartDayButton" Classes="secondary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Content="Start day" Command="{Binding StartDayCommand}"
+                      IsVisible="{Binding ShowDayButtons}" AutomationProperties.Name="Start day" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding ShowDayDetails}">
+              <!-- The status line, on the plain screen -->
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,16" IsVisible="{Binding ShowStatusLine}">
+                <Ellipse Classes="statusdot" Fill="{Binding StatusKind, Converter={x:Static conv:StatusBrushConverter.Instance}}" />
+                <TextBlock Classes="status" Text="{Binding StatusText}" />
+              </StackPanel>
+              <!-- Screen A's divider -->
+              <Border Classes="divider" Margin="0,0,0,18" IsVisible="{Binding BreakDue.IsShown}" />
+
+              <!-- Today's progress -->
+              <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
+                <views:PanelIcon Name="DayRing" State="{Binding Icon}" Avatars="{Binding IconAvatars}" Width="64" Height="64"
+                                 AutomationProperties.Name="{Binding RingName}" />
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Classes="progressline" Text="{Binding Today.ProgressLine}" />
+                  <TextBlock Classes="muted" Text="{Binding Today.ToGoLine}" IsVisible="{Binding Today.ToGoLine, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </StackPanel>
+              </Grid>
+
+              <!-- Actions, on the plain screen -->
+              <ContentControl Margin="0,10,0,0" Content="{Binding}" ContentTemplate="{StaticResource ActionsTemplate}" IsVisible="{Binding ShowActionsAbove}" />
 
               <!-- Today's breaks -->
-              <Border Grid.Row="1" Classes="subcard" Margin="0,12,0,0" IsVisible="{Binding ShowBreakList}">
-                <StackPanel Spacing="5">
-                  <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,2">
-                    <TextBlock Classes="title" Text="Today's breaks" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Classes="small" Text="{Binding ShiftText}" TextTrimming="CharacterEllipsis"
-                               HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0" />
-                  </Grid>
-                  <ItemsControl ItemsSource="{Binding Rows}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:BreakRowViewModel">
-                        <Border Classes="row" Classes.hl="{Binding IsHighlighted}" Margin="-8,0,-8,0">
-                          <Grid ColumnDefinitions="24,*">
-                            <Panel VerticalAlignment="Top" Margin="0,1,0,0">
-                              <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="17" Height="17" Foreground="{StaticResource Brush.Amber}" IsVisible="{Binding !IsLunch}" HorizontalAlignment="Left" />
-                              <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="17" Height="17" Foreground="{StaticResource Brush.Teal}" IsVisible="{Binding IsLunch}" HorizontalAlignment="Left" />
-                            </Panel>
-                            <StackPanel Grid.Column="1" Spacing="2">
-                              <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="title" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="6,0,0,0">
-                                  <Border Classes="pill" Background="{Binding PillTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
-                                    <TextBlock Text="{Binding PillText}" Foreground="{Binding PillTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                                  </Border>
-                                  <Border Classes="pill" Background="{Binding ApprovalTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}"
-                                          IsVisible="{Binding ApprovalText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                    <TextBlock Text="{Binding ApprovalText}" Foreground="{Binding ApprovalTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                                  </Border>
-                                </StackPanel>
-                              </Grid>
-                              <TextBlock Classes="small" Classes.alert="{Binding DetailIsAlert}" Text="{Binding Detail}" TextTrimming="CharacterEllipsis"
-                                         ToolTip.Tip="{Binding Detail}" />
-                              <TextBlock Classes="small" Text="{Binding Note}" TextWrapping="Wrap" FontStyle="Italic"
-                                         IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                              <Button Classes="link" Content="Add comment" Command="{Binding CommentCommand}" HorizontalAlignment="Left"
-                                      Margin="0,2,0,2" IsVisible="{Binding CanComment}" AutomationProperties.Name="Add comment" />
-                              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,2" IsVisible="{Binding HasActions}">
-                                <Button Classes="rowaction" Command="{Binding ResumeCommand}" IsVisible="{Binding CanResume}" AutomationProperties.Name="Resume break">
-                                  <TextBlock Text="Resume" />
-                                </Button>
-                                <Button Classes="rowaction quiet" Command="{Binding EndCommand}" IsVisible="{Binding CanEnd}" AutomationProperties.Name="End break">
-                                  <TextBlock Text="End break" />
-                                </Button>
-                              </StackPanel>
-                            </StackPanel>
+              <StackPanel IsVisible="{Binding ShowBreakList}" Margin="0,16,0,0">
+                <TextBlock Classes="muted" Text="Today's breaks" Margin="0,0,0,4" />
+                <TextBlock Classes="small" Text="{Binding ShiftText}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4"
+                           IsVisible="{Binding !BreakDue.IsShown}" />
+                <ItemsControl ItemsSource="{Binding Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:BreakRowViewModel">
+                      <Border Classes="breakrow" AutomationProperties.Name="{Binding SpokenText}" ToolTip.Tip="{Binding Detail}">
+                        <StackPanel Spacing="3">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="rowname" Classes.current="{Binding IsCurrent}" Text="{Binding Name}" />
+                            <TextBlock Grid.Column="1" Classes="rowright" Margin="8,0,0,0" Text="{Binding RightText}" IsVisible="{Binding ShowRightText}" />
+                            <Border Grid.Column="1" Classes="nowpill" Margin="8,0,0,0" IsVisible="{Binding IsCurrent}">
+                              <TextBlock Text="Now" />
+                            </Border>
                           </Grid>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock Classes="muted" Text="{Binding FreeText}" TextWrapping="Wrap" IsVisible="{Binding ShowFreeText}" LineHeight="18" />
-                </StackPanel>
-              </Border>
+                          <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowChips}">
+                            <Border Classes="pill" IsVisible="{Binding ShowTiming}" Background="{Binding PillTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
+                              <TextBlock Text="{Binding PillText}" Foreground="{Binding PillTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                            </Border>
+                            <Border Classes="pill" IsVisible="{Binding HasApproval}" Background="{Binding ApprovalTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
+                              <TextBlock Text="{Binding ApprovalText}" Foreground="{Binding ApprovalTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                            </Border>
+                          </StackPanel>
+                          <TextBlock Classes="small" Classes.attention="{Binding DetailIsAlert}" Text="{Binding Detail}" TextWrapping="Wrap" IsVisible="{Binding ShowDetail}" />
+                          <TextBlock Classes="small" Text="{Binding Note}" TextWrapping="Wrap" FontStyle="Italic" IsVisible="{Binding HasNote}" />
+                          <Button Classes="link" Content="Add comment" Command="{Binding CommentCommand}" HorizontalAlignment="Left"
+                                  Margin="0,2,0,2" IsVisible="{Binding CanComment}" AutomationProperties.Name="Add comment" />
+                          <!-- 4.0: a paused break can be resumed inside its window, or ended -->
+                          <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,2,0,2" IsVisible="{Binding HasActions}">
+                            <Button Classes="link" Content="Resume" Command="{Binding ResumeCommand}" IsVisible="{Binding CanResume}" AutomationProperties.Name="Resume break" />
+                            <Button Classes="link" Content="End break" Command="{Binding EndCommand}" IsVisible="{Binding CanEnd}" AutomationProperties.Name="End break" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="muted" Text="{Binding FreeText}" TextWrapping="Wrap" IsVisible="{Binding ShowFreeText}" LineHeight="18" />
+              </StackPanel>
 
-              <!-- End day -->
-              <Button Grid.Row="3" Classes="endday" Command="{Binding EndDayCommand}" Margin="0,12,0,0">
-                <Button.IsVisible>
-                  <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="IsRunning" />
-                    <Binding Path="ShowDayButtons" />
-                  </MultiBinding>
-                </Button.IsVisible>
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                  <Border Width="30" Height="30" CornerRadius="15" Background="#33FFFFFF">
-                    <PathIcon Classes="i" Data="{StaticResource Icon.Power}" Foreground="#FFFFFF" Width="16" Height="16" />
-                  </Border>
-                  <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="END DAY" FontSize="14" FontWeight="Bold" />
-                    <TextBlock Text="Finish and save your day" FontSize="10.5" Foreground="#DAD8F5" />
+              <!-- Actions, under a card: its one primary action comes first -->
+              <ContentControl Margin="0,16,0,0" Content="{Binding}" ContentTemplate="{StaticResource ActionsTemplate}" IsVisible="{Binding ShowActionsBelow}" />
+
+              <!-- Time taken today -->
+              <StackPanel Spacing="8" Margin="0,18,0,0">
+                <TextBlock Classes="muted" Text="Time taken today" />
+                <Grid ColumnDefinitions="*,*,*">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="small" Text="Break" />
+                    <TextBlock Classes="title num" FontSize="14" Text="{Binding Today.BreakTotal}" />
                   </StackPanel>
-                </StackPanel>
-              </Button>
-            </Grid>
-          </ScrollViewer>
-        </Border>
-
-        <!-- Right: today, chat -->
-        <Grid Grid.Column="1" Margin="14,0,0,0" RowDefinitions="Auto,*">
-          <Border Classes="card" Padding="18,14,18,14">
-            <StackPanel Spacing="10">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Classes="title" FontSize="14" Text="Today" />
-                <TextBlock Grid.Column="1" Classes="small" Text="Focus time runs from Start Day, minus breaks" VerticalAlignment="Center" />
-              </Grid>
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Classes="small" Text="Lunch" />
+                    <TextBlock Classes="title num" FontSize="14" Text="{Binding Today.LunchTotal}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Classes="small" Text="Meeting" />
+                    <TextBlock Classes="title num" FontSize="14" Text="{Binding Today.MeetingTotal}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
 
               <!-- Focus time: the server's number, ticking while the day runs -->
-              <Grid ColumnDefinitions="Auto,*">
-                <StackPanel Spacing="1" VerticalAlignment="Bottom">
-                  <TextBlock Classes="small" FontSize="11.5" Text="Focus time" />
-                  <TextBlock Classes="focus num" Text="{Binding Today.FocusText}" />
-                </StackPanel>
-                <StackPanel Grid.Column="1" Margin="20,0,0,6" Spacing="6" VerticalAlignment="Bottom">
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Classes="small" FontSize="11.5" Text="{Binding Today.FocusStatus}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Grid.Column="1" Classes="small" FontSize="11.5" Text="{Binding Today.ExpectedText}" Margin="8,0,0,0" />
-                  </Grid>
-                  <ProgressBar Classes="focusbar" Minimum="0" Maximum="1" Value="{Binding Today.Progress}" Height="8" MinHeight="8" CornerRadius="4" />
-                </StackPanel>
-              </Grid>
-              <WrapPanel Orientation="Horizontal">
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,0" VerticalAlignment="Center"
-                            IsVisible="{Binding Today.DayStartedText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="13" Height="13" Foreground="{StaticResource Brush.Muted}" />
-                  <TextBlock Classes="muted" Text="{Binding Today.DayStartedText}" />
-                </StackPanel>
-                <Border Classes="pill" Background="{StaticResource Brush.GreenBg}" Margin="0,0,8,0" IsVisible="{Binding Today.HasPlus}">
-                  <TextBlock Text="{Binding Today.PlusText}" Foreground="{StaticResource Brush.GreenInk}" />
-                </Border>
-                <Border Classes="pill" Background="{StaticResource Brush.NeutralBg}" IsVisible="{Binding Today.HasMinus}">
-                  <TextBlock Text="{Binding Today.MinusText}" Foreground="{StaticResource Brush.Neutral}" />
-                </Border>
-                <Border Classes="pill" Background="{StaticResource Brush.NeutralBg}" Margin="8,0,0,0" IsVisible="{Binding Today.HasAdjusted}" ToolTip.Tip="Changed by hand by the Super Manager; the reason is in your notifications">
-                  <TextBlock Text="{Binding Today.AdjustedText}" Foreground="{StaticResource Brush.Neutral}" />
-                </Border>
-              </WrapPanel>
-
-              <!-- The paid break allowance (SPEC 2.4, 8.1), and paid time beside it: focus + paid breaks -->
-              <Grid ColumnDefinitions="Auto,*,Auto">
-                <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="14" Height="14" Foreground="{StaticResource Brush.Muted}" VerticalAlignment="Center"
-                          Margin="0,0,7,0" Background="Transparent" ToolTip.Tip="{Binding Today.AllowanceToolTip}" />
-                <TextBlock Grid.Column="1" Classes="small" Classes.alert="{Binding Today.HasUnpaid}" FontSize="12" Text="{Binding Today.AllowanceText}"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Today.AllowanceToolTip}" />
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0" VerticalAlignment="Center" Background="Transparent"
-                            IsVisible="{Binding Today.HasPaidTime}" ToolTip.Tip="{x:Static vm:TodayViewModel.PaidTimeToolTip}">
-                  <TextBlock Classes="small" FontSize="12" Text="Paid time" VerticalAlignment="Center" />
-                  <TextBlock Classes="num" FontSize="12.5" FontWeight="SemiBold" Text="{Binding Today.PaidTimeText}" VerticalAlignment="Center"
-                             Foreground="{StaticResource Brush.Ink}" />
-                </StackPanel>
-              </Grid>
-
-              <!-- Offline time the server has no activity data for yet (SPEC 2.4): only when there is some -->
-              <Border Classes="note warn" Padding="10,7" IsVisible="{Binding Today.HasUnverified}">
-                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.CloudOff}" Width="14" Height="14" Foreground="{StaticResource Brush.AmberStrong}"
-                            VerticalAlignment="Center" Margin="0,0,8,0" />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <TextBlock FontSize="12" Text="Offline, no activity data" />
-                    <TextBlock Classes="num" FontSize="12.5" FontWeight="SemiBold" Text="{Binding Today.UnverifiedText}" />
-                  </StackPanel>
-                  <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                             Text="{x:Static vm:TodayViewModel.UnverifiedNote}" />
+              <StackPanel Spacing="4" Margin="0,18,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="muted" Text="Focus time" />
+                  <TextBlock Grid.Column="1" Classes="small" Text="{Binding Today.ExpectedText}" VerticalAlignment="Center" />
                 </Grid>
-              </Border>
+                <TextBlock Classes="title num" FontSize="14" Text="{Binding Today.FocusText}" />
+                <TextBlock Classes="small" Text="{Binding Today.FocusStatus}" TextWrapping="Wrap" />
+                <TextBlock Classes="small" Text="{Binding Today.DayStartedText}" IsVisible="{Binding Today.DayStartedText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="small" Text="{Binding Today.PlusText}" IsVisible="{Binding Today.HasPlus}" />
+                <TextBlock Classes="small" Text="{Binding Today.MinusText}" IsVisible="{Binding Today.HasMinus}" />
+                <TextBlock Classes="small" Text="{Binding Today.AdjustedText}" IsVisible="{Binding Today.HasAdjusted}" TextWrapping="Wrap" />
+                <TextBlock Classes="small" Text="Focus time runs from Start day, minus breaks" TextWrapping="Wrap" />
+              </StackPanel>
 
-              <Border Padding="0,9,0,0" BorderBrush="{StaticResource Brush.Divider}" BorderThickness="0,1,0,0">
-                <Grid ColumnDefinitions="Auto,*,*,*">
-                  <TextBlock Classes="title" Text="Time taken today" VerticalAlignment="Center" Margin="0,0,16,0" />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
-                    <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="16" Height="16" Foreground="{StaticResource Brush.Amber}" />
-                    <TextBlock Classes="muted" Text="Break" VerticalAlignment="Center" />
-                    <TextBlock Classes="num" Text="{Binding Today.BreakTotal}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="7">
-                    <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="16" Height="16" Foreground="{StaticResource Brush.Teal}" />
-                    <TextBlock Classes="muted" Text="Lunch" VerticalAlignment="Center" />
-                    <TextBlock Classes="num" Text="{Binding Today.LunchTotal}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7">
-                    <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="16" Height="16" Foreground="{StaticResource Brush.Violet}" />
-                    <TextBlock Classes="muted" Text="Meeting" VerticalAlignment="Center" />
-                    <TextBlock Classes="num" Text="{Binding Today.MeetingTotal}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  </StackPanel>
+              <!-- 4.0: the paid break allowance (SPEC 2.4, 8.1), paid time (focus + paid breaks), and
+                   offline time the server has no activity data for yet (only when there is some) -->
+              <StackPanel Spacing="4" Margin="0,18,0,0">
+                <TextBlock Name="AllowanceLine" Classes="small" Classes.attention="{Binding Today.HasUnpaid}" Text="{Binding Today.AllowanceText}"
+                           TextWrapping="Wrap" ToolTip.Tip="{Binding Today.AllowanceToolTip}" />
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Today.HasPaidTime}" Background="Transparent" ToolTip.Tip="{x:Static vm:TodayViewModel.PaidTimeToolTip}">
+                  <TextBlock Classes="muted" Text="Paid time" />
+                  <TextBlock Grid.Column="1" Classes="title num" FontSize="14" Text="{Binding Today.PaidTimeText}" />
                 </Grid>
-              </Border>
+                <Border Classes="note" IsVisible="{Binding Today.HasUnverified}">
+                  <StackPanel Spacing="2">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="Offline, no activity data" />
+                      <TextBlock Classes="num" FontWeight="SemiBold" Text="{Binding Today.UnverifiedText}" />
+                    </StackPanel>
+                    <TextBlock Classes="small" TextWrapping="Wrap" Text="{x:Static vm:TodayViewModel.UnverifiedNote}" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
 
               <!-- Waiting for your manager -->
-              <Border Padding="0,9,0,0" BorderBrush="{StaticResource Brush.Divider}" BorderThickness="0,1,0,0" IsVisible="{Binding Today.HasWaiting}">
-                <StackPanel Spacing="6">
-                  <TextBlock Classes="title" FontSize="12.5" Text="{Binding Today.WaitingTitle}" />
-                  <ItemsControl ItemsSource="{Binding Today.Waiting}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:WaitingItemViewModel">
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,5" Background="Transparent" ToolTip.Tip="{Binding ToolTip}">
-                          <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                   Fill="{Binding Kind, Converter={x:Static conv:WaitingDotConverter.Instance}}" />
-                          <TextBlock Grid.Column="1" Margin="8,0,10,0" Text="{Binding Title}" FontSize="12.5" Foreground="{StaticResource Brush.InkSoft}"
-                                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                          <Border Grid.Column="2" Classes="pill" Background="{Binding ChipTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
-                            <TextBlock Text="{Binding Chip}" Foreground="{Binding ChipTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-                          </Border>
-                        </Grid>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock Classes="small" Text="{Binding Today.WaitingMore}" IsVisible="{Binding Today.WaitingMore, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                </StackPanel>
-              </Border>
-            </StackPanel>
-          </Border>
+              <StackPanel Spacing="6" Margin="0,18,0,0" IsVisible="{Binding Today.HasWaiting}">
+                <TextBlock Classes="muted" Text="{Binding Today.WaitingTitle}" />
+                <ItemsControl ItemsSource="{Binding Today.Waiting}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WaitingItemViewModel">
+                      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,0,0,8" Background="Transparent" ToolTip.Tip="{Binding ToolTip}">
+                        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                 Fill="{Binding Kind, Converter={x:Static conv:WaitingDotConverter.Instance}}" />
+                        <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Border Grid.Row="1" Grid.Column="1" Classes="pill" Margin="8,3,0,0" HorizontalAlignment="Left"
+                                Background="{Binding ChipTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}">
+                          <TextBlock Text="{Binding Chip}" Foreground="{Binding ChipTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="small" Text="{Binding Today.WaitingMore}" IsVisible="{Binding Today.WaitingMore, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
 
-          <views:ChatView Grid.Row="1" Margin="0,14,0,0" DataContext="{Binding Chat}" />
-        </Grid>
-      </Grid>
-    </Grid>
+              <!-- End day: a quiet text action -->
+              <Button Classes="quiet" Margin="0,16,0,0" Content="End day" Command="{Binding EndDayCommand}" IsVisible="{Binding ShowEndDay}" />
 
-    <!-- ===== The hamburger menu: pages, sign out, quit (admins) ===== -->
-    <Panel IsVisible="{Binding IsMenuOpen}">
-      <Button Theme="{StaticResource BareButton}" Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-              Command="{Binding CloseMenuCommand}" AutomationProperties.Name="Close menu" />
-      <Border Name="MainMenu" Classes="menu" Width="244" Margin="22,60,0,0" HorizontalAlignment="Left" VerticalAlignment="Top">
-        <StackPanel Spacing="2">
-          <Button Classes="menuitem" Classes.on="{Binding IsDashboardPage}" Command="{Binding ShowDashboardCommand}" AutomationProperties.Name="Dashboard">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Home}" Width="17" Height="17" />
-              <TextBlock Text="Dashboard" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="menuitem" Classes.on="{Binding IsHistoryPage}" Command="{Binding ShowHistoryCommand}" AutomationProperties.Name="History">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.History}" Width="17" Height="17" />
-              <TextBlock Text="History" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="menuitem" Classes.on="{Binding IsLeavePage}" Command="{Binding ShowLeaveCommand}" AutomationProperties.Name="Leave">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="17" Height="17" />
-              <TextBlock Text="Leave" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="menuitem" Classes.on="{Binding IsCalendarPage}" Command="{Binding ShowCalendarCommand}" AutomationProperties.Name="My calendar">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Width="17" Height="17" />
-              <TextBlock Text="My calendar" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="menuitem" Classes.on="{Binding IsInstructionsPage}" Command="{Binding ShowInstructionsCommand}" AutomationProperties.Name="Instructions">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Book}" Width="17" Height="17" />
-              <TextBlock Text="Instructions" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="8,4" />
-          <Button Classes="menuitem" Command="{Binding SignOutCommand}" AutomationProperties.Name="Sign out">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.SignOut}" Width="17" Height="17" />
-              <StackPanel Spacing="1">
-                <TextBlock Text="Sign out…" />
-                <TextBlock Classes="small" FontSize="11" Text="Needs a key from your admin" />
+              <!-- The sync line -->
+              <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center" Margin="0,12,0,0"
+                          IsVisible="{Binding SyncText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                         Fill="{Binding SyncTone, Converter={x:Static conv:StatusBrushConverter.Instance}}" />
+                <TextBlock Classes="small" Text="{Binding SyncText}" ToolTip.Tip="{Binding SyncToolTip}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center" Margin="0,8,0,0" IsVisible="{Binding IsBusy}">
+                <PathIcon Classes="spinner" Width="14" Height="14" />
+                <TextBlock Classes="small" Text="Saving..." VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
-          </Button>
-          <Button Classes="menuitem quit" Command="{Binding QuitCommand}" IsVisible="{Binding CanQuit}" AutomationProperties.Name="Quit RX Vision">
-            <StackPanel Orientation="Horizontal" Spacing="11">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Power}" Width="17" Height="17" />
-              <TextBlock Text="Quit RX Vision…" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-        </StackPanel>
-      </Border>
-    </Panel>
-
-    <!-- ===== Dialogs: over the dashboard, which waits behind a scrim ===== -->
-    <Panel IsVisible="{Binding HasOverlay}" Background="{StaticResource Brush.Scrim}">
-      <Border Background="#FFFFFF" CornerRadius="12" Width="{Binding OverlayWidth}" Margin="20"
-              HorizontalAlignment="Center" VerticalAlignment="Center"
-              BoxShadow="0 24 60 0 #59141828" ClipToBounds="True">
-        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-          <ContentControl Content="{Binding Overlay}" />
+          </StackPanel>
         </ScrollViewer>
-      </Border>
+
+        <!-- Resume work: where the design puts it, at the foot of the panel -->
+        <Button Grid.Row="2" Name="ResumeWork" Classes="primary" Margin="20,12,20,19" HorizontalAlignment="Stretch" Content="Resume work"
+                Command="{Binding BackToWorkCommand}" AutomationProperties.Name="Resume work" IsVisible="{Binding ShowResume}" />
+
+        <!-- ===== Messages ===== -->
+        <views:ChatView Grid.Row="1" Grid.RowSpan="2" DataContext="{Binding Chat}"
+                        IsVisible="{Binding $parent[Window].((vm:DashboardViewModel)DataContext).IsMessagesTab}" />
+
+        <!-- ===== Profile ===== -->
+        <ScrollViewer Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding ShowProfileList}"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="20,0,20,16">
+            <!-- The account. The avatar seam: initials here until the avatars stream draws the picture
+                 and makes this row open the picker (D-85). -->
+            <Border Name="Account" Margin="0,0,0,8" Padding="0,8" AutomationProperties.Name="Account">
+              <Grid ColumnDefinitions="Auto,*">
+                <Border Classes="avatar" Width="44" Height="44" CornerRadius="22" Margin="0,0,12,0">
+                  <TextBlock Text="{Binding Initials}" FontSize="15" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                  <TextBlock Classes="status" Text="{Binding DisplayName}" MaxWidth="230" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" Text="{Binding StatusText}" />
+                  <TextBlock Classes="small" Text="{Binding DepartmentText}" TextTrimming="CharacterEllipsis"
+                             IsVisible="{Binding DepartmentText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+            <Border Classes="divider" Margin="0,0,0,6" />
+            <Button Classes="menuitem" Command="{Binding ShowHistoryCommand}" AutomationProperties.Name="History">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.History}" Width="17" Height="17" />
+                <TextBlock Text="History" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="menuitem" Command="{Binding ShowInstructionsCommand}" AutomationProperties.Name="Instructions">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.Book}" Width="17" Height="17" />
+                <TextBlock Text="Instructions" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="menuitem" Command="{Binding ShowCalendarCommand}" AutomationProperties.Name="My calendar">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Width="17" Height="17" />
+                <TextBlock Text="My calendar" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="menuitem" Command="{Binding ShowLeaveCommand}" AutomationProperties.Name="Leave">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.Home}" Width="17" Height="17" />
+                <TextBlock Text="Leave" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Border Classes="divider" Margin="0,6" />
+            <!-- 4.0: sign out takes a key from the admin; only admins quit, with a key -->
+            <Button Classes="menuitem" Command="{Binding SignOutCommand}" AutomationProperties.Name="Sign out">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.SignOut}" Width="17" Height="17" />
+                <StackPanel Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Text="Sign out…" />
+                  <TextBlock Classes="small" Text="Needs a key from your admin" />
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Classes="menuitem" Command="{Binding QuitCommand}" IsVisible="{Binding CanQuit}" AutomationProperties.Name="Quit RX Vision">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <PathIcon Classes="i" Data="{StaticResource Icon.Power}" Width="17" Height="17" />
+                <TextBlock Text="Quit RX Vision…" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- Who and what this is, for a support call -->
+            <StackPanel Spacing="2" Margin="4,18,0,0">
+              <TextBlock Classes="small" Text="{Binding ShiftText}" TextTrimming="CharacterEllipsis"
+                         IsVisible="{Binding ShiftText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="small" Text="{Binding VersionText}" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- History, Leave, My calendar and Instructions, from the Profile tab -->
+        <Grid Grid.Row="1" Grid.RowSpan="2" RowDefinitions="Auto,*" IsVisible="{Binding !IsDashboardPage}">
+          <Button Classes="ghost" Margin="15,0,0,6" HorizontalAlignment="Left" Command="{Binding ShowProfileCommand}"
+                  ToolTip.Tip="Back" AutomationProperties.Name="Back">
+            <PathIcon Classes="i" Data="{StaticResource Icon.ChevronLeft}" Width="16" Height="16" />
+          </Button>
+          <views:LeaveView Grid.Row="1" Margin="20,0,20,16" DataContext="{Binding Leave}" IsVisible="{Binding $parent[Window].((vm:DashboardViewModel)DataContext).IsLeavePage}" />
+          <views:CalendarView Grid.Row="1" Margin="20,0,20,16" DataContext="{Binding Calendar}" IsVisible="{Binding $parent[Window].((vm:DashboardViewModel)DataContext).IsCalendarPage}" />
+          <views:HistoryView Grid.Row="1" Margin="20,0,20,16" DataContext="{Binding History}" IsVisible="{Binding $parent[Window].((vm:DashboardViewModel)DataContext).IsHistoryPage}" />
+          <views:InstructionsView Grid.Row="1" Margin="20,0,20,16" DataContext="{Binding Instructions}" IsVisible="{Binding $parent[Window].((vm:DashboardViewModel)DataContext).IsInstructionsPage}" />
+        </Grid>
+      </Grid>
+
+      <!-- ===== Cards over the panel, which waits behind a scrim ===== -->
+      <Panel IsVisible="{Binding HasOverlay}" Background="{StaticResource Brush.Scrim}">
+        <Border Classes="dialogcard" Width="{Binding OverlayWidth}" MaxHeight="538" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <ContentControl Content="{Binding Overlay}" />
+        </Border>
+      </Panel>
     </Panel>
-  </Panel>
+  </Border>
 </Window>

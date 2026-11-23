@@ -6,11 +6,12 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,18" Spacing="13">
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,24,20,16" Spacing="12">
       <StackPanel Orientation="Horizontal" Spacing="10">
-        <Border Width="32" Height="32" CornerRadius="10" Background="{StaticResource Brush.VioletIcon}">
-          <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="18" Height="18" Foreground="#7C3AED" />
+        <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource Brush.MeetingWash}">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="18" Height="18" Foreground="{StaticResource Brush.Meeting}" />
         </Border>
         <TextBlock Classes="h2" Text="{Binding Title}" VerticalAlignment="Center" />
       </StackPanel>
@@ -24,7 +25,7 @@
       </Border>
 
       <StackPanel Spacing="10" IsVisible="{Binding IsPast}">
-        <Grid ColumnDefinitions="116,14,*" IsVisible="{Binding HasStartOptions}">
+        <Grid ColumnDefinitions="116,12,*" IsVisible="{Binding HasStartOptions}">
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="Started at" />
             <ComboBox ItemsSource="{Binding StartOptions}" SelectedItem="{Binding StartAt}" HorizontalAlignment="Stretch"
@@ -60,7 +61,7 @@
         </Grid>
         <Border Classes="range" IsVisible="{Binding RangeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="15" Height="15" Foreground="#6D28D9" />
+            <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="15" Height="15" Foreground="{StaticResource Brush.TextQuiet}" />
             <TextBlock Text="{Binding RangeText}" FontWeight="SemiBold" />
           </StackPanel>
         </Border>
@@ -107,7 +108,7 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBox Classes="bare" MinWidth="190" Text="{Binding PersonQuery}" Watermark="{Binding PeopleHint}"
+            <TextBox Classes="bare" MinWidth="180" Text="{Binding PersonQuery}" Watermark="{Binding PeopleHint}"
                      IsEnabled="{Binding CanAddPeople}" MaxLength="80" AutomationProperties.Name="Add people or type a name">
               <TextBox.KeyBindings>
                 <KeyBinding Gesture="Enter" Command="{Binding AddTypedCommand}" />
@@ -146,11 +147,12 @@
       </Border>
       <TextBlock Classes="small" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" TextWrapping="Wrap" />
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <Grid ColumnDefinitions="1.3*,8,*">
-        <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
-        <Button Grid.Column="2" Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
       </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

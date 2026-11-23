@@ -49,7 +49,6 @@ public sealed class AppController : IDisposable
 
     private AgentState _shownState = AgentState.Starting;
     private bool _openDashboardOnSession;
-    private bool _dashboardPlaced;
     private bool _quitting;
     private bool _fullScreen;
     private Task<bool>? _fullScreenProbe;
@@ -171,7 +170,6 @@ public sealed class AppController : IDisposable
         _bubbleVm.Dispose();
         try { _agent.Shutdown(); }
         catch (Exception ex) { _log.Warn("ui", "agent shutdown failed", ex); }
-        SaveDashboardPlacement();
     }
 
     /// <summary>An Admin's or Super Admin's quit, after the key was taken (SPEC 2.8). Tracking stops.</summary>
@@ -375,15 +373,23 @@ public sealed class AppController : IDisposable
         var window = _dashboard ??= CreateDashboard();
         if (!window.IsVisible)
         {
-            // A hidden window keeps its place by itself; the saved placement is for
-            // the first show after launch, or when its screen has gone away.
-            if (!_dashboardPlaced || !IsOnAnyScreen(window)) RestoreDashboardPlacement(window);
-            _dashboardPlaced = true;
+            PlacePanel(window);
+            // It opens on Today, with the newest card on top.
+            _dashboardVm.ShowDashboardCommand.Execute(null);
             window.Show();
         }
-        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Activate();
         OnDashboardShown();
+        window.FocusNewestCard();
+    }
+
+    /// <summary>Beside the icon, bottoms aligned (see <see cref="PanelPlacement"/>).</summary>
+    private void PlacePanel(DashboardWindow window)
+    {
+        var (_, centre) = ToastAnchor(window);
+        var screen = BubblePlacement.ScreenFor(centre, window.Screens.All) ?? window.Screens.Primary ?? window.Screens.All.FirstOrDefault();
+        if (screen is null) return;
+        window.Position = PanelPlacement.Place(centre, screen.WorkingArea, screen.Scaling);
     }
 
     private DashboardWindow CreateDashboard()
@@ -392,7 +398,6 @@ public sealed class AppController : IDisposable
         window.VisibilityChanged += visible =>
         {
             if (visible) return;
-            SaveDashboardPlacement();
             _dashboardVm.Overlay?.Cancel();
             _dashboardVm.IsOnScreen = false;
             _bubbleVm.SetPanelOpen(false);
@@ -401,7 +406,7 @@ public sealed class AppController : IDisposable
         window.Activated += (_, _) =>
         {
             _dashboardVm.IsOnScreen = true;
-            if (_agent.ChatUnread > 0) _ = SafeAsync(_dashboardVm.Chat.LoadConversationAsync);
+            if (_agent.ChatUnread > 0 && _dashboardVm.IsMessagesTab) _ = SafeAsync(_dashboardVm.Chat.LoadConversationAsync);
         };
         window.Deactivated += (_, _) => _dashboardVm.IsOnScreen = false;
         return window;
@@ -419,7 +424,6 @@ public sealed class AppController : IDisposable
         }
         _toasts.Withdraw(ToastKind.Message);
         _dashboardVm.Refresh();
-        _ = SafeAsync(_dashboardVm.Chat.ActivateAsync);
         _ = RefreshDataAsync();
     }
 
@@ -475,6 +479,7 @@ public sealed class AppController : IDisposable
             _bubble.Clicked += ToggleDashboard;
             _bubble.DragEnded += () =>
             {
+                if (_dashboard is { IsVisible: true } panel) PlacePanel(panel);
                 if (_toastWindow is not { IsVisible: true } toast) return;
                 var (avoid, centre) = ToastAnchor(toast);
                 toast.MoveBeside(avoid, centre);
@@ -488,75 +493,6 @@ public sealed class AppController : IDisposable
     {
         if (_bubble?.IsVisible == true) _bubble.Hide();
         _bubbleVm.SetShown(false);
-    }
-
-    private static bool IsOnAnyScreen(Window window)
-    {
-        try
-        {
-            var position = window.Position;
-            return window.Screens.All.Any(s => s.WorkingArea.Intersects(
-                new PixelRect(position.X, position.Y, (int)(window.Width * s.Scaling), (int)(40 * s.Scaling))));
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void RestoreDashboardPlacement(Window window)
-    {
-        var screens = window.Screens;
-        var saved = _settings.Current.Dashboard;
-        if (saved is not null)
-        {
-            var screen = screens.All.FirstOrDefault(s =>
-                s.WorkingArea.Intersects(new PixelRect(saved.X, saved.Y, (int)(saved.Width * s.Scaling), (int)(40 * s.Scaling))));
-            if (screen is not null)
-            {
-                var area = screen.WorkingArea;
-                var maxW = area.Width / screen.Scaling;
-                var maxH = area.Height / screen.Scaling;
-                window.Width = Math.Clamp(saved.Width, window.MinWidth, Math.Max(window.MinWidth, maxW));
-                window.Height = Math.Clamp(saved.Height, window.MinHeight, Math.Max(window.MinHeight, maxH));
-                var w = (int)(window.Width * screen.Scaling);
-                var h = (int)(window.Height * screen.Scaling);
-                window.Position = new PixelPoint(
-                    Math.Clamp(saved.X, area.X, Math.Max(area.X, area.Right - w)),
-                    Math.Clamp(saved.Y, area.Y, Math.Max(area.Y, area.Bottom - h)));
-                if (saved.Maximized) window.WindowState = WindowState.Maximized;
-                return;
-            }
-        }
-        // First time (or that screen is gone): a comfortable size, centred, fitting a 1366x768 laptop.
-        var primary = screens.Primary ?? screens.All.FirstOrDefault();
-        if (primary is null) return;
-        var work = primary.WorkingArea;
-        var s = primary.Scaling;
-        window.Width = Math.Max(window.MinWidth, Math.Min(1080, work.Width / s - 40));
-        window.Height = Math.Max(window.MinHeight, Math.Min(720, work.Height / s - 30));
-        window.Position = new PixelPoint(
-            work.X + (int)((work.Width - window.Width * s) / 2),
-            work.Y + (int)Math.Max(0, (work.Height - window.Height * s) / 2));
-    }
-
-    private void SaveDashboardPlacement()
-    {
-        var window = _dashboard;
-        if (window is null) return;
-        try
-        {
-            var maximized = window.WindowState == WindowState.Maximized;
-            var previous = _settings.Current.Dashboard;
-            _settings.Current.Dashboard = maximized && previous is not null
-                ? new WindowPlacement { X = previous.X, Y = previous.Y, Width = previous.Width, Height = previous.Height, Maximized = true }
-                : new WindowPlacement { X = window.Position.X, Y = window.Position.Y, Width = window.Width, Height = window.Height, Maximized = maximized };
-            _settings.Save();
-        }
-        catch (Exception ex)
-        {
-            _log.Warn("ui", "could not save the dashboard placement", ex);
-        }
     }
 
     // ---- Events from the agent ----------------------------------------------------------------
@@ -658,7 +594,7 @@ public sealed class AppController : IDisposable
         try
         {
             var shown = _dashboardVm.Chat.OnMessageReceived(message);
-            if (shown && _dashboard is { IsVisible: true, IsActive: true })
+            if (shown && _dashboardVm.IsMessagesTab && _dashboard is { IsVisible: true, IsActive: true })
             {
                 // Being read as it arrives: reloading marks it read.
                 await _dashboardVm.Chat.LoadConversationAsync();
@@ -681,6 +617,7 @@ public sealed class AppController : IDisposable
                 OnOpen = () =>
                 {
                     ShowDashboard();
+                    RunFromMenu(() => _dashboardVm.ShowMessagesCommand.ExecuteAsync(null));
                     _dashboardVm.Chat.Select(message.FromUserId);
                 },
             });

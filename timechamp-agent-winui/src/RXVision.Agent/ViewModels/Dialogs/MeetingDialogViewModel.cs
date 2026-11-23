@@ -128,7 +128,6 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
     }
 
     public override string Title => IsPast ? "Log an earlier meeting" : "Start a meeting";
-    public override double Width => 484;
 
     public ObservableCollection<ParticipantChipViewModel> Chosen { get; } = new();
     public ObservableCollection<ParticipantSuggestionViewModel> Suggestions { get; } = new();

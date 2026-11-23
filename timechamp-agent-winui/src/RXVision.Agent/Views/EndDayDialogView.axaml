@@ -6,32 +6,28 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,18" Spacing="12">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
+    <StackPanel Margin="20,26,20,10" Spacing="10">
       <TextBlock Classes="h2" Text="{Binding Title}" />
       <TextBlock Classes="body" Text="{Binding Message}" />
-      <ScrollViewer Name="CommentList" MaxHeight="{Binding ListMaxHeight}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    </StackPanel>
+    <!-- The boxes scroll on their own, so the words and End day stay on the panel. -->
+    <ScrollViewer Grid.Row="1" Name="CommentList" Margin="20,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <ItemsControl ItemsSource="{Binding Items}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="dlg:SkipCommentItemViewModel">
-              <!-- Compact, so three fit the dashboard at its default size without scrolling:
-                   the help line sits beside the name, the chips are small, the box is one line
-                   that grows to three. -->
-              <Border Classes="commentcard compact" Classes.ok="{Binding CountOk}" Margin="0,0,0,8"
+              <Border Classes="commentcard" Classes.ok="{Binding CountOk}" Margin="0,0,0,8"
                       AutomationProperties.Name="{Binding Name}">
                 <StackPanel Spacing="6">
-                  <Grid ColumnDefinitions="Auto,*,Auto">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Panel Width="16" Height="16" VerticalAlignment="Center">
-                        <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="16" Height="16" Foreground="{StaticResource Brush.Amber}" IsVisible="{Binding !IsLunch}" />
-                        <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="16" Height="16" Foreground="{StaticResource Brush.Teal}" IsVisible="{Binding IsLunch}" />
-                      </Panel>
-                      <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
-                      <TextBlock Classes="muted" FontSize="13" Text="·" VerticalAlignment="Center" />
-                      <TextBlock Classes="muted" FontSize="13" Text="{Binding When}" VerticalAlignment="Center" />
+                  <Grid ColumnDefinitions="Auto,*">
+                    <Panel Width="16" Height="16" VerticalAlignment="Top" Margin="0,1,8,0">
+                      <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="16" Height="16" Foreground="{StaticResource Brush.Amber}" IsVisible="{Binding !IsLunch}" />
+                      <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="16" Height="16" Foreground="{StaticResource Brush.Brand}" IsVisible="{Binding IsLunch}" />
+                    </Panel>
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Classes="title" Text="{Binding Name}" />
+                      <TextBlock Classes="small" Text="{Binding When}" TextWrapping="Wrap" />
                     </StackPanel>
-                    <TextBlock Grid.Column="2" Classes="count" Classes.ok="{Binding CountOk}" Text="{Binding Help}"
-                               TextWrapping="Wrap" TextAlignment="Right" MaxWidth="230" Margin="12,0,0,0" VerticalAlignment="Center" />
                   </Grid>
                   <ItemsControl ItemsSource="{Binding Chips}" AutomationProperties.Name="Quick reasons">
                     <ItemsControl.ItemsPanel>
@@ -41,7 +37,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="dlg:ChipViewModel">
-                        <Button Classes="chip small" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,6,0" />
+                        <Button Classes="chip small" Classes.on="{Binding IsOn}" Content="{Binding Label}" Command="{Binding PickCommand}" Margin="0,0,6,6" />
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
@@ -55,21 +51,23 @@
                            MaxHeight="76"
                            VerticalContentAlignment="Top"
                            AutomationProperties.Name="{Binding BoxLabel}" />
+                  <TextBlock Classes="count" Classes.ok="{Binding CountOk}" Text="{Binding Help}" TextWrapping="Wrap" />
                 </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-      </ScrollViewer>
-      <TextBlock Classes="body" FontSize="13" Text="{Binding Note}" />
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Margin="20,6,20,14" Spacing="8">
+      <TextBlock Classes="small" Text="{Binding Note}" TextWrapping="Wrap" />
       <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <Grid ColumnDefinitions="1.3*,8,*">
-        <Button Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
-        <Button Grid.Column="2" Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}"
+    <Border Grid.Row="3" Classes="dialogfooter">
+      <Grid ColumnDefinitions="*,11,*">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}"
                 Command="{Binding CancelCommand}" IsCancel="True" />
+        <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" />
       </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

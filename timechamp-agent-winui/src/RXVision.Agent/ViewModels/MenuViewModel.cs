@@ -36,13 +36,12 @@ public sealed record MenuState(
 
     public static string StatusText(AgentState state, string presenceStatus, bool onBreak) => state switch
     {
-        AgentState.Running when presenceStatus == PresenceStatus.Lunch => "At lunch",
-        AgentState.Running when onBreak || presenceStatus == PresenceStatus.Break => "On a break",
+        AgentState.Running when onBreak || presenceStatus is PresenceStatus.Break or PresenceStatus.Lunch => "On break",
         AgentState.Running when presenceStatus == PresenceStatus.Meeting => "In a meeting",
         AgentState.Running => "Working",
-        AgentState.NotStarted => "Day not started",
+        AgentState.NotStarted => "Not started",
         AgentState.DayEnded => "Day ended",
-        AgentState.NeedsNotice => "Not tracking yet",
+        AgentState.NeedsNotice => "Not started",
         AgentState.Connecting => "Reconnecting",
         AgentState.SignIn => "Signed out",
         _ => "Starting",
@@ -89,9 +88,9 @@ public sealed partial class AgentMenuViewModel : ObservableObject
         Open = new MenuItemViewModel("Open RX Vision", open);
         QuickBreak = new MenuItemViewModel("Quick break…", quickBreak);
         NextBreak = new MenuItemViewModel("Next break", nextBreak);
-        BackToWork = new MenuItemViewModel("Back to work", backToWork);
-        EndDay = new MenuItemViewModel("End Day", endDay);
-        StartDay = new MenuItemViewModel("Start Day", startDay);
+        BackToWork = new MenuItemViewModel("Resume work", backToWork);
+        EndDay = new MenuItemViewModel("End day", endDay);
+        StartDay = new MenuItemViewModel("Start day", startDay);
         SignOut = new MenuItemViewModel("Sign out…", signOut);
         Quit = new MenuItemViewModel("Quit RX Vision…", quit);
         Items = new[]

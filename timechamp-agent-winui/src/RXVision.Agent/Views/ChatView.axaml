@@ -3,52 +3,45 @@
              xmlns:vm="using:RXVision.Agent.ViewModels"
              x:Class="RXVision.Agent.Views.ChatView"
              x:DataType="vm:ChatViewModel">
-  <Border Classes="card" Padding="0" CornerRadius="20">
     <Grid RowDefinitions="Auto,*,Auto">
 
       <!-- Who you're talking to -->
-      <Border BorderBrush="{StaticResource Brush.Divider}" BorderThickness="0,0,0,1" Padding="16,12">
-        <Grid ColumnDefinitions="Auto,*">
-          <Border Width="34" Height="34" CornerRadius="11" Background="#E7E9FE" VerticalAlignment="Center">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Chat}" Width="17" Height="17" Foreground="{StaticResource Brush.Brand}" />
-          </Border>
-          <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding HeaderText}" FontSize="14" FontWeight="SemiBold"
+      <Border BorderBrush="{StaticResource Brush.PanelBorder}" BorderThickness="0,0,0,1" Padding="20,0,20,10">
+        <Panel>
+          <TextBlock Text="{Binding HeaderText}" FontSize="14" FontWeight="SemiBold"
                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsVisible="{Binding !HasManyContacts}" />
-          <StackPanel Grid.Column="1" Margin="10,0,0,0" Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasManyContacts}">
-            <TextBlock Text="Chat with" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <ComboBox ItemsSource="{Binding Contacts}" SelectedItem="{Binding SelectedContact}" MinWidth="220" MaxWidth="320"
-                      VerticalAlignment="Center" AutomationProperties.Name="Chat with">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ContactItem">
-                  <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </StackPanel>
-        </Grid>
+          <ComboBox ItemsSource="{Binding Contacts}" SelectedItem="{Binding SelectedContact}" HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center" AutomationProperties.Name="Chat with" IsVisible="{Binding HasManyContacts}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ContactItem">
+                <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Panel>
       </Border>
 
       <!-- The conversation, newest at the bottom -->
       <ScrollViewer Grid.Row="1" Name="Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <ItemsControl ItemsSource="{Binding Messages}" Margin="16,14,16,6">
+        <ItemsControl ItemsSource="{Binding Messages}" Margin="20,14,20,6">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ChatMessageItem">
               <Panel Margin="0,0,0,12">
-                <Grid ColumnDefinitions="Auto,*" HorizontalAlignment="Left" IsVisible="{Binding IsTheirs}" MaxWidth="440">
-                  <Border Width="28" Height="28" CornerRadius="14" Background="#E85D75" VerticalAlignment="Top">
-                    <TextBlock Text="{Binding Initials}" Foreground="#FFFFFF" FontSize="10.5" FontWeight="SemiBold"
+                <Grid ColumnDefinitions="Auto,*" HorizontalAlignment="Left" IsVisible="{Binding IsTheirs}" MaxWidth="270">
+                  <Border Width="28" Height="28" CornerRadius="14" Background="{StaticResource Brush.NeutralFill}" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding Initials}" FontSize="10.5" FontWeight="SemiBold"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Border>
                   <StackPanel Grid.Column="1" Margin="8,0,0,0" Spacing="3">
-                    <Border Background="#F1F3F9" CornerRadius="4,14,14,14" Padding="12,8" HorizontalAlignment="Left">
-                      <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource Brush.Ink}" />
+                    <Border Background="{StaticResource Brush.Card}" CornerRadius="4,14,14,14" Padding="12,8" HorizontalAlignment="Left">
+                      <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" FontSize="13" />
                     </Border>
                     <TextBlock Classes="small" FontSize="10.5" Text="{Binding Stamp}" />
                   </StackPanel>
                 </Grid>
-                <StackPanel HorizontalAlignment="Right" Spacing="3" MaxWidth="440" IsVisible="{Binding IsMine}">
-                  <Border Background="{StaticResource Brush.Brand}" CornerRadius="14,4,14,14" Padding="12,8" HorizontalAlignment="Right">
-                    <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" FontSize="13" Foreground="#FFFFFF" />
+                <StackPanel HorizontalAlignment="Right" Spacing="3" MaxWidth="270" IsVisible="{Binding IsMine}">
+                  <Border Background="{StaticResource Brush.BrandWashHover}" CornerRadius="14,4,14,14" Padding="12,8" HorizontalAlignment="Right">
+                    <SelectableTextBlock Text="{Binding Body}" TextWrapping="Wrap" FontSize="13" />
                   </Border>
                   <TextBlock Classes="small" FontSize="10.5" Text="{Binding Stamp}" HorizontalAlignment="Right" />
                 </StackPanel>
@@ -59,13 +52,13 @@
       </ScrollViewer>
       <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" Margin="24"
                   IsVisible="{Binding IsEmpty}">
-        <PathIcon Classes="i" Data="{StaticResource Icon.Chat}" Width="26" Height="26" Foreground="#B3B9C9" HorizontalAlignment="Center" />
-        <TextBlock Classes="muted" FontSize="13" Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="300" />
+        <PathIcon Classes="i" Data="{StaticResource Icon.Chat}" Width="26" Height="26" Foreground="{StaticResource Brush.Neutral}" HorizontalAlignment="Center" />
+        <TextBlock Classes="muted" FontSize="13" Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="260" />
       </StackPanel>
 
       <!-- Write -->
-      <StackPanel Grid.Row="2" Margin="14,4,14,14" Spacing="4">
-        <Border Background="{StaticResource Brush.Field}" CornerRadius="22" Padding="6,4">
+      <StackPanel Grid.Row="2" Margin="20,4,20,16" Spacing="4">
+        <Border Background="{StaticResource Brush.Field}" BorderBrush="{StaticResource Brush.PanelBorder}" BorderThickness="1" CornerRadius="22" Padding="6,4">
           <Grid ColumnDefinitions="*,Auto">
             <TextBox Name="Input"
                      Classes="chatinput"
@@ -83,7 +76,7 @@
             </TextBox>
             <Button Grid.Column="1" Classes="send" Command="{Binding SendCommand}" VerticalAlignment="Bottom"
                     ToolTip.Tip="Send" AutomationProperties.Name="Send">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Send}" Width="16" Height="16" Foreground="#FFFFFF" />
+              <PathIcon Classes="i" Data="{StaticResource Icon.Send}" Width="16" Height="16" Foreground="{StaticResource Brush.BrandLabel}" />
             </Button>
           </Grid>
         </Border>
@@ -93,5 +86,4 @@
         </Grid>
       </StackPanel>
     </Grid>
-  </Border>
 </UserControl>

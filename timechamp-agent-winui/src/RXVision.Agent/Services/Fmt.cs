@@ -53,6 +53,14 @@ public static class Fmt
     /// <summary>"1 min", "12 min".</summary>
     public static string Minutes(int minutes) => $"{minutes} min";
 
+    /// <summary>"1:00 to 1:45 PM"; "11:30 AM to 12:15 PM" across noon.</summary>
+    public static string Span(string from, string to)
+    {
+        var a = from.Split(' ');
+        var b = to.Split(' ');
+        return a.Length == 2 && b.Length == 2 && a[1] == b[1] ? $"{a[0]} to {to}" : $"{from} to {to}";
+    }
+
     /// <summary>
     /// A finished break's length or overrun, counted like a timer (whole minutes,
     /// rounded down) exactly as the portal shows it: "under 1 min", "19 min",
@@ -66,6 +74,17 @@ public static class Fmt
         if (minutes < 60) return $"{minutes} min";
         return minutes % 60 == 0 ? $"{minutes / 60} h" : $"{minutes / 60} h {minutes % 60} min";
     }
+
+    /// <summary>Time worked, whole minutes rounded down: "5h 12m", "3h 05m", "0h 00m".</summary>
+    public static string Worked(int seconds)
+    {
+        var minutes = Math.Max(0, seconds) / 60;
+        return $"{minutes / 60}h {minutes % 60:00}m";
+    }
+
+    /// <summary>A break's length: "45 min" under an hour, "1h 30m" from there.</summary>
+    public static string Length(int minutes) =>
+        minutes < 60 ? Minutes(Math.Max(0, minutes)) : $"{minutes / 60}h {minutes % 60:00}m";
 
     /// <summary>The minus sign people read ("−15 min"), never a hyphen.</summary>
     public const string Minus = "−";

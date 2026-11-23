@@ -519,26 +519,24 @@ public class Dashboard40Tests
     }
 
     [Fact]
-    public async Task The_menu_opens_pages_and_closes()
+    public async Task The_profile_tab_opens_pages_and_today_comes_back()
     {
+        // 3.6: the hamburger menu became the panel's Profile tab.
         var (vm, agent) = Dashboard("10:47", a => a.HistoryFor = _ => (Months.October(), true));
         Assert.True(vm.IsDashboardPage);
-        vm.ToggleMenuCommand.Execute(null);
-        Assert.True(vm.IsMenuOpen);
+        vm.ShowProfileCommand.Execute(null);
+        Assert.True(vm.ShowProfileList);
         await vm.ShowHistoryCommand.ExecuteAsync(null);
-        Assert.False(vm.IsMenuOpen);
+        Assert.False(vm.ShowProfileList);
         Assert.True(vm.IsHistoryPage);
         Assert.True(vm.History.HasData);
 
-        vm.ToggleMenuCommand.Execute(null);
+        vm.ShowProfileCommand.Execute(null);
         vm.ShowInstructionsCommand.Execute(null);
         Assert.True(vm.IsInstructionsPage);
         vm.ShowDashboardCommand.Execute(null);
         Assert.True(vm.IsDashboardPage);
-
-        vm.ToggleMenuCommand.Execute(null);
-        vm.CloseMenuCommand.Execute(null);
-        Assert.False(vm.IsMenuOpen);
+        Assert.True(vm.IsTodayTab);
     }
 
     [Theory]
@@ -714,11 +712,11 @@ public class Agent40Screenshots
 
     [AvaloniaFact]
     public Task Menu_open_admin() => Shoot("40-dashboard-menu-admin", Agent("10:47", a => a.User!.Role = "ADMIN"),
-        vm => { vm.Refresh(); vm.IsMenuOpen = true; return Task.CompletedTask; });
+        vm => { vm.Refresh(); vm.ShowProfileCommand.Execute(null); return Task.CompletedTask; });
 
     [AvaloniaFact]
     public Task Menu_open_staff() => Shoot("40-dashboard-menu-staff", Agent("10:47"),
-        vm => { vm.IsMenuOpen = true; return Task.CompletedTask; });
+        vm => { vm.ShowProfileCommand.Execute(null); return Task.CompletedTask; });
 
     [AvaloniaFact]
     public Task Away_status_on_the_dashboard() => Shoot("40-dashboard-away", Agent("14:28", a => a.AwaySince = Ist.At("14:05")));

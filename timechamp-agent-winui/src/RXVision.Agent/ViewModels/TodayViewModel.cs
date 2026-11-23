@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RXVision.Agent.Core.Api;
+using RXVision.Agent.Icon;
 using RXVision.Agent.Services;
 
 namespace RXVision.Agent.ViewModels;
@@ -57,6 +58,10 @@ public sealed partial class TodayViewModel : ObservableObject
     private string? _adjustedText;
 
     [ObservableProperty] private double _progress;
+    /// <summary>"3h 30m of 8h" (C-588), or "Target reached · 8h 00m today" (C-586).</summary>
+    [ObservableProperty] private string _progressLine = "";
+    /// <summary>"4h 30m to go" (C-589), "+15 min over target" (C-585), or null right at the target.</summary>
+    [ObservableProperty] private string? _toGoLine;
     [ObservableProperty] private string _expectedText = "8h day";
     [ObservableProperty] private string _breakTotal = "0m";
     [ObservableProperty] private string _lunchTotal = "0m";
@@ -127,8 +132,10 @@ public sealed partial class TodayViewModel : ObservableObject
     }
 
     /// <summary>The focus panel: the number, why it is (not) moving, and what is still to be decided.</summary>
-    /// <param name="targetSec">Today's focus target (4.0: the shift minus the paid allowance); 0 when unknown.</param>
-    public void UpdateFocus(int focusSec, string status, string? dayStarted, int pendingPlusSec, int pendingMinusSec, int targetSec, int adjustedSec = 0)
+    /// <param name="expectedSec">Today's focus target (4.0: the shift minus the paid allowance, less part-day leave); 0 when unknown: 8 h.</param>
+    /// <param name="adjustedSec">Signed seconds the Super Manager added or took off by hand.</param>
+    /// <param name="dayEnded">The day is over: nothing is "to go" any more; what it reached stays.</param>
+    public void UpdateFocus(int focusSec, string status, string? dayStarted, int pendingPlusSec, int pendingMinusSec, int expectedSec, int adjustedSec = 0, bool dayEnded = false)
     {
         FocusText = Fmt.Focus(focusSec);
         FocusStatus = status;
@@ -138,9 +145,21 @@ public sealed partial class TodayViewModel : ObservableObject
         PlusText = plus > 0 ? $"{Fmt.PlusMinutes(plus)} if approved" : null;
         MinusText = minus > 0 ? $"{Fmt.MinusMinutes(minus)} if rejected" : null;
         AdjustedText = AdjustedLine(adjustedSec);
-        var target = targetSec > 0 ? targetSec : 8 * 3600;
-        ExpectedText = $"Target {Fmt.Hours(target)}";
-        Progress = Math.Clamp(focusSec / (double)target, 0, 1);
+        // 4.0: the focus target is the shift less the paid break allowance, so it says Target.
+        var expected = DayProgressLines.TargetOf(expectedSec);
+        ExpectedText = $"Target {Fmt.Hours(expected)}";
+        Progress = Math.Clamp(focusSec / (double)expected, 0, 1);
+        var lines = DayProgressLines.Of(focusSec, expectedSec);
+        ProgressLine = lines.Done;
+        ToGoLine = dayEnded && !lines.Reached ? null : lines.Left;
+    }
+
+    /// <summary>The ring's own reading, so the panel's lines and the ring agree on the minute. Nothing is to go on a day that ended.</summary>
+    public void ShowReading(DayReading reading)
+    {
+        Progress = reading.SweepDegrees / 360;
+        ProgressLine = reading.PanelLine;
+        ToGoLine = reading.PanelNote.Length == 0 || (reading.Status == IconStatus.DayEnded && !reading.Reached) ? null : reading.PanelNote;
     }
 
     /// <summary>3.3: focus time a Super Manager added or took off by hand, or null when none.</summary>
@@ -148,7 +167,7 @@ public sealed partial class TodayViewModel : ObservableObject
     {
         var minutes = Fmt.EffectMinutes(Math.Abs(adjustedSec));
         if (minutes == 0) return null;
-        return adjustedSec > 0 ? $"{Fmt.PlusMinutes(minutes)} adjusted" : $"{Fmt.MinusMinutes(minutes)} adjusted";
+        return $"{(adjustedSec > 0 ? Fmt.PlusMinutes(minutes) : Fmt.MinusMinutes(minutes))} adjusted by the Super Manager";
     }
 
     /// <summary>
@@ -165,7 +184,7 @@ public sealed partial class TodayViewModel : ObservableObject
         foreach (var item in items.Where(i => !i.IsPending && i.DecidedAt is { } at && today is not null && businessDate(at) == today))
         {
             var rejected = item.Status == "REJECTED";
-            var decision = rejected ? "Rejected" : "Approved";
+            var decision = rejected ? "Not approved" : "Approved";
             var effect = string.IsNullOrWhiteSpace(item.Effect.Text) ? decision : $"{decision} · {EffectText(item)}";
             shown.Add(new WaitingItemViewModel(Key(item), item.Title, effect, rejected ? Tone.Bad : Tone.Good, KindOf(item),
                 string.IsNullOrWhiteSpace(item.DecisionNote) ? item.Detail : $"{item.DecidedByName ?? "Manager"}: {item.DecisionNote}"));

@@ -81,7 +81,7 @@
   <ItemsControl Name="Cards" ItemsSource="{Binding Alerts.Cards}">
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="vm:AlertCard">
-        <Border Classes="alertcard" Margin="0,0,0,12" AutomationProperties.Name="{Binding Title}">
+        <Border Classes="alertcard" Margin="0,0,0,12" AutomationProperties.Name="{Binding Title}" IsVisible="{Binding !DrawnByPanel}">
           <StackPanel Spacing="12">
             <Grid ColumnDefinitions="Auto,*">
               <Border Classes="alerticon" Classes.action="{Binding IsAction}" VerticalAlignment="Top">

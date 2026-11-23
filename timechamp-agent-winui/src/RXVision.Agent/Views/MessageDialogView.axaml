@@ -7,43 +7,38 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,20" Spacing="12">
-      <TextBlock Classes="h2" Text="{Binding Title}" />
-      <WrapPanel IsVisible="{Binding HasTag}">
-        <Border Classes="pill" Background="{Binding TagTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}" Margin="0,0,8,0">
-          <TextBlock Text="{Binding TagText}" Foreground="{Binding TagTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
-        </Border>
-        <TextBlock Classes="muted" Text="{Binding TagDetail}" VerticalAlignment="Center" />
-      </WrapPanel>
-      <TextBlock Classes="body" Text="{Binding Message}" />
-      <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
-    </StackPanel>
-    <Border Classes="dialogfooter">
-      <Panel>
-        <UniformGrid Rows="1" Margin="-4,0" IsVisible="{Binding HasNoAlt}">
-          <Button Name="Primary"
-                  Classes="primary"
-                  Classes.danger="{Binding IsDanger}"
-                  Content="{Binding PrimaryText}"
-                  Command="{Binding SubmitCommand}"
-                  IsDefault="{Binding HasNoAlt}" />
-          <Button Classes="secondary"
-                  Content="{Binding CancelText}"
-                  Command="{Binding CancelCommand}"
-                  IsCancel="True"
-                  IsVisible="{Binding HasCancel}" />
-        </UniformGrid>
-        <!-- Start break · Skip break · Cancel -->
-        <Grid ColumnDefinitions="1.2*,8,*,8,Auto" IsVisible="{Binding HasAlt}">
-          <Button Name="AltPrimary" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
-                  Command="{Binding SubmitCommand}" IsDefault="{Binding HasAlt}" />
-          <Button Grid.Column="2" Classes="skip" HorizontalAlignment="Stretch" Content="{Binding AltText}"
-                  Command="{Binding AlternativeCommand}" />
-          <Button Grid.Column="4" Classes="plain" Content="{Binding CancelText}" Command="{Binding CancelCommand}"
-                  IsVisible="{Binding HasCancel}" />
-        </Grid>
-      </Panel>
-    </Border>
-  </StackPanel>
+  <!-- Screen G, and every plain question: the quieter button on the left, the primary on the right. -->
+  <Panel>
+    <Grid RowDefinitions="*,Auto">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="20,26,20,20" Spacing="10">
+        <TextBlock Classes="h2" Text="{Binding Title}" Margin="0,0,16,0" />
+        <WrapPanel IsVisible="{Binding HasTag}">
+          <Border Classes="pill" Background="{Binding TagTone, Converter={x:Static conv:ToneBackgroundConverter.Instance}}" Margin="0,0,8,0">
+            <TextBlock Text="{Binding TagText}" Foreground="{Binding TagTone, Converter={x:Static conv:ToneForegroundConverter.Instance}}" />
+          </Border>
+          <TextBlock Classes="muted" Text="{Binding TagDetail}" VerticalAlignment="Center" />
+        </WrapPanel>
+        <TextBlock Classes="lead" Text="{Binding Message}" />
+        <TextBlock Classes="error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+      </StackPanel>
+      </ScrollViewer>
+      <Border Grid.Row="1" Classes="dialogfooter">
+        <Panel>
+          <Grid ColumnDefinitions="*,11,*" IsVisible="{Binding HasSecond}">
+            <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding SecondText}" Command="{Binding SecondCommand}"
+                    IsCancel="{Binding HasCancel}" />
+            <Button Grid.Column="2" Name="AltPrimary" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
+                    Command="{Binding SubmitCommand}" IsDefault="{Binding HasSecond}" />
+          </Grid>
+          <Button Name="Primary" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}"
+                  Command="{Binding SubmitCommand}" IsDefault="{Binding !HasSecond}" IsVisible="{Binding !HasSecond}" />
+        </Panel>
+      </Border>
+    </Grid>
+    <Button Classes="ghost" Margin="0,16,16,0" HorizontalAlignment="Right" VerticalAlignment="Top" Command="{Binding CancelCommand}"
+            ToolTip.Tip="Close" AutomationProperties.Name="Close" IsVisible="{Binding ShowClose}">
+      <Path Data="M0,0 L8,8 M8,0 L0,8" Stroke="{StaticResource Brush.TextQuiet}" StrokeThickness="1.5" StrokeLineCap="Round" Width="8" Height="8" Margin="3" />
+    </Button>
+  </Panel>
 </UserControl>

@@ -130,12 +130,12 @@ public class MovedClockDayTests
             var reading = Rig.Meter.Reading;
             Assert.Equal(reading.SweepDegrees, Rig.Vm.Frame.SweepDegrees, 3);
             Assert.Equal(reading.Label, Rig.Vm.Label);
-            Assert.Equal(reading.PanelLine, Panel.ProgressLine);
-            Assert.Equal(reading.PanelNote, Panel.ProgressNote);
+            Assert.Equal(reading.PanelLine, Panel.Today.ProgressLine);
+            Assert.Equal(reading.Status == IconStatus.DayEnded && !reading.Reached ? "" : reading.PanelNote, Panel.Today.ToGoLine ?? "");
             // The same words on both: "Working · 5h 12m of 8h" and "5h 12m of 8h".
             if (!reading.Reached && reading.Status is not (IconStatus.BreakExtended or IconStatus.DayEnded))
             {
-                Assert.EndsWith(Panel.ProgressLine, Rig.Vm.Label);
+                Assert.EndsWith(Panel.Today.ProgressLine, Rig.Vm.Label);
             }
             Assert.InRange(Server.WorkedSec - reading.WorkedSec, 0, 60);
         }
@@ -148,8 +148,8 @@ public class MovedClockDayTests
         day.Check();
         Assert.Equal(status, day.Rig.Vm.Status);
         Assert.Equal(label, day.Rig.Vm.Label);
-        Assert.Equal(line, day.Panel.ProgressLine);
-        Assert.Equal(note, day.Panel.ProgressNote);
+        Assert.Equal(line, day.Panel.Today.ProgressLine);
+        Assert.Equal(note, day.Panel.Today.ToGoLine ?? "");
     }
 
     [Fact]

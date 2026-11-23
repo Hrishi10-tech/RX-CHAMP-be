@@ -525,10 +525,10 @@ public class PagesInTheMenuTests
         var agent = new FakeAgent("10:20");
         var dialogs = new FakeDialogs();
         var vm = new DashboardViewModel(agent, new BreakActions(agent, dialogs, NullLog.Instance), NullLog.Instance);
-        vm.ToggleMenuCommand.Execute(null);
-        Assert.True(vm.IsMenuOpen);
+        vm.ShowProfileCommand.Execute(null);
+        Assert.True(vm.ShowProfileList);
         await vm.ShowLeaveCommand.ExecuteAsync(null);
-        Assert.True(vm.IsLeavePage && !vm.IsMenuOpen);
+        Assert.True(vm.IsLeavePage && !vm.ShowProfileList);
         await vm.ShowCalendarCommand.ExecuteAsync(null);
         Assert.True(vm.IsCalendarPage);
         await vm.ShowHistoryCommand.ExecuteAsync(null);

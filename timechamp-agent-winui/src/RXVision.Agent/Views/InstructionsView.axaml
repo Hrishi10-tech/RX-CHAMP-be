@@ -3,317 +3,118 @@
              xmlns:vm="using:RXVision.Agent.ViewModels"
              x:Class="RXVision.Agent.Views.InstructionsView"
              x:DataType="vm:InstructionsViewModel">
-  <!-- Instructions (SPEC 8.3): a visual guide, text and simple diagrams drawn here (no images). -->
+  <!-- Instructions: how the 4.0 agent works (one column, the 3.6 panel's width), then the
+       organisation's own guide from the server (GET /workday/guide), in order. -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel Spacing="14">
-      <Border Classes="card" Padding="20,16" CornerRadius="20">
-        <Grid ColumnDefinitions="Auto,*">
-          <Border Width="42" Height="42" CornerRadius="13" Background="{StaticResource Brush.IndigoIcon}" VerticalAlignment="Center">
-            <PathIcon Classes="i" Data="{StaticResource Icon.Book}" Width="22" Height="22" Foreground="{StaticResource Brush.Brand}" />
-          </Border>
-          <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="3" VerticalAlignment="Center">
-            <TextBlock Classes="h2" Text="How RX Vision works" />
-            <TextBlock Classes="muted" TextWrapping="Wrap"
-                       Text="Focus time is the time from Start Day to End Day, minus breaks and unexplained away time. Here is everything on one page." />
-          </StackPanel>
-        </Grid>
-      </Border>
+    <StackPanel Spacing="12">
+      <StackPanel Spacing="3">
+        <TextBlock Classes="h2" Text="How RX Vision works" />
+        <TextBlock Classes="muted" TextWrapping="Wrap"
+                   Text="Focus time runs from Start day to End day, minus breaks and unexplained away time." />
+      </StackPanel>
 
-      <Grid ColumnDefinitions="*,14,*" RowDefinitions="Auto,14,Auto,14,Auto,14,Auto,14,Auto">
-
-        <!-- 1. Start and end the day -->
-        <Border Grid.Row="0" Grid.Column="0" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Play}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
-              <TextBlock Classes="title" FontSize="14" Text="1. Start and end your day" />
-            </StackPanel>
-            <Border Classes="mock">
-              <Grid ColumnDefinitions="Auto,*,Auto">
-                <Border Background="{StaticResource Brush.Brand}" CornerRadius="9" Padding="10,5">
-                  <TextBlock Text="Start Day" Foreground="#FFFFFF" FontSize="12" FontWeight="Bold" />
-                </Border>
-                <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="3">
-                  <Panel>
-                    <Border Height="8" CornerRadius="4" Background="{StaticResource Brush.IndigoIcon}" />
-                    <Border Height="8" CornerRadius="4" Background="{StaticResource Brush.Brand}" HorizontalAlignment="Left" Width="70" />
-                  </Panel>
-                  <TextBlock Text="focus time counts" FontSize="10.5" Foreground="{StaticResource Brush.Muted}" HorizontalAlignment="Center" />
-                </StackPanel>
-                <Border Grid.Column="2" Background="#312E81" CornerRadius="9" Padding="10,5">
-                  <TextBlock Text="End Day" Foreground="#FFFFFF" FontSize="12" FontWeight="Bold" />
-                </Border>
-              </Grid>
-            </Border>
-            <TextBlock Classes="step" Text="• Press Start Day when you begin work. Nothing is recorded before it." />
-            <TextBlock Classes="step" Text="• Press End Day when you finish. Skipped breaks need a comment first." />
-            <TextBlock Classes="step" Text="• Closing the window only hides it. RX Vision keeps running in the tray or menu bar." />
-          </StackPanel>
-        </Border>
-
-        <!-- 2. The four tiles -->
-        <Border Grid.Row="0" Grid.Column="2" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Spark}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
-              <TextBlock Classes="title" FontSize="14" Text="2. The four tiles" />
-            </StackPanel>
-            <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,8,Auto">
-              <Border Classes="mock" Background="{StaticResource Brush.AmberBg}">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="15" Height="15" Foreground="{StaticResource Brush.Amber}" />
-                  <TextBlock Text="Quick break" FontSize="12" FontWeight="SemiBold" />
-                </StackPanel>
-              </Border>
-              <Border Grid.Column="2" Classes="mock" Background="{StaticResource Brush.TealBg}">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.Lunch}" Width="15" Height="15" Foreground="{StaticResource Brush.Teal}" />
-                  <TextBlock Text="Next break" FontSize="12" FontWeight="SemiBold" />
-                </StackPanel>
-              </Border>
-              <Border Grid.Row="2" Classes="mock" Background="{StaticResource Brush.IndigoBg}">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.Focus}" Width="15" Height="15" Foreground="{StaticResource Brush.Brand}" />
-                  <TextBlock Text="Focus work" FontSize="12" FontWeight="SemiBold" />
-                </StackPanel>
-              </Border>
-              <Border Grid.Row="2" Grid.Column="2" Classes="mock" Background="{StaticResource Brush.VioletBg}">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="15" Height="15" Foreground="{StaticResource Brush.Violet}" />
-                  <TextBlock Text="Meeting" FontSize="12" FontWeight="SemiBold" />
-                </StackPanel>
-              </Border>
-            </Grid>
-            <TextBlock Classes="step" Text="• Quick break: 5, 10 or 15 minutes, any time the day runs." />
-            <TextBlock Classes="step" Text="• Next break: your next scheduled break. Tap it when it is open, or to resume a paused one." />
-            <TextBlock Classes="step" Text="• Focus work shows today's focus time. Meeting starts a meeting or logs an earlier one." />
-          </StackPanel>
-        </Border>
-
-        <!-- 3. Breaks and windows -->
-        <Border Grid.Row="2" Grid.Column="0" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Clock}" Width="18" Height="18" Foreground="{StaticResource Brush.Amber}" />
-              <TextBlock Classes="title" FontSize="14" Text="3. Breaks and their windows" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <Grid ColumnDefinitions="2*,*,2*" RowDefinitions="Auto,Auto,Auto">
-                <Border Grid.ColumnSpan="3" Height="10" CornerRadius="5" Background="{StaticResource Brush.AmberTrack}" />
-                <Border Grid.Column="1" Height="10" Background="{StaticResource Brush.Amber}" />
-                <TextBlock Grid.Row="1" Text="Opens 10:30 AM" FontSize="10.5" Foreground="{StaticResource Brush.Muted}" Margin="0,5,0,0" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="Due 11:00 AM" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Brush.AmberStrong}" HorizontalAlignment="Center" Margin="0,5,0,0" />
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="Closes 11:45 AM" FontSize="10.5" Foreground="{StaticResource Brush.Muted}" HorizontalAlignment="Right" Margin="0,5,0,0" />
-                <TextBlock Grid.Row="2" Text="early: reason" FontSize="10.5" Foreground="{StaticResource Brush.Subtle}" Margin="0,2,0,0" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="on time" FontSize="10.5" Foreground="{StaticResource Brush.Subtle}" HorizontalAlignment="Center" Margin="0,2,0,0" />
-                <TextBlock Grid.Row="2" Grid.Column="2" Text="late: reason" FontSize="10.5" Foreground="{StaticResource Brush.Subtle}" HorizontalAlignment="Right" Margin="0,2,0,0" />
-              </Grid>
-            </Border>
-            <TextBlock Classes="step" Text="• Each break can start while its window is open. Around its time it rings: start it then and no reason is needed." />
-            <TextBlock Classes="step" Text="• Earlier or later asks why; your manager approves it. A break you don't take is skipped and needs a comment." />
-          </StackPanel>
-        </Border>
-
-        <!-- 4. Pause and resume -->
-        <Border Grid.Row="2" Grid.Column="2" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Pause}" Width="18" Height="18" Foreground="{StaticResource Brush.Teal}" />
-              <TextBlock Classes="title" FontSize="14" Text="4. Pause and resume" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Spacing="5">
-                <Grid ColumnDefinitions="3*,2*,2*,*">
-                  <Border Height="12" CornerRadius="6,0,0,6" Background="{StaticResource Brush.Teal}" />
-                  <Border Grid.Column="1" Height="12" Background="{StaticResource Brush.IndigoIcon}" />
-                  <Border Grid.Column="2" Height="12" Background="{StaticResource Brush.Teal}" />
-                  <Border Grid.Column="3" Height="12" CornerRadius="0,6,6,0" Background="{StaticResource Brush.TealTrack}" />
-                </Grid>
-                <Grid ColumnDefinitions="3*,2*,2*,*">
-                  <TextBlock Text="lunch" FontSize="10.5" Foreground="{StaticResource Brush.TealStrong}" />
-                  <TextBlock Grid.Column="1" Text="paused: working" FontSize="10.5" Foreground="{StaticResource Brush.Brand}" />
-                  <TextBlock Grid.Column="2" Text="resumed" FontSize="10.5" Foreground="{StaticResource Brush.TealStrong}" />
-                  <TextBlock Grid.Column="3" Text="left" FontSize="10.5" Foreground="{StaticResource Brush.Subtle}" />
-                </Grid>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• A scheduled break can be paused if you are needed: focus time starts again at once." />
-            <TextBlock Classes="step" Text="• Resume it from the Next break tile before its window closes. If it closes first, the break ends at the pause." />
-            <TextBlock Classes="step" Text="• End break always asks first, so a stray click never ends it." />
-          </StackPanel>
-        </Border>
-
-        <!-- 5. Quick breaks and the paid allowance -->
-        <Border Grid.Row="4" Grid.Column="0" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="18" Height="18" Foreground="{StaticResource Brush.Amber}" />
-              <TextBlock Classes="title" FontSize="14" Text="5. Quick breaks and paid break time" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Spacing="5">
-                <Grid ColumnDefinitions="8*,1*,2*">
-                  <Border Height="12" CornerRadius="6,0,0,6" Background="{StaticResource Brush.Green}" />
-                  <Border Grid.Column="1" Height="12" Background="#86EFAC" />
-                  <Border Grid.Column="2" Height="12" CornerRadius="0,6,6,0" Background="{StaticResource Brush.AmberBorder}" />
-                </Grid>
-                <Grid ColumnDefinitions="8*,1*,2*">
-                  <TextBlock Text="your shift's breaks: paid" FontSize="10.5" Foreground="{StaticResource Brush.GreenInk}" />
-                  <TextBlock Grid.Column="1" Text="buffer" FontSize="10.5" Foreground="{StaticResource Brush.GreenInk}" />
-                  <TextBlock Grid.Column="2" Text="unpaid" FontSize="10.5" Foreground="{StaticResource Brush.AmberInk}" HorizontalAlignment="Right" />
-                </Grid>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• Your scheduled breaks plus a small buffer (10 minutes unless your company sets another) are paid." />
-            <TextBlock Classes="step" Text="• Quick breaks and minutes over a break use the buffer first. Past it, break time is unpaid. Today shows the line: Paid breaks 1 h 05 m of 1 h 30 m." />
-            <TextBlock Classes="step" Text="• Paid time, beside that line and in History, is your focus time plus paid break time: what your pay counts." />
-          </StackPanel>
-        </Border>
-
-        <!-- 6. Meetings and the minutes -->
-        <Border Grid.Row="4" Grid.Column="2" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Meeting}" Width="18" Height="18" Foreground="{StaticResource Brush.Violet}" />
-              <TextBlock Classes="title" FontSize="14" Text="6. Meetings and the minutes" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Spacing="6">
-                <Border Background="#FFFFFF" CornerRadius="7" Padding="8,5" BorderBrush="{StaticResource Brush.FieldBorder}" BorderThickness="1">
-                  <TextBlock Text="Agenda: client onboarding review" FontSize="11.5" />
-                </Border>
-                <Border Background="#FFFFFF" CornerRadius="7" Padding="8,5" BorderBrush="{StaticResource Brush.FieldBorder}" BorderThickness="1">
-                  <TextBlock Text="Who will mail the minutes: Priya" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource Brush.VioletInk}" />
-                </Border>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• Start a meeting now, or log one that already happened today. Focus time keeps counting." />
-            <TextBlock Classes="step" Text="• Say who will mail the minutes (required). Your manager approves the meeting afterwards." />
-          </StackPanel>
-        </Border>
-
-        <!-- 7. When you're away -->
-        <Border Grid.Row="6" Grid.Column="0" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Away}" Width="18" Height="18" Foreground="{StaticResource Brush.AmberStrong}" />
-              <TextBlock Classes="title" FontSize="14" Text="7. When you're away" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Spacing="7">
-                <TextBlock Text="Away since 2:05 PM · 23 min" FontSize="12.5" FontWeight="Bold" />
-                <WrapPanel>
-                  <Border Classes="pill" Background="{StaticResource Brush.AmberSoft}" Margin="0,0,6,4"><TextBlock Text="Took a break" Foreground="{StaticResource Brush.AmberInk}" /></Border>
-                  <Border Classes="pill" Background="{StaticResource Brush.NeutralBg}" Margin="0,0,6,4"><TextBlock Text="Thinking" /></Border>
-                  <Border Classes="pill" Background="{StaticResource Brush.NeutralBg}" Margin="0,0,6,4"><TextBlock Text="Short meeting" /></Border>
-                  <Border Classes="pill" Background="{StaticResource Brush.NeutralBg}" Margin="0,0,6,4"><TextBlock Text="Other work" /></Border>
-                </WrapPanel>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• If your company turns it on, no keyboard or mouse for a few minutes opens this pop-up. A locked screen counts as away." />
-            <TextBlock Classes="step" Text="• Took a break makes it a quick break from when you left. Any other reason goes for approval: approved, it counts as focus time." />
-            <TextBlock Classes="step" Text="• Unanswered away time is not focus time." />
-          </StackPanel>
-        </Border>
-
-        <!-- 8. History -->
-        <Border Grid.Row="6" Grid.Column="2" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.History}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
-              <TextBlock Classes="title" FontSize="14" Text="8. History" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <Grid ColumnDefinitions="Auto,*">
-                <Panel Width="58" Height="58">
-                  <Ellipse Stroke="{StaticResource Brush.IndigoIcon}" StrokeThickness="7" Margin="4" />
-                  <Arc Stroke="{StaticResource Brush.Brand}" StrokeThickness="7" Margin="4" StartAngle="-90" SweepAngle="250" StrokeLineCap="Round" />
-                </Panel>
-                <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="5" VerticalAlignment="Center">
-                  <Grid ColumnDefinitions="60,*">
-                    <TextBlock Text="Mon 5 Oct" FontSize="10.5" />
-                    <Border Grid.Column="1" Height="6" CornerRadius="3" Background="{StaticResource Brush.Brand}" />
-                  </Grid>
-                  <Grid ColumnDefinitions="60,*">
-                    <TextBlock Text="Tue 6 Oct" FontSize="10.5" />
-                    <Border Grid.Column="1" Height="6" CornerRadius="3" Background="{StaticResource Brush.Brand}" HorizontalAlignment="Left" Width="60" />
-                  </Grid>
-                </StackPanel>
-              </Grid>
-            </Border>
-            <TextBlock Classes="step" Text="• Menu, then History: each month's focus time against its target, day by day, with your meetings and away time." />
-            <TextBlock Classes="step" Text="• A decision made later changes the day it belongs to straight away." />
-          </StackPanel>
-        </Border>
-
-        <!-- 9. Offline -->
-        <Border Grid.Row="8" Grid.Column="0" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.CloudOff}" Width="18" Height="18" Foreground="{StaticResource Brush.Muted}" />
-              <TextBlock Classes="title" FontSize="14" Text="9. Working offline" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <Border Background="#FFFFFF" CornerRadius="12" Padding="9,4" BorderBrush="{StaticResource Brush.Divider}" BorderThickness="1">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Ellipse Width="7" Height="7" Fill="{StaticResource Brush.Amber}" VerticalAlignment="Center" />
-                    <TextBlock Text="Offline · 3 actions waiting" FontSize="11" />
-                  </StackPanel>
-                </Border>
-                <PathIcon Classes="i" Data="{StaticResource Icon.ChevronRight}" Width="13" Height="13" Foreground="{StaticResource Brush.Subtle}" />
-                <Border Background="#FFFFFF" CornerRadius="12" Padding="9,4" BorderBrush="{StaticResource Brush.Divider}" BorderThickness="1">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Ellipse Width="7" Height="7" Fill="{StaticResource Brush.Green}" VerticalAlignment="Center" />
-                    <TextBlock Text="Online · synced 2:05 PM" FontSize="11" />
-                  </StackPanel>
-                </Border>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• Every button works without the internet. What you do is saved on this computer at once and sent in order when you're back online." />
-            <TextBlock Classes="step" Text="• The top right says how many actions are waiting. If RX Vision refuses one later, you'll see a note once." />
-            <TextBlock Classes="step" Text="• Time recorded offline counts once the app's activity data for it arrives (it follows your actions). Until then Today and History show it as Offline, no activity data." />
-          </StackPanel>
-        </Border>
-
-        <!-- 10. Sign-out keys -->
-        <Border Grid.Row="8" Grid.Column="2" Classes="guide">
-          <StackPanel Spacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Classes="i" Data="{StaticResource Icon.Key}" Width="18" Height="18" Foreground="{StaticResource Brush.Brand}" />
-              <TextBlock Classes="title" FontSize="14" Text="10. Signing out" />
-            </StackPanel>
-            <Border Classes="mock" Padding="12,10">
-              <StackPanel Spacing="6">
-                <TextBlock Text="Syncing 3 actions…  then:" FontSize="11" Foreground="{StaticResource Brush.Muted}" />
-                <Border Background="#FFFFFF" CornerRadius="7" Padding="8,5" BorderBrush="{StaticResource Brush.Brand}" BorderThickness="1.5">
-                  <TextBlock Text="amber orbit cedar river lamp 42" FontSize="12" FontFamily="Consolas, Menlo, monospace" />
-                </Border>
-              </StackPanel>
-            </Border>
-            <TextBlock Classes="step" Text="• Sign out is in the menu. It sends everything first, so it needs the internet, then asks for a key from your admin." />
-            <TextBlock Classes="step" Text="• A key works for 24 hours. Closing the window only hides it: RX Vision keeps running (only admins can quit it, with a key)." />
-          </StackPanel>
-        </Border>
-      </Grid>
-
-      <!-- 3.2: the organisation's own guide (GET /workday/guide), with its numbers filled in. -->
-      <Border Classes="card" Padding="20,16" CornerRadius="20">
-        <StackPanel Spacing="3">
-          <TextBlock Classes="h2" Text="Your organisation's rules" />
-          <TextBlock Classes="muted" TextWrapping="Wrap" Text="The same points with your organisation's own times and limits." />
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="1. Start and end your day" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Tap Start day when you begin work. Nothing is recorded before it." />
+          <TextBlock Classes="body" Text="Tap End day when you finish. Skipped breaks need a comment first." />
+          <TextBlock Classes="body" Text="Closing the panel only hides it. RX Vision keeps running beside the icon." />
         </StackPanel>
       </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="2. Today's actions" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Quick break: 5, 10 or 15 minutes, any time the day runs." />
+          <TextBlock Classes="body" Text="Next break: your next scheduled break. Tap it when it is open, or to resume a paused one." />
+          <TextBlock Classes="body" Text="Start meeting: you're in a meeting until you tap End meeting. Meeting with details records the agenda and people, or logs an earlier one." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="3. Breaks and their windows" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Each break can start while its window is open. When it is due the icon says so: start it then and no reason is needed." />
+          <TextBlock Classes="body" Text="Earlier or later asks why; your department's managers approve it. A break you don't take is skipped and needs a comment." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="4. Pause and resume" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="A scheduled break can be paused if you are needed: focus time starts again at once." />
+          <TextBlock Classes="body" Text="Resume it from Next break before its window closes. If it closes first, the break ends at the pause." />
+          <TextBlock Classes="body" Text="Resume work always asks first, so a stray click never ends a break." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="5. Quick breaks and paid break time" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Your scheduled breaks plus a small buffer (10 minutes unless your organisation sets another) are paid." />
+          <TextBlock Classes="body" Text="Quick breaks and minutes over a break use the buffer first. Past it, break time is unpaid. Today shows the line: Paid breaks 1h 05m of 1h 30m." />
+          <TextBlock Classes="body" Text="Paid time, beside that line and in History, is your focus time plus paid break time: what your pay counts." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="6. Meetings" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Start meeting when a meeting begins and End meeting when it ends. Your focus time keeps counting." />
+          <TextBlock Classes="body" Text="If a call is still open on your computer, RX Vision asks before it ends the meeting, and asks again after 2 hours." />
+          <TextBlock Classes="body" Text="With details, say who will mail the minutes. Your department's managers approve the meeting afterwards." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="7. When you're away" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="If your organisation turns it on, no keyboard or mouse for a few minutes asks where you were. A locked screen counts as away." />
+          <TextBlock Classes="body" Text="Took a break makes it a quick break from when you left. Any other reason goes for approval: approved, it counts as focus time." />
+          <TextBlock Classes="body" Text="Unanswered away time is not focus time." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="8. History" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Profile, then History: each month's working time against its target, day by day, with your meetings and away time." />
+          <TextBlock Classes="body" Text="A decision made later changes the day it belongs to straight away." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="9. Working offline" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Every button works without the internet. What you do is saved on this computer at once and sent in order when you're back online." />
+          <TextBlock Classes="body" Text="The sync line on Today says how many actions are waiting. If RX Vision refuses one later, you'll see a note once." />
+          <TextBlock Classes="body" Text="Time recorded offline counts once its activity data arrives. Until then Today and History show it as Offline, no activity data." />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="title" FontSize="14" Text="10. Signing out" TextWrapping="Wrap" />
+          <TextBlock Classes="body" Text="Sign out is on the Profile tab. It sends everything first, so it needs the internet, then asks for a key from your admin." />
+          <TextBlock Classes="body" Text="A key works for 24 hours. Only admins can quit RX Vision, with a key." />
+        </StackPanel>
+      </Border>
+
+      <!-- 3.2: the organisation's own guide (GET /workday/guide), with its numbers filled in. -->
+      <StackPanel Spacing="3" Margin="0,6,0,0">
+        <TextBlock Classes="h2" Text="Your organisation's rules" />
+        <TextBlock Classes="muted" TextWrapping="Wrap" Text="The same points with your organisation's own times and limits." />
+      </StackPanel>
       <Border Classes="note" IsVisible="{Binding HasNote}">
-        <TextBlock Text="{Binding Note}" TextWrapping="Wrap" FontSize="12.5" />
+        <TextBlock Text="{Binding Note}" TextWrapping="Wrap" FontSize="13" />
       </Border>
       <ItemsControl ItemsSource="{Binding Items}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:GuideRow">
-            <Border Classes="guide" Margin="0,0,0,12">
+            <Border Classes="card" Margin="0,0,0,10">
               <StackPanel Spacing="6">
                 <TextBlock Classes="title" FontSize="14" Text="{Binding Heading}" TextWrapping="Wrap" />
-                <TextBlock Classes="body" FontSize="13" Text="{Binding Body}" TextWrapping="Wrap" />
+                <TextBlock Classes="body" Text="{Binding Body}" />
               </StackPanel>
             </Border>
           </DataTemplate>

@@ -34,7 +34,7 @@ public partial class ToastWindow : Window
         Opened += (_, _) =>
         {
             NativeWindow.MakeNonActivating(this);
-            if (ActualTransparencyLevel == WindowTransparencyLevel.None) Background = new SolidColorBrush(Color.Parse("#EEF0FB"));
+            if (ActualTransparencyLevel == WindowTransparencyLevel.None) Background = new SolidColorBrush(Color.Parse("#1A2029"));
         };
         SizeChanged += (_, _) => { if (IsVisible) Place(); };
     }

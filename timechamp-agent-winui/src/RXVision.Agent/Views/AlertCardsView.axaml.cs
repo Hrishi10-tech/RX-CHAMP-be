@@ -1,6 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.VisualTree;
+using RXVision.Agent.ViewModels;
 
 namespace RXVision.Agent.Views;
 
@@ -12,8 +12,8 @@ public partial class AlertCardsView : UserControl
     /// <summary>Keyboard focus on the top card's primary action. False when it has none.</summary>
     public bool FocusTopAction()
     {
-        var first = Cards.ContainerFromIndex(0);
+        var first = Cards.GetRealizedContainers().FirstOrDefault(c => c.DataContext is AlertCard { DrawnByPanel: false });
         var button = first?.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "Primary" && b.IsVisible);
-        return button?.Focus(NavigationMethod.Tab) == true;
+        return button?.Focus() == true;
     }
 }

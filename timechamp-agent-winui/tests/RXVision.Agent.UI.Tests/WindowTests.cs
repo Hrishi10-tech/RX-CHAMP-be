@@ -175,38 +175,38 @@ public class WindowTests
         Assert.True(await dialog.Completion);
         window.Close();
     }
-    /// <summary>The End Day dialog over the dashboard at its default size (1080 x 700).</summary>
-    private static async Task<(DashboardWindow Window, ScrollViewer Overlay, ScrollViewer List)> EndDayOver(int boxes)
+    /// <summary>The End day card over the panel.</summary>
+    private static async Task<(DashboardWindow Window, Border Card, ScrollViewer List)> EndDayOver(int boxes)
     {
         var agent = new FakeAgent("18:32");
         var vm = new DashboardViewModel(agent, new Services.BreakActions(agent, new FakeDialogs(), Core.Util.NullLog.Instance), Core.Util.NullLog.Instance);
         vm.Refresh();
-        var window = new DashboardWindow { DataContext = vm, Width = 1080, Height = 700 };
+        var window = new DashboardWindow { DataContext = vm };
         window.Show();
         vm.Overlay = new ViewModels.Dialogs.EndDayDialogViewModel(EndDayFit.Items(boxes), "your manager", "Your manager");
         Settle();
         await Task.Yield();
         Settle();
         var list = window.GetVisualDescendants().OfType<ScrollViewer>().Single(s => s.Name == "CommentList");
-        var overlay = list.GetVisualAncestors().OfType<ScrollViewer>().First();
-        return (window, overlay, list);
+        var card = list.GetVisualAncestors().OfType<Border>().First(b => b.Classes.Contains("dialogcard"));
+        return (window, card, list);
     }
 
     [AvaloniaFact]
-    public async Task Three_comment_boxes_fit_the_dashboard_at_its_default_size_without_scrolling()
+    public async Task One_comment_box_shows_whole_and_End_day_stays_on_the_panel()
     {
-        var (window, overlay, list) = await EndDayOver(3);
-        Assert.True(overlay.Extent.Height <= overlay.Viewport.Height + 0.5, $"the dialog scrolls: {overlay.Extent.Height:F0} in {overlay.Viewport.Height:F0}");
+        var (window, card, list) = await EndDayOver(1);
         Assert.True(list.Extent.Height <= list.Viewport.Height + 0.5, $"the list scrolls: {list.Extent.Height:F0} in {list.Viewport.Height:F0}");
+        Assert.True(card.Bounds.Height <= 540);
         window.AllowClose = true;
         window.Close();
     }
 
     [AvaloniaFact]
-    public async Task A_fourth_comment_box_scrolls_inside_the_list()
+    public async Task Four_comment_boxes_scroll_inside_the_list()
     {
-        var (window, overlay, list) = await EndDayOver(4);
-        Assert.True(overlay.Extent.Height <= overlay.Viewport.Height + 0.5, $"the dialog scrolls: {overlay.Extent.Height:F0} in {overlay.Viewport.Height:F0}");
+        var (window, card, list) = await EndDayOver(4);
+        Assert.True(card.Bounds.Height <= 540);
         Assert.True(list.Extent.Height > list.Viewport.Height + 20, "four boxes scroll inside the list");
         window.AllowClose = true;
         window.Close();

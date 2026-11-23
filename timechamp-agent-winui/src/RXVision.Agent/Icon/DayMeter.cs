@@ -145,10 +145,11 @@ public sealed class DayMeter
         Publish();
     }
 
-    /// <summary>The minute: the ring, the label and the panel move together.</summary>
+    /// <summary>The minute: the ring, the label and the panel move together. On a break they hold still; only the server correcting the time by a minute or more moves them.</summary>
     public void MinuteTick()
     {
         Follow();
+        if (_status is IconStatus.OnBreak or IconStatus.BreakExtended && Math.Abs(_worked.TotalSeconds - _shownWorkedSec) < 60) return;
         _shownWorkedSec = (int)_worked.TotalSeconds;
         _shownTargetSec = _targetSec;
         Publish();

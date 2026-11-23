@@ -11,7 +11,7 @@ public class FocusAdjustmentTests
     [InlineData(-900, "−15 min adjusted")]
     [InlineData(20, "+1 min adjusted")]
     public void An_adjustment_reads_as_minutes(int seconds, string expected) =>
-        Assert.Equal(expected, TodayViewModel.AdjustedLine(seconds));
+        Assert.Equal(expected + " by the Super Manager", TodayViewModel.AdjustedLine(seconds));
 
     [Fact]
     public void No_adjustment_shows_nothing() =>
@@ -23,7 +23,7 @@ public class FocusAdjustmentTests
         var today = new TodayViewModel();
         today.UpdateFocus(3600, "Running", null, 0, 0, 27000, adjustedSec: 1800);
         Assert.True(today.HasAdjusted);
-        Assert.Equal("+30 min adjusted", today.AdjustedText);
+        Assert.Equal("+30 min adjusted by the Super Manager", today.AdjustedText);
 
         today.UpdateFocus(3600, "Running", null, 0, 0, 27000);
         Assert.False(today.HasAdjusted);

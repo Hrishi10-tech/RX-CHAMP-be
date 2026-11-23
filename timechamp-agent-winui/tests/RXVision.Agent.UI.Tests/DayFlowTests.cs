@@ -28,7 +28,7 @@ namespace RXVision.Agent.UI.Tests;
 /// </summary>
 public sealed class DashboardHarness
 {
-    public DashboardHarness(FakeAgent agent, double height = 760)
+    public DashboardHarness(FakeAgent agent)
     {
         Agent = agent;
         DashboardViewModel? vm = null;
@@ -37,7 +37,7 @@ public sealed class DashboardHarness
         Actions.Cue += Cues.Add;
         vm = new DashboardViewModel(agent, Actions, NullLog.Instance);
         Vm = vm;
-        Window = new DashboardWindow { DataContext = vm, Width = 1080, Height = height };
+        Window = new DashboardWindow { DataContext = vm };
         Window.Show();
         Refresh();
     }
@@ -94,8 +94,8 @@ public sealed class DashboardHarness
         var found = Visible<Button>(top)
             .Where(b => TextOf(b) == text || AutomationProperties.GetName(b) == text)
             .ToList();
-        // The same words behind an open dialog (End break on the panel and in the dialog): the one that can be clicked.
-        if (found.Count > 1) found = found.Where(b => b.IsEffectivelyEnabled).ToList();
+        // The same words behind an open dialog (End day on the panel and in the dialog): the dialog's.
+        if (found.Count > 1) found = found.Where(b => !b.GetVisualAncestors().OfType<Grid>().Any(g => g.Name == "Body" && !g.IsEnabled)).ToList();
         Assert.True(found.Count == 1, $"expected one button \"{text}\", found {found.Count}");
         return found[0];
     }
@@ -120,6 +120,9 @@ public sealed class DashboardHarness
     public static void ClickOn(TopLevel top, Button button)
     {
         Assert.True(button.IsEffectivelyEnabled, $"\"{TextOf(button)}\" is disabled");
+        // The panel is 540 px tall and scrolls, as a person would to reach it.
+        button.BringIntoView();
+        Settle();
         var middle = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), top)
                      ?? throw new InvalidOperationException("the button is not on the window");
         top.MouseDown(middle, MouseButton.Left);
@@ -180,23 +183,23 @@ public class DayFlowTests
         var agent = NotStarted("08:55");
         agent.StartDayOutcomes.Enqueue(new StartDayOutcome.Started(Days.Open(startedAt: "08:56", serverNow: "08:56", focusSec: 0), false));
         var ui = new DashboardHarness(agent);
-        Assert.True(ui.Shows("YOUR DAY HASN'T STARTED"));
+        Assert.True(ui.Shows("Your day hasn't started"));
         Assert.True(ui.Shows("Good morning, Asha."));
         Assert.True(ui.Shows("General shift · 9:30 AM to 6:30 PM"));
         Assert.True(ui.Shows("Not started · nothing recorded"));
-        Assert.False(ui.HasButton("END DAY"));
+        Assert.False(ui.HasButton("End day"));
         Assert.False(ui.HasButton("Quick break"));
 
         agent.SetNow("08:56");
-        ui.Click("Start Day");
+        ui.Click("Start day");
         Assert.Equal(1, agent.StartDayCalls);
         Assert.False(ui.HasDialog);
 
         ui.Refresh();
-        Assert.False(ui.Shows("YOUR DAY HASN'T STARTED"));
+        Assert.False(ui.Shows("Your day hasn't started"));
         Assert.True(ui.HasButton("Quick break"));
         Assert.True(ui.HasButton("Next break"));
-        Assert.True(ui.HasButton("END DAY"));
+        Assert.True(ui.HasButton("End day"));
         Assert.True(ui.Shows("Day started 8:56 AM"));
         Assert.True(ui.Shows("Counting"));
 
@@ -229,13 +232,13 @@ public class DayFlowTests
         agent.Online = false;
         var ui = new DashboardHarness(agent);
         Assert.True(ui.Shows("Offline · synced 10:44 AM"));
-        ui.Click("Start Day");
+        ui.Click("Start day");
         Assert.False(ui.HasDialog);
         agent.PendingActions = 1;
         ui.Refresh();
         Assert.Equal(AgentState.Running, agent.State);
         Assert.True(ui.Shows("Offline · 1 action waiting"));
-        Assert.True(ui.HasButton("END DAY"));
+        Assert.True(ui.HasButton("End day"));
 
         agent.Online = true;
         agent.PendingActions = 0;
@@ -263,11 +266,10 @@ public class DayFlowTests
         agent.Day = Days.General().WithActive(Days.Running("MORNING", "10:47"));
         agent.Presence = new CurrentPresence { Status = PresenceStatus.Break, Since = Ist.At("10:47") };
         ui.At("10:55");
-        Assert.True(ui.Shows("1h 23m"));
-        Assert.True(ui.Shows("Paused · on a break"));
+        Assert.True(ui.Shows("Paused"));
         Assert.True(ui.Shows("Back by 11:02 AM. Your focus time is paused. Pause it if you need to step back in."));
         ui.At("11:01");
-        Assert.True(ui.Shows("1h 23m"));
+        Assert.Equal("Ring paused at 1h 23m", ui.Vm.ActiveBreak.RingPaused);
 
         // Back at 11:01: the server's new number ticks again.
         agent.Day = Days.General().WithRecord(Days.Taken("MORNING", "10:47", "11:01"));
@@ -289,13 +291,13 @@ public class DayFlowTests
             Days.NeedsComment("EVENING", "17:00"),
             Days.NeedsComment("LUNCH", "14:00", date: "2026-10-12"),
         });
-        var ui = new DashboardHarness(agent, height: 800);
-        ui.Click("END DAY");
+        var ui = new DashboardHarness(agent);
+        ui.Click("End day");
         var dialog = ui.Dialog<EndDayDialogViewModel>();
         Assert.True(ui.Shows("Before you end the day"));
-        Assert.True(ui.Shows("3 skipped breaks need a comment. Each goes to your manager with your comment."));
-        Assert.True(ui.Shows("Auto-skipped at 2:00 PM on 12 Oct"));
-        var endDay = ui.Button("End Day");
+        Assert.True(ui.Shows("Add a comment to each of your 3 skipped breaks. Each goes to your manager."));
+        Assert.True(ui.Shows("Skipped for you at 2:00 PM on 12 Oct"));
+        var endDay = ui.Button("End day");
         Assert.False(endDay.IsEffectivelyEnabled);
 
         var boxes = ui.Boxes();
@@ -326,8 +328,8 @@ public class DayFlowTests
         ui.Refresh();
         Assert.True(ui.Shows("Your day ended at 6:32 PM."));
         Assert.True(ui.Shows("Day ended · nothing recorded"));
-        Assert.False(ui.HasButton("END DAY"));
-        Assert.True(ui.HasButton("Start Day"));
+        Assert.False(ui.HasButton("End day"));
+        Assert.True(ui.HasButton("Start day"));
         ui.Close();
     }
 
@@ -340,20 +342,20 @@ public class DayFlowTests
         agent.EndDayOutcomes.Enqueue(new EndDayOutcome.ApprovalsOverdue(3, Ist.At("10:00").AddDays(-3), "x"));
         var ui = new DashboardHarness(agent);
 
-        ui.Click("END DAY");
-        Assert.True(ui.Shows("End your working day?"));
-        ui.Click("End Day");
-        Assert.True(ui.Shows("Approvals are past 48 hours"));
-        Assert.True(ui.Shows("3 approvals are past 48 hours. Decide them in the portal to end your day."));
+        ui.Click("End day");
+        Assert.True(ui.Shows("End your day?"));
+        ui.Click("End day");
+        Assert.True(ui.Shows("Approvals waiting past 48 hours"));
+        Assert.True(ui.Shows("Decide 3 approvals in the portal to end your day. They are past 48 hours."));
         ui.Click("Open approvals");
         Assert.False(ui.HasDialog);
         Assert.Equal("https://app.rxvision.shop/dashboard/approvals", Assert.Single(agent.Dev.OpenedUrls));
 
         // The day is still running; Close leaves it so.
         ui.Refresh();
-        Assert.True(ui.HasButton("END DAY"));
-        ui.Click("END DAY");
-        ui.Click("End Day");
+        Assert.True(ui.HasButton("End day"));
+        ui.Click("End day");
+        ui.Click("End day");
         ui.Click("Close");
         Assert.False(ui.HasDialog);
         Assert.Single(agent.Dev.OpenedUrls);
@@ -412,9 +414,9 @@ public class BreakFlowTests
         ui.Click("Skip this break");
 
         var skip = ui.Dialog<ReasonDialogViewModel>();
-        Assert.True(ui.Shows("Skip morning break?"));
+        Assert.True(ui.Shows("Skip this break?"));
         Assert.True(ui.Shows("Your focus time keeps running. If your manager rejects the skip, the 15 min come off it."));
-        Assert.True(ui.Shows("Required. 10 characters or more."));
+        Assert.True(ui.Shows("10 characters or more, please."));
         Assert.False(ui.Button("Skip break").IsEffectivelyEnabled);
         ui.Click("Client call");
         Assert.Equal("Client call", ui.Box("ReasonBox").Text);
@@ -428,7 +430,7 @@ public class BreakFlowTests
         // The server's day now has the skip: the row says so, with the reason.
         agent.Day = Days.General().WithRecord(Days.Skip("MORNING", "10:59", auto: false, reason: "Client call"));
         ui.Refresh();
-        Assert.True(ui.Shows("Skipped"));
+        Assert.True(ui.Shows("10:59 AM · Skipped"));
         Assert.True(ui.Shows("Skipped at 10:59 AM · focus time kept counting"));
         Assert.True(ui.Shows("“Client call”"));
         ui.Close();
@@ -439,14 +441,14 @@ public class BreakFlowTests
     {
         var agent = new FakeAgent("10:59:30");
         var ui = new DashboardHarness(agent);
-        ui.Click("Next break");
-        Assert.True(ui.Shows("Start morning break?"));
-        Assert.True(ui.Shows("15 min. Back by 11:14 AM. Your focus time pauses until you tap End break."));
+        ui.Click("Take a break");
+        Assert.True(ui.Shows("Take your morning break?"));
+        Assert.True(ui.Shows("15 min, ends at 11:14 AM. Your ring pauses until you resume."));
 
         ui.Click("Skip break");
-        Assert.True(ui.Shows("Skip morning break?"));
-        ui.Click("Back");
-        Assert.True(ui.Shows("Start morning break?"));
+        Assert.True(ui.Shows("Skip this break?"));
+        ui.Click("Keep my break");
+        Assert.True(ui.Shows("Take your morning break?"));
 
         ui.Click("Skip break");
         ui.Click("Deadline");
@@ -462,13 +464,14 @@ public class BreakFlowTests
     }
 
     [AvaloniaFact]
-    public void Super_admins_skip_with_no_dialog()
+    public void Super_admins_are_asked_once_with_no_reason_and_no_pay_line()
     {
         var agent = new FakeAgent("10:59:30");
         agent.User!.Role = "SUPER_ADMIN";
         var ui = new DashboardHarness(agent);
-        ui.Click("Next break");
+        ui.Click("Take a break");
         ui.Click("Skip break");
+        ui.Click("Skip break"); // 3.6 screen D: asked once, with no reason and no pay line
         Assert.False(ui.HasDialog);
         Assert.Equal(("MORNING", (string?)null), Assert.Single(agent.SkipCalls));
         ui.Close();
@@ -481,8 +484,8 @@ public class BreakFlowTests
         var agent = new FakeAgent("12:10") { Day = Days.General().WithRecord(record) };
         agent.Workday!.SkipsNeedingComment.Add(Days.NeedsComment("MORNING", "12:00"));
         var ui = new DashboardHarness(agent);
-        Assert.True(ui.Shows("Auto-skipped"));
-        Assert.True(ui.Shows("Auto-skipped at 12:00 PM · add a comment"));
+        Assert.True(ui.Shows("12:00 PM · Skipped for you"));
+        Assert.True(ui.Shows("Add a comment · skipped for you at 12:00 PM"));
 
         // The card's Add comment opens the same dialog; Esc closes it and sends nothing.
         ui.Alerts().OnAutoSkipped(record);
@@ -497,8 +500,9 @@ public class BreakFlowTests
         ui.Vm.Alerts.Clear(card.Key);
         DashboardHarness.Settle();
 
-        // The row's Add comment.
-        ui.Click("Add comment");
+        // The row's Add comment (the card on top has the same one).
+        Assert.Equal(2, ui.ButtonsReading("Add comment").Count());
+        ui.Click(ui.ButtonsReading("Add comment").Last());
         Assert.True(ui.Shows("Morning break · closed 12:00 PM"));
         ui.Type(ui.Box("ReasonBox"), "The client demo ran until 12:15");
         ui.Click("Send comment");
@@ -512,6 +516,7 @@ public class BreakFlowTests
         agent.Workday.SkipsNeedingComment.Clear();
         ui.Refresh();
         Assert.False(ui.HasButton("Add comment"));
+        Assert.False(ui.Vm.HasCommentCard);
         Assert.True(ui.Shows("“The client demo ran until 12:15”"));
         ui.Close();
     }
@@ -529,9 +534,8 @@ public class BreakFlowTests
         // 4.0: no "ask your manager to count the minutes" step; the buffer takes them (SPEC 2.3).
         var agent = OnBreakSince("11:19", "11:00");
         var ui = new DashboardHarness(agent);
-        Assert.True(ui.Shows("−04:00"));
-        Assert.True(ui.Shows("Over by 4 min"));
-        ui.Click("End break");
+        Assert.True(ui.Shows("Break extended"));
+        ui.Click("Resume work");
         Assert.True(ui.Shows("End your morning break now?"));
         Assert.True(ui.Shows("You're 4 min over. Minutes over come out of your paid buffer first."));
         ui.Click("End break");
@@ -546,7 +550,7 @@ public class BreakFlowTests
     {
         var agent = OnBreakSince("11:03", "11:00");
         var ui = new DashboardHarness(agent);
-        ui.Click("End break");
+        ui.Click("Resume work");
         Assert.True(ui.Shows("End your morning break now?"));
         Assert.True(ui.Shows("You have 12 min left."));
         ui.Click("Stay on break");
@@ -595,7 +599,7 @@ public class BreakFlowTests
         var agent = OnBreakSince("11:09", "11:00");
         agent.EndOutcomes.Enqueue(new EndOutcome.Ended(Days.Taken("MORNING", "11:00", "11:09")));
         var ui = new DashboardHarness(agent);
-        ui.Click("End break");
+        ui.Click("Resume work");
         Assert.True(ui.Shows("You have 6 min left."));
         ui.Click("End break");
         Assert.False(ui.HasDialog);
@@ -641,7 +645,7 @@ public class MeetingFlowTests
         Assert.Equal(new[] { "m-1", null }, people.Select(p => p.Id));
 
         ui.At("10:32");
-        Assert.True(ui.Shows("IN A MEETING"));
+        Assert.True(ui.Shows("In a meeting"));
         Assert.True(ui.Shows("12:00"));
         Assert.True(ui.Shows("Maya Reddy, Vikram (Pune)"));
         Assert.True(ui.Shows("Counting · in a meeting"));
@@ -651,7 +655,7 @@ public class MeetingFlowTests
         ui.Click("End meeting");
         Assert.Equal(1, agent.EndMeetingCalls);
         ui.Refresh();
-        Assert.False(ui.Shows("IN A MEETING"));
+        Assert.False(ui.Shows("In a meeting"));
         Assert.True(ui.HasButton("Start meeting"));
         ui.Close();
     }
@@ -664,7 +668,7 @@ public class MeetingFlowTests
         {
             Kind = "BREAK", StartedAt = Ist.At("11:00").ToUniversalTime(), EndedAt = Ist.At("11:15").ToUniversalTime(),
         }));
-        var ui = new DashboardHarness(agent, height: 820);
+        var ui = new DashboardHarness(agent);
         ui.Click("Meeting with details, or an earlier one");
         ui.Click("Already happened");
         var dialog = ui.Dialog<MeetingDialogViewModel>();

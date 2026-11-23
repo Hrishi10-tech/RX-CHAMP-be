@@ -286,13 +286,14 @@ public class DayAlertsTests
         Assert.True(ui.Shows("15 min, from 11:00 AM."));
         Assert.True(ui.Shows("Your focus time changed"));
         var take = ui.Button("Take a break");
-        Assert.True(ui.Window.AlertCardsForTests.FocusTopAction());
+        ui.Window.FocusNewestCard();
         DashboardHarness.Settle();
         Assert.Same(take, ui.Window.FocusManager!.GetFocusedElement());
 
-        // Enter on the focused action does it.
+        // Enter on the focused action does it: screen G asks once, then the break starts.
         ui.Press(Key.Enter);
         DashboardHarness.Settle();
+        ui.Click("Start break");
         Assert.Equal(("MORNING", (string?)null), Assert.Single(agent.TakeCalls));
         ui.Close();
     }

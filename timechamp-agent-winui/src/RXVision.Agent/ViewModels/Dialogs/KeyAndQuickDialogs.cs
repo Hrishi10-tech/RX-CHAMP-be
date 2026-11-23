@@ -39,7 +39,6 @@ public sealed partial class QuickBreakDialogViewModel : DialogViewModel
     }
 
     public override string Title => "Take a quick break";
-    public override double Width => 440;
     public ObservableCollection<MinutesChoiceViewModel> Choices { get; } = new();
     public int BufferMin { get; }
 

@@ -201,7 +201,7 @@ public class MeetingCardsTests
         Assert.True(ui.Shows("You look to be on a Zoom call."));
         Assert.True(ui.HasButton("Not now"));
         var card = ui.Window.GetVisualDescendants().OfType<AlertCardsView>().Single();
-        var tile = ui.Window.GetVisualDescendants().OfType<Button>().First(b => b.Classes.Contains("tile"));
+        var tile = ui.Window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "NextBreakAction");
         Assert.True(card.TranslatePoint(new Point(0, 0), ui.Window)!.Value.Y < tile.TranslatePoint(new Point(0, 0), ui.Window)!.Value.Y);
 
         ui.Click("Not now");

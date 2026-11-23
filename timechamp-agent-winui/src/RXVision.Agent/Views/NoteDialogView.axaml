@@ -6,11 +6,12 @@
   <UserControl.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
   </UserControl.KeyBindings>
-  <StackPanel>
-    <StackPanel Margin="24,22,24,18" Spacing="12">
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="20,26,20,20" Spacing="10">
       <TextBlock Classes="h2" Text="{Binding Title}" />
       <TextBlock Classes="body" Text="{Binding Message}" />
-      <StackPanel Spacing="6" Margin="0,2,0,0">
+      <StackPanel Spacing="6">
         <TextBlock Classes="label" Text="{Binding Label}" />
         <TextBox Name="NoteBox"
                  Classes="field"
@@ -23,21 +24,15 @@
                  VerticalContentAlignment="Top" />
       </StackPanel>
     </StackPanel>
-    <Border Classes="dialogfooter">
-      <UniformGrid Rows="1" Margin="-4,0">
-        <Button Classes="primary"
-                Content="{Binding PrimaryText}"
-                Command="{Binding SubmitCommand}"
-                IsDefault="True" />
-        <Button Classes="secondary"
-                Content="{Binding SkipText}"
-                Command="{Binding SkipCommand}"
-                IsVisible="{Binding HasSkip}" />
-        <Button Classes="secondary"
-                Content="{Binding CancelText}"
-                Command="{Binding CancelCommand}"
-                IsCancel="True" />
-      </UniformGrid>
+    </ScrollViewer>
+    <Border Grid.Row="1" Classes="dialogfooter">
+      <StackPanel Spacing="10">
+        <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding SkipText}" Command="{Binding SkipCommand}" IsVisible="{Binding HasSkip}" />
+        <Grid ColumnDefinitions="*,11,*">
+          <Button Classes="secondary" HorizontalAlignment="Stretch" Content="{Binding CancelText}" Command="{Binding CancelCommand}" IsCancel="True" />
+          <Button Grid.Column="2" Classes="primary" HorizontalAlignment="Stretch" Content="{Binding PrimaryText}" Command="{Binding SubmitCommand}" IsDefault="True" />
+        </Grid>
+      </StackPanel>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

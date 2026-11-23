@@ -58,7 +58,9 @@ public static class IconPainter
     /// <param name="context">Scaled so that one unit is one device-independent pixel, origin at the canvas's top left.</param>
     /// <param name="scale">The display scale, for the snapped centres.</param>
     /// <param name="avatar">The person's picture at this scale, or null to draw <paramref name="initials"/>.</param>
-    public static void Paint(DrawingContext context, IconFrame frame, double scale, Bitmap? avatar, string initials)
+    /// <param name="span">The panel on a break with no shift: the break drawn on the ring after the held arc.</param>
+    /// <param name="day">The panel with a shift: the ring as the shift's clock, breaks marked (no badge: the panel's cards say it).</param>
+    public static void Paint(DrawingContext context, IconFrame frame, double scale, Bitmap? avatar, string initials, BreakSpan? span = null, DayRing? day = null)
     {
         using var inBox = context.PushTransform(Matrix.CreateTranslation(IconGeometry.Margin, IconGeometry.Margin));
         var c = new Point(IconGeometry.Centre, IconGeometry.Centre);
@@ -66,9 +68,11 @@ public static class IconPainter
         PaintBase(context, c);
         PaintAvatar(context, c, avatar, initials);
         context.DrawEllipse(null, AvatarEdge, c, IconGeometry.AvatarRadius, IconGeometry.AvatarRadius);
-        PaintRing(context, c, frame);
+        if (day is not null) PaintDayRing(context, frame, day);
+        else if (span is { } onBreak) PaintBreakRing(context, c, frame, onBreak);
+        else PaintRing(context, c, frame);
         PaintDot(context, frame.Look, scale);
-        if (frame.Glyph is { } glyph && frame.BadgeScale > 0) PaintBadge(context, glyph, frame.BadgeScale, scale);
+        if (day is null && frame.Glyph is { } glyph && frame.BadgeScale > 0) PaintBadge(context, glyph, frame.BadgeScale, scale);
     }
 
     private static void PaintBase(DrawingContext context, Point c)
@@ -111,14 +115,71 @@ public static class IconPainter
         context.DrawGeometry(null, pen, Arc(frame.SweepDegrees));
     }
 
+    /// <summary>
+    /// The ring on a break, in the panel. The day's arc holds in soft amber. After a small gap the
+    /// break's own section follows: a faint track as long as the break, filling in full amber as the
+    /// minutes pass, closed by a second small gap. A fill that carries on past that gap is a break
+    /// run over: it reads without a number. A break with no length has no section, only the fill.
+    /// </summary>
+    private static void PaintBreakRing(DrawingContext context, Point c, IconFrame frame, BreakSpan span)
+    {
+        context.DrawEllipse(null, Stroke(Colors.White, IconGeometry.TrackOpacity, BreakSpan.Stroke), c, IconGeometry.RingRadius, IconGeometry.RingRadius);
+        var layout = span.Layout(frame.SweepDegrees);
+        var colour = frame.Look.RingColor;
+        if (layout.Held > 0) Segment(context, 0, layout.Held, colour, BreakSpan.HeldOpacity);
+        if (layout.SectionLength > 0) Segment(context, layout.SectionStart, layout.SectionLength, colour, BreakSpan.SectionOpacity);
+        if (layout.Fill > 0) Segment(context, layout.SectionStart, layout.Fill, colour, 1);
+        if (layout.Over > 0) Segment(context, layout.OverStart, layout.Over, colour, 1);
+    }
+
+    private static void Segment(DrawingContext context, double from, double length, Color colour, double opacity, double stroke = BreakSpan.Stroke)
+    {
+        if (length <= 0 || opacity <= 0) return;
+        var pen = new ImmutablePen(new ImmutableSolidColorBrush(colour, opacity), stroke, lineCap: PenLineCap.Flat);
+        context.DrawGeometry(null, pen, length >= 359.99 ? Circle() : Arc(from, length));
+    }
+
+    private static Geometry Circle() =>
+        new EllipseGeometry(new Rect(IconGeometry.Centre - IconGeometry.RingRadius, IconGeometry.Centre - IconGeometry.RingRadius, 2 * IconGeometry.RingRadius, 2 * IconGeometry.RingRadius));
+
+    /// <summary>The panel's ring as the shift's clock (see <see cref="DayRing"/>).</summary>
+    private static void PaintDayRing(DrawingContext context, IconFrame frame, DayRing day)
+    {
+        foreach (var arc in day.Arcs())
+        {
+            var (colour, opacity) = arc.Kind switch
+            {
+                DayRing.Kind.Track => (Colors.White, IconGeometry.TrackOpacity),
+                DayRing.Kind.Section => (IconColors.OnBreak, DayRing.SectionOpacity),
+                DayRing.Kind.NextSection => (IconColors.OnBreak, DayRing.NextOpacity),
+                DayRing.Kind.Work => (frame.Look.RingColor, frame.Look.RingOpacity),
+                DayRing.Kind.Break => (IconColors.OnBreak, DayRing.TakenOpacity),
+                _ => (IconColors.OnBreak, 1.0),
+            };
+            Segment(context, arc.From, arc.Length, colour, opacity, DayRing.Stroke);
+        }
+        var notch = new ImmutablePen(new ImmutableSolidColorBrush(IconColors.DarkEdge), DayRing.Notch);
+        var reach = DayRing.Stroke / 2 + 0.4;
+        foreach (var degrees in day.Notches())
+        {
+            var radians = (IconGeometry.RingStartDegrees + degrees) * Math.PI / 180;
+            Point At(double r) => new(IconGeometry.Centre + r * Math.Sin(radians), IconGeometry.Centre - r * Math.Cos(radians));
+            context.DrawLine(notch, At(IconGeometry.RingRadius - reach), At(IconGeometry.RingRadius + reach));
+        }
+    }
+
     /// <summary>The ring's path from the dot, clockwise, for this many degrees.</summary>
-    public static Geometry Arc(double sweepDegrees)
+    public static Geometry Arc(double sweepDegrees) => Arc(0, sweepDegrees);
+
+    /// <summary>The ring's path from this many degrees past the dot, clockwise, for this many degrees.</summary>
+    public static Geometry Arc(double fromDegrees, double sweepDegrees)
     {
         var geometry = new StreamGeometry();
         using var path = geometry.Open();
         var r = IconGeometry.RingRadius;
-        path.BeginFigure(IconGeometry.OnRing(IconGeometry.RingStartDegrees), isFilled: false);
-        path.ArcTo(IconGeometry.OnRing(IconGeometry.RingStartDegrees + sweepDegrees), new Size(r, r), 0,
+        var start = IconGeometry.RingStartDegrees + fromDegrees;
+        path.BeginFigure(IconGeometry.OnRing(start), isFilled: false);
+        path.ArcTo(IconGeometry.OnRing(start + sweepDegrees), new Size(r, r), 0,
             isLargeArc: sweepDegrees > 180, SweepDirection.Clockwise);
         path.EndFigure(isClosed: false);
         return geometry;

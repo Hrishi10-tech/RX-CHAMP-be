@@ -36,7 +36,15 @@ public sealed partial class CalendarViewModel : ObservableObject
 
     [ObservableProperty] private int _year;
     [ObservableProperty] private string? _summary;
-    [ObservableProperty] private string _totalsText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TotalsShown))]
+    private string _totalsText = "";
+
+    /// <summary>
+    /// The year's totals as drawn (G9): spaces inside each figure do not break, so a narrow panel
+    /// wraps only between "312 working days", "52 weekly off" and "1 holiday", never mid-phrase.
+    /// </summary>
+    public string TotalsShown => string.Join(" · ", TotalsText.Split(" · ").Select(p => p.Replace(' ', '\u00A0')));
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasProblem))]

@@ -28,6 +28,8 @@ export const RATE_LIMITS = {
   socketTicket: { user: 30, ip: 600 },
   /** POST /activity/report (a sample a minute per agent, plus an offline backlog). */
   activityReport: { user: 120, ip: 1200 },
+  /** POST /biometric/punches (3.5): a connector pushing punches as they happen, or a backlog. */
+  biometricPush: { user: 600, ip: 600 },
 } as const satisfies Record<string, RouteRateLimit>;
 
 /** Route limits that depend on whom the request counts against (see RATE_LIMITS). */

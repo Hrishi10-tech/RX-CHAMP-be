@@ -340,7 +340,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
   }
 
   async heal(userIds: string[] | null): Promise<HealResult> {
-    if (userIds && !userIds.length) return { healed: [], discarded: 0 };
+    if (userIds && !userIds.length) return { healed: [], discarded: 0, discardedIds: [] };
     const users = userIds ? Prisma.sql`AND m.user_id = ANY(${userIds}::uuid[])` : Prisma.empty;
     const ids = await this.prisma.$queryRaw<{ id: string }[]>`
       UPDATE meeting_records m
@@ -364,7 +364,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
       select: { id: true, startedAt: true },
     });
     const all = [...ids.map((r) => r.id), ...orphans.map((o) => o.id)];
-    if (!all.length) return { healed: [], discarded: 0 };
+    if (!all.length) return { healed: [], discarded: 0, discardedIds: [] };
     // An orphan ends where it started; it and any meeting under a minute are discarded.
     for (const o of orphans) {
       await this.prisma.meetingRecord.updateMany({
@@ -382,6 +382,7 @@ export class PrismaMeetingRecordRepository implements MeetingRecordRepository {
     return {
       healed: rows.filter((r) => !short.includes(r.id)).map(meetingFromPrisma),
       discarded: short.length + orphans.length,
+      discardedIds: [...short, ...orphans.map((o) => o.id)],
     };
   }
 

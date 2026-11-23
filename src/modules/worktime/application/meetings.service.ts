@@ -5,6 +5,7 @@ import {
   UnprocessableError,
   ValidationError,
 } from '@shared/exceptions/app.exception';
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -289,6 +290,13 @@ export class MeetingsService {
   async heal(userIds: string[] | null, now: Date): Promise<void> {
     const result = await this.meetings.heal(userIds);
     for (const m of result.healed) await this.requested(m);
+    // The lists showed it while it ran. (POST /meetings/:id/end says so for its own.)
+    for (const id of result.discardedIds) {
+      await this.events.publish(
+        ApprovalChangedEvent.eventName,
+        new ApprovalChangedEvent('MEETING', id, 'UPDATED'),
+      );
+    }
     if (result.healed.length || result.discarded) {
       this.logger.debug(
         `healed ${result.healed.length} live meeting(s), discarded ${result.discarded} (${now.toISOString()})`,
@@ -319,7 +327,11 @@ export class MeetingsService {
       });
       await this.events.publish(
         NoticeEvent.eventName,
-        new NoticeEvent(recipients, NOTICE.MEETING_REQUESTED, copy.title, copy.body, m.userId),
+        new NoticeEvent(recipients, NOTICE.MEETING_REQUESTED, copy.title, copy.body, m.userId, {
+          what: 'MEETING',
+          id: m.id,
+          action: 'CREATED',
+        }),
       );
     } catch (err) {
       this.logger.warn(`meeting notice for ${m.id} failed: ${(err as Error).message}`);

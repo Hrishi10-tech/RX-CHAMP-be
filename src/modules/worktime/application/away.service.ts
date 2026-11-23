@@ -298,7 +298,12 @@ export class AwayService {
       }. Approve it to count it as focus time.`;
       await this.events.publish(
         NoticeEvent.eventName,
-        new NoticeEvent(recipients, NOTICE.AWAY_REQUESTED, title, body, a.userId),
+        // 3.6: named, so approvals:changed and a push reach whoever decides it.
+        new NoticeEvent(recipients, NOTICE.AWAY_REQUESTED, title, body, a.userId, {
+          what: 'AWAY',
+          id: a.id,
+          action: 'CREATED',
+        }),
       );
     } catch (err) {
       this.logger.warn(`away request notice for ${a.id} failed: ${(err as Error).message}`);

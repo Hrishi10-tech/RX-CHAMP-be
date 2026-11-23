@@ -1,5 +1,6 @@
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { Role } from '@shared/rbac/roles.enum';
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { MeetingRecordRow } from '../domain/meeting-record.repository';
@@ -123,7 +124,7 @@ function setup() {
         durationSec: input.durationSec,
       }),
     })),
-    heal: jest.fn().mockResolvedValue({ healed: [], discarded: 0 }),
+    heal: jest.fn().mockResolvedValue({ healed: [], discarded: 0, discardedIds: [] }),
     listForUserOnDate: jest.fn().mockResolvedValue([]),
   };
   const peopleReader = {
@@ -154,7 +155,10 @@ function setup() {
     breakEvents as never,
     presence as never,
   );
-  const notices = () => events.publish.mock.calls.map(([, p]) => p as NoticeEvent);
+  const notices = () =>
+    events.publish.mock.calls
+      .filter(([name]) => name === NoticeEvent.eventName)
+      .map(([, p]) => p as NoticeEvent);
   return { svc, repo, reader, events, notices, presence, sessions };
 }
 
@@ -498,9 +502,25 @@ describe('MeetingsService.heal', () => {
     repo.heal.mockResolvedValueOnce({
       healed: [meeting({ id: 'a' }), meeting({ id: 'b', approvalStatus: 'NOT_REQUIRED' })],
       discarded: 1,
+      discardedIds: ['c'],
     });
     await svc.heal(['staff'], NOW);
     expect(repo.heal).toHaveBeenCalledWith(['staff']);
     expect(notices()).toHaveLength(1);
+  });
+
+  it('one it discarded leaves the open lists at once, with no notice to anybody', async () => {
+    const { svc, repo, events } = setup();
+    repo.heal.mockResolvedValueOnce({ healed: [], discarded: 2, discardedIds: ['c', 'd'] });
+    await svc.heal(null, NOW);
+    expect(
+      events.publish.mock.calls.map(([name, p]) => {
+        const e = p as ApprovalChangedEvent;
+        return [name, e.what, e.id, e.action];
+      }),
+    ).toEqual([
+      [ApprovalChangedEvent.eventName, 'MEETING', 'c', 'UPDATED'],
+      [ApprovalChangedEvent.eventName, 'MEETING', 'd', 'UPDATED'],
+    ]);
   });
 });

@@ -1,3 +1,4 @@
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { ApprovalsDigestEvent } from '../../domain/events/approvals-digest.event';
 import { SlaClaim } from '../../domain/approvals.reader';
@@ -169,7 +170,14 @@ describe('ApprovalsSlaJob', () => {
     claim(userId, { approverRole: 'ADMIN', departmentId: null, ...over });
   const refs = (claims: SlaClaim[]) => claims.map((c) => ({ type: c.type, id: c.id }));
 
-  const notices = () => (events.publish.mock.calls as Published[]).map(([, e]) => e as NoticeEvent);
+  const notices = () =>
+    (events.publish.mock.calls as Published[])
+      .filter(([name]) => name === NoticeEvent.eventName)
+      .map(([, e]) => e as NoticeEvent);
+  const changes = () =>
+    (events.publish.mock.calls as Published[])
+      .filter(([name]) => name === ApprovalChangedEvent.eventName)
+      .map(([, e]) => e as ApprovalChangedEvent);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -237,6 +245,29 @@ describe('ApprovalsSlaJob', () => {
     await job.tick(NOW);
     // mgr-b got the dept-1 reminder; the Admin's never went out.
     expect(reader.markReminded).toHaveBeenCalledWith(refs(dept), NOW);
+  });
+
+  it('3.6: an item marked escalated is announced, so an open list stops saying Overdue at once', async () => {
+    const items = [claim('u1'), adminItem('m9'), claim('u3', { type: 'AWAY' })];
+    reader.escalationsDue.mockResolvedValue(items);
+    await job.tick(NOW);
+    expect(reader.markEscalated).toHaveBeenCalledWith(refs(items), NOW);
+    expect(changes().map((c) => [c.what, c.id, c.action])).toEqual(
+      items.map((c) => [c.type, c.id, 'UPDATED']),
+    );
+    // After the mark, or a read it wakes would still say Overdue.
+    const announced = (events.publish.mock.calls as Published[]).findIndex(
+      ([name]) => name === ApprovalChangedEvent.eventName,
+    );
+    expect(reader.markEscalated.mock.invocationCallOrder[0]).toBeLessThan(
+      events.publish.mock.invocationCallOrder[announced],
+    );
+  });
+
+  it('3.6: nothing marked, nothing announced; a reminder changes nothing on screen', async () => {
+    reader.remindersDue.mockResolvedValue([claim('u1')]);
+    await job.tick(NOW);
+    expect(changes()).toEqual([]);
   });
 
   it('never reminds anyone about their own item', async () => {

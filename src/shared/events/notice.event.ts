@@ -1,3 +1,5 @@
+import { ApprovalChange } from './approval-changed.event';
+
 /**
  * A ready-written notification for one or more people. Modules that already
  * know the copy publish this instead of a bespoke event; the notifications
@@ -14,5 +16,7 @@ export class NoticeEvent {
     public readonly body: string | null,
     /** The person behind it, when there is one (never the recipient). */
     public readonly fromUserId: string | null = null,
+    /** The approval item this notice is about, when it comes from outside a decision (3.6). */
+    public readonly approval: ApprovalChange | null = null,
   ) {}
 }

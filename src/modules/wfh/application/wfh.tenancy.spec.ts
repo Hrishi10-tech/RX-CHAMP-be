@@ -209,6 +209,7 @@ describe('WfhRequestsService: who decides (4.0)', () => {
       findRequest: tx.findRequest,
       inUserLock: jest.fn(async (_u: string, fn: (t: typeof tx) => unknown) => fn(tx)),
       listRequests: jest.fn(async () => rows),
+      lockedMonths: jest.fn(async () => new Set<string>()),
     };
     const p = people();
     jest.spyOn(p, 'shiftTimes').mockResolvedValue(new Map());

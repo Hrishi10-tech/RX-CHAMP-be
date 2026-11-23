@@ -144,8 +144,11 @@ export interface RequestFilter {
   category?: LeaveCategory;
   year?: number;
   limit?: number;
-  /** NEWEST (created, newest first, the default) or SOONEST (first day, soonest first). */
-  order?: 'NEWEST' | 'SOONEST';
+  /**
+   * NEWEST (created, newest first, the default), SOONEST (first day, soonest first) or
+   * DECIDED (latest decision first, however old the request).
+   */
+  order?: 'NEWEST' | 'SOONEST' | 'DECIDED';
 }
 
 /** What a transaction holding one person's leave lock may do. */
@@ -205,11 +208,18 @@ export interface CreditFilter {
   from?: string;
   to?: string;
   limit?: number;
+  /** Latest decision first; the newest claim first otherwise. */
+  order?: 'DECIDED';
 }
 
 export interface LeaveRepository {
   /** Runs `fn` in one transaction holding the person's leave lock (requests, decisions, adjustments). */
   inUserLock<T>(userId: string, fn: (tx: LeaveTx) => Promise<T>): Promise<T>;
+  /**
+   * Which of these organisation-months are locked for payroll (4.0: per organisation),
+   * as `companyId|month`, for what a screen offers.
+   */
+  lockedMonths(companyIds: string[], months: string[]): Promise<Set<string>>;
   findRequest(id: string): Promise<LeaveRequestRecord | null>;
   listRequests(filter: RequestFilter): Promise<LeaveRequestRecord[]>;
   /** Accounts of these people (one year, or every year). */

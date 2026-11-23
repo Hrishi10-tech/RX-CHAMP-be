@@ -38,6 +38,8 @@ import { CalendarModule } from '@modules/calendar/calendar.module';
 import { OrganisationsModule } from '@modules/organisations/organisations.module';
 import { DepartmentsModule } from '@modules/departments/departments.module';
 import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
+import { PushModule } from '@modules/push/push.module';
+import { ApprovalSyncModule } from '@modules/approval-sync/approval-sync.module';
 
 @Module({
   imports: [
@@ -79,6 +81,8 @@ import { SignOutKeysModule } from '@modules/signout-keys/signout-keys.module';
     OrganisationsModule,
     DepartmentsModule,
     SignOutKeysModule,
+    PushModule,
+    ApprovalSyncModule,
   ],
 })
 export class AppModule {}

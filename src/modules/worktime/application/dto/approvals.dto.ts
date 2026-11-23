@@ -77,7 +77,8 @@ export class ApprovalsListQueryDto {
 
   @ApiPropertyOptional({
     description:
-      '3.3: Super Manager or Super Admin on "All organisations": only this organisation. ' +
+      '3.3: Super Manager or Super Admin on "All organisations": only this organisation ' +
+      "(3.6: a Super Admin's own queue, scope=mine, too). " +
       'Inside one organisation it must be that organisation (else 404 ORG_NOT_FOUND).',
   })
   @IsOptional()
@@ -113,7 +114,9 @@ export class ApprovalsSummaryQueryDto {
   scope?: 'mine' | 'all' = 'mine';
 
   @ApiPropertyOptional({
-    description: '3.3: Super Manager or Super Admin on "All organisations": one organisation',
+    description:
+      '3.3: Super Manager or Super Admin on "All organisations": one organisation ' +
+      "(3.6: a Super Admin's own queue too)",
   })
   @IsOptional()
   @IsId()

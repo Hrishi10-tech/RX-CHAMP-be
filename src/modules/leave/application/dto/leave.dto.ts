@@ -133,6 +133,14 @@ export class ListLeaveQueryDto {
   @Min(1)
   @Max(1000)
   limit?: number;
+
+  @ApiPropertyOptional({
+    enum: ['DECIDED'],
+    description: 'DECIDED: latest decision first, however old the request',
+  })
+  @IsOptional()
+  @IsIn(['DECIDED'])
+  order?: 'DECIDED';
 }
 
 export class LeaveSummaryQueryDto {

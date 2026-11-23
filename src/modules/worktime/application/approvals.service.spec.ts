@@ -780,6 +780,23 @@ describe('ApprovalsService views and lists', () => {
     });
   });
 
+  it("3.6: the organisation asked for narrows a Super Admin's own queue too, list and counts", async () => {
+    const { svc, reader } = setup();
+    const SA_ALL = me('sa', Role.SUPER_ADMIN, { orgId: null });
+    const mineIn = { kind: 'ANY_ORG', companyId: 'co-2', adminMine: true, excludeUserId: 'sa' };
+    await svc.list(SA_ALL, { companyId: 'co-2' }, NOW);
+    expect(reader.list.mock.calls[0][0].scope).toEqual(mineIn);
+    await svc.summary(SA_ALL, NOW, 'mine', 'co-2');
+    expect(reader.count.mock.calls[0][0].scope).toEqual(mineIn);
+    // With the organisation picked in X-Org-Id, it is that organisation's Admin queue.
+    await svc.list(me('sa', Role.SUPER_ADMIN, { orgId: ORG }), {}, NOW);
+    expect(reader.list.mock.calls[1][0].scope).toEqual({
+      kind: 'ORG_ADMIN_MINE',
+      companyId: ORG,
+      excludeUserId: 'sa',
+    });
+  });
+
   it('3.3: combined views tag every item with its organisation and decide it in that organisation', async () => {
     const { svc, breaks, meetings } = setup();
     breaks.listByIds.mockResolvedValue([

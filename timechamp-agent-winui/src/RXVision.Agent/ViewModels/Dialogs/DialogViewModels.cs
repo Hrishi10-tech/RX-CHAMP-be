@@ -165,9 +165,17 @@ public sealed partial class ReasonDialogViewModel : DialogViewModel
 
     /// <summary>Characters that count, as the server counts them: the ends trimmed, a run of spaces as one.</summary>
     public int Length => Reason.Length;
-    public bool CountOk => Length >= MinChars && Length <= MaxChars;
+    public bool CountOk => (Length >= MinChars || IsPickedPreset) && Length <= MaxChars;
 
-    public string CountText => ReasonCount.Text(Length, MinChars, MaxChars);
+    /// <summary>
+    /// The chips are the organisation's quick answers (3.2): the server takes one as it is,
+    /// whatever its length. Off for the agent's own chips, which must meet the minimum.
+    /// </summary>
+    public bool PresetsPassAnyLength { get; init; }
+
+    private bool IsPickedPreset => PresetsPassAnyLength && Length > 0 && Chips.Any(c => c.Label == Reason);
+
+    public string CountText => IsPickedPreset ? "Looks good" : ReasonCount.Text(Length, MinChars, MaxChars);
 
     public string Reason => ReasonText.Clean(Text);
 

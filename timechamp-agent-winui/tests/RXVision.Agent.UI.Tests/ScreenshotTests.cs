@@ -67,6 +67,66 @@ public class ScreenshotTests
     [AvaloniaFact]
     public Task Dashboard_free_mode() => Shoot("dashboard-free", Agent("10:47", a => a.Day = Days.Free()));
 
+    // ---- 3.2 to 3.5: biometric days, the day's notes and the staff pages -----------------------
+
+    [AvaloniaFact]
+    public Task Dashboard_biometric() => Shoot("dashboard-biometric", Agent("10:20", a =>
+    {
+        a.IsBiometric = true;
+        a.Day = Days.Free();
+    }));
+
+    [AvaloniaFact]
+    public Task Dashboard_biometric_not_started() => Shoot("dashboard-biometric-not-started", Agent("09:02", a =>
+    {
+        a.State = AgentState.NotStarted;
+        a.Workday = Days.NotStarted("09:02");
+        a.Presence = new CurrentPresence { Status = PresenceStatus.NotStarted };
+        a.IsBiometric = true;
+        a.Day = Days.Free();
+    }));
+
+    [AvaloniaFact]
+    public Task Dashboard_day_notes() => Shoot("dashboard-day-notes", Agent("10:20", a =>
+    {
+        a.Workday!.DayOff = new DayOffView { Kind = "HOLIDAY", Name = "Diwali" };
+        a.Workday.Leave = new LeaveTodayView { Days = 0.5, Label = "Half day (first half)", Categories = "CL/SL" };
+        a.Workday.Wfh = new WfhTodayView { Label = "Full day" };
+        a.Workday.LateStart = new LateStartView { Minutes = 35, NeedsReason = true };
+    }), height: 820);
+
+    [AvaloniaFact]
+    public Task Page_leave() => Shoot("page-leave", Agent("10:20", a => a.LeaveResult = ApiResult<MyLeave>.Success(LeavePageTests.Leave())), vm =>
+        vm.ShowLeaveCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_leave_with_no_connection() => Shoot("page-leave-offline", Agent("10:20"), vm =>
+        vm.ShowLeaveCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_calendar() => Shoot("page-calendar", Agent("10:20", a => a.CalendarFor = y => ApiResult<CalendarYear>.Success(PagesData.Calendar(y))), vm =>
+        vm.ShowCalendarCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Page_instructions_with_the_organisations_guide() => Shoot("page-instructions-guide", Agent("10:20", a => a.GuideResult = (PagesData.Guide(), true)), vm =>
+        vm.ShowInstructionsCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+    [AvaloniaFact]
+    public Task Menu_open_with_the_pages() => Shoot("menu-open-pages", Agent("10:20"), vm => vm.ToggleMenuCommand.Execute(null));
+
+    [AvaloniaFact]
+    public Task Dialog_apply_for_leave() => Shoot("dialog-apply-for-leave", Agent("10:20"), vm =>
+    {
+        var context = new LeaveDialogContext(LeavePageTests.Leave().Policy, new DateTime(2026, 10, 13), new[] { "Unwell", "Family function", "Personal work" },
+            new HashSet<DateTime>(), _ => Task.FromResult(ApiResult<LeavePreview>.Success(new LeavePreview { Ok = true })),
+            (_, ct) => Task.Delay(Timeout.Infinite, ct)); // the lines below are the preview drawn
+        var dialog = new LeaveDialogViewModel(context) { Reason = "Unwell" };
+        dialog.PreviewLines.Add("Charges 1 day of CL/SL");
+        dialog.PreviewLines.Add("Left after: 9.5 (now 10.5)");
+        dialog.PreviewLines.Add("Goes to Maya Reddy for approval");
+        vm.Overlay = dialog;
+    }, height: 760);
+
     [AvaloniaFact]
     public Task Dashboard_upcoming() => Shoot("dashboard-upcoming", Agent("10:20"));
 

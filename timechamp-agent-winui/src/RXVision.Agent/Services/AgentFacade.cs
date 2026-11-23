@@ -49,6 +49,7 @@ public sealed class AgentFacade : IAgent, IDisposable
         host.EndDayHeld += h => Raise(() => EndDayHeld?.Invoke(h));
         host.AwayChanged += () => Raise(() => AwayChanged?.Invoke());
         host.HistoryChanged += () => Raise(() => HistoryChanged?.Invoke());
+        host.LeaveChanged += () => Raise(() => LeaveChanged?.Invoke());
         host.UpdateAvailable += o => Raise(() => UpdateAvailable?.Invoke(o));
         host.ExitRequested += () => Raise(() => ExitRequested?.Invoke());
         host.SignedOutUnexpectedly += r => Raise(() => SignedOutUnexpectedly?.Invoke(r));
@@ -92,6 +93,8 @@ public sealed class AgentFacade : IAgent, IDisposable
     public DateTimeOffset? LastSyncAt => _host.LastSyncAt;
     public DateTimeOffset? AwaySince => _host.AwaySince;
     public IdleConfig? IdleConfig => _host.IdleConfig;
+    public bool IsBiometric => _host.IsBiometric;
+    public IReadOnlyList<string> Presets(string kind) => _host.Presets(kind);
 
     public IChat? Chat
     {
@@ -133,6 +136,7 @@ public sealed class AgentFacade : IAgent, IDisposable
     public HeldEndDay? HeldEndDay => _host.HeldEndDay;
     public event Action? AwayChanged;
     public event Action? HistoryChanged;
+    public event Action? LeaveChanged;
     public event Action<UpdateOffer>? UpdateAvailable;
     public event Action? ExitRequested;
     public event Action<string>? SignedOutUnexpectedly;
@@ -143,7 +147,14 @@ public sealed class AgentFacade : IAgent, IDisposable
     public Task<string?> SignInAsync(string email, string password, string? server) => Task.Run(() => _host.SignInAsync(email, password, server));
     public Task<string?> SignInWithCodeAsync(string code) => Task.Run(() => _host.SignInWithCodeAsync(code));
     public Task AcknowledgeNoticeAsync() => Task.Run(_host.AcknowledgeNoticeAsync);
-    public Task<StartDayOutcome> StartDayAsync() => Task.Run(_host.StartDayAsync);
+    public Task<StartDayOutcome> StartDayAsync(string? lateReason = null) => Task.Run(() => _host.StartDayAsync(lateReason));
+    public Task<ApiResult<System.Text.Json.JsonElement>> AddLateReasonAsync(string reason) => Task.Run(() => _host.AddLateReasonAsync(reason));
+    public Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync() => Task.Run(_host.GetGuideAsync);
+    public Task<ApiResult<CalendarYear>> GetCalendarAsync(int year) => Task.Run(() => _host.GetCalendarAsync(year));
+    public Task<ApiResult<MyLeave>> GetMyLeaveAsync() => Task.Run(_host.GetMyLeaveAsync);
+    public Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body) => Task.Run(() => _host.PreviewLeaveAsync(body));
+    public Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body) => Task.Run(() => _host.RequestLeaveAsync(body));
+    public Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId) => Task.Run(() => _host.CancelLeaveAsync(requestId));
     public Task<EndDayOutcome> EndDayAsync(IReadOnlyList<SkipComment>? comments, DateTimeOffset? at = null) => Task.Run(() => _host.EndDayAsync(comments, at));
     public Task<StartOutcome> TakeBreakAsync(string kind, string? reason) => Task.Run(() => _host.TakeBreakAsync(kind, reason));
     public Task<StartOutcome> TakeFreeBreakAsync(string presenceType) => Task.Run(() => _host.TakeFreeBreakAsync(presenceType));

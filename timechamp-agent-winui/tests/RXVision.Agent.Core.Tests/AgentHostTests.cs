@@ -1105,7 +1105,7 @@ public class AgentHostTests
         h.Server.Route("POST auth/logout", (_, _) => FakeServer.Ok(new { ok = true }));
 
         // On a pool thread: the scripted server blocks until the gate opens.
-        var start = Task.Run(h.Host.StartDayAsync);
+        var start = Task.Run(() => h.Host.StartDayAsync());
         await HostHarness.WaitFor(() => h.Server.Count("POST activity/start-day") > 0);
         await h.Host.SignOutAsync();
         gate.SetResult();

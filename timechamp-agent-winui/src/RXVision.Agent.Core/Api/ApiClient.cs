@@ -442,9 +442,13 @@ public sealed class ApiClient : IDisposable
     /// pressed, sent only on a retry (the server takes it when it is within the last
     /// 10 minutes and not in the future, else uses its own now).
     /// </summary>
-    public Task<ApiResult<StartDayResult>> StartDayAsync(DateTimeOffset? startedAt = null, CancellationToken ct = default) =>
+    public Task<ApiResult<StartDayResult>> StartDayAsync(DateTimeOffset? startedAt = null, CancellationToken ct = default, string? lateReason = null) =>
         SendJsonAsync<StartDayResult>(HttpMethod.Post, "activity/start-day",
-            new StartDayRequest { StartedAt = startedAt is { } at ? Iso(at) : null }, ct);
+            new StartDayRequest
+            {
+                StartedAt = startedAt is { } at ? Iso(at) : null,
+                LateReason = string.IsNullOrWhiteSpace(lateReason) ? null : ReasonText.Clean(lateReason),
+            }, ct);
 
     /// <summary>POST /activity/end-day, with a comment for each skipped break that needs one.</summary>
     public Task<ApiResult<EndDayResult>> EndDayAsync(IReadOnlyList<SkipComment>? comments = null, CancellationToken ct = default) =>
@@ -736,6 +740,37 @@ public sealed class ApiClient : IDisposable
     /// <summary>POST /agent/quit-check {key}: 200 lets an Admin or Super Admin quit; 403 not.</summary>
     public Task<ApiResult<JsonElement>> QuitCheckAsync(string key, CancellationToken ct = default) =>
         SendJsonAsync<JsonElement>(HttpMethod.Post, "agent/quit-check", new SignOutKeyRequest { Key = NormaliseKey(key) }, ct);
+
+    // ---- The staff pages (3.2 to 3.5) -----------------------------------------------------
+
+    /// <summary>POST /workday/me/late-reason: the note for today's late start, made without one (another PC, an older agent).</summary>
+    public Task<ApiResult<JsonElement>> AddLateReasonAsync(string reason, CancellationToken ct = default) =>
+        SendJsonAsync<JsonElement>(HttpMethod.Post, "workday/me/late-reason", new LateReasonRequest { Reason = ReasonText.Clean(reason) }, ct);
+
+    /// <summary>GET /workday/guide: the Instructions page with the organisation's numbers.</summary>
+    public Task<ApiResult<StaffGuide>> GetGuideAsync(CancellationToken ct = default) =>
+        SendJsonAsync<StaffGuide>(HttpMethod.Get, "workday/guide", null, ct);
+
+    /// <summary>GET /calendar/people/:userId/year?year=: the person's own year (4.0, with 3.5's department and person weeks).</summary>
+    public Task<ApiResult<PersonYear>> GetPersonYearAsync(string userId, int year, CancellationToken ct = default) =>
+        SendJsonAsync<PersonYear>(HttpMethod.Get,
+            $"calendar/people/{Uri.EscapeDataString(userId)}/year?year={year.ToString(System.Globalization.CultureInfo.InvariantCulture)}", null, ct);
+
+    /// <summary>GET /leave/me: balances, comp off, requests and the policy (3.4, 3.5).</summary>
+    public Task<ApiResult<MyLeave>> GetMyLeaveAsync(CancellationToken ct = default) =>
+        SendJsonAsync<MyLeave>(HttpMethod.Get, "leave/me", null, ct);
+
+    /// <summary>POST /leave/preview: what a request would charge, or the first thing that stops it. Nothing is made.</summary>
+    public Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body, CancellationToken ct = default) =>
+        SendJsonAsync<LeavePreview>(HttpMethod.Post, "leave/preview", body, ct);
+
+    /// <summary>POST /leave/requests: apply for leave.</summary>
+    public Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body, CancellationToken ct = default) =>
+        SendJsonAsync<LeaveRequest>(HttpMethod.Post, "leave/requests", body, ct);
+
+    /// <summary>POST /leave/requests/:id/cancel: a pending request, or approved leave not yet begun.</summary>
+    public Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId, CancellationToken ct = default) =>
+        SendJsonAsync<LeaveRequest>(HttpMethod.Post, $"leave/requests/{Uri.EscapeDataString(requestId)}/cancel", new { }, ct);
 
     /// <summary>A key as typed or pasted: words in lower case, one space between them.</summary>
     public static string NormaliseKey(string? key) =>

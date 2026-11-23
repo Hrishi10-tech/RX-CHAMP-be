@@ -267,6 +267,21 @@ public sealed class AgentHost : IDisposable
     /// <summary>The effective away settings (4.0), or null before the server sent any.</summary>
     public IdleConfig? IdleConfig => _day.View.Workday?.Config?.Idle ?? _day.Base.Workday?.Config?.Idle;
 
+    // The server answered ATTENDANCE_BY_BIOMETRIC this session: the day buttons stay hidden.
+    private volatile bool _biometricRefused;
+
+    /// <summary>
+    /// The biometric device takes this person's attendance (3.5): no Start Day, End Day,
+    /// break or meeting buttons, and no reminders to start the day.
+    /// </summary>
+    public bool IsBiometric => _biometricRefused || Workday?.IsBiometric == true;
+
+    /// <summary>The organisation's quick answers for a comment box (3.2; empty when none are known).</summary>
+    public IReadOnlyList<string> Presets(string kind) =>
+        (_day.View.Breaks?.ReasonPresets ?? _day.Base.Breaks?.ReasonPresets) is { } all && all.TryGetValue(kind, out var list)
+            ? list.Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
+            : Array.Empty<string>();
+
     /// <summary>The person's status now, from the day (a break, a meeting, working).</summary>
     public CurrentPresence Presence
     {
@@ -344,6 +359,8 @@ public sealed class AgentHost : IDisposable
     public event Action? AwayChanged;
     /// <summary>History may have changed (a decision, a calendar change).</summary>
     public event Action? HistoryChanged;
+    /// <summary>The person's leave may have changed (a decision, comp off, a request made here).</summary>
+    public event Action? LeaveChanged;
     public event Action<UpdateOffer>? UpdateAvailable;
     /// <summary>The app must exit (an update installer is running).</summary>
     public event Action? ExitRequested;
@@ -705,6 +722,8 @@ public sealed class AgentHost : IDisposable
             if (what.StartsWith("WORKDAY", StringComparison.Ordinal) || what == "DECIDED") _ = SafeAsync("breaks", FetchBreaksAsync);
             try { HistoryChanged?.Invoke(); }
             catch (Exception ex) { _log.Error("day", "a history handler failed", ex); }
+            // Leave decided, comp off or a decision elsewhere (3.4: workday:changed LEAVE).
+            if (what is "WORKDAY:LEAVE" or "WORKDAY:COMPOFF" or "WORKDAY:DECISION") RaiseLeaveChanged();
         };
         svc.Updates.Available += offer => { PendingUpdate = offer; UpdateAvailable?.Invoke(offer); };
         svc.Updates.ExitForUpdate += () => ExitRequested?.Invoke();
@@ -756,9 +775,39 @@ public sealed class AgentHost : IDisposable
             case "DAY_AUTO_CLOSED":
             case "APPROVALS_OVERDUE":
             case "APPROVALS_ESCALATED":
+            case "BIOMETRIC_NO_CHECKOUT":
+            case "WFH_DECIDED":
+            case "WFH_REVOKED":
                 _ = SafeAsync("day", () => DayCheckAsync(greet: false));
                 break;
+            case "LEAVE_DECIDED":
+            case "LEAVE_REVOKED":
+            case "LEAVE_ADJUSTED":
+            case "LEAVE_UPDATED":
+            case "COMPOFF_DECIDED":
+            case "COMPOFF_CREDITED":
+            case "COMPOFF_EXPIRING":
+                // Leave moves today's target and the Leave page (3.4, 3.5).
+                _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+                RaiseLeaveChanged();
+                break;
         }
+    }
+
+    private void RaiseLeaveChanged()
+    {
+        try { LeaveChanged?.Invoke(); }
+        catch (Exception ex) { _log.Error("leave", "a leave handler failed", ex); }
+    }
+
+    /// <summary>The server said the biometric device takes this person's attendance: the day buttons go for this session.</summary>
+    private void NoteBiometric(string? code)
+    {
+        if (code != "ATTENDANCE_BY_BIOMETRIC" || _biometricRefused) return;
+        _biometricRefused = true;
+        _log.Info("day", "attendance is taken by the biometric device; the day buttons are hidden");
+        try { WorkdayChanged?.Invoke(); }
+        catch (Exception ex) { _log.Error("day", "a workday handler failed", ex); }
     }
 
     private static bool SameServer(string a, string b) =>
@@ -1027,7 +1076,11 @@ public sealed class AgentHost : IDisposable
         _dayDate = day.Date;
         if (greet && _greetedDate != day.Date)
         {
-            if (RecentlyEnded(out var ago))
+            if (!MayNudge(day))
+            {
+                _log.Info("day", "not greeting: a day off, a full day of leave, or a biometric day");
+            }
+            else if (RecentlyEnded(out var ago))
             {
                 // A day that ended a moment ago (a night shift, End Day after midnight): a
                 // "Good morning" now would invite a stray session. A later unlock greets.
@@ -1041,6 +1094,13 @@ public sealed class AgentHost : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Nothing nags on a day off or a full day of leave (3.2, 3.4; Start Day stays
+    /// available), or for someone whose day the biometric device opens (3.5).
+    /// </summary>
+    private bool MayNudge(WorkdayToday? day) =>
+        !IsBiometric && day?.DayOff is null && day?.Leave is not { Full: true };
 
     /// <summary>Remembers when the last working day ended, from the day.</summary>
     private void NoteDayEnded(WorkdayToday day)
@@ -1729,6 +1789,7 @@ public sealed class AgentHost : IDisposable
         var date = local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var month = date[..7];
         var what = EventRequests.Describe(e);
+        NoteBiometric(result.Code);
 
         // End Day refused for comments on skipped breaks (ones never seen offline, or auto-skips
         // End Day itself would make): held, so the person adds them and End Day goes again with
@@ -1826,6 +1887,7 @@ public sealed class AgentHost : IDisposable
         var e = RecordExpected(kind, payload, at);
         _sync.Poke();
         var fate = await WaitForAsync(e);
+        if (fate is EventFate.Refused refused) NoteBiometric(refused.Result.Code);
         return (e, fate);
     }
 
@@ -1874,8 +1936,13 @@ public sealed class AgentHost : IDisposable
 
     // ---- The working day ----------------------------------------------------------------
 
-    /// <summary>Start Day: the day opens at once (journalled), and goes to the server with its time.</summary>
-    public async Task<StartDayOutcome> StartDayAsync()
+    /// <summary>
+    /// Start Day: the day opens at once (journalled), and goes to the server with its time.
+    /// A late first start (3.2) asks for its note first, by the day as known, before anything
+    /// is recorded; the server's 422 LATE_REASON_REQUIRED, when it answers in time, asks the
+    /// same way. Press again with <paramref name="lateReason"/>.
+    /// </summary>
+    public async Task<StartDayOutcome> StartDayAsync(string? lateReason = null)
     {
         var svc = _svc;
         if (svc?.Api.CurrentUser is null) return new StartDayOutcome.Refused("SIGNED_OUT", "Sign in first.");
@@ -1897,9 +1964,15 @@ public sealed class AgentHost : IDisposable
                     return new StartDayOutcome.Refused("NOT_READY", "Finish signing in first.");
             }
             resumed = State == AgentState.DayEnded;
-            e = RecordExpected(EventKinds.StartDay, new EventPayload());
+            var note = string.IsNullOrWhiteSpace(lateReason) ? null : ReasonText.Clean(lateReason);
+            if (note is null && !resumed && IsLateStart(_clock.UtcNow) is { } needs)
+            {
+                _log.Info("day", $"Start Day {needs.MinutesLate} min after the shift start: asking for the note first");
+                return needs;
+            }
+            e = RecordExpected(EventKinds.StartDay, new EventPayload { Reason = note });
             _sync.Poke();
-            _log.Info("day", $"Start Day{(resumed ? " (again)" : "")}");
+            _log.Info("day", $"Start Day{(resumed ? " (again)" : "")}{(note is null ? "" : ", with the late start's note")}");
             ApplyDayLocked(greet: false);
         }
         finally
@@ -1909,12 +1982,115 @@ public sealed class AgentHost : IDisposable
         var fate = await WaitForAsync(e);
         if (fate is EventFate.Refused refused)
         {
+            NoteBiometric(refused.Result.Code);
+            if (LateStartRule.FromRefusal(refused.Result) is { } asked)
+            {
+                // The server judged the start late (its day differs from the one known here):
+                // nothing was recorded, so ask and press again.
+                _log.Info("day", "Start Day refused: the late start needs its note");
+                return asked;
+            }
             var outcome = new StartDayOutcome.Refused(refused.Result.Code ?? "REFUSED", refused.Result.Message ?? "Couldn't start your day.");
             _log.Warn("day", $"Start Day refused: {outcome.Code} {outcome.Message}");
             return outcome;
         }
         _ = SafeAsync("day", FetchBreaksAsync);
         return new StartDayOutcome.Started(Workday, resumed);
+    }
+
+    /// <summary>A first Start Day now would be late and wants a note (by today as known), else null.</summary>
+    internal StartDayOutcome.NeedsLateReason? IsLateStart(DateTimeOffset now) =>
+        LateStartRule.Check(_day.View.Workday ?? _day.Base.Workday, _svc?.Api.CurrentUser?.Role, now, BusinessDate(now), BusinessOffset(now),
+            Presets(PresetKinds.LateDayStart), at => Clock12.Format(at.ToOffset(BusinessOffset(at))));
+
+    // ---- The late start's note, the guide, My calendar, leave (3.2 to 3.5) ---------------------
+
+    /// <summary>"Add a note": a late start made without one (another computer, an older agent).</summary>
+    public async Task<ApiResult<JsonElement>> AddLateReasonAsync(string reason)
+    {
+        var svc = _svc;
+        if (svc is null || !svc.Api.IsSignedIn) return NotSignedIn<JsonElement>();
+        var result = await svc.Api.AddLateReasonAsync(reason);
+        if (result.Ok) _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        return result;
+    }
+
+    private const string GuideFile = "guide.json";
+
+    /// <summary>
+    /// The Instructions page from the server (3.2), or the copy an earlier answer left when it
+    /// can't be asked. <c>Fresh</c> false: that copy, or nothing yet.
+    /// </summary>
+    public async Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync()
+    {
+        var path = Path.Combine(_platform.Paths.DataDir, GuideFile);
+        var svc = _svc;
+        if (svc is not null && svc.Api.IsSignedIn)
+        {
+            var result = await svc.Api.GetGuideAsync();
+            if (result.Ok && result.Data is { } guide)
+            {
+                try { AtomicFile.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(guide, Json.Options)); }
+                catch (Exception ex) { _log.Warn("guide", "could not keep the guide on disk", ex); }
+                return (guide, true);
+            }
+        }
+        try
+        {
+            if (File.Exists(path)) return (JsonSerializer.Deserialize<StaffGuide>(File.ReadAllBytes(path), Json.Options), false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("guide", "the kept guide could not be read", ex);
+        }
+        return (null, false);
+    }
+
+    private static ApiResult<T> NotSignedIn<T>() => new() { Outcome = ApiOutcome.Rejected, Message = "Sign in first." };
+
+    /// <summary>The person's own year (GET /calendar/people/:id/year), as My calendar shows it.</summary>
+    public async Task<ApiResult<CalendarYear>> GetCalendarAsync(int year)
+    {
+        var svc = _svc;
+        if (svc?.Api.CurrentUser is not { } user) return NotSignedIn<CalendarYear>();
+        var result = await svc.Api.GetPersonYearAsync(user.Id, year);
+        return result.Ok && result.Data is { } data
+            ? result.As(CalendarYear.From(data, BusinessDate(_clock.UtcNow)))
+            : result.As<CalendarYear>();
+    }
+
+    /// <summary>Balances, comp off, requests and the policy (3.4, 3.5).</summary>
+    public async Task<ApiResult<MyLeave>> GetMyLeaveAsync() =>
+        _svc is { } svc ? await svc.Api.GetMyLeaveAsync() : NotSignedIn<MyLeave>();
+
+    /// <summary>What a request would charge, or the first thing that stops it. Nothing is made.</summary>
+    public async Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body) =>
+        _svc is { } svc ? await svc.Api.PreviewLeaveAsync(body) : NotSignedIn<LeavePreview>();
+
+    public async Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body)
+    {
+        var svc = _svc;
+        if (svc is null) return NotSignedIn<LeaveRequest>();
+        var result = await svc.Api.RequestLeaveAsync(body);
+        if (result.Ok)
+        {
+            RaiseLeaveChanged();
+            _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        }
+        return result;
+    }
+
+    public async Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId)
+    {
+        var svc = _svc;
+        if (svc is null) return NotSignedIn<LeaveRequest>();
+        var result = await svc.Api.CancelLeaveAsync(requestId);
+        if (result.Ok)
+        {
+            RaiseLeaveChanged();
+            _ = SafeAsync("day", () => DayCheckAsync(greet: false));
+        }
+        return result;
     }
 
     /// <summary>
@@ -2082,7 +2258,7 @@ public sealed class AgentHost : IDisposable
     {
         // Not within hours of a day ending (after a night shift, or End Day after
         // midnight, sitting on is not a new day).
-        if (State != AgentState.NotStarted || RecentlyEnded(out _))
+        if (State != AgentState.NotStarted || RecentlyEnded(out _) || !MayNudge(Workday))
         {
             lock (_gate) _deskNudge.Reset();
             return;
@@ -2764,6 +2940,7 @@ public sealed class AgentHost : IDisposable
         _enrollment = null;
         _dayKnown = false;
         _greetedDate = null;
+        _biometricRefused = false;
         // A shared computer stays set up for the next person: the app starts with Windows.
         if (!keepAutostart)
         {
@@ -2776,6 +2953,7 @@ public sealed class AgentHost : IDisposable
     private async Task OnSessionLostAsync(string reason)
     {
         _handover.Reset();
+        _biometricRefused = false;
         Interlocked.Increment(ref _sessionGen);
         StopTracking();
         StopNudges();

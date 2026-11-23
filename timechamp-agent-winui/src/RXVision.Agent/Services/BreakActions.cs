@@ -58,6 +58,9 @@ public sealed class BreakActions
 
     private bool IsSuperAdmin => _agent.User?.Role == "SUPER_ADMIN";
 
+    /// <summary>Where the flows ask their questions (the Leave page asks there too).</summary>
+    public IDialogService Dialogs => _dialogs;
+
     /// <summary>An Admin or Super Admin may quit (with a key); staff and managers cannot quit at all (SPEC 2.8).</summary>
     public bool CanQuit => _agent.User?.Role is "ADMIN" or "SUPER_ADMIN";
 
@@ -662,8 +665,108 @@ public sealed class BreakActions
         RunFlowAsync(async () =>
         {
             if (_agent.State is not (AgentState.NotStarted or AgentState.DayEnded)) return;
-            var outcome = await Busy(_agent.StartDayAsync);
-            if (outcome is StartDayOutcome.Refused refused) await _dialogs.AlertAsync("Couldn't start your day", refused.Message);
+            // A full day of leave (3.4): asked first, it would count as an extra day.
+            if (_agent.State == AgentState.NotStarted && _agent.Workday?.Leave is { Full: true } leave
+                && !await _dialogs.ConfirmAsync("You're on leave today",
+                    $"You are on leave today ({leave.Categories}). Start Day anyway? It will count as an extra day.",
+                    "Start Day", "Cancel"))
+            {
+                return;
+            }
+            // Past the grace (3.2): the note, with the quick answers, then the press again.
+            // Cancel leaves the day not started (nothing was recorded).
+            string? reason = null;
+            string? error = null;
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var sending = reason;
+                var outcome = await Busy(() => _agent.StartDayAsync(sending));
+                switch (outcome)
+                {
+                    case StartDayOutcome.NeedsLateReason needs:
+                        var dialog = LateStartDialog(needs);
+                        dialog.Text = reason ?? "";
+                        dialog.Error = reason is null ? error : needs.Message;
+                        if (!await _dialogs.ShowAsync(dialog)) return;
+                        reason = dialog.Reason;
+                        continue;
+                    case StartDayOutcome.Refused { Code: "REASON_TOO_LONG" } tooLong:
+                        error = tooLong.Message;
+                        reason = null;
+                        continue;
+                    case StartDayOutcome.Refused { Code: "ATTENDANCE_BY_BIOMETRIC" } biometric:
+                        await _dialogs.AlertAsync("Your attendance", biometric.Message);
+                        return;
+                    case StartDayOutcome.Refused refused:
+                        await _dialogs.AlertAsync("Couldn't start your day", refused.Message);
+                        return;
+                    default:
+                        return;
+                }
+            }
+        });
+
+    /// <summary>Past the grace: why, with the server's words and the organisation's quick answers (3.2).</summary>
+    public ReasonDialogViewModel LateStartDialog(StartDayOutcome.NeedsLateReason needs) =>
+        new("Add a short note", needs.Message, needs.MinChars, needs.Presets)
+        {
+            TagText = needs.ShiftStart is null ? null : "Your shift start",
+            TagTone = Tone.Neutral,
+            TagDetail = needs.ShiftStart is { } start ? _agent.BusinessTime(start) : null,
+            Label = "What came up?",
+            Placeholder = "For example: a morning appointment ran over",
+            Hint = $"Required. {needs.MinChars} characters or more, or pick a quick answer.",
+            PrimaryText = "Start day",
+            CancelText = "Cancel",
+            PresetsPassAnyLength = true,
+        };
+
+    /// <summary>"Add a note": a late start made by another computer or an older agent still wants its note (lateStart.needsReason).</summary>
+    public Task AddLateReasonAsync() =>
+        RunFlowAsync(async () =>
+        {
+            if (_agent.Workday?.LateStart is not { NeedsReason: true } late) return;
+            var minChars = _agent.Workday?.Settings.ReasonMinChars ?? 10;
+            var text = "";
+            string? error = null;
+            for (var attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var dialog = new ReasonDialogViewModel("Add a short note",
+                    $"Your day started {Fmt.Minutes(late.Minutes)} after your shift start. Add a short note for {Approver}.",
+                    minChars, _agent.Presets(PresetKinds.LateDayStart))
+                {
+                    Label = "What came up?",
+                    Placeholder = "For example: a morning appointment ran over",
+                    Hint = $"Required. {minChars} characters or more, or pick a quick answer.",
+                    PrimaryText = "Add note",
+                    Text = text,
+                    Error = error,
+                    PresetsPassAnyLength = true,
+                };
+                if (!await _dialogs.ShowAsync(dialog)) return;
+                text = dialog.Reason;
+                var result = await Busy(() => _agent.AddLateReasonAsync(text));
+                if (result.Ok)
+                {
+                    // Until the day is read again, the banner goes.
+                    late.NeedsReason = false;
+                    late.Reason = text;
+                    return;
+                }
+                if (result.Transient)
+                {
+                    error = "Can't reach RX Vision, so the note isn't saved. Try again.";
+                    continue;
+                }
+                if (result.Code is "REASON_REQUIRED" or "REASON_TOO_LONG")
+                {
+                    if (result.DetailInt("minChars") is { } min) minChars = Math.Max(minChars, min);
+                    error = result.Message;
+                    continue;
+                }
+                await _dialogs.AlertAsync("Couldn't add the note", result.Message ?? "Try again in a moment.");
+                return;
+            }
         });
 
     /// <summary>

@@ -13,8 +13,68 @@ public abstract record StartDayOutcome
     /// with the time it was made (<paramref name="PressedAt"/>, server clock), so it is never lost.
     /// </summary>
     public sealed record Pending(DateTimeOffset PressedAt, string Message) : StartDayOutcome;
+    /// <summary>
+    /// A first start past the shift start plus the grace (3.2): ask why, with the quick
+    /// answers, and press Start Day again with the reason. Nothing was recorded. A preset
+    /// passes whatever its length.
+    /// </summary>
+    public sealed record NeedsLateReason(int MinutesLate, DateTimeOffset? ShiftStart, int MinChars, int MaxChars, IReadOnlyList<string> Presets, string Message) : StartDayOutcome;
     /// <summary>The server refused. Show the message.</summary>
     public sealed record Refused(string Code, string Message) : StartDayOutcome;
+}
+
+/// <summary>
+/// The late start's note (3.2). The 4.0 agent records Start Day at once (journalled), so it
+/// asks before recording when the day it knows says the start is late; the server's own
+/// 422 LATE_REASON_REQUIRED (a day it judges differently) asks the same way.
+/// </summary>
+public static class LateStartRule
+{
+    public const string RequiredCode = "LATE_REASON_REQUIRED";
+    /// <summary>The longest note the server keeps.</summary>
+    public const int MaxChars = 500;
+
+    /// <summary>Roles nobody approves: never asked why their day started late (4.0).</summary>
+    public static bool IsExempt(string? role) => role is "SUPER_ADMIN" or "SUPER_MANAGER" or "ADMIN";
+
+    /// <summary>The server's 422 LATE_REASON_REQUIRED as the question to ask, else null.</summary>
+    public static StartDayOutcome.NeedsLateReason? FromRefusal<T>(ApiResult<T> result)
+    {
+        if (result.Code != RequiredCode) return null;
+        return new StartDayOutcome.NeedsLateReason(
+            Math.Max(0, result.DetailInt("minutesLate") ?? 0),
+            result.DetailTime("shiftStart"),
+            Math.Clamp(result.DetailInt("minChars") ?? 10, 1, MaxChars),
+            Math.Clamp(result.DetailInt("maxChars") ?? MaxChars, 1, MaxChars),
+            result.Detail<List<string>>("presets") ?? new List<string>(),
+            result.Message ?? "Add a short note for your manager.");
+    }
+
+    /// <summary>
+    /// Whether a first Start Day now is late by the day as known (the organisation's grace and
+    /// setting, the shift, leave at the start of the day), as the server judges it; null: no note needed.
+    /// </summary>
+    /// <param name="day">Today as last read from the server.</param>
+    /// <param name="today">Today's business date ("yyyy-MM-dd").</param>
+    /// <param name="offset">The business time zone's offset now.</param>
+    public static StartDayOutcome.NeedsLateReason? Check(WorkdayToday? day, string? role, DateTimeOffset now, string today, TimeSpan offset,
+        IReadOnlyList<string> presets, Func<DateTimeOffset, string> format)
+    {
+        if (day is null || day.Date != today || !day.IsNotStarted || day.Sessions.Count > 0) return null;
+        if (!day.Settings.RequireLateStartReason || IsExempt(role) || day.IsBiometric) return null;
+        if (day.IsWorkingDay == false || day.DayOff is not null || day.Leave is { Full: true }) return null;
+        DateTimeOffset mark;
+        if (day.WorkingFrom is { } from) mark = from;
+        else if (day.Shift is { } shift && TimeSpan.TryParseExact(shift.Start, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var start)
+                 && DateTime.TryParseExact(day.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date))
+            mark = new DateTimeOffset(date + start, offset);
+        else return null;
+        var minutes = (int)Math.Floor((now - mark).TotalMinutes);
+        if (minutes <= day.Settings.LateStartGraceMin) return null;
+        var minChars = Math.Clamp(day.Settings.ReasonMinChars, 1, MaxChars);
+        return new StartDayOutcome.NeedsLateReason(minutes, mark, minChars, MaxChars, presets,
+            $"You're starting {minutes} minutes after your shift start ({format(mark)}). Say why (at least {minChars} characters).");
+    }
 }
 
 /// <summary>Result of End Day, with the server's two gates as their own answers.</summary>

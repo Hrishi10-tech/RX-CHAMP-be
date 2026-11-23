@@ -48,6 +48,9 @@
     <DataTemplate DataType="dlg:ProgressDialogViewModel">
       <views:ProgressDialogView />
     </DataTemplate>
+    <DataTemplate DataType="dlg:LeaveDialogViewModel">
+      <views:LeaveDialogView />
+    </DataTemplate>
   </Application.DataTemplates>
 
 </Application>

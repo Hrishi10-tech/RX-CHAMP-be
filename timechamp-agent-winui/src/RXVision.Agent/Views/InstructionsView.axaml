@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="RXVision.Agent.Views.InstructionsView">
+             xmlns:vm="using:RXVision.Agent.ViewModels"
+             x:Class="RXVision.Agent.Views.InstructionsView"
+             x:DataType="vm:InstructionsViewModel">
   <!-- Instructions (SPEC 8.3): a visual guide, text and simple diagrams drawn here (no images). -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Spacing="14">
@@ -294,6 +296,29 @@
           </StackPanel>
         </Border>
       </Grid>
+
+      <!-- 3.2: the organisation's own guide (GET /workday/guide), with its numbers filled in. -->
+      <Border Classes="card" Padding="20,16" CornerRadius="20">
+        <StackPanel Spacing="3">
+          <TextBlock Classes="h2" Text="Your organisation's rules" />
+          <TextBlock Classes="muted" TextWrapping="Wrap" Text="The same points with your organisation's own times and limits." />
+        </StackPanel>
+      </Border>
+      <Border Classes="note" IsVisible="{Binding HasNote}">
+        <TextBlock Text="{Binding Note}" TextWrapping="Wrap" FontSize="12.5" />
+      </Border>
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:GuideRow">
+            <Border Classes="guide" Margin="0,0,0,12">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="title" FontSize="14" Text="{Binding Heading}" TextWrapping="Wrap" />
+                <TextBlock Classes="body" FontSize="13" Text="{Binding Body}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

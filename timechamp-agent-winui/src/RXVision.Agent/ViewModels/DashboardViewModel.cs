@@ -15,7 +15,7 @@ namespace RXVision.Agent.ViewModels;
 public enum SyncTone { Ok, Pending, Off }
 
 /// <summary>The pages of the main window (the hamburger menu, SPEC 8.1).</summary>
-public enum DashboardPage { Dashboard, History, Instructions }
+public enum DashboardPage { Dashboard, History, Leave, Calendar, Instructions }
 
 /// <summary>Someone in the running meeting, as a small round avatar.</summary>
 public sealed record MeetingPersonViewModel(string Initials, string Name);
@@ -51,6 +51,9 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         Chat = new ChatViewModel(agent, log);
         History = new HistoryViewModel(agent, log);
+        Leave = new LeaveViewModel(agent, actions.Dialogs, log);
+        Calendar = new CalendarViewModel(agent, log);
+        Instructions = new InstructionsViewModel(agent, log);
         _actions.BusyChanged += () => IsBusy = _actions.IsBusy;
     }
 
@@ -62,6 +65,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     public TodayViewModel Today { get; } = new();
     public ChatViewModel Chat { get; }
     public HistoryViewModel History { get; }
+    /// <summary>Leave and comp off (3.4, 3.5).</summary>
+    public LeaveViewModel Leave { get; }
+    /// <summary>My calendar (3.2, the 4.0 organisation calendar).</summary>
+    public CalendarViewModel Calendar { get; }
+    /// <summary>The organisation's guide under the Instructions page (3.2).</summary>
+    public InstructionsViewModel Instructions { get; }
     public ObservableCollection<BreakRowViewModel> Rows { get; } = new();
     public ObservableCollection<MeetingPersonViewModel> MeetingPeople { get; } = new();
 
@@ -83,11 +92,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _syncToolTip = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDashboardPage), nameof(IsHistoryPage), nameof(IsInstructionsPage))]
+    [NotifyPropertyChangedFor(nameof(IsDashboardPage), nameof(IsHistoryPage), nameof(IsLeavePage), nameof(IsCalendarPage), nameof(IsInstructionsPage))]
     private DashboardPage _page = DashboardPage.Dashboard;
 
     public bool IsDashboardPage => Page == DashboardPage.Dashboard;
     public bool IsHistoryPage => Page == DashboardPage.History;
+    public bool IsLeavePage => Page == DashboardPage.Leave;
+    public bool IsCalendarPage => Page == DashboardPage.Calendar;
     public bool IsInstructionsPage => Page == DashboardPage.Instructions;
 
     /// <summary>The hamburger menu is open.</summary>
@@ -119,10 +130,28 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ShowInstructions()
+    private Task ShowLeaveAsync()
+    {
+        IsMenuOpen = false;
+        Page = DashboardPage.Leave;
+        return Leave.LoadAsync();
+    }
+
+    [RelayCommand]
+    private Task ShowCalendarAsync()
+    {
+        IsMenuOpen = false;
+        Page = DashboardPage.Calendar;
+        return Calendar.OpenAsync();
+    }
+
+    /// <summary>Instructions: how the agent works (4.0), then the organisation's guide from the server (3.2).</summary>
+    [RelayCommand]
+    private Task ShowInstructionsAsync()
     {
         IsMenuOpen = false;
         Page = DashboardPage.Instructions;
+        return Instructions.LoadAsync();
     }
 
     [RelayCommand]
@@ -169,8 +198,43 @@ public sealed partial class DashboardViewModel : ObservableObject
     public bool HasHeldEndDay => HeldEndDayText is not null;
     public bool HasUpdate => UpdateText is not null;
     public double TilesOpacity => IsDayEnded ? 0.45 : 1.0;
-    /// <summary>The four tiles: while the day runs (not on a break or in a meeting) and after it ended.</summary>
-    public bool ShowTiles => !IsNotStarted && !IsOnBreak && !IsInMeeting;
+    /// <summary>The four tiles: while the day runs (not on a break or in a meeting) and after it ended; never for biometric staff.</summary>
+    public bool ShowTiles => !IsNotStarted && !IsOnBreak && !IsInMeeting && !IsBiometric;
+
+    // ---- What the day view says about today (3.2 to 3.5) -------------------------------------
+
+    /// <summary>"Today is Diwali" / "Today is a day off" (3.2), or null on a working day.</summary>
+    [ObservableProperty] private string? _dayOffText;
+    /// <summary>"On leave today · Half day (first half) · CL/SL" (3.4), or null.</summary>
+    [ObservableProperty] private string? _leaveText;
+    /// <summary>"Work from home (full day)", from wfh.label on the day view (3.5), or null.</summary>
+    [ObservableProperty] private string? _wfhText;
+
+    /// <summary>The late start still wants its note (a day started by another computer or an older agent): the banner's words, or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLateReason))]
+    private string? _lateReasonText;
+
+    public bool HasLateReason => LateReasonText is not null;
+
+    /// <summary>The biometric device takes this person's attendance (3.5): no day, break or meeting buttons.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDayButtons), nameof(ShowBreakTiles), nameof(BiometricText), nameof(ShowBreakList), nameof(ShowTiles))]
+    private bool _isBiometric;
+
+    /// <summary>What a biometric person reads instead of Start Day.</summary>
+    public string? BiometricText => IsBiometric ? BiometricLine : null;
+    public const string BiometricLine = "Your attendance is recorded by the biometric device: your day starts with your first punch there.";
+    /// <summary>A biometric day closed without a check-out punch (3.5), or null.</summary>
+    [ObservableProperty] private string? _checkoutMissingText;
+    public bool ShowDayButtons => !IsBiometric;
+    public bool ShowBreakTiles => !IsBiometric;
+    /// <summary>Breaks are not tracked for biometric staff, whatever the shift says.</summary>
+    public bool ShowBreakList => !IsBiometric;
+
+    /// <summary>"Add a note" on the late start's banner.</summary>
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private Task AddLateReasonAsync() => _actions.AddLateReasonAsync();
 
     // ---- Not started ------------------------------------------------------------------------
 
@@ -212,7 +276,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(BackToWorkCommand), nameof(EndBreakCommand), nameof(PauseBreakCommand),
-        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand))]
+        nameof(EndDayCommand), nameof(StartDayCommand), nameof(EndMeetingCommand), nameof(AddLateReasonCommand))]
     private bool _isBusy;
 
     partial void OnIsBusyChanged(bool value)
@@ -257,11 +321,11 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(CanEndDay))]
     private Task EndDayAsync() => _actions.EndDayAsync();
-    private bool CanEndDay() => IsRunning && !IsBusy && _agent.State == AgentState.Running;
+    private bool CanEndDay() => IsRunning && !IsBusy && !IsBiometric && _agent.State == AgentState.Running;
 
     [RelayCommand(CanExecute = nameof(CanStartDay))]
     private Task StartDayAsync() => _actions.StartDayAsync();
-    private bool CanStartDay() => (IsDayEnded || IsNotStarted) && !IsBusy;
+    private bool CanStartDay() => (IsDayEnded || IsNotStarted) && !IsBusy && !IsBiometric;
 
     /// <summary>The update banner's button: "Download", then "Show file" once it is saved.</summary>
     [ObservableProperty] private string _downloadLabel = "Download";
@@ -417,6 +481,8 @@ public sealed partial class DashboardViewModel : ObservableObject
         var allowance = _agent.Allowance;
         Today.UpdateAllowance(allowance);
         UpdatePaid(state, workday, focus, allowance);
+        IsBiometric = _agent.IsBiometric;
+        UpdateDayNotes(workday);
         UpdateNotStarted(state, workday, panel, now);
         UpdateEnded(state, workday, focus, now);
         UpdateTiles(state, panel, focus);
@@ -478,6 +544,24 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         var today = state is AgentState.Running or AgentState.DayEnded;
         Today.UpdatePaid(today ? focus + allowance.PaidUsedSec : null, today ? workday?.Focus.UnverifiedSec ?? 0 : 0);
+    }
+
+    /// <summary>What the day view says about today: off, on leave, at home, and a late start's missing note.</summary>
+    private void UpdateDayNotes(WorkdayToday? workday)
+    {
+        DayOffText = workday?.DayOff is { } off
+            ? string.IsNullOrWhiteSpace(off.Name) ? "Today is a day off" : $"Today is {off.Name!.Trim()}"
+            : null;
+        LeaveText = workday?.Leave is { } leave
+            ? string.IsNullOrWhiteSpace(leave.Categories) ? $"On leave today · {leave.Label}" : $"On leave today · {leave.Label} · {leave.Categories}"
+            : null;
+        WfhText = workday?.Wfh is { Label: { Length: > 0 } wfh } ? $"Work from home ({Fmt.Lower(wfh)})" : null;
+        LateReasonText = workday?.LateStart is { NeedsReason: true } late
+            ? $"Your day started {Fmt.Minutes(late.Minutes)} after your shift start. Add a short note for {_actions.Approver}."
+            : null;
+        CheckoutMissingText = IsBiometric && workday?.CheckoutMissing == true
+            ? "Your day was closed with no check-out punch. Ask your manager if the time is wrong."
+            : null;
     }
 
     private void UpdateNotStarted(AgentState state, WorkdayToday? workday, BreakPanel panel, DateTimeOffset now)
@@ -633,7 +717,8 @@ public sealed partial class DashboardViewModel : ObservableObject
         else FocusTile.Set(total, "Working now", TileLook.Active, false);
 
         var meetingSec = _agent.Totals.MeetingSec;
-        if (!running) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", ended, TileLook.Disabled, false);
+        if (IsBiometric) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Your day is on the biometric device", TileLook.Disabled, false);
+        else if (!running) MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", ended, TileLook.Disabled, false);
         else MeetingTile.Set($"{Fmt.Duration(meetingSec)} today", "Start one, or log an earlier one", TileLook.Idle, true);
     }
 
@@ -719,11 +804,20 @@ public sealed partial class DashboardViewModel : ObservableObject
         if (IsHistoryPage) _ = History.LoadAsync();
     }
 
+    /// <summary>The person's leave changed (a decision, comp off): read it again if its page is open.</summary>
+    public void OnLeaveChanged()
+    {
+        if (IsLeavePage) _ = Leave.LoadAsync();
+    }
+
     /// <summary>Clears what belonged to the person who signed out.</summary>
     public void Reset()
     {
         Overlay?.Cancel();
         Chat.Reset();
+        Leave.Reset();
+        Calendar.Reset();
+        Instructions.Reset();
         Rows.Clear();
         MeetingPeople.Clear();
         _peopleKey = "";

@@ -115,6 +115,16 @@ public static class Fmt
     /// <summary>"1 approval", "3 approvals".</summary>
     public static string Count(int count, string one, string many) => count == 1 ? $"1 {one}" : $"{count} {many}";
 
+    /// <summary>Days of leave as a number: "10.5", "12", "−1".</summary>
+    public static string Days(double days)
+    {
+        var text = Math.Abs(days).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        return days < 0 ? Minus + text : text;
+    }
+
+    /// <summary>"1 day", "2.5 days".</summary>
+    public static string DaysWord(double days) => $"{Days(days)} {(Math.Abs(days) == 1 ? "day" : "days")}";
+
     /// <summary>"Morning break" becomes "morning break" in the middle of a sentence.</summary>
     public static string Lower(string label) =>
         string.IsNullOrEmpty(label) ? label : char.ToLowerInvariant(label[0]) + label[1..];

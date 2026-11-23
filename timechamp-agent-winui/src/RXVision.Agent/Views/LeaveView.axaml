@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RXVision.Agent.ViewModels"
+             x:Class="RXVision.Agent.Views.LeaveView"
+             x:DataType="vm:LeaveViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="14">
+      <Border Classes="card" Padding="20,16" CornerRadius="20">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="h2" Text="Leave" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="primary" Content="Apply for leave" Command="{Binding ApplyCommand}" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Balances}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LeaveBalanceRow">
+                <Grid ColumnDefinitions="90,Auto,*" Margin="0,0,0,6">
+                  <TextBlock Classes="title" Text="{Binding Label}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="num" FontSize="13" Text="{Binding Left}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Classes="muted" Margin="10,0,0,0" Text="{Binding Waiting}" IsVisible="{Binding HasWaiting}" VerticalAlignment="Center" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding HasNextLeave}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Width="14" Height="14" Foreground="{StaticResource Brush.Muted}" />
+            <TextBlock Classes="muted" FontSize="12.5" Text="{Binding NextLeaveText}" VerticalAlignment="Center" />
+          </StackPanel>
+          <TextBlock Classes="small" Text="{Binding CompOffExpiryText}" IsVisible="{Binding HasCompOffExpiry}" />
+        </StackPanel>
+      </Border>
+      <Border Classes="note" IsVisible="{Binding HasProblem}">
+        <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" FontSize="12.5" />
+      </Border>
+      <Border Classes="card" Padding="20,14">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="title" Text="My requests" />
+          <TextBlock Classes="muted" Text="No requests this year." IsVisible="{Binding ShowNoRequests}" />
+          <ItemsControl ItemsSource="{Binding Requests}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:LeaveRequestRow">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                  <StackPanel Spacing="2">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Classes="title" Text="{Binding Span}" />
+                      <TextBlock Classes="muted" Text="{Binding Amount}" />
+                      <TextBlock Classes="muted" Text="{Binding Pool}" />
+                    </StackPanel>
+                    <TextBlock Classes="small" Text="{Binding Status}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="soft" Content="{Binding CancelText}" Command="{Binding CancelCommand}"
+                          IsVisible="{Binding CanCancel}" VerticalAlignment="Center" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

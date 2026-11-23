@@ -68,6 +68,12 @@ public interface IAgent
     /// <summary>The away settings for this person (null: none yet).</summary>
     IdleConfig? IdleConfig { get; }
 
+    // ---- 3.2 to 3.5 ----
+    /// <summary>The biometric device takes this person's attendance: no day, break or meeting buttons.</summary>
+    bool IsBiometric { get; }
+    /// <summary>The organisation's quick answers for a comment box (<see cref="PresetKinds"/>); empty when none.</summary>
+    IReadOnlyList<string> Presets(string kind);
+
     /// <summary>"9:05 AM" (12-hour) of an instant in the business time zone (the one the schedule's times are in).</summary>
     string BusinessTime(DateTimeOffset instant);
 
@@ -102,6 +108,8 @@ public interface IAgent
     event Action? AwayChanged;
     /// <summary>History may have changed (a decision, the calendar).</summary>
     event Action? HistoryChanged;
+    /// <summary>The person's leave may have changed (a decision, comp off, a request made here).</summary>
+    event Action? LeaveChanged;
     event Action<UpdateOffer>? UpdateAvailable;
     event Action? ExitRequested;
     event Action<string>? SignedOutUnexpectedly;
@@ -114,7 +122,18 @@ public interface IAgent
     Task<string?> SignInAsync(string email, string password, string? server);
     Task<string?> SignInWithCodeAsync(string code);
     Task AcknowledgeNoticeAsync();
-    Task<StartDayOutcome> StartDayAsync();
+    /// <param name="lateReason">The note for a late first start (after <see cref="StartDayOutcome.NeedsLateReason"/>).</param>
+    Task<StartDayOutcome> StartDayAsync(string? lateReason = null);
+    /// <summary>"Add a note" for a late start made without one.</summary>
+    Task<ApiResult<System.Text.Json.JsonElement>> AddLateReasonAsync(string reason);
+    /// <summary>The staff guide, and whether it is fresh from the server (false: the last saved copy, or none).</summary>
+    Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync();
+    /// <summary>The person's own year for My calendar.</summary>
+    Task<ApiResult<CalendarYear>> GetCalendarAsync(int year);
+    Task<ApiResult<MyLeave>> GetMyLeaveAsync();
+    Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body);
+    Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body);
+    Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId);
     /// <param name="at">A held End Day's time: the day ends then. Null: now.</param>
     Task<EndDayOutcome> EndDayAsync(IReadOnlyList<SkipComment>? comments, DateTimeOffset? at = null);
     Task<StartOutcome> TakeBreakAsync(string kind, string? reason);

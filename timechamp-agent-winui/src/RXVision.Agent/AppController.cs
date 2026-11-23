@@ -105,6 +105,7 @@ public sealed class AppController : IDisposable
         _agent.EndDayHeld += OnEndDayHeld;
         _agent.AwayChanged += UpdateAway;
         _agent.HistoryChanged += _dashboardVm.OnHistoryChanged;
+        _agent.LeaveChanged += _dashboardVm.OnLeaveChanged;
         _actions.Cue += OnCue;
         _agent.ChatMessageReceived += m => _ = OnChatMessageAsync(m);
         _agent.ChatUnreadChanged += _ => _bubbleVm.Update(_agent);
@@ -270,7 +271,7 @@ public sealed class AppController : IDisposable
     private void UpdateMenu()
     {
         var panel = _agent.BreakPanel;
-        _menu.Update(MenuState.For(_agent.State, _agent.Presence.Status, panel.Active is not null, _actions.CanQuit));
+        _menu.Update(MenuState.For(_agent.State, _agent.Presence.Status, panel.Active is not null, _actions.CanQuit, _agent.IsBiometric));
     }
 
     // ---- The clock --------------------------------------------------------------------------
@@ -720,7 +721,13 @@ public sealed class AppController : IDisposable
             "BREAK_DECIDED" => (ToastKind.BreakDecision, "Break update"),
             "MEETING_DECIDED" => (ToastKind.BreakDecision, "Meeting update"),
             "BREAK_APPROVAL_REQUESTED" or "SKIP_REQUESTED" or "AUTO_SKIP_REQUESTED"
-                or "SKIP_COMMENT_ADDED" or "MEETING_REQUESTED" => (ToastKind.Approval, "Approval needed"),
+                or "SKIP_COMMENT_ADDED" or "MEETING_REQUESTED"
+                or "LEAVE_REQUESTED" or "LEAVE_CANCELLED" or "WFH_REQUESTED" or "WFH_CANCELLED" or "COMPOFF_CLAIMED" => (ToastKind.Approval, "Approval needed"),
+            "LATE_START_REASON" => (ToastKind.Info, "Your start today"),
+            "LEAVE_DECIDED" or "LEAVE_REVOKED" or "LEAVE_ADJUSTED" or "LEAVE_UPDATED" => (ToastKind.Info, "Leave"),
+            "COMPOFF_DECIDED" or "COMPOFF_CREDITED" or "COMPOFF_EXPIRING" => (ToastKind.Info, "Comp off"),
+            "WFH_DECIDED" or "WFH_REVOKED" => (ToastKind.Info, "Work from home"),
+            "BIOMETRIC_NO_CHECKOUT" => (ToastKind.Info, "Your attendance"),
             "BREAK_APPROVALS_DIGEST" => (ToastKind.Approval, "Approvals"),
             "APPROVALS_DUE_SOON" => (ToastKind.Approval, "Approvals due soon"),
             "APPROVALS_OVERDUE" => (ToastKind.Approval, "Approvals overdue"),

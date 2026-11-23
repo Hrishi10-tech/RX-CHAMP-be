@@ -398,8 +398,52 @@ public sealed class FakeAgent : IAgent
         return Task.FromResult(outcome);
     }
 
-    public Task<StartDayOutcome> StartDayAsync()
+    // ---- 3.2 to 3.5: the staff pages, presets, biometric staff ----
+    public bool IsBiometric { get; set; }
+    public Dictionary<string, List<string>> PresetLists { get; } = new();
+    public IReadOnlyList<string> Presets(string kind) => PresetLists.TryGetValue(kind, out var list) ? list : Array.Empty<string>();
+    public event Action? LeaveChanged;
+    public void RaiseLeave() => LeaveChanged?.Invoke();
+    /// <summary>The late note sent with each Start Day (null: none), in step with <see cref="StartDayCalls"/>.</summary>
+    public List<string?> StartDayReasons { get; } = new();
+    public List<string> LateReasons { get; } = new();
+    public ApiResult<System.Text.Json.JsonElement> LateReasonResult { get; set; } = ApiResult<System.Text.Json.JsonElement>.Success(default);
+    public (StaffGuide? Guide, bool Fresh) GuideResult { get; set; } = (null, false);
+    public Func<int, ApiResult<CalendarYear>> CalendarFor { get; set; } = _ => ApiResult<CalendarYear>.TransientFailure("offline");
+    public ApiResult<MyLeave> LeaveResult { get; set; } = ApiResult<MyLeave>.TransientFailure("offline");
+    public Func<LeaveRequestBody, ApiResult<LeavePreview>> PreviewFor { get; set; } = _ => ApiResult<LeavePreview>.Success(new LeavePreview { Ok = true });
+    public Queue<ApiResult<LeaveRequest>> LeaveResults { get; } = new();
+    public List<LeaveRequestBody> LeaveRequests { get; } = new();
+    public List<string> LeaveCancels { get; } = new();
+
+    public Task<ApiResult<System.Text.Json.JsonElement>> AddLateReasonAsync(string reason)
     {
+        LateReasons.Add(reason);
+        return Task.FromResult(LateReasonResult);
+    }
+
+    public Task<(StaffGuide? Guide, bool Fresh)> GetGuideAsync() => Task.FromResult(GuideResult);
+    public Task<ApiResult<CalendarYear>> GetCalendarAsync(int year) => Task.FromResult(CalendarFor(year));
+    public Task<ApiResult<MyLeave>> GetMyLeaveAsync() => Task.FromResult(LeaveResult);
+    public Task<ApiResult<LeavePreview>> PreviewLeaveAsync(LeaveRequestBody body) => Task.FromResult(PreviewFor(body));
+
+    public Task<ApiResult<LeaveRequest>> RequestLeaveAsync(LeaveRequestBody body)
+    {
+        LeaveRequests.Add(body);
+        return Task.FromResult(LeaveResults.Count > 0
+            ? LeaveResults.Dequeue()
+            : ApiResult<LeaveRequest>.Success(new LeaveRequest { Id = "l-new", Span = "Mon 9 Nov", Status = LeaveStatuses.Pending, WaitingFor = "Maya Reddy" }));
+    }
+
+    public Task<ApiResult<LeaveRequest>> CancelLeaveAsync(string requestId)
+    {
+        LeaveCancels.Add(requestId);
+        return Task.FromResult(ApiResult<LeaveRequest>.Success(new LeaveRequest { Id = requestId, Status = LeaveStatuses.Cancelled }));
+    }
+
+    public Task<StartDayOutcome> StartDayAsync(string? lateReason = null)
+    {
+        StartDayReasons.Add(lateReason);
         StartDayCalls++;
         var outcome = StartDayOutcomes.Count > 0 ? StartDayOutcomes.Dequeue() : new StartDayOutcome.Started(Days.Open(), false);
         if (outcome is StartDayOutcome.Started started)

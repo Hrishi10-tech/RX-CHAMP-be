@@ -99,12 +99,46 @@
               <TextBlock Text="{Binding EndedTitle}" FontSize="13.5" FontWeight="SemiBold" Foreground="#312E81" TextWrapping="Wrap" />
               <TextBlock Classes="muted" Text="{Binding EndedDetail}" TextWrapping="Wrap" />
             </StackPanel>
-            <Button Grid.Column="2" Classes="primary" Command="{Binding StartDayCommand}" VerticalAlignment="Center">
+            <Button Grid.Column="2" Classes="primary" Command="{Binding StartDayCommand}" VerticalAlignment="Center" IsVisible="{Binding ShowDayButtons}">
               <StackPanel Orientation="Horizontal" Spacing="7">
                 <PathIcon Classes="i" Data="{StaticResource Icon.Play}" Foreground="#FFFFFF" Width="14" Height="14" />
                 <TextBlock Text="Start Day" />
               </StackPanel>
             </Button>
+          </Grid>
+        </Border>
+
+        <!-- What the day view says about today (3.2 to 3.5): a day off, leave, work from home -->
+        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding DayOffText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding DayOffText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding LeaveText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding LeaveText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding WfhText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Home}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding WfhText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Classes="banner info" Margin="0,12,0,0" IsVisible="{Binding CheckoutMissingText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Foreground="{StaticResource Brush.Brand}" Width="18" Height="18" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding CheckoutMissingText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <!-- A late start still waiting for its note (3.2) -->
+        <Border Classes="banner warn" Margin="0,12,0,0" IsVisible="{Binding HasLateReason}">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding LateReasonText}" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Classes="primary" Margin="12,0,0,0" Content="Add a note" Command="{Binding AddLateReasonCommand}" VerticalAlignment="Center" />
           </Grid>
         </Border>
 
@@ -150,7 +184,15 @@
       <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsHistoryPage}">
         <views:HistoryView DataContext="{Binding History}" />
       </Panel>
-      <views:InstructionsView Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsInstructionsPage}" />
+      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsLeavePage}">
+        <views:LeaveView DataContext="{Binding Leave}" />
+      </Panel>
+      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsCalendarPage}">
+        <views:CalendarView DataContext="{Binding Calendar}" />
+      </Panel>
+      <Panel Grid.Row="2" Margin="22,12,22,16" IsVisible="{Binding IsInstructionsPage}">
+        <views:InstructionsView DataContext="{Binding Instructions}" />
+      </Panel>
 
       <!-- ===== Body ===== -->
       <Grid Grid.Row="2" Margin="22,12,22,16" ColumnDefinitions="352,*" IsVisible="{Binding IsDashboardPage}">
@@ -171,7 +213,7 @@
                       <TextBlock Classes="muted" FontSize="12.5" Text="{Binding ShiftLine}" VerticalAlignment="Center" />
                     </StackPanel>
                     <Button Classes="startday" Command="{Binding StartDayCommand}" Margin="0,6,0,0"
-                            AutomationProperties.Name="Start Day">
+                            IsVisible="{Binding ShowDayButtons}" AutomationProperties.Name="Start Day">
                       <StackPanel Orientation="Horizontal" Spacing="12">
                         <Border Width="34" Height="34" CornerRadius="17" Background="#33FFFFFF">
                           <PathIcon Classes="i" Data="{StaticResource Icon.Play}" Foreground="#FFFFFF" Width="16" Height="16" />
@@ -182,7 +224,10 @@
                         </StackPanel>
                       </StackPanel>
                     </Button>
-                    <TextBlock Classes="body" FontSize="12.5" Text="Nothing is recorded until you press Start Day." />
+                    <TextBlock Classes="body" FontSize="12.5" Text="Nothing is recorded until you press Start Day." IsVisible="{Binding ShowDayButtons}" />
+                    <Border Classes="note" IsVisible="{Binding IsBiometric}">
+                      <TextBlock Text="{Binding BiometricText}" TextWrapping="Wrap" FontSize="12.5" />
+                    </Border>
                     <Border Classes="note" IsVisible="{Binding DayCheckText, Converter={x:Static ObjectConverters.IsNotNull}}">
                       <TextBlock Text="{Binding DayCheckText}" TextWrapping="Wrap" FontSize="12.5" />
                     </Border>
@@ -285,7 +330,7 @@
               </Panel>
 
               <!-- Today's breaks -->
-              <Border Grid.Row="1" Classes="subcard" Margin="0,12,0,0">
+              <Border Grid.Row="1" Classes="subcard" Margin="0,12,0,0" IsVisible="{Binding ShowBreakList}">
                 <StackPanel Spacing="5">
                   <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,2">
                     <TextBlock Classes="title" Text="Today's breaks" VerticalAlignment="Center" />
@@ -339,7 +384,13 @@
               </Border>
 
               <!-- End day -->
-              <Button Grid.Row="3" Classes="endday" Command="{Binding EndDayCommand}" Margin="0,12,0,0" IsVisible="{Binding IsRunning}">
+              <Button Grid.Row="3" Classes="endday" Command="{Binding EndDayCommand}" Margin="0,12,0,0">
+                <Button.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="IsRunning" />
+                    <Binding Path="ShowDayButtons" />
+                  </MultiBinding>
+                </Button.IsVisible>
                 <StackPanel Orientation="Horizontal" Spacing="12">
                   <Border Width="30" Height="30" CornerRadius="15" Background="#33FFFFFF">
                     <PathIcon Classes="i" Data="{StaticResource Icon.Power}" Foreground="#FFFFFF" Width="16" Height="16" />
@@ -489,6 +540,18 @@
             <StackPanel Orientation="Horizontal" Spacing="11">
               <PathIcon Classes="i" Data="{StaticResource Icon.History}" Width="17" Height="17" />
               <TextBlock Text="History" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="menuitem" Classes.on="{Binding IsLeavePage}" Command="{Binding ShowLeaveCommand}" AutomationProperties.Name="Leave">
+            <StackPanel Orientation="Horizontal" Spacing="11">
+              <PathIcon Classes="i" Data="{StaticResource Icon.Coffee}" Width="17" Height="17" />
+              <TextBlock Text="Leave" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="menuitem" Classes.on="{Binding IsCalendarPage}" Command="{Binding ShowCalendarCommand}" AutomationProperties.Name="My calendar">
+            <StackPanel Orientation="Horizontal" Spacing="11">
+              <PathIcon Classes="i" Data="{StaticResource Icon.Calendar}" Width="17" Height="17" />
+              <TextBlock Text="My calendar" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="menuitem" Classes.on="{Binding IsInstructionsPage}" Command="{Binding ShowInstructionsCommand}" AutomationProperties.Name="Instructions">

@@ -6,6 +6,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
@@ -287,7 +288,17 @@ export class ApprovalsSlaJob extends GuardedJob {
           marked.push(...items.filter((i) => toldManagers.has(`${i.type}:${i.id}`)));
       }
     }
-    if (marked.length) await this.reader.markEscalated(unique(marked), now);
+    if (marked.length) {
+      const items = unique(marked);
+      await this.reader.markEscalated(items, now);
+      // The Super Manager gets neither notice, and her open lists say where each one stands.
+      for (const item of items) {
+        await this.events.publish(
+          ApprovalChangedEvent.eventName,
+          new ApprovalChangedEvent(item.type, item.id, 'UPDATED'),
+        );
+      }
+    }
     if (reminded.length || marked.length) {
       this.logger.log(`approvals: ${reminded.length} reminded, ${unique(marked).length} escalated`);
     }

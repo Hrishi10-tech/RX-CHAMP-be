@@ -206,10 +206,24 @@ export class PrismaWfhRepository implements WfhRepository {
       orderBy:
         f.order === 'SOONEST'
           ? [{ startDate: 'asc' }, { createdAt: 'asc' }]
-          : [{ createdAt: 'desc' }],
+          : f.order === 'DECIDED'
+            ? [{ decidedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }]
+            : [{ createdAt: 'desc' }],
       take: Math.min(1000, Math.max(1, f.limit ?? 200)),
     });
     return rows.map(toRequest);
+  }
+
+  async lockedMonths(companyIds: string[], months: string[]): Promise<Set<string>> {
+    const wantedMonths = [...new Set(months)];
+    const wantedOrgs = uuids([...new Set(companyIds.filter(Boolean))]);
+    if (!wantedMonths.length || !wantedOrgs.length) return new Set();
+    // 4.0: a month is locked per organisation.
+    const rows = await this.prisma.monthLock.findMany({
+      where: { month: { in: wantedMonths }, companyId: { in: wantedOrgs } },
+      select: { month: true, companyId: true },
+    });
+    return new Set(rows.map((r) => `${r.companyId}|${r.month}`));
   }
 
   async heldDaysOf(userIds: string[], from: string, to: string): Promise<HeldWfhDay[]> {

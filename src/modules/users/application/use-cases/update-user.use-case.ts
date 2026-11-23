@@ -7,7 +7,10 @@ import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { requireOrg } from '@shared/tenancy';
 import { User } from '../../domain/entities/user.entity';
 import { UserAccessService } from '../../domain/services/user-access.service';
-import { UserAccessChangedEvent } from '../../domain/events/user-access-changed.event';
+import {
+  FormerPlacement,
+  UserAccessChangedEvent,
+} from '../../domain/events/user-access-changed.event';
 import { UserMapper } from '../mappers/user.mapper';
 import { PublicUser } from '../user.types';
 import { USER_REPOSITORY, UserRepository } from '../../domain/repositories/user.repository';
@@ -95,12 +98,19 @@ export class UpdateUserUseCase {
     if (dto.designation !== undefined) target.setDesignation(dto.designation);
 
     let accessChanged = false;
+    let formerPlacement: FormerPlacement | undefined;
     if (placementAsked) {
       const before = {
         role: target.role,
         departmentId: target.departmentId,
         managed: target.managedDepartmentIds,
         grants: target.grants,
+      };
+      // 3.6: approvals that waited on these departments' managers are announced again.
+      formerPlacement = {
+        role: before.role,
+        departmentId: before.departmentId,
+        managedDepartmentIds: [...before.managed],
       };
       const placement = await resolvePlacement(
         this.departments,
@@ -146,7 +156,13 @@ export class UpdateUserUseCase {
     if (accessChanged) {
       await this.events.publish(
         UserAccessChangedEvent.eventName,
-        new UserAccessChangedEvent(target.id, ['ROLE'], new Date(), saved.isActive()),
+        new UserAccessChangedEvent(
+          target.id,
+          ['ROLE'],
+          new Date(),
+          saved.isActive(),
+          formerPlacement,
+        ),
       );
     }
     await this.audit.recordMany(audits);

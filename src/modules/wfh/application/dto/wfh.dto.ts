@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   Allow,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -104,6 +105,14 @@ export class ListWfhQueryDto {
   @Min(1)
   @Max(1000)
   limit?: number;
+
+  @ApiPropertyOptional({
+    enum: ['DECIDED'],
+    description: 'DECIDED: latest decision first, however old the request',
+  })
+  @IsOptional()
+  @IsIn(['DECIDED'])
+  order?: 'DECIDED';
 }
 
 export class WfhSummaryQueryDto {

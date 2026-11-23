@@ -22,7 +22,22 @@ export class UserAccessChangedEvent {
     public readonly at: Date,
     /** The account's state after the change, when known. */
     public readonly active?: boolean,
+    /**
+     * 4.0, a change of role or departments: where they stood until now, so whoever
+     * their approvals waited on, or who waited on them, can be told (3.6 sent the
+     * former manager instead; 4.0 routes by department).
+     */
+    public readonly formerPlacement?: FormerPlacement,
   ) {}
+}
+
+/** A person's role and departments before a change (4.0 approval routing reads these). */
+export interface FormerPlacement {
+  role: string;
+  /** The department they belonged to. */
+  departmentId: string | null;
+  /** The departments they managed (a Manager). */
+  managedDepartmentIds: string[];
 }
 
 /**

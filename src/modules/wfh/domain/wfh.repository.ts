@@ -36,7 +36,8 @@ export interface WfhRequestFilter {
   from?: string;
   to?: string;
   limit?: number;
-  order?: 'NEWEST' | 'SOONEST';
+  /** DECIDED: latest decision first, however old the request. */
+  order?: 'NEWEST' | 'SOONEST' | 'DECIDED';
 }
 
 /** A held day of a pending or approved request (other modules, overlap checks). */
@@ -84,6 +85,11 @@ export interface WfhTx {
 }
 
 export interface WfhRepository {
+  /**
+   * Which of these organisation-months are locked for payroll (4.0: per organisation),
+   * as `companyId|month`, for what a screen offers.
+   */
+  lockedMonths(companyIds: string[], months: string[]): Promise<Set<string>>;
   inUserLock<T>(userId: string, fn: (tx: WfhTx) => Promise<T>): Promise<T>;
   findRequest(id: string): Promise<WfhRequestRecord | null>;
   listRequests(filter: WfhRequestFilter): Promise<WfhRequestRecord[]>;

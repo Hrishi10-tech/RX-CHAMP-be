@@ -703,7 +703,14 @@ export class CompOffService {
   /** GET /leave/comp-off/claims: claims and credits in scope, waiting first. */
   async list(
     me: AuthenticatedUser,
-    q: { status?: string; userId?: string; companyId?: string; needsMe?: boolean; limit?: number },
+    q: {
+      status?: string;
+      userId?: string;
+      companyId?: string;
+      needsMe?: boolean;
+      limit?: number;
+      order?: 'DECIDED';
+    },
     now: Date,
   ) {
     const scope = await this.people.scopeIds(me, {
@@ -720,6 +727,7 @@ export class CompOffService {
       userIds: scope,
       statuses: statuses.length ? statuses : undefined,
       limit: q.limit ?? 300,
+      order: q.order,
     });
     const waiting = await this.waitingOnMe(me, rows);
     const items = await this.views(

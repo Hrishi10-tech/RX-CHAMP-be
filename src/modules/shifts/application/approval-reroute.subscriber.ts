@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { UserAccessChangedEvent } from '@modules/users/domain/events/user-access-changed.event';
 import {
@@ -86,6 +87,19 @@ export class ApprovalRerouteSubscriber implements OnModuleInit {
         })
       ) {
         moved += 1;
+        // 3.6, after the move (a read before it would still show the old route). A row
+        // written before 4.0 still names its approver, who is told by name; 4.0's
+        // former department managers are told by the approval sync (movedBy).
+        await this.bus.publish(
+          ApprovalChangedEvent.eventName,
+          new ApprovalChangedEvent(
+            'BREAK',
+            r.id,
+            'UPDATED',
+            undefined,
+            r.approverId ? [r.approverId] : [],
+          ),
+        );
         const updated = await this.records.findById(r.id);
         if (updated)
           await this.events.approvalRequested(

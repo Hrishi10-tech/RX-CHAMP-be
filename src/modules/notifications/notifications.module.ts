@@ -46,5 +46,6 @@ import { NotificationsGateway } from './presentation/notifications.gateway';
     MarkAllNotificationsReadUseCase,
     CountUnreadNotificationsUseCase,
   ],
+  exports: [NotificationsGateway],
 })
 export class NotificationsModule {}

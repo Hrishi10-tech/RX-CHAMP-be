@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ApprovalChangedEvent } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { AWAY_REPOSITORY, AwayRepository } from '../domain/away.repository';
 import { UserAccessChangedEvent } from '@modules/users/domain/events/user-access-changed.event';
@@ -81,6 +82,19 @@ export class MeetingRerouteSubscriber implements OnModuleInit {
         })
       ) {
         moved += 1;
+        // 3.6: new to whom it waits on now once it can be decided, after the move. A row
+        // written before 4.0 still names its approver, who is told by name; 4.0's
+        // former department managers are told by the approval sync (movedBy).
+        await this.bus.publish(
+          ApprovalChangedEvent.eventName,
+          new ApprovalChangedEvent(
+            'MEETING',
+            r.id,
+            r.endedAt ? 'CREATED' : 'UPDATED',
+            undefined,
+            r.approverId ? [r.approverId] : [],
+          ),
+        );
       }
     }
     return moved;

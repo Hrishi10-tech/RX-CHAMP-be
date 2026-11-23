@@ -71,6 +71,7 @@ export interface HealResult {
   healed: MeetingRecordRow[];
   /** Ones shorter than a minute, deleted. */
   discarded: number;
+  discardedIds: string[];
 }
 
 export interface MeetingDecision {

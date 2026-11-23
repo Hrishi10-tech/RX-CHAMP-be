@@ -268,3 +268,40 @@ describe('UpdateUserUseCase: the Super Manager and Super Manager accounts (3.3)'
     }
   });
 });
+
+describe('UpdateUserUseCase: where approvals waited (3.6 on 4.0)', () => {
+  const placementOf = (events: { publish: jest.Mock }) =>
+    (events.publish.mock.calls.at(-1)?.[1] as { formerPlacement?: unknown }).formerPlacement;
+
+  it('a move of department names the department the person left', async () => {
+    const { useCase, events } = setup();
+    await useCase.execute(admin(ORG_A), IDS.staffA1, { departmentId: DEPT_A2 });
+    expect(placementOf(events)).toEqual({
+      role: Role.USER,
+      departmentId: DEPT_A1,
+      managedDepartmentIds: [],
+    });
+  });
+
+  it('a Manager losing departments names the ones they managed', async () => {
+    const mgr = person({
+      id: '20000000-0000-0000-0000-0000000000a6',
+      role: Role.MANAGER,
+      departmentId: DEPT_A1,
+      managed: [DEPT_A1, DEPT_A2],
+    });
+    const { useCase, events } = setup([mgr]);
+    await useCase.execute(admin(ORG_A), mgr.id, { role: Role.USER });
+    expect(placementOf(events)).toEqual({
+      role: Role.MANAGER,
+      departmentId: DEPT_A1,
+      managedDepartmentIds: [DEPT_A1, DEPT_A2],
+    });
+  });
+
+  it('a rename announces nothing', async () => {
+    const { useCase, events } = setup();
+    await useCase.execute(admin(ORG_A), IDS.staffA1, { firstName: 'Janet' });
+    expect(events.publish).not.toHaveBeenCalled();
+  });
+});

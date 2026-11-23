@@ -7,6 +7,7 @@ import { AuthenticatedGateway } from '@shared/websocket/authenticated.gateway';
 import { SocketAccessService } from '@shared/websocket/socket-access.service';
 import { socketCors } from '@shared/websocket/socket-cors';
 import { membersRoom, userRoom } from '@shared/websocket/socket-rooms';
+import { ApprovalAction, ApprovalWhat } from '@shared/events/approval-changed.event';
 import { NotificationView } from '../application/notification.types';
 
 @WebSocketGateway({
@@ -48,5 +49,22 @@ export class NotificationsGateway extends AuthenticatedGateway implements OnGate
     this.server.to(userRoom(userId)).emit('notification', notification);
   }
 
-  /** The person's working day changed (3.4): their devices refresh it. */
+  /**
+   * An approval item changed (3.6): these people's devices refresh. `needsYou` marks
+   * those it is waiting on, so a phone can tell a new request of theirs from the rest.
+   * Sent to each person's own room only, so it never reaches another organisation.
+   */
+  emitApprovals(
+    userIds: string[],
+    change: {
+      what: ApprovalWhat;
+      id: string;
+      action: ApprovalAction;
+      needsYou: boolean;
+      at: string;
+    },
+  ): void {
+    if (!userIds.length) return;
+    this.server?.to(userIds.map(userRoom)).emit('approvals:changed', change);
+  }
 }

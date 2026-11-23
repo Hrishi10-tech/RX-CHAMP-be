@@ -6,6 +6,7 @@ import {
   NotFoundError,
   UnprocessableError,
 } from '@shared/exceptions/app.exception';
+import { ApprovalChange } from '@shared/events/approval-changed.event';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
@@ -552,7 +553,18 @@ export class SkipsService {
       date: record.date,
       comment: record.reason ?? '',
     });
-    await this.publish(recipients, NOTICE.SKIP_COMMENT_ADDED, copy.title, copy.body, record.userId);
+    await this.publish(
+      recipients,
+      NOTICE.SKIP_COMMENT_ADDED,
+      copy.title,
+      copy.body,
+      record.userId,
+      {
+        what: 'BREAK',
+        id: record.id,
+        action: 'UPDATED',
+      },
+    );
   }
 
   private async notify(
@@ -562,7 +574,11 @@ export class SkipsService {
     body: string,
   ): Promise<void> {
     const recipients = await this.breakEvents.recipientsFor(record);
-    await this.publish(recipients, type, title, body, record.userId);
+    await this.publish(recipients, type, title, body, record.userId, {
+      what: 'BREAK',
+      id: record.id,
+      action: 'CREATED',
+    });
   }
 
   private async publish(
@@ -571,12 +587,13 @@ export class SkipsService {
     title: string,
     body: string,
     fromUserId: string,
+    approval: ApprovalChange,
   ): Promise<void> {
     if (!recipients.length) return;
     try {
       await this.events.publish(
         NoticeEvent.eventName,
-        new NoticeEvent(recipients, type, title, body, fromUserId),
+        new NoticeEvent(recipients, type, title, body, fromUserId, approval),
       );
     } catch (err) {
       this.logger.warn(`${type} notice failed: ${(err as Error).message}`);

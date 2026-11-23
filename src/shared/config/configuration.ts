@@ -53,6 +53,21 @@ export interface AppConfig {
   ocr: {
     enabled: boolean;
   };
+  /**
+   * Phone push notifications (3.6), sent only while FEATURE_MOBILE_PUSH is on and the
+   * service account is set. Never logged or answered.
+   */
+  push: {
+    fcm: {
+      projectId: string;
+      clientEmail: string;
+      /** PEM; an env file may keep it on one line with literal `\n`. */
+      privateKey: string;
+      /** Empty: Google's own endpoints. Set only to point at a local fake in tests. */
+      tokenUrl: string;
+      apiUrl: string;
+    };
+  };
   agent: {
     binaryPath: string;
     /** S3 object key for the agent binary; when set, it's served from S3 not disk. */
@@ -124,6 +139,15 @@ export default (): AppConfig => ({
   },
   ocr: {
     enabled: (process.env.OCR_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+  },
+  push: {
+    fcm: {
+      projectId: process.env.FCM_PROJECT_ID?.trim() ?? '',
+      clientEmail: process.env.FCM_CLIENT_EMAIL?.trim() ?? '',
+      privateKey: process.env.FCM_PRIVATE_KEY ?? '',
+      tokenUrl: process.env.FCM_TOKEN_URL?.trim() ?? '',
+      apiUrl: process.env.FCM_API_URL?.trim() ?? '',
+    },
   },
   agent: {
     // `||`, not `??`: an empty AGENT_BINARY_PATH= must mean "not set", never the

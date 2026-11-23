@@ -113,6 +113,7 @@ export interface WfhListQuery {
   to?: string;
   needsMe?: boolean;
   limit?: number;
+  order?: 'DECIDED';
 }
 
 interface Plan {
@@ -618,7 +619,7 @@ export class WfhRequestsService {
       from: q.from,
       to: q.to,
       limit: q.limit ?? 300,
-      order: q.from || q.to ? 'SOONEST' : 'NEWEST',
+      order: q.order ?? (q.from || q.to ? 'SOONEST' : 'NEWEST'),
     });
     const views = await this.views(me, rows, now);
     const waiting = await this.waitingOnMe(me, rows);
@@ -684,6 +685,17 @@ export class WfhRequestsService {
     const times = await this.people.shiftTimes(
       parts.map((r) => ({ person: people.get(r.userId)!, date: r.startDate })),
     );
+    // Taking back is refused in a locked month (revoke), so it is not offered there.
+    // 4.0: months lock per organisation, the person's own (as revoke checks it).
+    const approved = rows.filter((r) => r.status === 'APPROVED');
+    const locked = await this.repo.lockedMonths(
+      approved.map((r) => people.get(r.userId)?.companyId ?? ''),
+      approved.flatMap((r) => monthsOf(r.days, r.startDate)),
+    );
+    const inLockedMonth = (r: WfhRequestRecord) => {
+      const org = people.get(r.userId)?.companyId;
+      return !!org && monthsOf(r.days, r.startDate).some((m) => locked.has(`${org}|${m}`));
+    };
     return rows.map((r, i) => {
       const person = people.get(r.userId);
       const decide =
@@ -730,7 +742,7 @@ export class WfhRequestsService {
             r.userId === me.id &&
             (r.status === 'PENDING' || (r.status === 'APPROVED' && r.startDate >= today)),
           decide: r.status === 'PENDING' && decide,
-          revoke: r.status === 'APPROVED' && decide,
+          revoke: r.status === 'APPROVED' && decide && !inLockedMonth(r),
         },
       };
     });

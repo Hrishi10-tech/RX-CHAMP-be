@@ -150,7 +150,11 @@ export class LeaveJobs implements OnApplicationBootstrap, OnModuleDestroy {
     });
     await this.events.publish(
       NoticeEvent.eventName,
-      new NoticeEvent([r.userId], LEAVE_NOTICE.LEAVE_UPDATED, copy.title, copy.body, null),
+      new NoticeEvent([r.userId], LEAVE_NOTICE.LEAVE_UPDATED, copy.title, copy.body, null, {
+        what: 'LEAVE',
+        id: r.id,
+        action: result.updated.status === 'CANCELLED' ? 'CANCELLED' : 'UPDATED',
+      }),
     );
     await this.events.publish(
       LeaveChangedEvent.eventName,

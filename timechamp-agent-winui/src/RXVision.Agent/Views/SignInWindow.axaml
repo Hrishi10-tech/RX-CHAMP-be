@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RXVision.Agent.ViewModels"
+        xmlns:ctl="using:RXVision.Agent.Controls"
         x:Class="RXVision.Agent.Views.SignInWindow"
         x:DataType="vm:SignInViewModel"
         Title="Sign in to RX Vision"
@@ -14,9 +15,9 @@
 
       <!-- Brand -->
       <StackPanel Spacing="10" HorizontalAlignment="Center">
-        <Border Width="60" Height="60" CornerRadius="30" ClipToBounds="True" HorizontalAlignment="Center" Background="#04070E">
-          <Image Source="avares://RXVision/Assets/agent-badge.png" Stretch="UniformToFill" />
-        </Border>
+        <!-- The round RX mark; while a signed-in person reconnects, their avatar if they chose one (3.6, D-85) -->
+        <ctl:PersonAvatar Width="60" Height="60" HorizontalAlignment="Center" AvatarId="{Binding BrandAvatarId}"
+                          AutomationProperties.Name="RX Vision" />
         <TextBlock Classes="h1" Text="RX Vision" HorizontalAlignment="Center" />
         <TextBlock Classes="muted" FontSize="13" Text="{Binding Subtitle}" TextAlignment="Center" TextWrapping="Wrap"
                    IsVisible="{Binding ShowForm}" />

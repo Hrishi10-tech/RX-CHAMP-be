@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:RXVision.Agent.ViewModels"
         xmlns:views="using:RXVision.Agent.Views"
+        xmlns:ctl="using:RXVision.Agent.Controls"
         xmlns:conv="using:RXVision.Agent.Converters"
         x:Class="RXVision.Agent.Views.DashboardWindow"
         x:DataType="vm:DashboardViewModel"
@@ -225,10 +226,7 @@
                   </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:MeetingPersonViewModel">
-                      <!-- The avatar seam: initials until the avatars stream draws the person's picture -->
-                      <Border Classes="avatar" Width="24" Height="24" Margin="0,0,-6,0" ToolTip.Tip="{Binding Name}">
-                        <TextBlock Text="{Binding Initials}" />
-                      </Border>
+                      <ctl:PersonAvatar Width="24" Height="24" Margin="0,0,-6,0" ToolTip.Tip="{Binding Name}" AvatarId="{Binding AvatarId}" />
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -442,21 +440,21 @@
         <ScrollViewer Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding ShowProfileList}"
                       HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="20,0,20,16">
-            <!-- The account. The avatar seam: initials here until the avatars stream draws the picture
-                 and makes this row open the picker (D-85). -->
-            <Border Name="Account" Margin="0,0,0,8" Padding="0,8" AutomationProperties.Name="Account">
-              <Grid ColumnDefinitions="Auto,*">
-                <Border Classes="avatar" Width="44" Height="44" CornerRadius="22" Margin="0,0,12,0">
-                  <TextBlock Text="{Binding Initials}" FontSize="15" />
-                </Border>
+            <!-- The account: tap it to choose an avatar or go back to the RX mark (D-85) -->
+            <Button Name="Account" Classes="menuitem account" Margin="-8,0,-8,8" Command="{Binding Profile.OpenAvatarCommand}"
+                    AutomationProperties.Name="Account, choose your avatar" ToolTip.Tip="Choose your avatar">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <ctl:PersonAvatar Width="44" Height="44" Margin="0,0,12,0" AvatarId="{Binding Profile.AvatarId}" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                  <TextBlock Classes="status" Text="{Binding DisplayName}" MaxWidth="230" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="status" Text="{Binding DisplayName}" MaxWidth="210" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" />
                   <TextBlock Classes="muted" Text="{Binding StatusText}" />
                   <TextBlock Classes="small" Text="{Binding DepartmentText}" TextTrimming="CharacterEllipsis"
                              IsVisible="{Binding DepartmentText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
+                <PathIcon Grid.Column="2" Classes="i" Margin="10,0,0,0" Data="{StaticResource Icon.ChevronRight}" Width="15" Height="15"
+                          VerticalAlignment="Center" />
               </Grid>
-            </Border>
+            </Button>
             <Border Classes="divider" Margin="0,0,0,6" />
             <Button Classes="menuitem" Command="{Binding ShowHistoryCommand}" AutomationProperties.Name="History">
               <StackPanel Orientation="Horizontal" Spacing="12">

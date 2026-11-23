@@ -39,13 +39,13 @@ public sealed class ParticipantChipViewModel
     public ParticipantChipViewModel(MeetingParticipant person, Action<ParticipantChipViewModel> remove)
     {
         Person = person;
-        Initials = Fmt.Initials(person.Name);
         RemoveCommand = new RelayCommand(() => remove(this));
     }
 
     public MeetingParticipant Person { get; }
     public string Name => Person.Name;
-    public string Initials { get; }
+    /// <summary>Their chosen avatar, or null: the RX mark.</summary>
+    public string? AvatarId => Person.AvatarId;
     public string RemoveLabel => $"Remove {Person.Name}";
     public IRelayCommand RemoveCommand { get; }
 }
@@ -211,7 +211,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
         var name = (PersonQuery ?? "").Trim();
         if (name.Length == 0) return;
         var match = _directory.FirstOrDefault(p => string.Equals(p.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
-        AddPerson(match is null ? new MeetingParticipant(null, name) : new MeetingParticipant(match.Id, match.Name.Trim()));
+        AddPerson(match is null ? new MeetingParticipant(null, name) : new MeetingParticipant(match.Id, match.Name.Trim()) { AvatarId = match.AvatarId });
         PersonQuery = "";
     }
 
@@ -225,7 +225,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
             ? c.Person.Id == id
             : c.Person.Id is null && string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (duplicate) return;
-        Chosen.Add(new ParticipantChipViewModel(new MeetingParticipant(id, name), RemovePerson));
+        Chosen.Add(new ParticipantChipViewModel(new MeetingParticipant(id, name) { AvatarId = person.AvatarId }, RemovePerson));
         OnPropertyChanged(nameof(CanAddPeople));
         OnPropertyChanged(nameof(PeopleHint));
         RebuildSuggestions();
@@ -309,7 +309,7 @@ public sealed partial class MeetingDialogViewModel : DialogViewModel
             .Where(p => query.Length == 0 || p.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
             .Take(MaxSuggestions);
         foreach (var p in people)
-            Suggestions.Add(new ParticipantSuggestionViewModel(new MeetingParticipant(p.Id, p.Name.Trim()), $"+ {p.Name.Trim()}", AddSuggested));
+            Suggestions.Add(new ParticipantSuggestionViewModel(new MeetingParticipant(p.Id, p.Name.Trim()) { AvatarId = p.AvatarId }, $"+ {p.Name.Trim()}", AddSuggested));
         var exact = _directory.Any(p => string.Equals(p.Name.Trim(), query, StringComparison.OrdinalIgnoreCase));
         if (query.Length > 0 && !exact && !Chosen.Any(c => string.Equals(c.Name, query, StringComparison.OrdinalIgnoreCase)))
         {

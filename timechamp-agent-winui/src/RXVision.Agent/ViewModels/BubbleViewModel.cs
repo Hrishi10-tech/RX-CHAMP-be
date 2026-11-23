@@ -55,7 +55,6 @@ public sealed partial class BubbleViewModel : ObservableObject, IDisposable
     private bool _alertBadge;
     private bool _shown = true;
     private bool _first = true;
-    private string _initials = "";
 
     public BubbleViewModel(IAgent agent, DayMeter meter, AlertCenter alerts, IUiDispatcher ui,
         AgentMenuViewModel? menu = null, IIconAvatarSource? avatars = null)
@@ -66,7 +65,7 @@ public sealed partial class BubbleViewModel : ObservableObject, IDisposable
         _meter = meter;
         _alerts = alerts;
         Menu = menu;
-        Avatars = avatars ?? new InitialsAvatarSource(agent);
+        Avatars = avatars ?? new AvatarIconSource(agent);
         Avatars.Changed += () => AvatarChanged?.Invoke();
         _behaviour = new IconBehaviour(_clock, ui);
         _behaviour.Changed += () => Move();
@@ -84,7 +83,7 @@ public sealed partial class BubbleViewModel : ObservableObject, IDisposable
     /// <summary>Where the picture comes from.</summary>
     public IIconAvatarSource Avatars { get; }
 
-    /// <summary>The picture or the initials changed.</summary>
+    /// <summary>The picture changed.</summary>
     public event Action? AvatarChanged;
 
     /// <summary>What to draw now. Equal frames draw the same pixels: nothing redraws when it holds still.</summary>
@@ -149,11 +148,6 @@ public sealed partial class BubbleViewModel : ObservableObject, IDisposable
         _behaviour.SetHolding(_glyph is not null);
         Label = reading.Label;
         AccessibleName = reading.AccessibleName;
-        if (_initials != Avatars.Initials)
-        {
-            _initials = Avatars.Initials;
-            AvatarChanged?.Invoke();
-        }
         _first = false;
         Move();
     }

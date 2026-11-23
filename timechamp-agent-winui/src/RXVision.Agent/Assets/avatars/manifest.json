@@ -1,0 +1,1660 @@
+{
+  "version": 1,
+  "format": "PNG, 192 x 192, transparent outside the circle",
+  "default": {
+    "male": "M01",
+    "female": "F01"
+  },
+  "avatars": [
+    {
+      "id": "M01",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M01.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 1
+      }
+    },
+    {
+      "id": "M02",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M02.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "M03",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M03.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 3
+      }
+    },
+    {
+      "id": "M04",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M04.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 4
+      }
+    },
+    {
+      "id": "M05",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M05.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 5
+      }
+    },
+    {
+      "id": "M06",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M06.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "M07",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M07.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "M08",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M08.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "M09",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M09.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 3
+      }
+    },
+    {
+      "id": "M10",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M10.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 4
+      }
+    },
+    {
+      "id": "M11",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M11.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "M12",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M12.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "M13",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M13.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "M14",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M14.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 1
+      }
+    },
+    {
+      "id": "M15",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M15.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "M16",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M16.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 4
+      }
+    },
+    {
+      "id": "M17",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M17.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "M18",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M18.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "M19",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M19.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "M20",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M20.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "M21",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M21.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 2
+      }
+    },
+    {
+      "id": "M22",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M22.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "M23",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M23.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "M24",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M24.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "M25",
+      "gender": "male",
+      "set": 1,
+      "file": "male/M25.png",
+      "source": {
+        "sheet": "Male Set 1",
+        "row": 4,
+        "column": 7
+      }
+    },
+    {
+      "id": "M26",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M26.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "M27",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M27.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 3
+      }
+    },
+    {
+      "id": "M28",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M28.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 4
+      }
+    },
+    {
+      "id": "M29",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M29.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 5
+      }
+    },
+    {
+      "id": "M30",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M30.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "M31",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M31.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "M32",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M32.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "M33",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M33.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 2
+      }
+    },
+    {
+      "id": "M34",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M34.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 4
+      }
+    },
+    {
+      "id": "M35",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M35.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "M36",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M36.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "M37",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M37.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "M38",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M38.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 1
+      }
+    },
+    {
+      "id": "M39",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M39.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 2
+      }
+    },
+    {
+      "id": "M40",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M40.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "M41",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M41.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "M42",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M42.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "M43",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M43.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "M44",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M44.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "M45",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M45.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 2
+      }
+    },
+    {
+      "id": "M46",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M46.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "M47",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M47.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "M48",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M48.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "M49",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M49.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 6
+      }
+    },
+    {
+      "id": "M50",
+      "gender": "male",
+      "set": 2,
+      "file": "male/M50.png",
+      "source": {
+        "sheet": "Male Set 2",
+        "row": 4,
+        "column": 7
+      }
+    },
+    {
+      "id": "M51",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M51.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 1
+      }
+    },
+    {
+      "id": "M52",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M52.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "M53",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M53.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 4
+      }
+    },
+    {
+      "id": "M54",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M54.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 5
+      }
+    },
+    {
+      "id": "M55",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M55.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "M56",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M56.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "M57",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M57.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "M58",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M58.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 3
+      }
+    },
+    {
+      "id": "M59",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M59.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 4
+      }
+    },
+    {
+      "id": "M60",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M60.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "M61",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M61.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "M62",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M62.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "M63",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M63.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 1
+      }
+    },
+    {
+      "id": "M64",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M64.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 2
+      }
+    },
+    {
+      "id": "M65",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M65.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "M66",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M66.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 4
+      }
+    },
+    {
+      "id": "M67",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M67.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "M68",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M68.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "M69",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M69.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "M70",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M70.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 2
+      }
+    },
+    {
+      "id": "M71",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M71.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "M72",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M72.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "M73",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M73.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "M74",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M74.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 6
+      }
+    },
+    {
+      "id": "M75",
+      "gender": "male",
+      "set": 3,
+      "file": "male/M75.png",
+      "source": {
+        "sheet": "Male Set 3",
+        "row": 4,
+        "column": 7
+      }
+    },
+    {
+      "id": "F01",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F01.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 1,
+        "column": 1
+      }
+    },
+    {
+      "id": "F02",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F02.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "F03",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F03.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 1,
+        "column": 4
+      }
+    },
+    {
+      "id": "F04",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F04.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "F05",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F05.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "F06",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F06.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "F07",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F07.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 2
+      }
+    },
+    {
+      "id": "F08",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F08.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 3
+      }
+    },
+    {
+      "id": "F09",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F09.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "F10",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F10.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "F11",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F11.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "F12",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F12.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 1
+      }
+    },
+    {
+      "id": "F13",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F13.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 2
+      }
+    },
+    {
+      "id": "F14",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F14.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "F15",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F15.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 4
+      }
+    },
+    {
+      "id": "F16",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F16.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "F17",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F17.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "F18",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F18.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "F19",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F19.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "F20",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F20.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 2
+      }
+    },
+    {
+      "id": "F21",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F21.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "F22",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F22.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "F23",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F23.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "F24",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F24.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 6
+      }
+    },
+    {
+      "id": "F25",
+      "gender": "female",
+      "set": 1,
+      "file": "female/F25.png",
+      "source": {
+        "sheet": "Female Set 1",
+        "row": 4,
+        "column": 7
+      }
+    },
+    {
+      "id": "F26",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F26.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "F27",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F27.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 1,
+        "column": 3
+      }
+    },
+    {
+      "id": "F28",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F28.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 1,
+        "column": 5
+      }
+    },
+    {
+      "id": "F29",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F29.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "F30",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F30.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "F31",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F31.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "F32",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F32.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 2
+      }
+    },
+    {
+      "id": "F33",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F33.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 3
+      }
+    },
+    {
+      "id": "F34",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F34.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 4
+      }
+    },
+    {
+      "id": "F35",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F35.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "F36",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F36.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "F37",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F37.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "F38",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F38.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 1
+      }
+    },
+    {
+      "id": "F39",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F39.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 2
+      }
+    },
+    {
+      "id": "F40",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F40.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "F41",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F41.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "F42",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F42.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "F43",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F43.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "F44",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F44.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "F45",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F45.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 2
+      }
+    },
+    {
+      "id": "F46",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F46.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "F47",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F47.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "F48",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F48.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "F49",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F49.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 6
+      }
+    },
+    {
+      "id": "F50",
+      "gender": "female",
+      "set": 2,
+      "file": "female/F50.png",
+      "source": {
+        "sheet": "Female Set 2",
+        "row": 4,
+        "column": 7
+      }
+    },
+    {
+      "id": "F51",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F51.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 1
+      }
+    },
+    {
+      "id": "F52",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F52.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 2
+      }
+    },
+    {
+      "id": "F53",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F53.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 4
+      }
+    },
+    {
+      "id": "F54",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F54.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 5
+      }
+    },
+    {
+      "id": "F55",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F55.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 6
+      }
+    },
+    {
+      "id": "F56",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F56.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 1,
+        "column": 7
+      }
+    },
+    {
+      "id": "F57",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F57.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 1
+      }
+    },
+    {
+      "id": "F58",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F58.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 2
+      }
+    },
+    {
+      "id": "F59",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F59.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 3
+      }
+    },
+    {
+      "id": "F60",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F60.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 4
+      }
+    },
+    {
+      "id": "F61",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F61.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 5
+      }
+    },
+    {
+      "id": "F62",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F62.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 6
+      }
+    },
+    {
+      "id": "F63",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F63.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 2,
+        "column": 7
+      }
+    },
+    {
+      "id": "F64",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F64.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 2
+      }
+    },
+    {
+      "id": "F65",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F65.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 3
+      }
+    },
+    {
+      "id": "F66",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F66.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 4
+      }
+    },
+    {
+      "id": "F67",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F67.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 5
+      }
+    },
+    {
+      "id": "F68",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F68.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 6
+      }
+    },
+    {
+      "id": "F69",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F69.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 3,
+        "column": 7
+      }
+    },
+    {
+      "id": "F70",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F70.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 1
+      }
+    },
+    {
+      "id": "F71",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F71.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 3
+      }
+    },
+    {
+      "id": "F72",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F72.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 4
+      }
+    },
+    {
+      "id": "F73",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F73.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 5
+      }
+    },
+    {
+      "id": "F74",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F74.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 6
+      }
+    },
+    {
+      "id": "F75",
+      "gender": "female",
+      "set": 3,
+      "file": "female/F75.png",
+      "source": {
+        "sheet": "Female Set 3",
+        "row": 4,
+        "column": 7
+      }
+    }
+  ]
+}

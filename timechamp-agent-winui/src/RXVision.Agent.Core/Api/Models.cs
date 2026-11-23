@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using RXVision.Agent.Core.Avatars;
 
 namespace RXVision.Agent.Core.Api;
 
@@ -18,6 +19,9 @@ public sealed class PublicUser
     public string? Department { get; set; }
     public string? ManagerId { get; set; }
     public bool ScreenshotsEnabled { get; set; } = true;
+    /// <summary>The avatar they chose, or null: the RX mark (D-85). A gender default counts as no choice.</summary>
+    public string? AvatarId { get => _avatarId; set => _avatarId = AvatarChoice.Shown(value); }
+    private string? _avatarId;
 
     [JsonIgnore]
     public string DisplayName
@@ -35,6 +39,28 @@ public sealed class PublicUser
 public sealed class AuthResponse
 {
     public PublicUser? User { get; set; }
+}
+
+// ---- Avatars (3.6) --------------------------------------------------------------
+
+/// <summary>GET, PUT and DELETE /me/avatar.</summary>
+public sealed class MyAvatar
+{
+    /// <summary>What the person shows; null while they have no gender.</summary>
+    public string? AvatarId { get; set; }
+    /// <summary>What is stored; null on the default.</summary>
+    public string? ChosenAvatarId { get; set; }
+    public string? DefaultAvatarId { get; set; }
+    /// <summary>male, female, or null: the only library the picker offers.</summary>
+    public string? Library { get; set; }
+}
+
+/// <summary>The socket's avatar:changed.</summary>
+public sealed class AvatarChange
+{
+    public string UserId { get; set; } = "";
+    public string? AvatarId { get => _avatarId; set => _avatarId = AvatarChoice.Shown(value); }
+    private string? _avatarId;
 }
 
 // ---- Presence -----------------------------------------------------------------
@@ -759,6 +785,9 @@ public sealed class MeetingParticipant
 
     public string? Id { get; set; }
     public string Name { get; set; } = "";
+    /// <summary>For the chips while picking people, from the people search. A meeting's answer has none, and it is never sent.</summary>
+    [JsonIgnore]
+    public string? AvatarId { get; set; }
 }
 
 public sealed class MeetingRecord
@@ -841,6 +870,9 @@ public sealed class ParticipantOption
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Department { get; set; }
+    /// <summary>The avatar they chose, or null: the RX mark (D-85). A gender default counts as no choice.</summary>
+    public string? AvatarId { get => _avatarId; set => _avatarId = AvatarChoice.Shown(value); }
+    private string? _avatarId;
 }
 
 public sealed class ParticipantList
@@ -914,6 +946,9 @@ public sealed class ChatContact
     public string? Department { get; set; }
     /// <summary>MANAGER (who they report to), REPORT (their staff) or ORG.</summary>
     public string? Relation { get; set; }
+    /// <summary>The avatar they chose, or null: the RX mark (D-85). A gender default counts as no choice.</summary>
+    public string? AvatarId { get => _avatarId; set => _avatarId = AvatarChoice.Shown(value); }
+    private string? _avatarId;
 }
 
 public sealed class ChatMessage

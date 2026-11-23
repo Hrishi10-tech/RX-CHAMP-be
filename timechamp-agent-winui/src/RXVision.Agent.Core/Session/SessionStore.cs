@@ -13,6 +13,8 @@ public sealed class SavedSession
     public string DisplayName { get; set; } = "";
     public string? Role { get; set; }
     public bool ScreenshotsEnabled { get; set; } = true;
+    /// <summary>The avatar's ID, so a start with no network still draws it.</summary>
+    public string? AvatarId { get; set; }
 }
 
 /// <summary>

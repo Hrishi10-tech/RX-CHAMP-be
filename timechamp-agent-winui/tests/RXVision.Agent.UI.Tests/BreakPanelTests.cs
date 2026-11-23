@@ -570,7 +570,7 @@ public class BreakScreenTests
             {
                 Width = 220, Height = 220,
                 Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1A2029")),
-                Content = new PanelIcon { Width = 192, Height = 192, State = new PanelIconState(new IconFrame(look, 0, null, 1), false, "", Day: day),
+                Content = new PanelIcon { Width = 192, Height = 192, State = new PanelIconState(new IconFrame(look, 0, null, 1), false, Day: day),
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
             };
             window.Show();

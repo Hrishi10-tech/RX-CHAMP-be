@@ -151,7 +151,7 @@ public static class IconBitmap
         var bitmap = new RenderTargetBitmap(pixels, new Vector(96 * scale, 96 * scale));
         using var context = bitmap.CreateDrawingContext();
         var picture = avatars.Picture((int)Math.Ceiling(IconGeometry.AvatarDiameter * scale));
-        IconPainter.Paint(context, frame, scale, picture, avatars.Initials);
+        IconPainter.Paint(context, frame, scale, picture);
         return bitmap;
     }
 

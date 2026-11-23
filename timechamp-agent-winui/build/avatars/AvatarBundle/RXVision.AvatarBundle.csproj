@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs on the build machine, whatever the runtime being published: turns the PNG
+       masters into the WebP sizes the agent bundles. RXVision.Agent.csproj builds and
+       runs it before every build and publish. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>RXVision.AvatarBundle</AssemblyName>
+    <RootNamespace>RXVision.AvatarBundle</RootNamespace>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+    <RollForward>Major</RollForward>
+    <!-- One place for every configuration, so the app's build knows where to find it. -->
+    <OutputPath>bin/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <!-- The release scripts also run on Linux. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
+  </ItemGroup>
+
+</Project>

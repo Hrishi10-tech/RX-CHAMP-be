@@ -50,6 +50,11 @@ public sealed class NotificationService
         // 4.0: the organisation's settings (calendar, away tracking) or the person's day changed.
         _socket.On("config:changed", e => RaiseChanged("CONFIG:" + Kind(e)));
         _socket.On("workday:changed", e => RaiseChanged("WORKDAY:" + Kind(e, "reason")));
+        // 3.6: someone's preset avatar changed: this person's, or someone they see.
+        _socket.On("avatar:changed", e =>
+        {
+            if (Payload.As<AvatarChange>(e) is { UserId.Length: > 0 } change) AvatarChanged?.Invoke(change);
+        });
         _socket.ConnectionChanged += up =>
         {
             if (up) RaiseConnected();
@@ -58,6 +63,9 @@ public sealed class NotificationService
 
     /// <summary>The socket is up. Events are not replayed: what may have been missed is read again (background thread).</summary>
     public event Action? Connected;
+
+    /// <summary>Someone's avatar changed (background thread).</summary>
+    public event Action<AvatarChange>? AvatarChanged;
 
     /// <summary>The socket came up (tests call it to stand in for a real reconnect).</summary>
     internal void RaiseConnected()

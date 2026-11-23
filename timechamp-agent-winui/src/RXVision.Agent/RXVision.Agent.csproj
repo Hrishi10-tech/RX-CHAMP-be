@@ -15,6 +15,13 @@
     <!-- Avalonia and the views use reflection-free compiled bindings, but trimming is
          not verified for this app: publish untrimmed. -->
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- The preset avatars: PNG masters here (committed), the WebP sizes generated into
+         obj/ on every build and publish (never committed). -->
+    <AvatarLibraryDir Condition="'$(AvatarLibraryDir)' == ''">$(MSBuildProjectDirectory)/Assets/avatars</AvatarLibraryDir>
+    <AvatarBundleOut>$(MSBuildProjectDirectory)/obj/avatars</AvatarBundleOut>
+    <AvatarBundleTool>$(MSBuildProjectDirectory)/../../build/avatars/AvatarBundle/bin/RXVision.AvatarBundle.dll</AvatarBundleTool>
+    <AvatarDotnet>$(DOTNET_HOST_PATH)</AvatarDotnet>
+    <AvatarDotnet Condition="'$(AvatarDotnet)' == ''">dotnet</AvatarDotnet>
   </PropertyGroup>
 
   <ItemGroup>
@@ -58,5 +65,25 @@
   <ItemGroup>
     <InternalsVisibleTo Include="RXVision.Agent.UI.Tests" />
   </ItemGroup>
+
+  <!-- Built for the machine doing the build, whatever runtime is being published. -->
+  <ItemGroup>
+    <ProjectReference Include="../../build/avatars/AvatarBundle/RXVision.AvatarBundle.csproj"
+                      ReferenceOutputAssembly="false" Private="false"
+                      SkipGetTargetFrameworkProperties="true"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishSingleFile;PublishReadyToRun;UseAppHost;OutputPath;PublishDir;_CommandLineDefinedRuntimeIdentifier;_CommandLineDefinedSelfContained;_CommandLineDefinedOutputPath" />
+  </ItemGroup>
+
+  <!-- Masters to bundle, before anything is copied: a missing master fails the build, in
+       Debug and in publish, for every runtime. The files go beside the app as Content, so
+       an avatar is read from disk only when it is drawn. -->
+  <Target Name="GenerateAvatarBundle" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolveProjectReferences">
+    <Exec Command="&quot;$(AvatarDotnet)&quot; &quot;$(AvatarBundleTool)&quot; &quot;$(AvatarLibraryDir)&quot; &quot;$(AvatarBundleOut)&quot;" StandardOutputImportance="low" />
+    <ItemGroup>
+      <_AvatarBundleFile Include="$(AvatarBundleOut)/bundle/**/*" />
+      <Content Include="@(_AvatarBundleFile)" Link="Assets/avatars/%(_AvatarBundleFile.RecursiveDir)%(_AvatarBundleFile.Filename)%(_AvatarBundleFile.Extension)"
+               CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 
 </Project>

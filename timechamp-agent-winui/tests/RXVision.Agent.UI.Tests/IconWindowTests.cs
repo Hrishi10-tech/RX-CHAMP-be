@@ -351,7 +351,7 @@ public class IconWindowTests
         window.Show();
         IconRig.Pump();
         var draws = window.View.Draws;
-        source.Set("MR");
+        source.Set();
         IconRig.Pump();
         Assert.Equal(draws + 1, window.View.Draws);
         window.Close();
@@ -360,14 +360,9 @@ public class IconWindowTests
 
     private sealed class SwitchingAvatars : IIconAvatarSource
     {
-        public string Initials { get; private set; } = "AK";
         public Avalonia.Media.Imaging.Bitmap? Picture(int devicePixels) => null;
         public event Action? Changed;
-        public void Set(string initials)
-        {
-            Initials = initials;
-            Changed?.Invoke();
-        }
+        public void Set() => Changed?.Invoke();
     }
 }
 

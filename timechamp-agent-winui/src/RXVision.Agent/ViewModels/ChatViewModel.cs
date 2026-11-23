@@ -7,7 +7,7 @@ using RXVision.Agent.Services;
 
 namespace RXVision.Agent.ViewModels;
 
-public sealed class ContactItem
+public sealed partial class ContactItem : ObservableObject
 {
     public ContactItem(ChatContact contact)
     {
@@ -19,27 +19,29 @@ public sealed class ContactItem
             _ => contact.Role switch { "SUPER_ADMIN" => "admin", "MANAGER" => "manager", _ => null },
         };
         Display = who is null ? contact.Name : $"{contact.Name} ({who})";
-        Initials = Fmt.Initials(contact.Name);
+        _avatarId = contact.AvatarId;
     }
+
+    /// <summary>Their chosen avatar, or null: the RX mark.</summary>
+    [ObservableProperty] private string? _avatarId;
 
     public ChatContact Contact { get; }
     public string UserId => Contact.UserId;
     public string Name => Contact.Name;
     public string Display { get; }
-    public string Initials { get; }
     public override string ToString() => Display;
 }
 
-public sealed class ChatMessageItem
+public sealed partial class ChatMessageItem : ObservableObject
 {
-    public ChatMessageItem(ChatMessage message, string stamp, string initials)
+    public ChatMessageItem(ChatMessage message, string stamp, string? avatarId = null)
     {
+        _avatarId = avatarId;
         Id = message.Id;
         Body = message.Body;
         IsMine = message.Mine;
         CreatedAt = message.CreatedAt;
         Stamp = stamp;
-        Initials = initials;
     }
 
     public string Id { get; }
@@ -48,7 +50,8 @@ public sealed class ChatMessageItem
     public bool IsTheirs => !IsMine;
     public DateTimeOffset CreatedAt { get; }
     public string Stamp { get; }
-    public string Initials { get; }
+    /// <summary>The sender's chosen avatar, or null: the RX mark.</summary>
+    [ObservableProperty] private string? _avatarId;
 }
 
 /// <summary>
@@ -71,6 +74,17 @@ public sealed partial class ChatViewModel : ObservableObject
         _agent = agent;
         _log = log;
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
+        agent.Avatars.PersonChanged += OnPersonAvatarChanged;
+    }
+
+    /// <summary>A contact's avatar changed (the socket, or a read after a reconnect): their rows follow.</summary>
+    private void OnPersonAvatarChanged(string userId, string? avatarId)
+    {
+        var contact = Contacts.FirstOrDefault(c => c.UserId == userId);
+        if (contact is null) return;
+        contact.AvatarId = avatarId;
+        if (!ReferenceEquals(contact, SelectedContact)) return;
+        foreach (var message in Messages.Where(m => m.IsTheirs)) message.AvatarId = avatarId;
     }
 
     public ObservableCollection<ContactItem> Contacts { get; } = new();
@@ -148,7 +162,12 @@ public sealed partial class ChatViewModel : ObservableObject
     {
         var current = SelectedContact?.UserId;
         var list = chat.Contacts.Select(c => new ContactItem(c)).ToList();
-        if (list.Select(c => c.UserId).SequenceEqual(Contacts.Select(c => c.UserId))) return;
+        if (list.Select(c => c.UserId).SequenceEqual(Contacts.Select(c => c.UserId)))
+        {
+            // The same people, read again: only their pictures can have moved.
+            foreach (var fresh in list) OnPersonAvatarChanged(fresh.UserId, fresh.AvatarId);
+            return;
+        }
         _syncingContacts = true;
         try
         {
@@ -259,9 +278,9 @@ public sealed partial class ChatViewModel : ObservableObject
     private bool Add(ChatMessage message, bool notify)
     {
         if (string.IsNullOrEmpty(message.Id) || !_ids.Add(message.Id)) return false;
-        var initials = message.Mine ? "" : SelectedContact?.Initials ?? "?";
+        var avatarId = message.Mine ? null : SelectedContact?.AvatarId;
         // In the business time zone, like every other time on screen (SPEC 2.10).
-        var item = new ChatMessageItem(message, Fmt.ChatStamp(_agent.BusinessLocal(message.CreatedAt), _agent.BusinessLocal(DateTimeOffset.UtcNow)), initials);
+        var item = new ChatMessageItem(message, Fmt.ChatStamp(_agent.BusinessLocal(message.CreatedAt), _agent.BusinessLocal(DateTimeOffset.UtcNow)), avatarId);
         // Keep the list in time order even if a live message beats the reload.
         var index = Messages.Count;
         while (index > 0 && Messages[index - 1].CreatedAt > item.CreatedAt) index--;

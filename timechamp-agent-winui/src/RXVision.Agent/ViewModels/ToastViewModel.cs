@@ -36,7 +36,8 @@ public sealed partial class ToastViewModel : ObservableObject
     [ObservableProperty] private string _stamp = "";
     [ObservableProperty] private string _body = "";
     [ObservableProperty] private int _count = 1;
-    public string Initials { get; init; } = "";
+    /// <summary>The sender's chosen avatar, or null: the RX mark.</summary>
+    public string? AvatarId { get; init; }
     public string PrimaryText { get; init; } = "Open RX Vision";
     /// <summary>A second, quieter button (null: none).</summary>
     public string? SecondaryText { get; init; }

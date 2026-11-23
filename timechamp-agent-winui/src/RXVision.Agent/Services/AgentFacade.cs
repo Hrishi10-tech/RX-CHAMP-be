@@ -27,12 +27,16 @@ public sealed class AgentFacade : IAgent, IDisposable
     private readonly ILog _log;
     private ChatService? _chatSource;
     private ChatAdapter? _chat;
+    private readonly AvatarsAdapter _avatars;
 
     public AgentFacade(AgentHost host, IUiDispatcher ui, ILog log)
     {
         _host = host;
         _ui = ui;
         _log = log;
+        _avatars = new AvatarsAdapter(host);
+        host.MyAvatarChanged += () => Raise(_avatars.RaiseChanged);
+        host.PersonAvatarChanged += (id, avatar) => Raise(() => _avatars.RaisePersonChanged(id, avatar));
         host.StateChanged += s => Raise(() => StateChanged?.Invoke(s));
         host.PresenceChanged += p => Raise(() => PresenceChanged?.Invoke(p));
         host.BreaksChanged += () => Raise(() => BreaksChanged?.Invoke());
@@ -104,6 +108,8 @@ public sealed class AgentFacade : IAgent, IDisposable
     public IdleConfig? IdleConfig => _host.IdleConfig;
     public bool IsBiometric => _host.IsBiometric;
     public IReadOnlyList<string> Presets(string kind) => _host.Presets(kind);
+
+    public IAvatars Avatars => _avatars;
 
     public IChat? Chat
     {
@@ -199,6 +205,32 @@ public sealed class AgentFacade : IAgent, IDisposable
     public void Shutdown() => _host.Shutdown();
 
     public void Dispose() => _host.Dispose();
+
+    private sealed class AvatarsAdapter : IAvatars
+    {
+        private static readonly ApiResult<MyAvatar> NotSignedIn = ApiResult<MyAvatar>.TransientFailure("Sign in again to carry on.");
+        private readonly AgentHost _host;
+
+        public AvatarsAdapter(AgentHost host) => _host = host;
+
+        public MyAvatar? Mine => _host.Avatars?.Mine;
+        public string? ShownId => _host.Avatars?.ShownId;
+        public string? PersonName => _host.Avatars?.PersonName;
+        public event Action? Changed;
+        public event Action<string, string?>? PersonChanged;
+        public void RaiseChanged() => Changed?.Invoke();
+        public void RaisePersonChanged(string userId, string? avatarId) => PersonChanged?.Invoke(userId, avatarId);
+
+        public Task RefreshAsync() => Task.Run(() => _host.Avatars?.RefreshAsync() ?? Task.CompletedTask);
+
+        public Task<ApiResult<MyAvatar>> SaveAsync(string avatarId) =>
+            Task.Run(() => _host.Avatars?.SaveAsync(avatarId) ?? Task.FromResult(NotSignedIn));
+
+        public Task<ApiResult<MyAvatar>> ResetAsync() =>
+            Task.Run(() => _host.Avatars?.ResetAsync() ?? Task.FromResult(NotSignedIn));
+
+        public Task<ApiResult<DayProgress>> GetDayProgressAsync() => Task.Run(_host.GetDayProgressAsync);
+    }
 
     private sealed class ChatAdapter : IChat
     {

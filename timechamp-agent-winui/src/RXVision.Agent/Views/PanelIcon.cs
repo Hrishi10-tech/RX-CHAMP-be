@@ -70,6 +70,6 @@ public sealed class PanelIcon : Control
         var picture = Avatars?.Picture((int)Math.Ceiling(IconGeometry.AvatarDiameter * scale));
         var fit = Matrix.CreateTranslation(-IconGeometry.Margin, -IconGeometry.Margin) * Matrix.CreateScale(k, k);
         using var transform = context.PushTransform(fit);
-        IconPainter.Paint(context, state.Frame, scale, picture, Avatars?.Initials ?? state.Initials, state.Break, state.Day);
+        IconPainter.Paint(context, state.Frame, scale, picture, state.Break, state.Day);
     }
 }

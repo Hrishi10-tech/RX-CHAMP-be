@@ -915,7 +915,7 @@ public class ChatViewModelTests
         Assert.Equal(new[] { "1", "2" }, chat.Messages.Select(m => m.Id));
         Assert.True(chat.Messages[0].IsTheirs);
         Assert.True(chat.Messages[1].IsMine);
-        Assert.Equal("MR", chat.Messages[0].Initials);
+        Assert.Null(chat.Messages[0].AvatarId);
     }
 
     [Fact]

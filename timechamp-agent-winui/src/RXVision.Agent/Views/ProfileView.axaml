@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RXVision.Agent.ViewModels"
+             xmlns:ctl="using:RXVision.Agent.Controls"
+             x:Class="RXVision.Agent.Views.ProfileView"
+             x:DataType="vm:ProfileViewModel">
+  <!-- Profile (3.6, D-85): the account. Tapping the whole row (picture, name, chevron) opens the avatar picker, for everyone. -->
+  <UserControl.Styles>
+    <Style Selector="Button.account">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="8,8" />
+    </Style>
+  </UserControl.Styles>
+  <Button Name="Account" Classes="menuitem account" Command="{Binding OpenAvatarCommand}"
+          AutomationProperties.Name="Account, choose your avatar" ToolTip.Tip="Choose your avatar">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+      <ctl:PersonAvatar Name="AccountAvatar" Width="36" Height="36" Margin="0,0,10,0" AvatarId="{Binding AvatarId}" />
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{StaticResource Brush.Ink}" TextTrimming="CharacterEllipsis" />
+        <TextBlock Classes="small" FontSize="11" Text="Choose your avatar" />
+      </StackPanel>
+      <PathIcon Grid.Column="2" Classes="i" Margin="8,0,0,0" Data="{StaticResource Icon.ChevronRight}" Width="14" Height="14"
+                VerticalAlignment="Center" />
+    </Grid>
+  </Button>
+</UserControl>

@@ -287,23 +287,54 @@ public class IconRenderTests
         Assert.Equal(new[] { 84 }, two.Asked);
     }
 
-    [AvaloniaFact]
-    public void With_no_picture_the_initials_sit_in_the_same_bezel()
+    [AvaloniaTheory]
+    [MemberData(nameof(Scales))]
+    public void With_no_picture_the_RX_mark_fills_the_same_42_px_circle(double scale)
     {
-        var drawn = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), 2);
-        var fill = IconPixels.Colour("#2B3343");
-        var ink = IconPixels.Colour("#E8EBF0");
-        var (x, y) = drawn.InBox(14, 28);
-        Assert.True(IconPixels.Distance(drawn.At(x, y), fill) <= 1, "the fill reaches across the circle");
-        var inks = 0;
-        for (var i = drawn.InBox(18, 0).X; i < drawn.InBox(38, 0).X; i++)
+        var drawn = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), scale);
+        var fill = IconPixels.Colour(RxMark.Fill.ToString());
+        foreach (var degrees in new[] { 0.0, 90, 180, 270 })
         {
-            for (var j = drawn.InBox(0, 20).Y; j < drawn.InBox(0, 36).Y; j++)
-            {
-                if (IconPixels.Distance(drawn.At(i, j), ink) <= 8) inks++;
-            }
+            var a = degrees * Math.PI / 180;
+            var (ix, iy) = drawn.InBox(28 + 19.5 * Math.Cos(a), 28 + 19.5 * Math.Sin(a));
+            var (ox, oy) = drawn.InBox(28 + 22.5 * Math.Cos(a), 28 + 22.5 * Math.Sin(a));
+            Assert.True(IconPixels.Distance(drawn.At(ix, iy), fill) <= 2, $"the fill reaches 19.5 px out at {degrees}");
+            Assert.True(IconPixels.Distance(drawn.At(ox, oy), fill) > 2, $"and stops before 22.5 px at {degrees}");
         }
-        Assert.True(inks > 40, $"letters drawn in the light ink: {inks} pixels");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Scales))]
+    public void The_RX_mark_sits_in_the_middle_in_its_two_greys_at_0_57_of_the_circle(double scale)
+    {
+        var drawn = IconPixels.Of(IconPixels.Frame(IconStatus.NotStarted), scale);
+        var r = IconPixels.Colour(RxMark.RInk.ToString());
+        var x = IconPixels.Colour(RxMark.XInk.ToString());
+        var (rs, xs) = (0, 0);
+        var (minX, maxX, minY, maxY) = (int.MaxValue, int.MinValue, int.MaxValue, int.MinValue);
+        for (var j = drawn.InBox(0, 10).Y; j < drawn.InBox(0, 46).Y; j++)
+            for (var i = drawn.InBox(10, 0).X; i < drawn.InBox(46, 0).X; i++)
+            {
+                var (dx, dy) = ((i + 0.5) / scale - IconGeometry.Margin - 28, (j + 0.5) / scale - IconGeometry.Margin - 28);
+                if (dx * dx + dy * dy > 19 * 19) continue; // Inside the circle: the ring's track is grey too.
+                var px = drawn.At(i, j);
+                var isR = IconPixels.Distance(px, r) <= 6;
+                var isX = IconPixels.Distance(px, x) <= 6;
+                if (isR) rs++;
+                if (isX) xs++;
+                if (!isR && !isX) continue;
+                (minX, maxX, minY, maxY) = (Math.Min(minX, i), Math.Max(maxX, i), Math.Min(minY, j), Math.Max(maxY, j));
+            }
+        var area = scale * scale;
+        Assert.Equal(0.57, RxMark.Share);
+        Assert.True(rs > 110 * area, $"the R in light grey: {rs} pixels");
+        Assert.True(xs > 40 * area, $"the X in the dimmer grey: {xs} pixels");
+        Assert.True(rs > xs, "the R leads, the X sits back");
+        var width = (maxX - minX + 1) / scale;
+        Assert.InRange(width, IconGeometry.AvatarDiameter * RxMark.Share - 2.5, IconGeometry.AvatarDiameter * RxMark.Share + 1.5); // Edges blend into the fill.
+        var (cx, cy) = drawn.InBox(28, 28);
+        Assert.InRange((minX + maxX + 1) / 2.0 - cx, -1.5 * scale, 1.5 * scale);
+        Assert.InRange((minY + maxY + 1) / 2.0 - cy, -1.5 * scale, 1.5 * scale);
     }
 
     [AvaloniaTheory]

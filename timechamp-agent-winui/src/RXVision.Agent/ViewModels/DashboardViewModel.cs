@@ -23,13 +23,13 @@ public enum PanelTab { Today, Messages, Profile }
 public enum DashboardPage { Dashboard, History, Leave, Calendar, Instructions }
 
 /// <summary>What the 64 px icon in the panel draws: the floating icon's frame, with the badge the screen below it asks for.</summary>
-public sealed record PanelIconState(IconFrame Frame, bool PastTarget, string Initials, BreakSpan? Break = null, DayRing? Day = null)
+public sealed record PanelIconState(IconFrame Frame, bool PastTarget, BreakSpan? Break = null, DayRing? Day = null)
 {
     public string? Badge => Frame.Glyph;
 }
 
-/// <summary>Someone in the running meeting, as a small round avatar.</summary>
-public sealed record MeetingPersonViewModel(string Initials, string Name);
+/// <summary>Someone in the running meeting, as a small circle: their avatar, else the RX mark.</summary>
+public sealed record MeetingPersonViewModel(string Name, string? AvatarId = null);
 
 /// <summary>
 /// The panel. Everything is recomputed from the agent by <see cref="Refresh"/>
@@ -51,7 +51,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     /// <param name="alerts">The cards on top of the panel, shared with the icon's badge (3.6).</param>
     /// <param name="meter">The one value the ring and these progress lines both read (3.6). With no icon beside it, the panel reads the day view.</param>
-    /// <param name="avatars">The person's picture for the panel's icon, the same as the floating icon's.</param>
+    /// <param name="avatars">The person's picture for the panel's icon, the same as the floating icon's (3.6).</param>
     public DashboardViewModel(IAgent agent, BreakActions actions, ILog log, AlertCenter? alerts = null, DayMeter? meter = null,
         IIconAvatarSource? avatars = null)
     {
@@ -65,7 +65,7 @@ public sealed partial class DashboardViewModel : ObservableObject
             OnPropertyChanged(nameof(ShowGreeting));
         };
         _meter = meter;
-        IconAvatars = avatars ?? new InitialsAvatarSource(agent);
+        IconAvatars = avatars ?? new AvatarIconSource(agent);
 
         // Today's actions (4.0's, drawn as the 3.6 panel's outlined buttons): Next break, Quick break, Start meeting.
         QuickTile = new TileViewModel("Quick break", "amber", "Icon.Coffee");
@@ -87,6 +87,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         Leave = new LeaveViewModel(agent, actions.Dialogs, log);
         Calendar = new CalendarViewModel(agent, log);
         Instructions = new InstructionsViewModel(agent, log);
+        Profile = new ProfileViewModel(agent);
         _actions.BusyChanged += () => IsBusy = _actions.IsBusy;
     }
 
@@ -118,6 +119,8 @@ public sealed partial class DashboardViewModel : ObservableObject
     public CalendarViewModel Calendar { get; }
     /// <summary>The organisation's guide under the Instructions page (3.2).</summary>
     public InstructionsViewModel Instructions { get; }
+    /// <summary>Who is signed in, and the way to their avatar (3.6, for everyone).</summary>
+    public ProfileViewModel Profile { get; }
     public ObservableCollection<BreakRowViewModel> Rows { get; } = new();
     public ObservableCollection<MeetingPersonViewModel> MeetingPeople { get; } = new();
 
@@ -129,7 +132,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     // ---- Header and pages -------------------------------------------------------------------
 
     [ObservableProperty] private string _displayName = "";
-    [ObservableProperty] private string _initials = "";
     /// <summary>The person's department (4.0), under their name on the Profile tab; null when none.</summary>
     [ObservableProperty] private string? _departmentText;
     [ObservableProperty] private string _statusText = "";
@@ -190,6 +192,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private void ShowProfile()
     {
+        Profile.Refresh();
         Page = DashboardPage.Dashboard;
         Tab = PanelTab.Profile;
     }
@@ -589,7 +592,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         var workday = _agent.Workday;
 
         DisplayName = _agent.User?.DisplayName ?? "";
-        Initials = Fmt.Initials(DisplayName);
+        Profile.Refresh();
         DepartmentText = string.IsNullOrWhiteSpace(_agent.User?.Department) ? null : _agent.User!.Department!.Trim();
         CanQuit = _actions.CanQuit;
         StatusText = _agent.AwaySince is not null && running && panel.Active is null && presence.Status == PresenceStatus.Working
@@ -691,7 +694,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         var frame = new IconFrame(IconLook.For(reading.Status, reading.Reached), reading.SweepDegrees, BreakAlerts.Badge(BreakAlert), 1);
         var day = DayRingOf(panel, workday, now);
-        Icon = new PanelIconState(frame, reading.Reached, Initials, Day: day);
+        Icon = new PanelIconState(frame, reading.Reached, Day: day);
         RingName = day is null ? null : RingNameOf(panel, day);
         if (!IsOnBreak || _active is not { } active) BreakIcon = null;
         // With a shift the ring stays as it is and its clock carries the break; the badge stays
@@ -700,7 +703,7 @@ public sealed partial class DashboardViewModel : ObservableObject
         else
         {
             var paused = frame.Look with { RingColor = IconColors.OnBreak, RingOpacity = IconLook.RingWorking };
-            BreakIcon = new PanelIconState(frame with { Look = paused, Glyph = null }, reading.Reached, Initials, new BreakSpan(active.DurationMin, active.Elapsed.TotalMinutes));
+            BreakIcon = new PanelIconState(frame with { Look = paused, Glyph = null }, reading.Reached, new BreakSpan(active.DurationMin, active.Elapsed.TotalMinutes));
         }
     }
 
@@ -867,7 +870,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         {
             _peopleKey = key;
             MeetingPeople.Clear();
-            foreach (var p in people.Take(5)) MeetingPeople.Add(new MeetingPersonViewModel(Fmt.Initials(p.Name), p.Name));
+            // A meeting's answer names people without their avatars; chat knows most of them.
+            var contacts = _agent.Chat?.Contacts;
+            foreach (var p in people.Take(5)) MeetingPeople.Add(new MeetingPersonViewModel(p.Name, contacts?.FirstOrDefault(c => c.UserId == p.Id)?.AvatarId));
         }
         MeetingPeopleText = people.Count == 0 ? "" : string.Join(", ", people.Select(p => p.Name));
         MeetingMomText = string.IsNullOrWhiteSpace(live?.MomSender) ? null : $"Minutes: {live!.MomSender!.Trim()}";

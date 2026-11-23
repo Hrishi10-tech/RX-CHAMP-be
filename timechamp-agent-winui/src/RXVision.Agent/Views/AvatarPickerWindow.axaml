@@ -1,0 +1,228 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:RXVision.Agent.ViewModels"
+        xmlns:ctl="using:RXVision.Agent.Controls"
+        x:Class="RXVision.Agent.Views.AvatarPickerWindow"
+        x:DataType="vm:AvatarPickerViewModel"
+        Title="Avatar"
+        Icon="avares://RXVision/Assets/rxvision.ico"
+        Width="396" Height="630"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="Manual">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
+  </Window.KeyBindings>
+
+  <!-- Design page 9, AGENT.md section 7, D-85. Offsets are from the window's top edge. -->
+  <Window.Styles>
+    <Style Selector="Button.topicon">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.topicon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#222937" />
+    </Style>
+    <Style Selector="Button.topicon PathIcon">
+      <Setter Property="Foreground" Value="#9AA3B2" />
+    </Style>
+
+    <Style Selector="Button.settab">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+    <Style Selector="Button.settab TextBlock">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="#9AA3B2" />
+    </Style>
+    <Style Selector="Button.settab.on /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2B3343" />
+    </Style>
+    <Style Selector="Button.settab.on TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="#E8EBF0" />
+    </Style>
+
+    <Style Selector="Button.tile">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Width" Value="57.6" />
+      <Setter Property="Height" Value="74" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- The RX logo, the default: one wide choice above the sets -->
+    <Style Selector="Button.mark">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Width" Value="350" />
+      <Setter Property="Height" Value="56" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="10,0,14,0" />
+      <Setter Property="Background" Value="#12161D" />
+      <Setter Property="BorderBrush" Value="#2A3241" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.mark:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1C222D" />
+    </Style>
+    <Style Selector="Button.mark.on /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="#6FC9B6" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+
+    <Style Selector="Button.save">
+      <Setter Property="Theme" Value="{StaticResource BareButton}" />
+      <Setter Property="Width" Value="350" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="#6FC9B6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.save TextBlock">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#0E1B18" />
+    </Style>
+    <Style Selector="Button.save:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#7DD3C1" />
+    </Style>
+    <Style Selector="Button.save:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
+  </Window.Styles>
+
+  <Border Background="#1A2029" BorderBrush="#2A3241" BorderThickness="1" CornerRadius="20" ClipToBounds="True">
+    <Grid RowDefinitions="59,88,Auto,Auto,Auto,Auto,*,Auto">
+
+      <!-- Back, title, close -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="14,18,14,0" VerticalAlignment="Top">
+        <Button Classes="topicon" Command="{Binding BackCommand}" ToolTip.Tip="Back" AutomationProperties.Name="Back">
+          <PathIcon Classes="i" Data="{StaticResource Icon.ChevronLeft}" Width="18" Height="18" />
+        </Button>
+        <TextBlock Grid.Column="1" Text="Avatar" FontSize="16" FontWeight="Bold" Foreground="#E8EBF0"
+                   VerticalAlignment="Center" Margin="4,0,0,0" />
+        <Button Grid.Column="2" Classes="topicon" Command="{Binding CloseCommand}" AutomationProperties.Name="Close">
+          <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="15" Height="15" />
+        </Button>
+      </Grid>
+
+      <!-- The live preview: the person's status and today's ring, with the tapped avatar in it -->
+      <ctl:PreviewIcon Grid.Row="1" Name="Preview" Width="88" Height="88" HorizontalAlignment="Center"
+                            AvatarId="{Binding PreviewId}" Look="{Binding Look}" />
+      <TextBlock Grid.Row="2" Margin="20,10,20,0" Text="{Binding StatusLabel}" FontSize="13" Foreground="#9AA3B2"
+                 TextAlignment="Center" MinHeight="18" />
+
+      <!-- The RX logo: the default, and the way back to it -->
+      <Button Grid.Row="3" Classes="mark" Classes.on="{Binding IsMarkSelected}" Margin="0,16,0,0" HorizontalAlignment="Center"
+              Command="{Binding PickMarkCommand}" AutomationProperties.Name="RX logo, default">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <ctl:MarkCircle Width="36" Height="36" />
+          <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="1">
+            <TextBlock Text="RX logo" FontSize="14" FontWeight="SemiBold" Foreground="#E8EBF0" />
+            <TextBlock Text="Default" FontSize="12" Foreground="#9AA3B2" />
+          </StackPanel>
+          <Border Grid.Column="2" Width="20" Height="20" CornerRadius="10" Background="#6FC9B6" IsVisible="{Binding IsMarkSelected}">
+            <PathIcon Classes="i" Data="{StaticResource Icon.Check}" Width="10" Height="10" Foreground="#0E1B18"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </Grid>
+      </Button>
+
+      <!-- Choose an avatar, 75 male avatars -->
+      <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="22,16,22,0" IsVisible="{Binding HasLibrary}">
+        <TextBlock Text="Choose an avatar" FontSize="13" FontWeight="SemiBold" Foreground="#E8EBF0" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding CountText}" FontSize="12" Foreground="#9AA3B2" VerticalAlignment="Center" />
+      </Grid>
+
+      <!-- Formal, Casual, Smart -->
+      <Border Grid.Row="5" Width="350" Height="42" Margin="0,11,0,0" Background="#12161D" BorderBrush="#2A3241" BorderThickness="1"
+              CornerRadius="12" IsVisible="{Binding HasLibrary}">
+        <ItemsControl ItemsSource="{Binding Sets}" Margin="4">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Rows="1" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:AvatarSetViewModel">
+              <Button Classes="settab" Classes.on="{Binding IsSelected}" Command="{Binding ChooseCommand}" AutomationProperties.Name="{Binding Label}">
+                <TextBlock Text="{Binding Label}" />
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- The grid: six across, scrolling under the buttons with a fade at the bottom -->
+      <ScrollViewer Grid.Row="6" Name="GridScroller" Margin="0,17,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"
+                    IsVisible="{Binding HasLibrary}">
+        <ScrollViewer.OpacityMask>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Color="#FF000000" Offset="0" />
+            <GradientStop Color="#FF000000" Offset="0.82" />
+            <GradientStop Color="#00000000" Offset="1" />
+          </LinearGradientBrush>
+        </ScrollViewer.OpacityMask>
+        <ItemsControl ItemsSource="{Binding Tiles}" Width="345.6" HorizontalAlignment="Center" Margin="0,0,0,28">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="6" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:AvatarTileViewModel">
+              <Button Classes="tile" Command="{Binding PickCommand}" AutomationProperties.Name="{Binding SpokenName}">
+                <StackPanel Spacing="1">
+                  <Canvas Width="56" Height="56" HorizontalAlignment="Center">
+                    <ctl:PersonAvatar Canvas.Left="4" Canvas.Top="4" Width="48" Height="48" AvatarId="{Binding Id}" />
+                    <!-- The selected avatar: a 52 px teal outline and a check at its bottom right -->
+                    <Ellipse Canvas.Left="2" Canvas.Top="2" Width="52" Height="52" Stroke="#6FC9B6" StrokeThickness="2"
+                             IsVisible="{Binding IsSelected}" />
+                    <Border Canvas.Left="34.8" Canvas.Top="34.8" Width="23" Height="23" CornerRadius="11.5" BorderBrush="#1B212C" BorderThickness="3"
+                            Background="#6FC9B6" IsVisible="{Binding IsSelected}">
+                      <PathIcon Classes="i" Data="{StaticResource Icon.Check}" Width="11" Height="11" Foreground="#0E1B18"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                  </Canvas>
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- No gender set: nothing to choose from yet -->
+      <TextBlock Grid.Row="4" Grid.RowSpan="3" Margin="44,28,44,0" Text="{Binding NoLibraryText}" FontSize="13.5" LineHeight="20"
+                 Foreground="#9AA3B2" TextAlignment="Center" TextWrapping="Wrap" VerticalAlignment="Top"
+                 IsVisible="{Binding HasNoLibrary}" />
+
+      <!-- Save: an avatar, or back to the RX logo -->
+      <StackPanel Grid.Row="7" Margin="0,2,0,16">
+        <!-- G8: the error sits on its own solid line under the faded grid, never over its last row. -->
+        <Border Background="#1A2029" Margin="0,-2,0,0" Padding="23,8,23,8" IsVisible="{Binding HasError}">
+          <TextBlock Classes="error" Text="{Binding Error}" TextAlignment="Center" TextWrapping="Wrap" />
+        </Border>
+        <Button Classes="save" HorizontalAlignment="Center" Command="{Binding SaveCommand}" AutomationProperties.Name="Save">
+          <TextBlock Text="Save" />
+        </Button>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

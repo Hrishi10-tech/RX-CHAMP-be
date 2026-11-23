@@ -54,6 +54,8 @@ public interface IAgent
     RingView? Ring { get; }
     int ChatUnread { get; }
     IChat? Chat { get; }
+    /// <summary>The signed-in person's avatar. The floating icon, the picker and every other picture read it.</summary>
+    IAvatars Avatars { get; }
     /// <summary>The break panel as of now (cheap; read it every second while visible).</summary>
     BreakPanel BreakPanel { get; }
     /// <summary>Now, on the server's clock (what breaks and focus time are judged by).</summary>
@@ -212,6 +214,31 @@ public interface IChat
     Task<ApiResult<ChatMessage>> SendAsync(string contactId, string body);
     Task RefreshUnreadAsync();
     void BumpUnread();
+}
+
+/// <summary>
+/// The signed-in person's avatar, by manifest ID (see <see cref="Core.Avatars.AvatarService"/>).
+/// The icon draws <see cref="ShownId"/> and updates on <see cref="Changed"/>: a save lands there
+/// at once, before the server has answered, and so does a change from another device, an
+/// admin's reset and a gender change.
+/// </summary>
+public interface IAvatars
+{
+    /// <summary>What the server last said; null before its first answer.</summary>
+    MyAvatar? Mine { get; }
+    /// <summary>The avatar on show, or null for the RX mark.</summary>
+    string? ShownId { get; }
+    /// <summary>Whose avatar it is, also before any answer from the server (a start with no network).</summary>
+    string? PersonName { get; }
+    /// <summary>What shows changed. Raised on the UI thread.</summary>
+    event Action? Changed;
+    /// <summary>Someone else's avatar changed: their user ID and avatar ID. Raised on the UI thread.</summary>
+    event Action<string, string?>? PersonChanged;
+    Task RefreshAsync();
+    Task<ApiResult<MyAvatar>> SaveAsync(string avatarId);
+    Task<ApiResult<MyAvatar>> ResetAsync();
+    /// <summary>The status and today's ring, for the live preview.</summary>
+    Task<ApiResult<DayProgress>> GetDayProgressAsync();
 }
 
 /// <summary>Runs work on the UI thread.</summary>

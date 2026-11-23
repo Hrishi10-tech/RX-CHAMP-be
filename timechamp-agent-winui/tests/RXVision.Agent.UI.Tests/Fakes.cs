@@ -320,6 +320,8 @@ public sealed class FakeAgent : IAgent
     public int ChatUnread { get; set; }
     public FakeChat FakeChat { get; } = new();
     public IChat? Chat => FakeChat;
+    public FakeAvatars FakeAvatars { get; } = new();
+    public IAvatars Avatars => FakeAvatars;
     public BreakDay? Day { get; set; } = Days.General();
     public BreakPanel BreakPanel => BreakSchedule.Compute(Day, Now);
     public DateTimeOffset Now { get; set; }
@@ -710,6 +712,93 @@ public sealed class FakeChat : IChat
 
     public Task RefreshUnreadAsync() => Task.CompletedTask;
     public void BumpUnread() => Bumps++;
+}
+
+/// <summary>
+/// The person's avatar as a test scripts it. A save lands at once and waits for
+/// <see cref="Hold"/> when one is set, the way the real one answers later; an answer that does
+/// not take puts the old avatar back. The real behaviour is proved on AvatarService itself.
+/// </summary>
+public sealed class FakeAvatars : IAvatars
+{
+    public MyAvatar? Mine { get; set; }
+    public string? ShownId { get; set; }
+    public string? PersonName { get; set; }
+    public event Action? Changed;
+    public event Action<string, string?>? PersonChanged;
+    public Queue<ApiResult<MyAvatar>> Answers { get; } = new();
+    public List<string> Saves { get; } = new();
+    public int Resets { get; private set; }
+    public int Refreshes { get; private set; }
+    public TaskCompletionSource? Hold { get; set; }
+    public ApiResult<DayProgress> DayAnswer { get; set; } = ApiResult<DayProgress>.TransientFailure("offline");
+    public int DayReads { get; private set; }
+
+    /// <summary>The person has this gender's library, the server shows this avatar, and this is their stored choice (null: the RX mark).</summary>
+    public FakeAvatars Have(string library, string avatarId, string? chosen = null)
+    {
+        Mine = new MyAvatar
+        {
+            Library = library,
+            AvatarId = avatarId,
+            ChosenAvatarId = chosen,
+            DefaultAvatarId = library == "male" ? "M01" : "F01",
+        };
+        ShownId = chosen;
+        return this;
+    }
+
+    public void RaiseChanged() => Changed?.Invoke();
+    public void RaisePerson(string userId, string? avatarId) => PersonChanged?.Invoke(userId, avatarId);
+
+    public Task RefreshAsync()
+    {
+        Refreshes++;
+        return Task.CompletedTask;
+    }
+
+    public Task<ApiResult<MyAvatar>> SaveAsync(string avatarId)
+    {
+        Saves.Add(avatarId);
+        return ChangeAsync(avatarId, () =>
+        {
+            var library = Mine?.Library ?? "male";
+            return new MyAvatar { Library = library, AvatarId = avatarId, ChosenAvatarId = avatarId, DefaultAvatarId = Mine?.DefaultAvatarId };
+        });
+    }
+
+    public Task<ApiResult<MyAvatar>> ResetAsync()
+    {
+        Resets++;
+        return ChangeAsync(null, () =>
+            new MyAvatar { Library = Mine?.Library, AvatarId = Mine?.DefaultAvatarId, ChosenAvatarId = null, DefaultAvatarId = Mine?.DefaultAvatarId });
+    }
+
+    private async Task<ApiResult<MyAvatar>> ChangeAsync(string? showNow, Func<MyAvatar> saved)
+    {
+        var before = ShownId;
+        ShownId = showNow;
+        Changed?.Invoke();
+        if (Hold is { } hold) await hold.Task;
+        var answer = Answers.Count > 0 ? Answers.Dequeue() : ApiResult<MyAvatar>.Success(saved());
+        if (answer.Ok)
+        {
+            Mine = answer.Data;
+            ShownId = answer.Data?.ChosenAvatarId;
+        }
+        else
+        {
+            ShownId = before;
+        }
+        Changed?.Invoke();
+        return answer;
+    }
+
+    public Task<ApiResult<DayProgress>> GetDayProgressAsync()
+    {
+        DayReads++;
+        return Task.FromResult(DayAnswer);
+    }
 }
 
 /// <summary>Answers dialogs from a script; records what was shown.</summary>

@@ -40,22 +40,17 @@ public sealed class IconPixels
     public int Side { get; }
     public double Scale { get; }
 
-    /// <summary>A flat picture, to read the avatar's circle; or none, for the initials.</summary>
+    /// <summary>A flat picture, to read the avatar's circle; or none, for the RX mark.</summary>
     public sealed class Avatars : IIconAvatarSource
     {
         private readonly Bitmap? _picture;
-        public Avatars(Bitmap? picture = null, string initials = "AK")
-        {
-            _picture = picture;
-            Initials = initials;
-        }
+        public Avatars(Bitmap? picture = null) => _picture = picture;
         public List<int> Asked { get; } = new();
         public Bitmap? Picture(int devicePixels)
         {
             Asked.Add(devicePixels);
             return _picture;
         }
-        public string Initials { get; }
         public event Action? Changed { add { } remove { } }
     }
 

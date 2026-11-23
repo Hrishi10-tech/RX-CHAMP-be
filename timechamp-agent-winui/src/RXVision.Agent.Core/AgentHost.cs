@@ -1073,7 +1073,7 @@ public sealed class AgentHost : IDisposable
         catch (Exception ex) { _log.Error("session", "a notice handler failed", ex); }
     }
 
-    /// <summary>C-966: an https server this build may not use (S-02, AG-2).</summary>
+    /// <summary>C-956: an https server this build may not use (S-02, AG-2).</summary>
     public const string ServerNotAllowed = "Check the server address with your manager.";
 
     /// <summary>

@@ -1,5 +1,11 @@
 import { isoWeekdayOfKey } from '@shared/utils/timezone';
 import { RECORD_LABEL } from '@modules/shifts/domain/shift.types';
+import {
+  dayLeaveView,
+  expectedAfterLeave,
+  leaveSecOf,
+  shiftAfterLeave,
+} from '@modules/leave/domain/day-leave';
 import { outcomeOf } from '@modules/shifts/domain/break-record.repository';
 import { overrunSeconds } from '@modules/shifts/domain/break-schedule';
 import { meetingsOfDay, PersonDayData } from '@modules/worktime/domain/day';
@@ -79,6 +85,11 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
   const joined = !beforeJoining(i.date, i.joinedOn, d.sessions.length > 0);
   const workday = joined && (i.plan ? i.plan.isWorkingDay : isWorkdayFor(i.shift, i.date));
   const shiftExpected = workday ? (i.plan ? i.plan.targetSec : expectedSecOf(i.shift)) : 0;
+  // Leave counts on working days only (3.4): a part day is judged on the rest of it.
+  const leave = workday ? d.leave : undefined;
+  const fullLeave = !!leave?.full;
+  const expectedLeft = expectedAfterLeave(shiftExpected, leave);
+  const markStart = shiftAfterLeave(i.shiftStart, i.shiftEnd ?? null, leave).start;
   const open = d.sessions.some((s) => s.endedAt === null);
   const first = d.sessions[0] ?? null;
   const last = d.sessions[d.sessions.length - 1] ?? null;
@@ -94,9 +105,10 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
       workday,
       spanSec: focus.spanSec,
       focusSec: focus.focusSec,
-      expectedSec: shiftExpected,
+      expectedSec: expectedLeft,
       fullDayPct: i.settings.fullDayPct,
       halfDayPct: i.settings.halfDayPct,
+      fullLeave,
     }),
     startedAt: first?.startedAt.toISOString() ?? null,
     endedAt: !open && last?.endedAt ? last.endedAt.toISOString() : null,
@@ -105,8 +117,8 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     extendedSec: extendedSecOf(d.sessions, i.shiftEnd ?? null, i.now),
     lateStart: (() => {
       const late =
-        workday && first
-          ? lateStartOf(first.startedAt, i.shiftStart, i.settings.lateStartGraceMin)
+        workday && first && !fullLeave
+          ? lateStartOf(first.startedAt, markStart, i.settings.lateStartGraceMin)
           : null;
       // 3.2: and why, once given.
       return late ? { minutes: late.minutes, reason: first?.lateReason?.trim() || null } : null;
@@ -118,13 +130,15 @@ export function summarizeDay(i: DaySummaryInput): PersonDaySummary {
     focusSec: focus.focusSec,
     // A future working day expects nothing yet, so a month's expected time is
     // always the sum of its days.
-    expectedSec: i.date <= i.today ? shiftExpected : 0,
+    expectedSec: i.date <= i.today ? expectedLeft : 0,
     breakSec: focus.breakSec,
     meetingSec: focus.meetingSec,
     approvedPlusSec: focus.approvedPlusSec,
     rejectedMinusSec: focus.rejectedMinusSec,
     pendingPlusSec: focus.pendingPlusSec,
     pendingMinusSec: focus.pendingMinusSec,
+    leave: workday ? dayLeaveView(d.leave) : null,
+    leaveSec: i.date <= i.today ? leaveSecOf(shiftExpected, leave) : 0,
     breaksTaken: taken.length,
     skipped: d.breakRecords.filter((r) => outcomeOf(r) === 'SKIPPED').length,
     autoSkipped: d.breakRecords.filter((r) => outcomeOf(r) === 'AUTO_SKIPPED').length,
@@ -178,6 +192,7 @@ const SUM_KEYS = [
   'adjustedSec',
   'activeSec',
   'availableSec',
+  'leaveSec',
 ] as const;
 
 /** A month's totals: every number is the sum (or count) of its days. */
@@ -187,8 +202,13 @@ export function monthTotals(
   quietHoursFlag: number,
 ): MonthTotals {
   const workdays = days.filter((d) => d.workday && d.date <= today);
-  const workdayFocus = workdays.reduce((s, d) => s + d.focusSec, 0);
+  // A day of leave is not a day the average focus is spread over (3.4).
+  const worked = workdays.filter((d) => d.dayClass !== 'LEAVE');
+  const workdayFocus = worked.reduce((s, d) => s + d.focusSec, 0);
   const by = (c: string) => days.filter((d) => d.dayClass === c).length;
+  const leaveDaysSoFar = workdays.filter((d) => d.leave && d.leave.days > 0);
+  const leaveSum = (f: (l: NonNullable<PersonDaySummary['leave']>) => number) =>
+    leaveDaysSoFar.reduce((s, d) => s + f(d.leave!), 0);
   // A day from a snapshot taken before 3.2 has no paid or active time: it adds 0.
   const sums = Object.fromEntries(
     SUM_KEYS.map((k) => [k, days.reduce((s, d) => s + ((d[k] as number | undefined) ?? 0), 0)]),
@@ -202,8 +222,12 @@ export function monthTotals(
     absent: by('ABSENT'),
     off: by('OFF'),
     extra: by('EXTRA'),
+    leave: workdays.filter((d) => d.dayClass === 'LEAVE').length,
+    leaveDays: leaveSum((l) => l.days),
+    clslDays: leaveSum((l) => l.clslDays ?? 0),
+    elplDays: leaveSum((l) => l.elplDays ?? 0),
     ...sums,
-    avgFocusSec: workdays.length ? Math.round(workdayFocus / workdays.length) : 0,
+    avgFocusSec: worked.length ? Math.round(workdayFocus / worked.length) : 0,
     lateStarts: days.filter((d) => d.lateStart).length,
     needsALook: sums.quietHours >= quietHoursFlag,
   };
@@ -224,6 +248,10 @@ export function teamTotals(
     'absent',
     'off',
     'extra',
+    'leave',
+    'leaveDays',
+    'clslDays',
+    'elplDays',
     'lateStarts',
     'holidays',
     'lateWithoutReason',
@@ -235,9 +263,13 @@ export function teamTotals(
   ) as Record<string, number>;
   const workdayFocus = rows.reduce(
     (s, r) =>
-      s + r.days.filter((d) => d.workday && d.date <= today).reduce((a, d) => a + d.focusSec, 0),
+      s +
+      r.days
+        .filter((d) => d.workday && d.date <= today && d.dayClass !== 'LEAVE')
+        .reduce((a, d) => a + d.focusSec, 0),
     0,
   );
+  const workedDays = sums.workdays - sums.leave;
   return {
     workdays: sums.workdays,
     full: sums.full,
@@ -245,9 +277,14 @@ export function teamTotals(
     absent: sums.absent,
     off: sums.off,
     extra: sums.extra,
+    leave: sums.leave,
+    leaveDays: sums.leaveDays,
+    clslDays: sums.clslDays,
+    elplDays: sums.elplDays,
+    leaveSec: sums.leaveSec,
     focusSec: sums.focusSec,
     expectedSec: sums.expectedSec,
-    avgFocusSec: sums.workdays ? Math.round(workdayFocus / sums.workdays) : 0,
+    avgFocusSec: workedDays > 0 ? Math.round(workdayFocus / workedDays) : 0,
     lateStarts: sums.lateStarts,
     lateWithoutReason: sums.lateWithoutReason,
     holidays: sums.holidays,

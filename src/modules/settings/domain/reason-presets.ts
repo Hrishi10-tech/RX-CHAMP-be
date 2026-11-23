@@ -16,6 +16,7 @@ export const PRESET_KINDS = [
   'BREAK_OVERRUN',
   'MEETING_AGENDA',
   'DECISION_NOTE',
+  'LEAVE_REASON',
 ] as const;
 export type PresetKind = (typeof PRESET_KINDS)[number];
 
@@ -46,6 +47,7 @@ export const PRESET_KIND_INFO: Record<PresetKind, { label: string; asked: string
     label: 'Manager note on a decision',
     asked: 'A note to the person when approving or rejecting',
   },
+  LEAVE_REASON: { label: 'Reason for leave', asked: 'Why are you taking leave?' },
 };
 
 export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
@@ -71,6 +73,14 @@ export const DEFAULT_REASON_PRESETS: Record<PresetKind, string[]> = {
     'Approved, thanks for the note',
     'Please take breaks on time',
     'Let us talk about this',
+  ],
+  LEAVE_REASON: [
+    'Unwell',
+    'Family function',
+    'Personal work',
+    'Medical appointment',
+    'Travel',
+    'Festival',
   ],
 };
 

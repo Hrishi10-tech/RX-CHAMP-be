@@ -29,7 +29,7 @@ export class OrgConfigSubscriber implements OnModuleInit {
     });
     this.events.subscribe<WorkdayChangedEvent>(WorkdayChangedEvent.eventName, (e) => {
       try {
-        for (const id of new Set(e.userIds)) this.gateway.emitWorkdayChanged(id, e.reason);
+        for (const id of new Set(e.userIds)) this.gateway.emitWorkdayChanged(id, e.reason, e.at);
       } catch (err) {
         this.logger.warn(`workday push failed: ${(err as Error).message}`);
       }

@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { LeaveDaysService } from '@modules/leave/application/leave-days.service';
+import { DayLeave, leaveOn, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { ConflictError, NotFoundError, UnprocessableError } from '@shared/exceptions/app.exception';
 import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { NoticeEvent } from '@shared/events/notice.event';
@@ -69,7 +71,24 @@ export class LateStartService {
     private readonly presets: ReasonPresetsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly plans: DayPlanService,
+    @Optional() private readonly leaveDays?: LeaveDaysService,
   ) {}
+
+  /** Approved leave of a person on a day (3.4). */
+  private async leaveOf(userId: string, date: string): Promise<DayLeave | undefined> {
+    if (!this.leaveDays) return undefined;
+    return leaveOn(await this.leaveDays.byDay([userId], date, date), userId, date);
+  }
+
+  /** The late-start mark: the shift start, or the end of leave at the start of the day. */
+  private markOf(
+    shift: Parameters<typeof shiftBounds>[0],
+    date: string,
+    leave: DayLeave | undefined,
+  ): Date {
+    const b = shiftBounds(shift, date, appTimezone());
+    return shiftAfterLeave(b.start, b.end, leave).start ?? b.start;
+  }
 
   /** Whether a Start Day at `startedAt` would be the day's late first start. */
   async lateFirstStart(person: ShiftPerson, startedAt: Date): Promise<LateFirstStart | null> {
@@ -87,7 +106,10 @@ export class LateStartService {
     const plan = pc.plan(person, date);
     const shift = plan.shift;
     if (!shift || !plan.isWorkingDay) return null;
-    const shiftStart = shiftBounds(shift, date, appTimezone()).start;
+    // A day of leave is never a late start; leave at its start moves the mark (3.4).
+    const leave = await this.leaveOf(person.id, date);
+    if (leave?.full) return null;
+    const shiftStart = this.markOf(shift, date, leave);
     const late = lateStartOf(startedAt, shiftStart, settings.lateStartGraceMin);
     if (!late) return null;
     return {
@@ -192,8 +214,9 @@ export class LateStartService {
     }
     const plan = pc.plan(person, date);
     const shift = plan.shift;
+    const leave = await this.leaveOf(person.id, date);
     const shiftStart =
-      shift && plan.isWorkingDay ? shiftBounds(shift, date, appTimezone()).start : null;
+      shift && plan.isWorkingDay && !leave?.full ? this.markOf(shift, date, leave) : null;
     const detail = lateStartDetail({
       first,
       shiftStart,

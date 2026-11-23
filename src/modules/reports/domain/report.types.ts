@@ -1,3 +1,4 @@
+import type { DayLeaveView } from '@modules/leave/domain/day-leave';
 import { BreakRecordView } from '@modules/shifts/application/shifts.types';
 import { BreakKind } from '@modules/shifts/domain/shift.types';
 import {
@@ -8,7 +9,7 @@ import {
 import { DayClass } from '@modules/worktime/domain/attendance';
 import { HourActivity } from '@modules/worktime/domain/hourly';
 import type { PendingBlocker } from '@modules/worktime/domain/approvals.reader';
-import type { OpenSessionBlocker } from './report.store';
+import type { OpenSessionBlocker, PendingLeaveBlocker } from './report.store';
 
 /** Report shapes (SPEC 3.7). */
 
@@ -83,6 +84,10 @@ export interface PersonDaySummary {
   activeSec?: number;
   /** Seconds inside the working day not on a break or in a meeting (3.2 Fix 10). */
   availableSec?: number;
+  /** Leave that day (3.4): approved, and any still waiting; null without any. */
+  leave?: DayLeaveView | null;
+  /** Expected seconds the approved leave covers: paid leave time (3.4). */
+  leaveSec?: number;
 }
 
 export interface TimelineSegment {
@@ -138,6 +143,14 @@ export interface MonthTotals {
   /** Keyboard and mouse input inside working days (Fix 10). */
   activeSec?: number;
   availableSec?: number;
+  /** Full days of leave not worked (day class LEAVE, 3.4). */
+  leave?: number;
+  /** Days of approved leave so far, part days included, and per pool (3.4). */
+  leaveDays?: number;
+  clslDays?: number;
+  elplDays?: number;
+  /** Paid leave time: the expected time the leave covers (3.4). */
+  leaveSec?: number;
   needsALook: boolean;
   // ---- 4.0
   /** Sum of every day's target (future working days included). */
@@ -214,6 +227,10 @@ export interface MonthLockBlockers {
   /** True when there are more undecided items than `items` lists. */
   moreItems: boolean;
   openSessions: OpenSessionBlocker[];
+  /** Leave requests with a day in the month still waiting for a decision (3.4). */
+  leave?: PendingLeaveBlocker[];
+  /** How many there are (the list stops at 50). */
+  pendingLeave?: number;
 }
 
 export interface ReportRunView {

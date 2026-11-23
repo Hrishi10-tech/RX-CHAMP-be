@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { WorkdayChangedSubscriber } from './application/workday-changed.subscriber';
+import { WorkdayChangeInterceptor } from './presentation/workday-change.interceptor';
 import { NOTIFICATION_REPOSITORY } from './domain/notification.repository';
 import { OversightRecipients } from './application/oversight-recipients.service';
 import { PrismaNotificationRepository } from './infrastructure/prisma-notification.repository';
@@ -36,6 +39,8 @@ import { NotificationsGateway } from './presentation/notifications.gateway';
     BreakEventsSubscriber,
     NoticeSubscriber,
     OrgConfigSubscriber,
+    WorkdayChangedSubscriber,
+    { provide: APP_INTERCEPTOR, useClass: WorkdayChangeInterceptor },
     ListNotificationsUseCase,
     MarkNotificationReadUseCase,
     MarkAllNotificationsReadUseCase,

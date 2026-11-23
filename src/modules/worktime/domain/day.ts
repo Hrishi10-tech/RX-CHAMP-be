@@ -3,6 +3,7 @@ import {
   outcomeOf,
   segmentsOf,
 } from '@modules/shifts/domain/break-record.repository';
+import type { DayLeave } from '@modules/leave/domain/day-leave';
 import { AwayRow } from './away.repository';
 import { computeFocus, FocusBreakdown } from './focus';
 import { adjustedSecOf, FocusAdjustmentRecord } from './focus-adjustment';
@@ -29,6 +30,8 @@ export interface PersonDayData {
   coverage?: CoverageRow[];
   /** 3.3: manual adjustments dated `date`, live and voided (only live ones count). */
   adjustments?: FocusAdjustmentRecord[];
+  /** Leave that day (3.4), approved and pending; optional for callers that have none. */
+  leave?: DayLeave;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { REPLAY_DAY_LIMITS } from '@shared/http/replay-day.port';
 import { WORKDAY_GATE } from '@shared/tenancy/workday-gate.port';
+import { LeaveModule } from '@modules/leave/leave.module';
 import { SettingsModule } from '@modules/settings/settings.module';
 import { CalendarModule } from '@modules/calendar/calendar.module';
 import { ShiftsModule } from '@modules/shifts/shifts.module';
@@ -68,7 +69,7 @@ import { OrganisationsOverviewController } from './presentation/organisations-ov
  * Start Day, End Day and activity reports; the reports module for its numbers.
  */
 @Module({
-  imports: [ShiftsModule, SettingsModule, CalendarModule],
+  imports: [ShiftsModule, SettingsModule, CalendarModule, LeaveModule],
   controllers: [
     WorkdayController,
     WorkdayBreaksController,

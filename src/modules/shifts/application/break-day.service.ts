@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { EVENT_BUS, EventBus } from '@shared/events/event-bus.port';
 import { appTimezone, dateKeyInZone } from '@shared/utils/timezone';
 import { breakSlots, isWorkDay, shiftDayKey } from '../domain/break-schedule';
 import { PersonForShift, ResolvedShift, resolveShift } from '../domain/shift-resolution';
@@ -32,6 +33,9 @@ export interface ResolutionContext {
  */
 export const CONTEXT_TTL_MS = 60_000;
 
+/** Published whenever working days may have changed (3.4). */
+export const CALENDAR_CHANGED = 'calendar.changed';
+
 interface CachedContext {
   at: number;
   shifts: Promise<ShiftRecord[]>;
@@ -47,7 +51,10 @@ interface CachedContext {
 export class BreakDayService {
   private cached: CachedContext | null = null;
 
-  constructor(@Inject(SHIFT_REPOSITORY) private readonly shifts: ShiftRepository) {}
+  constructor(
+    @Inject(SHIFT_REPOSITORY) private readonly shifts: ShiftRepository,
+    @Optional() @Inject(EVENT_BUS) private readonly events?: EventBus,
+  ) {}
 
   get timezone(): string {
     return appTimezone();
@@ -67,9 +74,14 @@ export class BreakDayService {
     };
   }
 
-  /** Forget the cached shifts and assignments (a shift or an assignment changed). */
+  /**
+   * Forget the cached shifts and assignments (a shift, an assignment, a holiday or
+   * a department calendar changed). Leave listens (3.4): a day that is no longer a
+   * working day is given back.
+   */
   invalidate(): void {
     this.cached = null;
+    void this.events?.publish(CALENDAR_CHANGED, {}).catch(() => undefined);
   }
 
   private source(now = Date.now()): CachedContext {

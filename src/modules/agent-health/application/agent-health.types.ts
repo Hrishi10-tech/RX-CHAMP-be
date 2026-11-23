@@ -1,3 +1,4 @@
+import type { DayLeaveView } from '@modules/leave/domain/day-leave';
 import { WorkdayState } from '@modules/worktime/application/worktime.types';
 
 /**
@@ -64,6 +65,8 @@ export interface AgentHealthRow {
     endedAt: string | null;
     /** A working day by the calendar, with the shift start when there is a shift. */
     workday: boolean;
+    /** Leave today (3.4); a full day is not a working day here. */
+    leave?: DayLeaveView | null;
     shiftStart: string | null;
   };
   screenshots: {

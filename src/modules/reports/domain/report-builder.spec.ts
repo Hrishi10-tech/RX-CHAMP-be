@@ -359,6 +359,115 @@ describe('summarizeDay', () => {
     expect(inGrace.lateStart).toBeNull();
   });
 
+  describe('leave (3.4)', () => {
+    const FULL = { mask: 15, units: 4, clslUnits: 4, elplUnits: 0, pendingMask: 0, full: true };
+    const FIRST_HALF = {
+      mask: 3,
+      units: 2,
+      clslUnits: 0,
+      elplUnits: 2,
+      pendingMask: 0,
+      full: false,
+    };
+    const end = (date: string) => ({ shiftEnd: at(date, '18:30') });
+
+    it('a full day of leave not worked is LEAVE, expects nothing and pays the shift as leave', () => {
+      const s = summarize(day('2026-09-07', { leave: FULL }), end('2026-09-07'));
+      expect(s).toMatchObject({
+        dayClass: 'LEAVE',
+        expectedSec: 0,
+        leaveSec: 8 * H,
+        lateStart: null,
+      });
+      expect(s.leave).toMatchObject({
+        days: 1,
+        full: true,
+        label: 'Full day',
+        categories: 'CL/SL',
+        clslDays: 1,
+      });
+    });
+
+    it('a full day of leave worked anyway is EXTRA', () => {
+      const s = summarize(
+        day('2026-09-07', { leave: FULL, sessions: [session('2026-09-07', '10:15', '13:00')] }),
+        end('2026-09-07'),
+      );
+      expect(s).toMatchObject({ dayClass: 'EXTRA', expectedSec: 0, lateStart: null });
+    });
+
+    it('a future day of leave is LEAVE, not UPCOMING; nothing is paid yet', () => {
+      const s = summarize(day('2026-10-02', { leave: FULL }), {
+        ...end('2026-10-02'),
+        today: '2026-09-30',
+      });
+      expect(s).toMatchObject({ dayClass: 'LEAVE', expectedSec: 0, leaveSec: 0 });
+    });
+
+    it('a half day: half the expected time, the late-start mark moves to mid-shift', () => {
+      const onTime = summarize(
+        day('2026-09-07', {
+          leave: FIRST_HALF,
+          sessions: [session('2026-09-07', '14:05', '18:30')],
+        }),
+        end('2026-09-07'),
+      );
+      expect(onTime).toMatchObject({
+        dayClass: 'FULL',
+        expectedSec: 4 * H,
+        leaveSec: 4 * H,
+        lateStart: null,
+      });
+      expect(onTime.leave).toMatchObject({
+        days: 0.5,
+        full: false,
+        label: 'Half day (first half)',
+        categories: 'EL/PL',
+      });
+      const late = summarize(
+        day('2026-09-07', {
+          leave: FIRST_HALF,
+          sessions: [session('2026-09-07', '14:20', '18:30')],
+        }),
+        end('2026-09-07'),
+      );
+      expect(late.lateStart).toEqual({ minutes: 20, reason: null });
+    });
+
+    it('leave on a day off counts for nothing', () => {
+      const s = summarize(day('2026-09-06', { leave: FULL }), end('2026-09-06'));
+      expect(s).toMatchObject({ dayClass: 'OFF', leaveSec: 0, leave: null });
+    });
+
+    it('month totals: leave days per pool, paid leave time, and the average leaves out days of leave', () => {
+      const days = [
+        summarize(
+          day('2026-09-07', { sessions: [session('2026-09-07', '09:30', '18:30')] }),
+          end('2026-09-07'),
+        ),
+        summarize(day('2026-09-08', { leave: FULL }), end('2026-09-08')),
+        summarize(
+          day('2026-09-09', {
+            leave: FIRST_HALF,
+            sessions: [session('2026-09-09', '14:00', '18:30')],
+          }),
+          end('2026-09-09'),
+        ),
+      ];
+      const t = monthTotals(days, '2026-09-30', 4);
+      expect(t).toMatchObject({
+        workdays: 3,
+        leave: 1,
+        leaveDays: 1.5,
+        clslDays: 1,
+        elplDays: 0.5,
+        leaveSec: 12 * H,
+      });
+      expect(t.expectedSec).toBe(8 * H + 0 + 4 * H);
+      expect(t.avgFocusSec).toBe(Math.round((days[0].focusSec + days[2].focusSec) / 2));
+    });
+  });
+
   it('a day off is OFF, or EXTRA when they worked, and expects nothing', () => {
     expect(summarize(day('2026-09-06'))).toMatchObject({
       dayClass: 'OFF',
@@ -617,6 +726,12 @@ describe('monthTotals', () => {
       availableSec: 0,
       holidays: 0,
       lateWithoutReason: 1,
+      // 3.4: no leave in the fixture.
+      leave: 0,
+      leaveDays: 0,
+      clslDays: 0,
+      elplDays: 0,
+      leaveSec: 0,
     });
   });
 

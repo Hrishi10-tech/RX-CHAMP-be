@@ -8,7 +8,7 @@ import { ReportsService } from './application/reports.service';
 import { CombinedReportsService } from './application/combined-reports.service';
 import { REPORT_STORE } from './domain/report.store';
 import { PrismaReportStore } from './infrastructure/prisma-report.store';
-import { ReportsController } from './presentation/reports.controller';
+import { MyReportsController, ReportsController } from './presentation/reports.controller';
 
 /**
  * Attendance and payroll reports (SPEC 1.9, 3.7): person and team, day and
@@ -17,7 +17,7 @@ import { ReportsController } from './presentation/reports.controller';
  */
 @Module({
   imports: [WorktimeModule, ShiftsModule, SettingsModule],
-  controllers: [ReportsController],
+  controllers: [MyReportsController, ReportsController],
   providers: [
     { provide: REPORT_STORE, useClass: PrismaReportStore },
     ReportsService,

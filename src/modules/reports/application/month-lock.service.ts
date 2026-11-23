@@ -83,15 +83,22 @@ export class MonthLockService {
     people: string[] | undefined,
     withSessions: boolean,
   ): Promise<MonthLockBlockers> {
-    const [items, openSessions] = await Promise.all([
+    const [items, openSessions, leave] = await Promise.all([
       pending > 0
         ? people
           ? this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT, people)
           : this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT)
         : [],
       withSessions ? this.store.openSessionsInMonth(companyId, month, BLOCKER_LIMIT) : [],
+      this.store.pendingLeaveInMonth(companyId, month, BLOCKER_LIMIT, people),
     ]);
-    return { items, moreItems: pending > items.length, openSessions };
+    return {
+      items,
+      moreItems: pending > items.length,
+      openSessions,
+      leave: leave.items,
+      pendingLeave: leave.count,
+    };
   }
 
   async lock(me: AuthenticatedUser, month: string, now: Date): Promise<MonthLockView> {
@@ -113,6 +120,18 @@ export class MonthLockService {
           'still open. Lock the month once they have ended (End Day, or the automatic close).',
         'OPEN_SESSIONS',
       ).withDetails({ count: result.count, sessions });
+    }
+    if (!result.ok && result.reason === 'PENDING_LEAVE') {
+      const leave = await this.store.pendingLeaveInMonth(companyId, month, BLOCKER_LIMIT);
+      throw new ConflictError(
+        `${result.count === 1 ? '1 leave request' : `${result.count} leave requests`} with days in ${month} ` +
+          `still ${result.count === 1 ? 'waits' : 'wait'} for a decision. Decide ${result.count === 1 ? 'it' : 'them'} before locking the month.`,
+        'PENDING_LEAVE',
+      ).withDetails({
+        count: result.count,
+        leave: leave.items,
+        moreLeave: result.count > leave.items.length,
+      });
     }
     if (!result.ok) {
       const items = await this.approvals.pendingInMonthDetails(companyId, month, BLOCKER_LIMIT);
@@ -181,4 +200,10 @@ export class MonthLockService {
 
 /** How many blocking rows the status and a refused lock name (the count is always exact). */
 const BLOCKER_LIMIT = 50;
-const EMPTY_BLOCKERS: MonthLockBlockers = { items: [], moreItems: false, openSessions: [] };
+const EMPTY_BLOCKERS: MonthLockBlockers = {
+  items: [],
+  moreItems: false,
+  openSessions: [],
+  leave: [],
+  pendingLeave: 0,
+};

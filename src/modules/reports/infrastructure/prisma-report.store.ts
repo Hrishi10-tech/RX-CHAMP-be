@@ -6,6 +6,7 @@ import {
   LockMonthResult,
   MonthLockRow,
   OpenSessionBlocker,
+  PendingLeaveBlocker,
   ReportRunRow,
   ReportStore,
 } from '../domain/report.store';
@@ -121,6 +122,11 @@ export class PrismaReportStore implements ReportStore {
       if (pending > 0) {
         return { ok: false as const, reason: 'PENDING_APPROVALS' as const, count: pending };
       }
+      // Leave waiting for a decision (3.4): it would change the month's attendance.
+      const leave = await tx.leaveRequest.count({
+        where: { status: 'PENDING', days: { some: { date: { startsWith: `${month}-` } } } },
+      });
+      if (leave > 0) return { ok: false as const, reason: 'PENDING_LEAVE' as const, count: leave };
       const snapshot = await buildSnapshot();
       const lock = await tx.monthLock.create({
         data: {
@@ -158,6 +164,63 @@ export class PrismaReportStore implements ReportStore {
       date: r.date,
       startedAt: r.startedAt.toISOString(),
     }));
+  }
+
+  /** Everyone of the organisation, past and present (their requests stay theirs). */
+  private async orgUserIds(companyId: string): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({ where: { companyId }, select: { id: true } });
+    return rows.map((r) => r.id);
+  }
+
+  async pendingLeaveInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<{ count: number; items: PendingLeaveBlocker[] }> {
+    const where: Prisma.LeaveRequestWhereInput = {
+      status: 'PENDING',
+      // 4.0: the organisation's people only.
+      userId: { in: userIds ?? (await this.orgUserIds(companyId)) },
+      days: { some: { date: { startsWith: `${month}-` } } },
+    };
+    const [count, rows] = await Promise.all([
+      this.prisma.leaveRequest.count({ where }),
+      this.prisma.leaveRequest.findMany({
+        where,
+        orderBy: [{ startDate: 'asc' }, { createdAt: 'asc' }],
+        take: Math.max(1, Math.min(500, Math.floor(limit))),
+        select: {
+          id: true,
+          userId: true,
+          category: true,
+          startDate: true,
+          endDate: true,
+          units: true,
+        },
+      }),
+    ]);
+    const people = rows.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: [...new Set(rows.map((r) => r.userId))] } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const nameOf = new Map(
+      people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim() || 'Former user'] as const),
+    );
+    return {
+      count,
+      items: rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        userName: nameOf.get(r.userId) ?? 'Former user',
+        category: r.category,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        days: r.units / 4,
+      })),
+    };
   }
 
   async unlockMonth(companyId: string, month: string): Promise<boolean> {

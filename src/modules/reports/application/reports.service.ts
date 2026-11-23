@@ -50,6 +50,7 @@ import {
 import { REPORT_STORE, ReportStore } from '../domain/report.store';
 import {
   MonthSnapshot,
+  MonthTotals,
   PersonDayReport,
   PersonDaySummary,
   PersonMonthReport,
@@ -349,6 +350,64 @@ export class ReportsService {
     };
   }
 
+  // ---- The person's own (3.4: the mobile app and My dashboard) ---------------------
+
+  private async self(me: AuthenticatedUser): Promise<PersonRow> {
+    const [p] = await this.reader.listPeople({ ids: [me.id] });
+    if (!p) throw new ValidationError('Unknown person', 'NOT_FOUND');
+    return p;
+  }
+
+  /**
+   * GET /reports/me/month: the person's own month, without the keyboard and mouse
+   * figures (SPEC 1.8: those are for managers). A locked month is its snapshot.
+   */
+  async myMonth(me: AuthenticatedUser, month: string, now: Date): Promise<MyMonthReport> {
+    const person = await this.self(me);
+    await this.assertMonthInRange(month, now);
+    // 4.0: months lock per organisation.
+    const snapshot = person.companyId
+      ? await this.store.findSnapshot(person.companyId, month)
+      : null;
+    const fromSnapshot = snapshot?.persons[me.id];
+    const report = fromSnapshot
+      ? { ...fromSnapshot, locked: true }
+      : { ...(await this.buildMonth([person], month, 'TEAM', now)).persons[0], locked: !!snapshot };
+    return {
+      person: report.person,
+      month: report.month,
+      locked: report.locked,
+      generatedAt: report.generatedAt,
+      totals: ownTotals(report.totals),
+      days: report.days.map(ownDay),
+    };
+  }
+
+  /** GET /reports/me/day: the person's own day (timeline, breaks, meetings, leave), no activity figures. */
+  async myDay(me: AuthenticatedUser, date: string | undefined, now: Date): Promise<MyDayReport> {
+    const person = await this.self(me);
+    const day = date ?? this.today(now);
+    // 4.0: the organisation calendar and settings, through the day plan.
+    const [data, pc, pending] = await Promise.all([
+      this.dayData.load([me.id], day, day, now, { heal: true }),
+      this.plans.context([person]),
+      this.approvalsReader.pendingByUserDate([me.id], day, day, now),
+    ]);
+    const d = data.day(me.id, day);
+    const summary = this.summary(person, d, [], pc, pending[0]?.pending ?? 0, now);
+    const shift = pc.plan(asShiftPerson(person), day).shift;
+    const names = await this.meetings.names(d.meetingRecords);
+    return {
+      person: reportPerson(person),
+      summary: ownDay(summary),
+      shift: ShiftMapper.ref(shift),
+      timeline: buildTimeline(d, now),
+      breaks: d.breakRecords.map((r) => ShiftMapper.recordView(r, now)),
+      meetings: d.meetingRecords.map((m) => meetingView(m, now, names)),
+      adjustments: (await this.adjustments.views(d.adjustments ?? [])).filter((a) => !a.voidedAt),
+    };
+  }
+
   // ---- One month ----------------------------------------------------------------
 
   async personMonth(
@@ -549,6 +608,7 @@ export class ReportsService {
     const plan = pc.plan(asShiftPerson(p), d.date);
     const settings = pc.settingsOf(p.companyId);
     const shift = plan.shift;
+    const bounds = shift ? shiftBounds(shift, d.date, appTimezone()) : null;
     return summarizeDay({
       date: d.date,
       today,
@@ -556,8 +616,8 @@ export class ReportsService {
       focus: focusOfDay(d, now, plan.bufferMin),
       hourly,
       shift,
-      shiftStart: shift ? shiftBounds(shift, d.date, appTimezone()).start : null,
-      shiftEnd: shift ? shiftBounds(shift, d.date, appTimezone()).end : null,
+      shiftStart: bounds?.start ?? null,
+      shiftEnd: bounds?.end ?? null,
       pending,
       settings,
       now,
@@ -581,4 +641,45 @@ function redactActivity(p: PersonMonthReport, activity: boolean): PersonMonthRep
     days: p.days.map((d) => ({ ...d, quietHours: 0, activeMin: 0 })),
     totals: { ...p.totals, quietHours: 0, needsALook: false },
   };
+}
+
+/** A day as its owner sees it: no keyboard and mouse figures (SPEC 1.8). */
+export type OwnDaySummary = Omit<
+  PersonDaySummary,
+  'quietHours' | 'activeMin' | 'activeSec' | 'availableSec'
+>;
+export type OwnMonthTotals = Omit<
+  MonthTotals,
+  'quietHours' | 'activeSec' | 'availableSec' | 'needsALook'
+>;
+
+export function ownDay(d: PersonDaySummary): OwnDaySummary {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { quietHours, activeMin, activeSec, availableSec, ...rest } = d;
+  return rest;
+}
+
+export function ownTotals(t: MonthTotals): OwnMonthTotals {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { quietHours, activeSec, availableSec, needsALook, ...rest } = t;
+  return rest;
+}
+
+export interface MyMonthReport {
+  person: ReportPerson;
+  month: string;
+  locked: boolean;
+  generatedAt: string;
+  totals: OwnMonthTotals;
+  days: OwnDaySummary[];
+}
+
+export interface MyDayReport {
+  person: ReportPerson;
+  summary: OwnDaySummary;
+  shift: PersonDayReport['shift'];
+  timeline: PersonDayReport['timeline'];
+  breaks: PersonDayReport['breaks'];
+  meetings: PersonDayReport['meetings'];
+  adjustments: NonNullable<PersonDayReport['adjustments']>;
 }

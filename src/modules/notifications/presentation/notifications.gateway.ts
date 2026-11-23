@@ -36,13 +36,17 @@ export class NotificationsGateway extends AuthenticatedGateway implements OnGate
   }
 
   /** 4.0: tell one person's sockets that their working day changed (a decision, a replay). */
-  emitWorkdayChanged(userId: string, reason: string): void {
-    this.server
-      .to(userRoom(userId))
-      .emit('workday:changed', { reason, at: new Date().toISOString() });
+  /**
+   * `workday:changed` to the person's devices. 4.0 agents read `reason`; the 3.4+
+   * phone app reads `what`: both carry the same value.
+   */
+  emitWorkdayChanged(userId: string, reason: string, at = new Date().toISOString()): void {
+    this.server?.to(userRoom(userId)).emit('workday:changed', { reason, what: reason, at });
   }
 
   emitToUser(userId: string, notification: NotificationView): void {
     this.server.to(userRoom(userId)).emit('notification', notification);
   }
+
+  /** The person's working day changed (3.4): their devices refresh it. */
 }

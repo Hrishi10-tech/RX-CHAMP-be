@@ -182,6 +182,10 @@ describe('payrollWorkbook', () => {
       // 3.2
       'Active hours (keyboard/mouse)',
       'Late starts without a reason',
+      'Leave days',
+      'CL/SL days',
+      'EL/PL days',
+      'Paid leave hours',
     ]);
     expect(ws.getRow(1).font?.bold).toBe(true);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
@@ -227,6 +231,10 @@ describe('payrollWorkbook', () => {
       // 3.2
       'Available min',
       'Late reason',
+      // 3.4
+      'Leave',
+      'Leave days',
+      'Paid leave hours',
     ]);
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const first = ws.getRow(2);
@@ -259,6 +267,69 @@ describe('payrollWorkbook', () => {
     expect(holiday.getCell(5).value).toBe('OFF');
     expect(holiday.getCell(22).value).toBe('Onam');
     expect(holiday.getCell(23).value).toBe(0);
+  });
+
+  it('carries leave: the days per pool and the paid leave hours (3.4)', async () => {
+    const leaveDay = daySummary({
+      date: '2026-09-03',
+      weekday: 4,
+      dayClass: 'LEAVE',
+      expectedSec: 0,
+      leaveSec: 8 * H,
+      leave: {
+        days: 1,
+        full: true,
+        label: 'Full day',
+        categories: 'CL/SL',
+        clslDays: 1,
+        elplDays: 0,
+        pendingDays: 0,
+        mask: 15,
+      },
+    });
+    const halfDay = daySummary({
+      date: '2026-09-04',
+      weekday: 5,
+      dayClass: 'FULL',
+      expectedSec: 4 * H,
+      focusSec: 4 * H,
+      leaveSec: 4 * H,
+      leave: {
+        days: 0.5,
+        full: false,
+        label: 'Half day (first half)',
+        categories: 'EL/PL',
+        clslDays: 0,
+        elplDays: 0.5,
+        pendingDays: 0,
+        mask: 3,
+      },
+    });
+    const r = report('Lena Paul', 'lena@example.test', [leaveDay, halfDay]);
+    r.totals = {
+      ...r.totals,
+      leave: 1,
+      leaveDays: 1.5,
+      clslDays: 1,
+      elplDays: 0.5,
+      leaveSec: 12 * H,
+    };
+    const wb = await readBack(await payrollWorkbook([r], TZ));
+    const payroll = wb.getWorksheet('Payroll')!;
+    const ph = (payroll.getRow(1).values as unknown[]).slice(1);
+    const at = (h: string) => ph.indexOf(h) + 1;
+    expect(payroll.getRow(2).getCell(at('Leave days')).value).toBe(1.5);
+    expect(payroll.getRow(2).getCell(at('CL/SL days')).value).toBe(1);
+    expect(payroll.getRow(2).getCell(at('EL/PL days')).value).toBe(0.5);
+    expect(payroll.getRow(2).getCell(at('Paid leave hours')).value).toBe(12);
+    const days = wb.getWorksheet('Days')!;
+    const dh = (days.getRow(1).values as unknown[]).slice(1);
+    const col = (h: string) => dh.indexOf(h) + 1;
+    expect(days.getRow(2).getCell(col('Day')).value).toBe('LEAVE');
+    expect(days.getRow(2).getCell(col('Leave')).value).toBe('CL/SL full day');
+    expect(days.getRow(3).getCell(col('Leave')).value).toBe('EL/PL half day (first half)');
+    expect(days.getRow(3).getCell(col('Leave days')).value).toBe(0.5);
+    expect(days.getRow(3).getCell(col('Paid leave hours')).value).toBe(4);
   });
 
   it('still makes both sheets for nobody', async () => {

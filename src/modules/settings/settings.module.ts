@@ -20,6 +20,6 @@ import { IdleSettingsController } from './presentation/idle-settings.controller'
     IdleSettingsService,
     ReasonPresetsService,
   ],
-  exports: [AppSettingsService, IdleSettingsService, ReasonPresetsService],
+  exports: [AppSettingsService, IdleSettingsService, ReasonPresetsService, SETTINGS_STORE],
 })
 export class SettingsModule {}

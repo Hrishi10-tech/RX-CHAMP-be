@@ -10,6 +10,7 @@ import { outcomeOf } from '@modules/shifts/domain/break-record.repository';
 import { phaseAt, shiftBounds } from '@modules/shifts/domain/break-schedule';
 import { ShiftPerson } from '@modules/shifts/domain/shift-people.reader';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
+import { dayLeaveView, expectedAfterLeave, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { expectedSecOf, isWorkdayFor, lateStartDetail } from '../domain/attendance';
 import { quietHoursOf } from '../domain/hourly';
 import { PersonRow, PresenceRow, WORKTIME_READER, WorktimeReader } from '../domain/worktime.reader';
@@ -124,15 +125,31 @@ export class TeamTodayService {
         const shift = resolved.shift;
         const workday = isWorkdayFor(shift, date);
         const breakDay = this.days.forDate(resolved, date);
-        // A day off shows its breaks only once the person has started it (3.2).
-        const slots = workday || d.sessions.length ? breakDay.slots : [];
+        // Leave (3.4): a full day expects nothing; a part day the rest of the shift.
+        const leave = workday ? d.leave : undefined;
+        const bounds = shift ? shiftBounds(shift, date, tz) : null;
+        const mark = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, leave);
+        // A day off shows its breaks only once the person has started it (3.2); leave
+        // hides the breaks it covers (3.4).
+        const slots = (workday || d.sessions.length ? breakDay.slots : []).filter((slot) => {
+          if (!leave?.mask || d.breakRecords.some((r) => r.kind === slot.kind)) return true;
+          if (leave.full) return d.sessions.length > 0;
+          const at = slot.scheduledStart.getTime();
+          return (
+            (!mark.start || at >= mark.start.getTime()) && (!mark.end || at < mark.end.getTime())
+          );
+        });
         const hourly = activity
           ? this.dayData.bucketHourly(d, buckets, now, settings.quietHourActiveMin)
           : [];
         const first = d.sessions[0] ?? null;
         const last = d.sessions[d.sessions.length - 1] ?? null;
         const openSession = d.sessions.find((s) => s.endedAt === null) ?? null;
-        const { status, since } = this.statusOf(d, openBy.get(p.id) ?? null, openSession, live);
+        const live0 = this.statusOf(d, openBy.get(p.id) ?? null, openSession, live);
+        const { status, since } =
+          live0.status === 'NOT_STARTED' && leave?.full
+            ? { status: 'ON_LEAVE' as TeamRowStatus, since: null }
+            : live0;
         const recordFor = (kind: string) => d.breakRecords.find((r) => r.kind === kind) ?? null;
         return {
           date,
@@ -151,10 +168,10 @@ export class TeamTodayService {
           autoClosed: !openSession && last?.endReason === 'AUTO_CLOSED',
           extended: d.sessions.some((s) => !!s.extendedAt),
           lateStart:
-            workday && shift && first
+            workday && shift && first && !leave?.full
               ? lateStartDetail({
                   first,
-                  shiftStart: shiftBounds(shift, date, tz).start,
+                  shiftStart: mark.start,
                   graceMin: settings.lateStartGraceMin,
                   requireReason: settings.requireLateStartReason,
                   // 4.0: nobody approves an admin's day, so nobody asks why it started late.
@@ -163,8 +180,9 @@ export class TeamTodayService {
               : null,
           // 4.0: holidays from the organisation calendar arrive with the calendar merge.
           dayOff: workday ? null : { kind: 'WEEKLY_OFF' as const, name: null },
+          leave: workday ? dayLeaveView(d.leave) : null,
           focus: focusView(focus),
-          expectedSec: workday ? expectedSecOf(shift) : 0,
+          expectedSec: workday ? expectedAfterLeave(expectedSecOf(shift), leave) : 0,
           breaks: slots.map((slot) => {
             const rec = recordFor(slot.kind);
             let cell: TeamBreakStatus;
@@ -200,6 +218,8 @@ export class TeamTodayService {
         onBreak: count(['BREAK', 'LUNCH']),
         inMeeting: count(['MEETING']),
         ended: count(['DAY_ENDED']),
+        onLeave: count(['ON_LEAVE']),
+        partLeave: rows.filter((r) => r.leave && r.leave.days > 0 && !r.leave.full).length,
         lateStarts: rows.filter((r) => r.lateStart).length,
         pendingApprovals: rows.reduce((s, r) => s + r.pending, 0),
         overdueApprovals,

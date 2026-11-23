@@ -1077,3 +1077,139 @@ model ScreenshotExport {
   @@index([requestedById, createdAt])
   @@map("screenshot_exports")
 }
+
+// ----------------------------------------------------------------------------
+// Leave (3.4): CL/SL lapses every year, EL/PL carries over. Amounts are counted
+// in quarter days ("units": a full day is 4).
+// ----------------------------------------------------------------------------
+enum LeaveCategory {
+  CLSL
+  ELPL
+}
+
+enum LeaveKind {
+  FULL_DAY
+  HALF_DAY
+  QUARTER_DAY
+}
+
+enum LeavePart {
+  FIRST_HALF
+  SECOND_HALF
+  Q1
+  Q2
+  Q3
+  Q4
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  REVOKED
+}
+
+/// One person's pool for one year: what was granted and (EL/PL) the carry-over cap
+/// in force when it opened. Balances are worked out from requests and adjustments.
+model LeaveAccount {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @map("user_id") @db.Uuid
+  year          Int
+  category      LeaveCategory
+  grantedUnits  Int           @map("granted_units")
+  /// DEFAULT (the policy's yearly days) or PERSON (their own quota).
+  grantSource   String        @default("DEFAULT") @map("grant_source")
+  /// Granted pro rata (joined during the year).
+  prorated      Boolean       @default(false)
+  carryCapUnits Int?          @map("carry_cap_units")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@unique([userId, year, category])
+  @@index([year])
+  @@map("leave_accounts")
+}
+
+/// A person's own yearly days of a pool, instead of the policy's.
+model LeaveQuota {
+  userId       String        @map("user_id") @db.Uuid
+  category     LeaveCategory
+  unitsPerYear Int           @map("units_per_year")
+  updatedById  String?       @map("updated_by_id") @db.Uuid
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@id([userId, category])
+  @@map("leave_quotas")
+}
+
+/// A manual change to a balance (add, take off, or set), with the reason the
+/// person reads. Append-only: a mistake is corrected by another adjustment.
+model LeaveAdjustment {
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  year        Int
+  category    LeaveCategory
+  deltaUnits  Int           @map("delta_units")
+  /// ADD | SUBTRACT | SET
+  mode        String
+  /// SET: the balance asked for.
+  targetUnits Int?          @map("target_units")
+  reason      String
+  createdById String        @map("created_by_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@index([userId, year])
+  @@index([createdAt])
+  @@map("leave_adjustments")
+}
+
+/// A request for leave: one day, a part of one, or a range of full days in one
+/// year. Pending requests reserve their days; approved ones take them.
+model LeaveRequest {
+  id           String            @id @default(uuid()) @db.Uuid
+  userId       String            @map("user_id") @db.Uuid
+  category     LeaveCategory
+  kind         LeaveKind
+  part         LeavePart?
+  startDate    String            @map("start_date")
+  endDate      String            @map("end_date")
+  year         Int
+  /// Quarter days charged (working days only).
+  units        Int
+  reason       String
+  status       LeaveStatus       @default(PENDING)
+  /// Who decides: MANAGER, SUPER_MANAGER or SUPER_ADMIN; null when approved at once.
+  approverRole RoleName?         @map("approver_role")
+  /// MANAGER route: the manager when it was made.
+  approverId   String?           @map("approver_id") @db.Uuid
+  decidedById  String?           @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime?         @map("decided_at")
+  decisionNote String?           @map("decision_note")
+  cancelledAt  DateTime?         @map("cancelled_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  days         LeaveRequestDay[]
+
+  @@index([userId, status])
+  @@index([status, approverRole])
+  @@index([startDate])
+  @@index([year, category])
+  @@map("leave_requests")
+}
+
+/// One charged day of a request: which quarters it covers (bits Q1 = 1 to Q4 = 8).
+model LeaveRequestDay {
+  id        String       @id @default(uuid()) @db.Uuid
+  requestId String       @map("request_id") @db.Uuid
+  request   LeaveRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String       @map("user_id") @db.Uuid
+  date      String
+  mask      Int
+  units     Int
+
+  @@index([userId, date])
+  @@index([date])
+  @@index([requestId])
+  @@map("leave_request_days")
+}

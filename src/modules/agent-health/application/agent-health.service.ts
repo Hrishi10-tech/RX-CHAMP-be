@@ -1,4 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { LeaveDaysService } from '@modules/leave/application/leave-days.service';
+import { dayLeaveView, leaveOn, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { addDaysToKey, appTimezone, dateKeyInZone, startOfDayInZone } from '@shared/utils/timezone';
 import { localDateString } from '@modules/activity/application/activity-date.util';
@@ -49,6 +51,7 @@ export class AgentHealthService {
     @Inject(WORK_SESSION_REPOSITORY) private readonly sessions: WorkSessionRepository,
     @Inject(AGENT_HEALTH_READER) private readonly reader: AgentHealthReader,
     @Inject(AGENT_CONTACT_REPOSITORY) private readonly contacts: AgentContactRepository,
+    @Optional() private readonly leaveDays?: LeaveDaysService,
   ) {}
 
   async list(me: AuthenticatedUser, q: AgentHealthQuery, now: Date): Promise<AgentHealthView> {
@@ -69,6 +72,8 @@ export class AgentHealthService {
       this.sessions.listForUsersBetween(ids, addDaysToKey(today, -1), today),
       this.plans.context(people.map(asPlanPerson)),
     ]);
+    // Leave (3.4): a day of leave is not a day to start; part leave moves the start.
+    const leave = this.leaveDays ? await this.leaveDays.byDay(ids, today, today) : new Map();
     const byUser = new Map<string, WorkSessionRecord[]>();
     for (const s of sessions) byUser.set(s.userId, [...(byUser.get(s.userId) ?? []), s]);
 
@@ -79,7 +84,11 @@ export class AgentHealthService {
       // before), then that day's plan: the organisation calendar and the shift.
       const shiftDay = this.days.dayWith(plan.shifts, asPlanPerson(p), now).dateKey;
       const dayPlan = plan.plan(asPlanPerson(p), shiftDay);
-      const shiftStart = dayPlan.shift ? shiftBounds(dayPlan.shift, shiftDay, tz).start : null;
+      // 3.4: a full day of leave is not a day to start; part leave moves the start.
+      const onLeave = leaveOn(leave, p.id, shiftDay);
+      const bounds = dayPlan.shift ? shiftBounds(dayPlan.shift, shiftDay, tz) : null;
+      const shiftStart = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, onLeave).start;
+      const workday = dayPlan.isWorkingDay && !onLeave.full;
       const sample = samples.get(p.id);
       const shot = shots.get(p.id);
       const signIn = signIns.get(p.id) ?? { signedIn: false, agentUserAgent: null };
@@ -94,7 +103,7 @@ export class AgentHealthService {
         agentVersion: version,
         dayState: day.state,
         dayStartedAt: day.startedAt,
-        workday: dayPlan.isWorkingDay,
+        workday,
         shiftStart,
         screenshotsEnabled: enabled.get(p.id) ?? true,
         lastShotAt: shot?.lastAt ?? null,
@@ -124,8 +133,9 @@ export class AgentHealthService {
           state: day.state,
           startedAt: iso(day.startedAt),
           endedAt: iso(day.endedAt),
-          workday: dayPlan.isWorkingDay,
+          workday,
           shiftStart: iso(shiftStart),
+          leave: dayPlan.isWorkingDay ? dayLeaveView(onLeave) : null,
         },
         screenshots: {
           enabled: facts.screenshotsEnabled,

@@ -58,6 +58,11 @@ const PAYROLL: Col[] = [
   // 3.2, after every earlier column so sheets read by position keep working.
   { header: 'Active hours (keyboard/mouse)', key: 'activeHours', width: 26, hours: true },
   { header: 'Late starts without a reason', key: 'lateWithoutReason', width: 26 },
+  // 3.4
+  { header: 'Leave days', key: 'leaveDays', width: 11 },
+  { header: 'CL/SL days', key: 'clslDays', width: 11 },
+  { header: 'EL/PL days', key: 'elplDays', width: 11 },
+  { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
 ];
 
 const DAYS: Col[] = [
@@ -93,6 +98,10 @@ const DAYS: Col[] = [
   // 3.2, after every earlier column so sheets read by position keep working.
   { header: 'Available min', key: 'availableMin', width: 13 },
   { header: 'Late reason', key: 'lateReason', width: 30 },
+  // 3.4
+  { header: 'Leave', key: 'leave', width: 24 },
+  { header: 'Leave days', key: 'leaveDays', width: 11 },
+  { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
 ];
 
 function sheet(wb: Workbook, name: string, cols: Col[]): Worksheet {
@@ -136,6 +145,10 @@ function dayRow(p: PersonMonthReport, d: PersonDaySummary, tz: string) {
     unverifiedHours: hours(d.unverifiedSec ?? 0),
     adjustedMin: signedMinutes(d.adjustedSec ?? 0),
     availableMin: minutes(d.availableSec ?? 0),
+    leave:
+      d.leave && d.leave.days > 0 ? `${d.leave.categories} ${d.leave.label.toLowerCase()}` : '',
+    leaveDays: d.leave?.days ?? 0,
+    leaveHours: hours(d.leaveSec ?? 0),
   };
 }
 
@@ -179,6 +192,10 @@ export async function payrollWorkbook(persons: PersonMonthReport[], tz: string):
       awayPendingMin: minutes(t.awayPendingSec ?? 0),
       unverifiedHours: hours(t.unverifiedSec ?? 0),
       adjustedMin: signedMinutes(t.adjustedSec ?? 0),
+      leaveDays: t.leaveDays ?? 0,
+      clslDays: t.clslDays ?? 0,
+      elplDays: t.elplDays ?? 0,
+      leaveHours: hours(t.leaveSec ?? 0),
     });
     for (const d of p.days) days.addRow(dayRow(p, d, tz));
   }

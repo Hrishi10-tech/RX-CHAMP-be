@@ -1,3 +1,4 @@
+import type { DayLeaveView } from '@modules/leave/domain/day-leave';
 import type { AfterSkipActivity } from '../domain/input-activity';
 import type { LateStartDetail } from '../domain/attendance';
 import { BreakRecordView, SkipNeedingComment } from '@modules/shifts/application/shifts.types';
@@ -71,6 +72,15 @@ export interface WorkdayTodayView {
   dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
   shift: ShiftBrief | null;
   expectedSec: number;
+  /**
+   * Leave today (3.4): approved (days, full or part, which pools) and any still
+   * waiting; null without any. A full day expects nothing; a part day expects the
+   * rest of the shift.
+   */
+  leave?: DayLeaveView | null;
+  /** Part-day leave: the part of the shift still to work (late starts count from workingFrom). */
+  workingFrom?: string | null;
+  workingUntil?: string | null;
   skipsNeedingComment: SkipNeedingComment[];
   overdueApprovals: number;
   endDayBlockedByOverdue: boolean;
@@ -260,7 +270,15 @@ export interface BulkApproveResult31 {
   skipped: { type: 'break' | 'meeting' | 'away'; id: string; reason: string }[];
 }
 
-export type TeamRowStatus = 'NOT_STARTED' | 'WORKING' | 'BREAK' | 'LUNCH' | 'MEETING' | 'DAY_ENDED';
+export type TeamRowStatus =
+  | 'NOT_STARTED'
+  | 'WORKING'
+  | 'BREAK'
+  | 'LUNCH'
+  | 'MEETING'
+  | 'DAY_ENDED'
+  /** A full day of approved leave, not started (3.4). */
+  | 'ON_LEAVE';
 
 export type TeamBreakStatus =
   | 'UPCOMING'
@@ -295,6 +313,8 @@ export interface TeamTodayRow {
   lateStart: LateStartDetail | null;
   /** 4.0 calendar: a day the organisation's calendar marks as not working (a holiday). */
   dayOff: { kind: 'HOLIDAY' | 'WEEKLY_OFF'; name: string | null } | null;
+  /** Leave that day (3.4): approved, and any still waiting; null without any. */
+  leave?: DayLeaveView | null;
   focus: FocusView;
   expectedSec: number;
   breaks: {
@@ -319,6 +339,10 @@ export interface TeamTodayView {
     onBreak: number;
     inMeeting: number;
     ended: number;
+    /** On a full day of approved leave, not started (3.4). */
+    onLeave?: number;
+    /** With part of the day on approved leave (3.4). */
+    partLeave?: number;
     lateStarts: number;
     pendingApprovals: number;
     overdueApprovals: number;

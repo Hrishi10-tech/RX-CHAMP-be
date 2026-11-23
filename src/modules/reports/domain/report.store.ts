@@ -19,8 +19,8 @@ export interface MonthLockRow {
 
 export type LockMonthResult =
   | { ok: true; lock: MonthLockRow; created: boolean }
-  /** Work sessions dated in the month still open, or items dated in it still PENDING. */
-  | { ok: false; reason: 'OPEN_SESSIONS' | 'PENDING_APPROVALS'; count: number };
+  /** Work sessions dated in the month still open, items or leave (3.4) dated in it still PENDING. */
+  | { ok: false; reason: 'OPEN_SESSIONS' | 'PENDING_APPROVALS' | 'PENDING_LEAVE'; count: number };
 
 /** report_runs and month_locks, per organisation (4.0). */
 export interface ReportStore {
@@ -66,6 +66,24 @@ export interface ReportStore {
     month: string,
     limit: number,
   ): Promise<OpenSessionBlocker[]>;
+  /** 3.4: the organisation's leave requests with a day in the month still waiting. */
+  pendingLeaveInMonth(
+    companyId: string,
+    month: string,
+    limit: number,
+    userIds?: string[],
+  ): Promise<{ count: number; items: PendingLeaveBlocker[] }>;
+}
+
+/** A leave request with a day in the month that waits for a decision (3.4). */
+export interface PendingLeaveBlocker {
+  id: string;
+  userId: string;
+  userName: string;
+  category: 'CLSL' | 'ELPL';
+  startDate: string;
+  endDate: string;
+  days: number;
 }
 
 /** A working day dated in the month that has not ended yet. */

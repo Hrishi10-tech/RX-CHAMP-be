@@ -6,11 +6,24 @@ import { hmToMinutes, isValidHm, isoWeekdayOfKey } from '@shared/utils/timezone'
  *   expectedSec = shift length − enabled scheduled break lengths (no shift: 8h)
  *   day class   = FULL ≥ fullDayPct% of expected, HALF ≥ halfDayPct%, else ABSENT,
  *                 on a working day; OFF or EXTRA on a day off; IN_PROGRESS today;
- *                 UPCOMING in the future
+ *                 UPCOMING in the future; LEAVE on a full day of approved leave
+ *                 not worked (3.4; worked anyway, it is EXTRA)
  *   late start  = first Start Day more than lateStartGraceMin after the shift start
+ *                 (3.4: after the end of leave at the start of the day)
+ *
+ * Part-day leave reduces the expected time first (a half day halves it), so the
+ * day is judged on the rest; see expectedAfterLeave.
  */
 
-export type DayClass = 'FULL' | 'HALF' | 'ABSENT' | 'OFF' | 'EXTRA' | 'IN_PROGRESS' | 'UPCOMING';
+export type DayClass =
+  | 'FULL'
+  | 'HALF'
+  | 'ABSENT'
+  | 'OFF'
+  | 'EXTRA'
+  | 'LEAVE'
+  | 'IN_PROGRESS'
+  | 'UPCOMING';
 
 export const NO_SHIFT_EXPECTED_SEC = 8 * 60 * 60;
 
@@ -97,15 +110,21 @@ export interface DayClassInput {
   /** Time inside work sessions that day (> 0 means they worked). */
   spanSec: number;
   focusSec: number;
+  /** Expected time left after any part-day leave (expectedAfterLeave). */
   expectedSec: number;
   fullDayPct: number;
   halfDayPct: number;
+  /** The whole day is on approved leave (3.4). */
+  fullLeave?: boolean;
 }
 
 export function dayClassOf(i: DayClassInput): DayClass {
+  // A day of leave is leave whenever it is (past, today or ahead), unless worked.
+  if (i.workday && i.fullLeave && i.spanSec <= 0) return 'LEAVE';
   if (i.date > i.today) return 'UPCOMING';
   if (i.date === i.today) return 'IN_PROGRESS';
   if (!i.workday) return i.spanSec > 0 ? 'EXTRA' : 'OFF';
+  if (i.fullLeave) return 'EXTRA';
   if (i.expectedSec <= 0) return i.focusSec > 0 ? 'FULL' : 'ABSENT';
   // Integer comparison, so the 80% / 40% boundaries are exact.
   if (i.focusSec * 100 >= i.expectedSec * i.fullDayPct) return 'FULL';

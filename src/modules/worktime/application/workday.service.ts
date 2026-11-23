@@ -18,6 +18,7 @@ import {
 } from '@modules/shifts/domain/shift.types';
 import { DayPlanService } from './day-plan.service';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
+import { dayLeaveView, expectedAfterLeave, shiftAfterLeave } from '@modules/leave/domain/day-leave';
 import { expectedSecOf, isWorkdayFor, lateStartDetail, lateStartOf } from '../domain/attendance';
 import { FocusBreakdown } from '../domain/focus';
 import { portalUrlFrom } from '../domain/portal-url';
@@ -134,6 +135,10 @@ export class WorkdayService {
     const last = day.sessions[day.sessions.length - 1] ?? null;
     const state =
       open && open.date === date ? 'OPEN' : day.sessions.length ? 'ENDED' : 'NOT_STARTED';
+    // Leave (3.4): a part day moves the late-start mark and shrinks what is expected.
+    const leave = workday ? day.leave : undefined;
+    const bounds = shift ? shiftBounds(shift, date, tz) : null;
+    const mark = shiftAfterLeave(bounds?.start ?? null, bounds?.end ?? null, leave);
 
     const approverScope = approverScopeOf(me);
     const [overdue, lastEnded] = await Promise.all([
@@ -152,10 +157,10 @@ export class WorkdayService {
       sessions: day.sessions.map(sessionView),
       focus: focusView(focus),
       lateStart:
-        workday && shift && first
+        workday && shift && first && !leave?.full
           ? lateStartDetail({
               first,
-              shiftStart: shiftBounds(shift, date, tz).start,
+              shiftStart: mark.start,
               graceMin: settings.lateStartGraceMin,
               requireReason: settings.requireLateStartReason,
               // 4.0: nobody approves an admin's day, so nobody asks why it started late.
@@ -170,7 +175,11 @@ export class WorkdayService {
         ? null
         : { kind: plan.label ? 'HOLIDAY' : 'WEEKLY_OFF', name: plan.label ?? null },
       shift: shift ? { id: shift.id, name: shift.name, start: shift.start, end: shift.end } : null,
-      expectedSec: plan.targetSec,
+      // 4.0's target, less what leave covers (3.4).
+      expectedSec: workday ? expectedAfterLeave(plan.targetSec, leave) : 0,
+      leave: workday ? dayLeaveView(day.leave) : null,
+      workingFrom: leave?.mask && !leave.full ? (mark.start?.toISOString() ?? null) : null,
+      workingUntil: leave?.mask && !leave.full ? (mark.end?.toISOString() ?? null) : null,
       skipsNeedingComment,
       overdueApprovals: overdue.count,
       endDayBlockedByOverdue:

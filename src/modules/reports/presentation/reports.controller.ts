@@ -219,3 +219,29 @@ export class ReportsController {
     return envelope(await this.locks.unlock(me, month, new Date()));
   }
 }
+
+/**
+ * The person's own reports (3.4), for every role: the mobile app's history and
+ * My dashboard. Without the keyboard and mouse figures (SPEC 1.8).
+ */
+@ApiTags('reports')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('reports/me')
+export class MyReportsController {
+  constructor(private readonly reports: ReportsService) {}
+
+  @Get('month')
+  @ApiOperation({ summary: 'Your own month: totals and every day (focus, attendance, leave)' })
+  async month(@CurrentUser() me: AuthenticatedUser, @Query() q: MonthQueryDto) {
+    const now = new Date();
+    const month = this.reports.monthOrCurrent(q.month, now);
+    return envelope(await this.reports.myMonth(me, month, now));
+  }
+
+  @Get('day')
+  @ApiOperation({ summary: 'Your own day: summary, timeline, breaks, meetings, adjustments' })
+  async day(@CurrentUser() me: AuthenticatedUser, @Query() q: PersonDayQueryDto) {
+    return envelope(await this.reports.myDay(me, q.date, new Date()));
+  }
+}

@@ -51,6 +51,8 @@ export interface TeamPersonView {
   online: boolean;
   agentVersion: string | null;
   lateStartMin: number | null;
+  /** 3.2: why the day started late, once given. */
+  lateReason: string | null;
 }
 
 export interface TeamView {
@@ -312,6 +314,7 @@ export class TeamOverviewService {
       online: l.online,
       agentVersion: l.facts?.agentVersion ?? null,
       lateStartMin: s.lateStart?.minutes ?? null,
+      lateReason: s.lateStart?.reason ?? null,
     };
   }
 

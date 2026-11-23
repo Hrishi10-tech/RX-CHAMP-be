@@ -32,6 +32,15 @@ public class MiscTests
     }
 
     [Fact]
+    public void The_first_retry_is_already_spread_so_a_fleet_never_retries_in_step()
+    {
+        // Core review C-R05: attempt 0 used to be exactly the minimum, with no jitter at all.
+        var firsts = Enumerable.Range(0, 20).Select(i => new Backoff(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(60), new Random(i)).Next().TotalSeconds).ToList();
+        Assert.All(firsts, d => Assert.InRange(d, 2, 4));
+        Assert.True(firsts.Distinct().Count() > 10);
+    }
+
+    [Fact]
     public void Server_clock_learns_the_offset_and_smooths_jitter()
     {
         var local = new FixedClock(new DateTimeOffset(2026, 10, 13, 5, 0, 0, TimeSpan.Zero));
@@ -229,5 +238,37 @@ public class BuiltInHostsTests
     public void What_is_not_a_plain_host_name_is_never_allowed(string raw)
     {
         Assert.Equal(new[] { "api.rxvision.shop" }, RXVision.Agent.Core.Config.AgentOptions.ParseHosts(raw));
+    }
+}
+
+/// <summary>
+/// Core review C-R03: the Windows build cannot read IANA zone ids (invariant globalization), so
+/// a day without break slots must still be in the business zone, never the PC's own.
+/// </summary>
+public class BusinessZoneTests
+{
+    // A machine that knows only Windows zone names, as Windows does without ICU.
+    private static TimeZoneInfo WindowsOnly(string id) =>
+        id.Contains('/') ? throw new TimeZoneNotFoundException(id) : TimeZoneInfo.CreateCustomTimeZone(id, TimeSpan.FromHours(-6), id, id);
+
+    [Fact]
+    public void India_is_five_and_a_half_hours_ahead_without_a_zone_database()
+    {
+        var at = new DateTimeOffset(2026, 11, 18, 3, 0, 0, TimeSpan.Zero);
+        Assert.Equal(new TimeSpan(5, 30, 0), RXVision.Agent.Core.Util.BusinessClock.ZoneOffset("Asia/Kolkata", at, WindowsOnly));
+    }
+
+    [Fact]
+    public void A_summer_time_zone_goes_through_its_Windows_name()
+    {
+        var at = new DateTimeOffset(2026, 11, 18, 3, 0, 0, TimeSpan.Zero);
+        Assert.Equal(TimeSpan.FromHours(-6), RXVision.Agent.Core.Util.BusinessClock.ZoneOffset("America/Chicago", at, WindowsOnly));
+    }
+
+    [Fact]
+    public void An_unknown_zone_says_so_and_the_machine_zone_is_the_last_resort()
+    {
+        var at = new DateTimeOffset(2026, 11, 18, 3, 0, 0, TimeSpan.Zero);
+        Assert.Null(RXVision.Agent.Core.Util.BusinessClock.ZoneOffset("Mars/Olympus", at, WindowsOnly));
     }
 }

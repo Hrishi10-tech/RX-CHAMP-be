@@ -17,10 +17,14 @@ public sealed class Backoff
 
     public int Attempt => _attempt;
 
-    /// <summary>The next delay: between min and min * 2^attempt (capped at max), randomised.</summary>
+    /// <summary>
+    /// The next delay: between min and min * 2^(attempt + 1) (capped at max), randomised. The
+    /// first one is already spread over min to 2 x min (Core review C-R05), so agents that lost
+    /// the server together never come back in the same second.
+    /// </summary>
     public TimeSpan Next()
     {
-        var ceiling = Math.Min(_max.TotalMilliseconds, _min.TotalMilliseconds * Math.Pow(2, Math.Min(_attempt, 16)));
+        var ceiling = Math.Min(_max.TotalMilliseconds, _min.TotalMilliseconds * Math.Pow(2, Math.Min(_attempt + 1, 16)));
         _attempt++;
         var ms = _min.TotalMilliseconds + _random.NextDouble() * Math.Max(0, ceiling - _min.TotalMilliseconds);
         return TimeSpan.FromMilliseconds(ms);

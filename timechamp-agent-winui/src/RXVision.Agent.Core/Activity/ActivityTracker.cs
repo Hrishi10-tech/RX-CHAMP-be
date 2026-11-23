@@ -213,6 +213,12 @@ public sealed class ActivityTracker : IDisposable
                         backlog |= IsBacklog(head.At, LastSent);
                         if (result.Data is not null) Acknowledged?.Invoke(result.Data);
                         break;
+                    case ApiOutcome.Rejected when result.Status is 404 or 405:
+                        // Core review C-R01: a 404 or 405 is a broken deploy (no such route), not a
+                        // refusal of this sample. Keep it and everything behind it for a later drain,
+                        // as auth/refresh does, so a bad deploy never wipes the fleet's backlog.
+                        _log.Warn("activity", $"the server has no activity route ({result.Status}); {_queue.Count} sample(s) kept");
+                        return false;
                     case ApiOutcome.Rejected:
                         // Retrying a request the API refused would block the queue for ever.
                         _log.Warn("activity", $"sample dropped ({result.Status} {result.Code}: {result.Message})");

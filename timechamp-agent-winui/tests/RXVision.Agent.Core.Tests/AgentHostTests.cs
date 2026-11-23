@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using RXVision.Agent.Core.Activity;
 using RXVision.Agent.Core.Api;
 using RXVision.Agent.Core.Breaks;
 using RXVision.Agent.Core.Config;
@@ -946,6 +947,24 @@ public class AgentHostTests
         if (body is null) return null;
         using var doc = JsonDocument.Parse(body);
         return doc.RootElement.GetProperty("token").GetString();
+    }
+
+    /// <summary>
+    /// Core review C-R02: on a shared PC, signing out never deletes another person's unsent
+    /// samples, and keeps one's own unsent samples for the next sign-in.
+    /// </summary>
+    [Fact]
+    public async Task Sign_out_touches_only_this_persons_queue_and_keeps_what_is_unsent()
+    {
+        using var h = new HostHarness(HostHarness.Day("NOT_STARTED"));
+        var other = new ActivityQueue(h.Platform.Secrets, h.Platform.DataDir, "u-9", NullLog.Instance);
+        other.Enqueue(new ActivityReport { At = "2026-10-13T05:00:00.000Z" });
+        await h.SignInAsync();
+        h.Server.Route("POST auth/logout", (_, _) => FakeServer.Ok(new { ok = true }));
+        await h.Host.SignOutAsync();
+
+        Assert.Equal(1, new ActivityQueue(h.Platform.Secrets, h.Platform.DataDir, "u-9", NullLog.Instance).Count);
+        Assert.Empty(Directory.GetFiles(h.Platform.DataDir, "queue-u1.bin"));
     }
 
     [Fact]

@@ -265,6 +265,30 @@ public class ActivityTrackerTests
         Assert.Null(tracker.TickInProgressSince);
     }
 
+    /// <summary>
+    /// Core review C-R01: a deploy that has lost the activity route answers 404 (or 405) with the
+    /// API's own envelope. That is not a refusal of the sample: the backlog stays, in order.
+    /// </summary>
+    [Theory]
+    [InlineData(404, "NOT_FOUND")]
+    [InlineData(405, "METHOD_NOT_ALLOWED")]
+    public async Task A_missing_route_after_a_broken_deploy_keeps_the_whole_backlog(int status, string code)
+    {
+        var broken = true;
+        var (tracker, _, platform, api) = Make((_, _) => broken ? FakeServer.Error(status, code, "Cannot POST /api/v1/activity/report") : Ack());
+        var queue = new ActivityQueue(platform.Secrets, platform.DataDir, "u-3", NullLog.Instance);
+        for (var i = 0; i < 5; i++) queue.Enqueue(new ActivityReport { At = $"2026-10-13T06:{i:00}:00.000Z" });
+        var drainer = new ActivityTracker(api, platform, new AgentOptions().Normalised(), queue, NullLog.Instance);
+        Assert.False(await drainer.DrainAsync(30, CancellationToken.None));
+        Assert.Equal(5, queue.Count);
+        Assert.Equal("2026-10-13T06:00:00.000Z", queue.Peek()!.At);
+
+        broken = false;
+        Assert.True(await drainer.DrainAsync(30, CancellationToken.None));
+        Assert.Equal(0, queue.Count);
+        _ = tracker;
+    }
+
     [Fact]
     public async Task Drops_a_sample_the_api_rejects_instead_of_blocking()
     {
@@ -393,5 +417,24 @@ public class ActivityTrackerTests
         Assert.NotNull(seen);
         Assert.False(seen!.ShouldCapture);
         Assert.False(seen.ScreenshotsEnabled);
+    }
+}
+
+/// <summary>Core review C-R13: a long offline backlog is not rewritten on every sample, and loses nothing on Persist.</summary>
+public class ActivityQueueSaveTests
+{
+    [Fact]
+    public void A_long_backlog_saves_every_few_samples_and_persist_writes_the_rest()
+    {
+        var platform = new DevPlatform(Directory.CreateTempSubdirectory().FullName);
+        var queue = new ActivityQueue(platform.Secrets, platform.DataDir, "u-4", NullLog.Instance);
+        var at = new DateTimeOffset(2026, 11, 18, 3, 0, 0, TimeSpan.Zero);
+        for (var i = 0; i < ActivityQueue.SaveEachUpTo + 3; i++)
+            queue.Enqueue(new ActivityReport { At = at.AddMinutes(i).ToString("yyyy-MM-ddTHH:mm:ss.fffZ") });
+
+        // The last three are in memory only, until a save.
+        Assert.Equal(ActivityQueue.SaveEachUpTo, new ActivityQueue(platform.Secrets, platform.DataDir, "u-4", NullLog.Instance).Count);
+        queue.Persist();
+        Assert.Equal(ActivityQueue.SaveEachUpTo + 3, new ActivityQueue(platform.Secrets, platform.DataDir, "u-4", NullLog.Instance).Count);
     }
 }

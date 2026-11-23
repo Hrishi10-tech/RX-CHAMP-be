@@ -67,9 +67,23 @@ public sealed class ActivityQueue
                 _items.RemoveRange(0, overflow);
                 _log.Warn("activity", $"queue full, dropped the {overflow} oldest sample(s)");
             }
-            Save();
+            // Core review C-R13: the whole file is encrypted and written on each save. A short
+            // queue saves every sample; a long offline backlog saves every SaveEvery samples (and
+            // on every drain, sign-out and exit), so its cost no longer grows with the outage.
+            if (_items.Count <= SaveEachUpTo || ++_unsavedAdds >= SaveEvery)
+            {
+                Save();
+                _unsavedAdds = 0;
+            }
+            else _dirty = true;
         }
     }
+
+    /// <summary>Up to this many queued, every new sample is saved at once (two hours offline).</summary>
+    internal const int SaveEachUpTo = 240;
+    /// <summary>Past that, a save every this many samples: a crash loses at most these minutes.</summary>
+    internal const int SaveEvery = 5;
+    private int _unsavedAdds;
 
     public ActivityReport? Peek()
     {

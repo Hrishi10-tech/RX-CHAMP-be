@@ -116,7 +116,13 @@ internal sealed class WindowsUpdateInstaller : IUpdateInstaller
             try { File.WriteAllText(_attemptFile, UpdateAttempt.Record(version, DateTimeOffset.UtcNow)); }
             catch (Exception ex) { _log?.Invoke($"update: could not record the attempt: {ex.Message}"); }
             DeleteStaleInstallers(verifiedFile);
-            var psi = new ProcessStartInfo(verifiedFile) { UseShellExecute = true };
+            // Its own folder as the working directory: inheriting this process's (often
+            // the app folder) would keep the installer from moving that folder aside.
+            var psi = new ProcessStartInfo(verifiedFile)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(verifiedFile) ?? _downloadDir,
+            };
             psi.ArgumentList.Add("--update");
             using var installer = Process.Start(psi);
             if (installer is not null) return true;

@@ -67,10 +67,13 @@ public sealed class NoScreenRecordingPlatform : IPlatform, IPermissions
     public IShell Shell => _dev.Shell;
     public ILegacyMigration Legacy => _dev.Legacy;
 
-    public PermissionState ScreenRecording => PermissionState.NotDetermined;
+    public PermissionState ScreenRecording { get; set; } = PermissionState.NotDetermined;
     public PermissionState Accessibility => PermissionState.Granted;
     public int Requests { get; private set; }
+    public int SettingsOpened { get; private set; }
+    public int Renewals { get; private set; }
     public void RequestScreenRecording() => Requests++;
-    public void OpenScreenRecordingSettings() => Requests++;
+    public void OpenScreenRecordingSettings() => SettingsOpened++;
+    public void RenewScreenRecording() => Renewals++;
     public void OpenAccessibilitySettings() { }
 }

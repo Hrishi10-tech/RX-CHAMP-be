@@ -151,7 +151,7 @@
                       <PathIcon Classes="i" Data="{StaticResource Icon.Close}" Width="12" Height="12" />
                     </Button>
                   </Grid>
-                  <TextBlock Classes="cardbody" Text="Turn on screen recording for RX Vision. After allowing it, quit and reopen RX Vision." />
+                  <TextBlock Classes="cardbody" Text="Turn on screen recording for RX Vision, then quit and reopen it. macOS may ask again after an update." />
                   <Button Classes="secondary" HorizontalAlignment="Stretch" Content="Allow screen recording" Command="{Binding AllowScreenRecordingCommand}" />
                 </StackPanel>
               </Border>

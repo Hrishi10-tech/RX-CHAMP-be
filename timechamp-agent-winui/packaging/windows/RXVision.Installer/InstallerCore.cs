@@ -365,7 +365,10 @@ public sealed class InstallerCore
     private IAgentProcess? LaunchAgent(string exe)
     {
         var minimized = _opts.Update || _opts.Minimized;
-        return _procs.Start(exe, minimized ? "--minimized" : null, _paths.AppDir);
+        // Started from the install root, never from inside app\: the agent passes its
+        // current directory on to the installer it launches for an update, and a
+        // process standing in app\ keeps that folder from being moved aside.
+        return _procs.Start(exe, minimized ? "--minimized" : null, _paths.InstallRoot);
     }
 
     private void BestEffortDeleteLegacyInstall()

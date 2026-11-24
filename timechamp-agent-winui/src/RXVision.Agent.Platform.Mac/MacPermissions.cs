@@ -67,6 +67,36 @@ internal sealed class MacPermissions : IPermissions
     public void OpenScreenRecordingSettings() => Open(ScreenCaptureUrl);
     public void OpenAccessibilitySettings() => Open(AccessibilityUrl);
 
+    /// <summary>
+    /// The person turned Screen Recording on, yet this build is refused: the entry in
+    /// Settings belongs to the build before the last update (its ad-hoc signature).
+    /// macOS will not prompt while that entry exists, and turning it off and on does
+    /// not help; removing it does. tccutil may reset this app's own entry without admin
+    /// rights, after which the normal system prompt appears ("Open System Settings",
+    /// then "Quit &amp; Reopen"). Done once per run: macOS shows the prompt at most once
+    /// per process, so a second click opens Settings instead.
+    /// </summary>
+    public void RenewScreenRecording()
+    {
+        if (Interlocked.Exchange(ref _renewed, 1) == 1)
+        {
+            OpenScreenRecordingSettings();
+            return;
+        }
+        var reset = ProcessRunner.Run("/usr/bin/tccutil",
+            new[] { "reset", "ScreenCapture", MacUpdateInstaller.ExpectedBundleId }, TimeSpan.FromSeconds(10));
+        if (!reset.Ok)
+        {
+            _log.Warn("permissions", $"could not clear the old screen recording entry (exit {reset.ExitCode}: {reset.StdErr.Trim()}); opening Settings");
+            OpenScreenRecordingSettings();
+            return;
+        }
+        _log.Info("permissions", "cleared the old screen recording entry; asking again");
+        RequestScreenRecording();
+    }
+
+    private int _renewed;
+
     private void Open(string url)
     {
         if (!ProcessRunner.Launch("/usr/bin/open", new[] { url }))

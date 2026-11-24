@@ -332,11 +332,13 @@ public sealed partial class DashboardViewModel : ObservableObject
         try
         {
             // Never asked yet: the system prompt is the way in (it offers to open
-            // Settings itself). Asked and refused: only Settings can change it.
-            // Doing both at once showed two prompts on macOS 15.
+            // Settings itself). Asked before and refused now: usually the entry an
+            // earlier build left after an update, so clear it and ask again (the
+            // platform falls back to Settings). Doing both at once showed two
+            // prompts on macOS 15.
             var permissions = _agent.Platform.Permissions;
             if (permissions.ScreenRecording == PermissionState.NotDetermined) permissions.RequestScreenRecording();
-            else permissions.OpenScreenRecordingSettings();
+            else permissions.RenewScreenRecording();
         }
         catch (Exception ex)
         {

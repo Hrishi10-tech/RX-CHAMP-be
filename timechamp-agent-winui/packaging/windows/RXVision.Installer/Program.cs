@@ -8,6 +8,12 @@ using RXVision.Installer;
 //   --update     silent: no message boxes, relaunch the agent minimised
 //   --minimized  launch the agent minimised
 
+// Step out of wherever this was started from. An update is launched by the agent and
+// inherits its current directory, which is often %LOCALAPPDATA%\RXVision\app: a process
+// standing in a folder keeps Windows from renaming it, so the swap app -> app.previous
+// failed every time ("being used by another process") and the update never took.
+try { Directory.SetCurrentDirectory(Path.GetTempPath()); } catch { /* best effort */ }
+
 var update = args.Any(a => string.Equals(a, "--update", StringComparison.OrdinalIgnoreCase));
 var minimized = args.Any(a => string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
 
@@ -37,7 +43,7 @@ if (!owned)
     {
         // The agent that launched this update has exited: do not leave the machine without one.
         var exe = Path.Combine(paths.AppDir, InstallerCore.AgentExeName);
-        if (File.Exists(exe)) procs.Start(exe, "--minimized", paths.AppDir);
+        if (File.Exists(exe)) procs.Start(exe, "--minimized", paths.InstallRoot);
     }
     else
     {

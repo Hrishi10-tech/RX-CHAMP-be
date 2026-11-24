@@ -239,6 +239,23 @@ public class InstallerCoreTests : IDisposable
     }
 
     [Fact]
+    public void Agent_is_started_from_the_install_root_not_inside_app()
+    {
+        // The agent hands its current directory to the installer it starts for an
+        // update; standing inside app\ kept that folder from being moved aside, so
+        // every update failed with "being used by another process".
+        SeedExistingApp("oldsha");
+        var opts = new InstallOptions { Update = true, ConfirmDelay = TimeSpan.Zero };
+        var (core, _, procs, _, _, _) = Build(opts);
+
+        Assert.True(core.Run().Success);
+
+        var wd = Assert.Single(procs.Started).wd;
+        Assert.Equal(_paths.InstallRoot, wd);
+        Assert.False(wd.StartsWith(_paths.AppDir, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Failed_update_rolls_back_to_the_previous_v3_build()
     {
         SeedExistingApp("oldsha", "marker.txt");

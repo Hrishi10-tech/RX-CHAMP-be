@@ -125,7 +125,7 @@
             <PathIcon Classes="i" Data="{StaticResource Icon.Warning}" Foreground="{StaticResource Brush.AmberStrong}" Width="22" Height="22" VerticalAlignment="Center" />
             <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Spacing="2">
               <TextBlock Text="RX Vision needs permission to take screenshots" FontSize="13.5" FontWeight="SemiBold" Foreground="{StaticResource Brush.AmberInk}" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" Text="Turn on screen recording for RX Vision. After allowing it, quit and reopen RX Vision." TextWrapping="Wrap" />
+              <TextBlock Classes="muted" Text="Click Allow screen recording, turn RX Vision on, then choose Quit &amp; Reopen. macOS may ask again after an update." TextWrapping="Wrap" />
             </StackPanel>
             <Button Grid.Column="2" Classes="primary" Content="Allow screen recording" Command="{Binding AllowScreenRecordingCommand}" VerticalAlignment="Center" />
             <Button Grid.Column="3" Classes="ghost" Margin="8,0,0,0" Command="{Binding DismissScreenRecordingCommand}" ToolTip.Tip="Dismiss" VerticalAlignment="Center">

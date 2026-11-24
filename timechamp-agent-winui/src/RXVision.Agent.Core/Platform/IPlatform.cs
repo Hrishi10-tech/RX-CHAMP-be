@@ -126,6 +126,14 @@ public interface IPermissions
     void RequestScreenRecording();
     void OpenScreenRecordingSettings();
     void OpenAccessibilitySettings();
+
+    /// <summary>
+    /// For a permission that reads as refused after it was asked for once. On macOS an
+    /// entry left by an earlier build (an ad-hoc signature changes with every update)
+    /// still shows ON in Settings but does not cover this build, and the system will not
+    /// prompt again while it exists: the Mac clears it and asks again. Elsewhere, Settings.
+    /// </summary>
+    void RenewScreenRecording() => OpenScreenRecordingSettings();
 }
 
 public interface ISoundPlayer

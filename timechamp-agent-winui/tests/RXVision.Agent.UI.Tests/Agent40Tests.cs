@@ -891,3 +891,38 @@ public class Agent40Screenshots
         ShootToast(Toasts.QuickOver(new FakeAgent("10:51"), active, () => { }, () => { }), "40-toast-quick-over");
     }
 }
+
+/// <summary>The "Allow screen recording" banner button on a Mac.</summary>
+public class ScreenRecordingButtonTests
+{
+    private static (DashboardViewModel vm, NoScreenRecordingPlatform mac) Build(Core.Platform.PermissionState state)
+    {
+        var agent = new FakeAgent("10:45");
+        var mac = new NoScreenRecordingPlatform(agent.Dev) { ScreenRecording = state };
+        agent.Platform = mac;
+        var vm = new DashboardViewModel(agent, new BreakActions(agent, new FakeDialogs(), NullLog.Instance), NullLog.Instance);
+        return (vm, mac);
+    }
+
+    [Fact]
+    public void Never_asked_shows_the_system_prompt()
+    {
+        var (vm, mac) = Build(Core.Platform.PermissionState.NotDetermined);
+        vm.AllowScreenRecordingCommand.Execute(null);
+        Assert.Equal(1, mac.Requests);
+        Assert.Equal(0, mac.Renewals);
+        Assert.Equal(0, mac.SettingsOpened);
+    }
+
+    [Fact]
+    public void Refused_after_asking_clears_the_old_entry_and_asks_again()
+    {
+        // After an update the old build's entry still shows ON in Settings but does not
+        // cover this build; the button renews it instead of only opening Settings.
+        var (vm, mac) = Build(Core.Platform.PermissionState.Denied);
+        vm.AllowScreenRecordingCommand.Execute(null);
+        Assert.Equal(1, mac.Renewals);
+        Assert.Equal(0, mac.Requests);
+        Assert.Equal(0, mac.SettingsOpened);
+    }
+}

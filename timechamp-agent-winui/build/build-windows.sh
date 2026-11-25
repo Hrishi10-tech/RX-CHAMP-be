@@ -9,6 +9,11 @@
 #   4. Publish the installer (single-file, self-contained win-x64) to dist/windows/RXChampAgent.exe.
 #   5. Print its size and SHA-256.
 #
+# On Linux it needs: dotnet 8 SDK, zip, unzip, and fontconfig (libfontconfig1 on
+# Debian/Ubuntu), which SkiaSharp loads when the build turns the avatar masters into
+# WebP (build/avatars/AvatarBundle). Without it the build stops with
+# "libfontconfig.so.1: cannot open shared object file".
+#
 # The UI app is being written in parallel and may not exist or build yet. Pass
 # --stub to build a tiny stand-in app named RXVision instead, so the installer and
 # this script can be verified end to end. With no flag the script uses the real app

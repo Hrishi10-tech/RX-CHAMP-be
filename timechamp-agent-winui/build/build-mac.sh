@@ -8,6 +8,11 @@
 # account and is what staff get today; the Developer ID path (env below) produces
 # a signed + notarized build and is documented in packaging/mac/README.md.
 #
+# On Linux it needs: dotnet 8 SDK, zip, unzip, python3, rcodesign, and fontconfig
+# (libfontconfig1 on Debian/Ubuntu), which SkiaSharp loads when the build turns the
+# avatar masters into WebP (build/avatars/AvatarBundle). Without it the build stops
+# with "libfontconfig.so.1: cannot open shared object file".
+#
 # Output (matches what the backend serves and what UpdateService downloads):
 #   agent/dist/mac/RXVision-mac.zip        (osx-arm64, ?platform=mac)
 #   agent/dist/mac/RXVision-mac-intel.zip  (osx-x64,   ?platform=mac-x64)

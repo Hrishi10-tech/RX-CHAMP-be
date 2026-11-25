@@ -1,0 +1,4 @@
+# Shell scripts run on Linux and macOS (the agent build and release scripts), where bash
+# cannot read Windows line endings. Keep them LF in every checkout and export, whatever
+# core.autocrlf says on the machine.
+*.sh text eol=lf

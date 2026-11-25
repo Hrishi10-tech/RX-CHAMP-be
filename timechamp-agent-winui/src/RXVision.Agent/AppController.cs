@@ -66,8 +66,10 @@ public sealed class AppController : IDisposable
         _settings = new UiSettingsStore(startup.Platform.Paths.DataDir, _log);
 
         // The dialogs show over the dashboard's view model, whose commands need the
-        // actions, which need the dialogs: the dialog service reads it when needed.
-        _dialogs = new DialogService(() => _dashboardVm!, () => _dashboard?.IsVisible == true);
+        // actions, which need the dialogs: the dialog service reads it when needed. A question
+        // in the dashboard brings it in front first: on a Mac the open panel can sit behind
+        // other apps, and a question nobody sees leaves every later tap waiting.
+        _dialogs = new DialogService(() => _dashboardVm!, BringDashboardForward);
         _actions = new BreakActions(_agent, _dialogs, _log);
         // 3.6: one alert centre for the icon's badge and the panel's cards; one day meter for the
         // ring, the hover label and the panel's progress lines.
@@ -87,7 +89,8 @@ public sealed class AppController : IDisposable
             open: ShowMain,
             quickBreak: () => RunFromMenu(() => { ShowDashboard(); return _actions.QuickBreakAsync(); }),
             nextBreak: () => RunFromMenu(() => { ShowDashboard(); return _actions.NextBreakAsync(); }),
-            backToWork: () => RunFromMenu(() => _actions.BackToWorkAsync()),
+            // Resume work asks first ("End your lunch break now?"): in the panel, like the others.
+            backToWork: () => RunFromMenu(() => { ShowDashboard(); return _actions.BackToWorkAsync(); }),
             endDay: () => RunFromMenu(() => { ShowDashboard(); return _actions.EndDayAsync(); }),
             startDay: () => RunFromMenu(() => _actions.StartDayAsync()),
             signOut: () => RunFromMenu(() => { ShowDashboard(); return _actions.SignOutAsync(); }),
@@ -396,6 +399,14 @@ public sealed class AppController : IDisposable
         window.Activate();
         OnDashboardShown();
         window.FocusNewestCard();
+    }
+
+    /// <summary>For the dialogs: when the dashboard is open, it comes in front and this is true.</summary>
+    private bool BringDashboardForward()
+    {
+        if (_dashboard is not { IsVisible: true } window) return false;
+        window.Activate();
+        return true;
     }
 
     /// <summary>Beside the icon, bottoms aligned (see <see cref="PanelPlacement"/>).</summary>

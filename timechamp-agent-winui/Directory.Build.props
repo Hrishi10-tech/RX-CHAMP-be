@@ -9,7 +9,7 @@
     <!-- One version for the whole agent: the app, the installer and what the
          server is told. Bump it here; src/RXVision.Agent/app.manifest repeats it
          for Windows (a test fails while the two differ). -->
-    <Version>4.1.0</Version>
+    <Version>4.1.1</Version>
     <Company>RX Vision</Company>
     <Product>RX Vision Agent</Product>
     <Copyright>RX Vision</Copyright>

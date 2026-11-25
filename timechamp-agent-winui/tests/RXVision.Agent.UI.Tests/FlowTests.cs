@@ -880,11 +880,37 @@ public class BreakActionsTests
         var dialogs = new BlockingDialogs(gate.Task);
         var actions = new BreakActions(agent, dialogs, NullLog.Instance);
         var first = actions.TakeAsync(PresenceStatus.Break);
-        await actions.TakeAsync(PresenceStatus.Break); // ignored while the first waits on its dialog
-        await actions.EndDayAsync();                   // so is every other flow
+        await actions.TakeAsync(PresenceStatus.Break); // starts nothing while the first waits on its dialog
+        await actions.EndDayAsync();                   // nor does any other flow
         Assert.Equal(1, dialogs.Count);
+        // Each of those taps brought the open dialog in front instead.
+        Assert.Equal(2, dialogs.BroughtForward);
         gate.SetResult(false);
         await first;
+    }
+
+    // On a Mac the agent is a menu-bar app: "End your lunch break now?" could open behind other
+    // apps, and every later End lunch tap then did nothing. A second tap shows the question again.
+    [Fact]
+    public async Task A_second_end_lunch_tap_brings_the_open_question_forward()
+    {
+        var agent = new FakeAgent("11:03") { Day = Days.General().WithActive(Days.Running("LUNCH", "11:00", duration: 15)) };
+        var gate = new TaskCompletionSource<bool>();
+        var dialogs = new BlockingDialogs(gate.Task);
+        var actions = new BreakActions(agent, dialogs, NullLog.Instance);
+
+        var first = actions.EndBreakAsync();
+        Assert.Equal(1, dialogs.Count);
+        Assert.Equal("End your lunch break now?", Assert.IsType<MessageDialogViewModel>(dialogs.Last).Title);
+
+        await actions.EndBreakAsync();
+        await actions.BackToWorkAsync();
+        Assert.Equal(1, dialogs.Count);
+        Assert.Equal(2, dialogs.BroughtForward);
+
+        gate.SetResult(true);
+        await first;
+        Assert.Equal(1, agent.BackToWorkCalls);
     }
 
     private sealed class BlockingDialogs : IDialogService
@@ -892,11 +918,15 @@ public class BreakActionsTests
         private readonly Task<bool> _answer;
         public BlockingDialogs(Task<bool> answer) => _answer = answer;
         public int Count { get; private set; }
+        public int BroughtForward { get; private set; }
+        public DialogViewModel? Last { get; private set; }
         public Task<bool> ShowAsync(DialogViewModel dialog)
         {
             Count++;
+            Last = dialog;
             return _answer;
         }
+        public void BringForward() => BroughtForward++;
     }
 }
 

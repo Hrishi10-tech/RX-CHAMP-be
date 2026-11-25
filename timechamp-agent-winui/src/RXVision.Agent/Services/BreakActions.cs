@@ -1285,10 +1285,18 @@ public sealed class BreakActions
         }
     }
 
-    /// <summary>One flow at a time: a second tap while a dialog is open does nothing.</summary>
+    /// <summary>
+    /// One flow at a time: a second tap while a dialog is open brings that dialog in front
+    /// (on a Mac it can sit behind other apps), and starts nothing new.
+    /// </summary>
     private async Task RunFlowAsync(Func<Task> flow)
     {
-        if (Interlocked.Exchange(ref _flow, 1) == 1) return;
+        if (Interlocked.Exchange(ref _flow, 1) == 1)
+        {
+            try { _dialogs.BringForward(); }
+            catch (Exception ex) { _log.Warn("ui", "could not bring the open dialog forward", ex); }
+            return;
+        }
         try
         {
             await flow();

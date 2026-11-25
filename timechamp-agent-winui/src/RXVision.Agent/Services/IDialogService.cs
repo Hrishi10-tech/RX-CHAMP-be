@@ -7,6 +7,12 @@ public interface IDialogService
 {
     /// <summary>True when the person chose the primary button.</summary>
     Task<bool> ShowAsync(DialogViewModel dialog);
+
+    /// <summary>
+    /// Brings the question waiting for an answer in front, if there is one. A tap while a
+    /// question is open shows it again, rather than doing nothing (a Mac may hide it behind other apps).
+    /// </summary>
+    void BringForward() { }
 }
 
 public static class DialogServiceExtensions

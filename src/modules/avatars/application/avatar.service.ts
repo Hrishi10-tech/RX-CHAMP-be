@@ -10,7 +10,6 @@ import {
   ValidationError,
 } from '@shared/exceptions/app.exception';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
-import { Role } from '@shared/rbac/roles.enum';
 import { User } from '@modules/users/domain/entities/user.entity';
 import {
   USER_REPOSITORY,
@@ -22,14 +21,10 @@ import {
 } from '@modules/users/domain/services/user-access.service';
 import { AvatarManifestView, MyAvatarView, UserAvatarResetView } from './avatar.types';
 
-/** The clients Staff may change their avatar from (D-15): the desktop agent and the phone. */
-const STAFF_CLIENTS = /^(RXVisionAgent|RXVisionMobile)\//;
-
 /**
  * Preset avatars (3.6). Only a manifest ID from the person's own gender's library is
- * ever stored. Staff change theirs from the agent or the phone only; everyone else
- * from anywhere. That limit is a product rule, not a security boundary: a User-Agent
- * can be forged, and what it protects is a preset picture.
+ * ever stored. Everyone changes their own from anywhere: the agent, the phone or the
+ * portal (Staff have the portal from 4.1 on, so the old agent-or-phone limit is gone).
  *
  * 4.0: someone else's avatar is put back on its default by whoever may set their
  * gender (canSetGender): their organisation's Admin or a Super Admin.
@@ -68,12 +63,7 @@ export class AvatarService {
     return this.view(await this.load(me.id));
   }
 
-  async choose(
-    me: AuthenticatedUser,
-    avatarId: string,
-    userAgent: string | undefined,
-  ): Promise<MyAvatarView> {
-    this.assertMayChange(me, userAgent);
+  async choose(me: AuthenticatedUser, avatarId: string): Promise<MyAvatarView> {
     const entry = this.catalog.find(avatarId);
     if (!entry) throw new ValidationError(API_COPY.avatarUnknown, 'AVATAR_UNKNOWN');
     const user = await this.load(me.id);
@@ -87,8 +77,7 @@ export class AvatarService {
     return this.view(await this.store(user, entry.id));
   }
 
-  async resetMine(me: AuthenticatedUser, userAgent: string | undefined): Promise<MyAvatarView> {
-    this.assertMayChange(me, userAgent);
+  async resetMine(me: AuthenticatedUser): Promise<MyAvatarView> {
     return this.view(await this.store(await this.load(me.id), null));
   }
 
@@ -104,15 +93,6 @@ export class AvatarService {
     }
     const saved = await this.store(target, null);
     return { userId: saved.id, avatarId: this.effective(saved) };
-  }
-
-  private assertMayChange(me: AuthenticatedUser, userAgent: string | undefined): void {
-    if (me.role === Role.USER && !STAFF_CLIENTS.test(userAgent ?? '')) {
-      throw new ForbiddenError(
-        'You can change your avatar from the agent or the phone app.',
-        'AVATAR_CHANGE_ON_WEB',
-      );
-    }
   }
 
   private async load(id: string): Promise<User> {

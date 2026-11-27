@@ -188,8 +188,8 @@ describe('payrollWorkbook', () => {
       'Paid leave hours',
       'Comp off days',
       'Comp off earned',
-      'Work from home days',
-      'Hours from home over the cap',
+      'Remote days',
+      'Remote hours over the cap',
       'No check-out days',
       // 3.6, at the end: every column before it stays where it was.
       'Meeting hours',
@@ -243,8 +243,8 @@ describe('payrollWorkbook', () => {
       'Leave days',
       'Paid leave hours',
       // 3.5
-      'Work from home (days)',
-      'Hours from home counted',
+      'Remote (days)',
+      'Remote hours counted',
       'Comp off earned',
       'No check-out',
     ]);

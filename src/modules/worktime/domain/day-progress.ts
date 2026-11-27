@@ -12,9 +12,11 @@ export const DEFAULT_TARGET_SEC = NO_SHIFT_EXPECTED_SEC;
 
 export type DayProgressStatus = 'NOT_STARTED' | 'WORKING' | 'MEETING' | 'BREAK' | 'ENDED';
 
-/** The contract the portal and phone previews call (do not change it). */
+/** The contract the portal and phone previews call (do not change it; 4.1 only adds `remote`). */
 export interface DayProgressView {
   status: DayProgressStatus;
+  /** 4.1: WORKING on a remote day (started from the portal or the phone): read it as "Remote". */
+  remote: boolean;
   date: string;
   workedSec: number;
   targetSec: number;
@@ -42,6 +44,8 @@ export interface DayProgressInput {
   breakDurationMin?: number | null;
   /** A running status meeting's last confirmation; null for any other meeting. */
   meetingConfirmedAt?: Date | null;
+  /** 4.1: the open work session is a remote day. */
+  remote?: boolean;
 }
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
@@ -64,6 +68,7 @@ export function dayProgressOf(i: DayProgressInput): DayProgressView {
   const confirmed = inMeeting ? (i.meetingConfirmedAt ?? null) : null;
   return {
     status,
+    remote: i.state === 'OPEN' && Boolean(i.remote),
     date: i.date,
     workedSec: i.focusSec,
     targetSec,

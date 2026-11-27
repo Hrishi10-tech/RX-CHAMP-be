@@ -360,6 +360,11 @@ export interface TeamTodayRow {
   };
   status: TeamRowStatus;
   statusSince: string | null;
+  /**
+   * 4.1: a remote day is running now (biometric staff on work from home, started from the
+   * portal or the phone). Clients show WORKING as "Remote" while it is true.
+   */
+  remote: boolean;
   startedAt: string | null;
   endedAt: string | null;
   autoClosed: boolean;
@@ -417,6 +422,8 @@ export interface TeamTodayView {
     lateStarts: number;
     /** 3.5 */
     workingFromHome?: number;
+    /** 4.1: people on a remote day right now. */
+    remote?: number;
     biometric?: number;
     pendingApprovals: number;
     overdueApprovals: number;

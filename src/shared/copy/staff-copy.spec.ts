@@ -912,7 +912,7 @@ describe('COPY_DECK Part B, as written', () => {
     [
       'C-849',
       wfhAutoEndedCopy({ endedAt: T }).body,
-      'We ended your work from home day at 1:45 PM, the end of your shift.',
+      'We ended your remote day at 1:45 PM, the end of your shift.',
     ],
     [
       'C-851',

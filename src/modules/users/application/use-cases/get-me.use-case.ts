@@ -29,8 +29,10 @@ export function permissionsOf(me: AuthenticatedUser): MePermissions {
     canApprove: overseer || manager,
     canSeeReports: overseer || manager,
     canSeeTeamBreaks: overseer || manager,
-    canUseMessages: overseer || manager,
-    canUsePortal: me.role !== Role.USER,
+    // 4.1: Staff message their managers and Admin from the portal too.
+    canUseMessages: overseer || manager || me.role === Role.USER,
+    // 4.1: everyone has the portal; Staff see their own pages there.
+    canUsePortal: true,
     needsOrganisation: seesEveryOrg(me.role) && !org,
     isSuperManager: me.role === Role.SUPER_MANAGER,
     canAdjustFocus: me.role === Role.SUPER_MANAGER,

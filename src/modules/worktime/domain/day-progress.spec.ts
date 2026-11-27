@@ -13,10 +13,11 @@ const base: DayProgressInput = {
 };
 
 describe('dayProgressOf', () => {
-  it('returns exactly the contract, nothing more', () => {
+  it('returns exactly the contract, nothing more (4.1 adds remote)', () => {
     expect(Object.keys(dayProgressOf(base)).sort()).toEqual(
       [
         'status',
+        'remote',
         'date',
         'workedSec',
         'targetSec',
@@ -34,6 +35,7 @@ describe('dayProgressOf', () => {
   it('Not started: an empty ring', () => {
     expect(dayProgressOf({ ...base, state: 'NOT_STARTED', focusSec: 0 })).toEqual({
       status: 'NOT_STARTED',
+      remote: false,
       date: '2026-11-05',
       workedSec: 0,
       targetSec: 8 * H,
@@ -45,6 +47,12 @@ describe('dayProgressOf', () => {
       meetingPromptAt: null,
       meetingFallbackAt: null,
     });
+  });
+
+  it('Remote (4.1): a remote day reads as working remotely, and only while it is open', () => {
+    expect(dayProgressOf({ ...base, remote: true })).toMatchObject({ status: 'WORKING', remote: true });
+    expect(dayProgressOf(base).remote).toBe(false);
+    expect(dayProgressOf({ ...base, state: 'ENDED', remote: true }).remote).toBe(false);
   });
 
   it('Working: the panel figures as they are', () => {

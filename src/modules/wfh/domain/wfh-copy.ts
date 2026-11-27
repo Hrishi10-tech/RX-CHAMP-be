@@ -102,7 +102,8 @@ export function wfhScheduledCopy(i: {
 
 export function wfhAutoEndedCopy(i: { endedAt: string }): Copy {
   return {
-    title: 'Work from home day ended',
-    body: `We ended your work from home day at ${i.endedAt}, the end of your shift.`,
+    // 4.1: a day worked from home reads "Remote" everywhere.
+    title: 'Remote day ended',
+    body: `We ended your remote day at ${i.endedAt}, the end of your shift.`,
   };
 }

@@ -20,7 +20,7 @@ import { WORK_SESSION_REPOSITORY, WorkSessionRepository } from '../domain/work-s
 import { DayDataService } from './day-data.service';
 import { PeopleScopeService } from './people-scope.service';
 import { focusView, wfhDayView } from './workday.service';
-import { BIOMETRIC_SOURCE } from '../domain/day';
+import { BIOMETRIC_SOURCE, MOBILE_WFH_SOURCE } from '../domain/day';
 import { DayPunch, PUNCHES_READER, PunchesReader } from '../domain/punches.reader';
 import { TeamBreakStatus, TeamRowStatus, TeamTodayRow, TeamTodayView } from './worktime.types';
 
@@ -186,6 +186,8 @@ export class TeamTodayService {
           },
           status,
           statusSince: since,
+          // 4.1: a remote day (started from the portal or the phone) is running right now.
+          remote: live && openSession?.source === MOBILE_WFH_SOURCE,
           startedAt: first?.startedAt.toISOString() ?? null,
           endedAt: !openSession && last?.endedAt ? last.endedAt.toISOString() : null,
           autoClosed: !openSession && last?.endReason === 'AUTO_CLOSED',
@@ -253,6 +255,7 @@ export class TeamTodayService {
         partLeave: rows.filter((r) => r.leave && r.leave.days > 0 && !r.leave.full).length,
         lateStarts: rows.filter((r) => r.lateStart).length,
         workingFromHome: rows.filter((r) => r.wfh && r.wfh.days > 0).length,
+        remote: rows.filter((r) => r.remote).length,
         biometric: rows.filter((r) => r.attendance === 'BIOMETRIC').length,
         pendingApprovals: rows.reduce((s, r) => s + r.pending, 0),
         overdueApprovals,

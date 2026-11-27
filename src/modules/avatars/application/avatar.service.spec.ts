@@ -7,10 +7,6 @@ import { Email } from '@modules/users/domain/value-objects/email.vo';
 import { UserId } from '@modules/users/domain/value-objects/user-id.vo';
 import { AvatarService } from './avatar.service';
 
-const PHONE = 'RXVisionMobile/1.2.0 (Android)';
-const AGENT = 'RXVisionAgent/4.0.0 (Windows)';
-const BROWSER = 'Mozilla/5.0 (Macintosh)';
-
 const catalog = new AvatarCatalog(
   {
     version: 3,
@@ -105,7 +101,7 @@ describe('AvatarService', () => {
   describe('choosing', () => {
     it('stores the ID and tells every device', async () => {
       users.findById.mockResolvedValue(user('MALE'));
-      const view = await service.choose(actor(Role.USER), 'M02', PHONE);
+      const view = await service.choose(actor(Role.USER), 'M02');
       expect(view.avatarId).toBe('M02');
       expect(users.save.mock.calls[0][0].avatarId).toBe('M02');
       expect(events.publish).toHaveBeenCalledWith(
@@ -116,7 +112,7 @@ describe('AvatarService', () => {
 
     it('refuses an ID that is not in the manifest', async () => {
       users.findById.mockResolvedValue(user('MALE'));
-      await expect(service.choose(actor(Role.MANAGER), 'M99', BROWSER)).rejects.toMatchObject({
+      await expect(service.choose(actor(Role.MANAGER), 'M99')).rejects.toMatchObject({
         status: 400,
         code: 'AVATAR_UNKNOWN',
       });
@@ -125,7 +121,7 @@ describe('AvatarService', () => {
 
     it("refuses the other gender's avatar", async () => {
       users.findById.mockResolvedValue(user('MALE'));
-      await expect(service.choose(actor(Role.MANAGER), 'F01', BROWSER)).rejects.toMatchObject({
+      await expect(service.choose(actor(Role.MANAGER), 'F01')).rejects.toMatchObject({
         status: 403,
         code: 'AVATAR_OTHER_LIBRARY',
       });
@@ -134,36 +130,18 @@ describe('AvatarService', () => {
 
     it('asks for the gender first', async () => {
       users.findById.mockResolvedValue(user(null));
-      await expect(service.choose(actor(Role.MANAGER), 'M01', BROWSER)).rejects.toMatchObject({
+      await expect(service.choose(actor(Role.MANAGER), 'M01')).rejects.toMatchObject({
         status: 409,
         code: 'GENDER_NOT_SET',
       });
     });
 
-    it.each([PHONE, AGENT])('lets Staff change it from %s', async (client) => {
-      users.findById.mockResolvedValue(user('MALE'));
-      await expect(service.choose(actor(Role.USER), 'M02', client)).resolves.toMatchObject({
-        avatarId: 'M02',
-      });
-    });
-
-    it.each([BROWSER, undefined, 'SomeRXVisionMobile/1.0'])(
-      'refuses Staff from anywhere else (%s)',
-      async (client) => {
-        users.findById.mockResolvedValue(user('MALE'));
-        await expect(service.choose(actor(Role.USER), 'M02', client)).rejects.toMatchObject({
-          status: 403,
-          code: 'AVATAR_CHANGE_ON_WEB',
-        });
-        expect(users.save).not.toHaveBeenCalled();
-      },
-    );
-
-    it.each([Role.MANAGER, Role.SUPER_MANAGER, Role.SUPER_ADMIN])(
-      'lets %s change it on the web',
+    // 4.1: Staff have the portal, so nobody is limited to the agent or the phone any more.
+    it.each([Role.USER, Role.MANAGER, Role.SUPER_MANAGER, Role.SUPER_ADMIN])(
+      'lets %s change it from any client',
       async (role) => {
         users.findById.mockResolvedValue(user('MALE'));
-        await expect(service.choose(actor(role), 'M02', BROWSER)).resolves.toMatchObject({
+        await expect(service.choose(actor(role), 'M02')).resolves.toMatchObject({
           avatarId: 'M02',
         });
       },
@@ -173,18 +151,12 @@ describe('AvatarService', () => {
   describe('resetting', () => {
     it('goes back to the default and tells every device', async () => {
       users.findById.mockResolvedValue(user('MALE', 'M02'));
-      const view = await service.resetMine(actor(Role.USER), PHONE);
+      const view = await service.resetMine(actor(Role.USER));
       expect(view).toMatchObject({ avatarId: 'M01', chosenAvatarId: null });
       expect(events.publish).toHaveBeenCalledWith(
         AvatarChangedEvent.eventName,
         new AvatarChangedEvent('u-1', 'M01', 'co-1'),
       );
-    });
-
-    it('keeps Staff off the web here too', async () => {
-      await expect(service.resetMine(actor(Role.USER), BROWSER)).rejects.toMatchObject({
-        code: 'AVATAR_CHANGE_ON_WEB',
-      });
     });
 
     // 4.0: whoever may set the person's gender (their organisation admin, a Super Admin).

@@ -70,8 +70,8 @@ const PAYROLL: Col[] = [
   // 3.5, after every earlier column again.
   { header: 'Comp off days', key: 'compOffDays', width: 13 },
   { header: 'Comp off earned', key: 'compOffEarned', width: 15 },
-  { header: 'Work from home days', key: 'wfhDays', width: 19 },
-  { header: 'Hours from home over the cap', key: 'wfhOverHours', width: 26, hours: true },
+  { header: 'Remote days', key: 'wfhDays', width: 19 },
+  { header: 'Remote hours over the cap', key: 'wfhOverHours', width: 26, hours: true },
   { header: 'No check-out days', key: 'noCheckoutDays', width: 17 },
   // 3.6, after every earlier column again: already inside the focus hours.
   { header: 'Meeting hours', key: 'meetingHours', width: 13, hours: true },
@@ -115,8 +115,8 @@ const DAYS: Col[] = [
   { header: 'Leave days', key: 'leaveDays', width: 11 },
   { header: 'Paid leave hours', key: 'leaveHours', width: 16, hours: true },
   // 3.5
-  { header: 'Work from home (days)', key: 'wfhDays', width: 20 },
-  { header: 'Hours from home counted', key: 'wfhHours', width: 22, hours: true },
+  { header: 'Remote (days)', key: 'wfhDays', width: 20 },
+  { header: 'Remote hours counted', key: 'wfhHours', width: 22, hours: true },
   { header: 'Comp off earned', key: 'compOffEarned', width: 15 },
   { header: 'No check-out', key: 'noCheckout', width: 12 },
 ];

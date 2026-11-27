@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '@shared/rbac/authenticated-user';
 import { DayProgressView, dayProgressOf } from '../domain/day-progress';
+import { MOBILE_WFH_SOURCE } from '../domain/day';
 import { WORK_SESSION_REPOSITORY, WorkSessionRepository } from '../domain/work-session.repository';
 import { WorkSessionsService } from './work-sessions.service';
 import { WorkdayService } from './workday.service';
@@ -45,6 +46,8 @@ export class DayProgressService {
       open,
       breakDurationMin: breakRecord?.durationMin ?? null,
       meetingConfirmedAt: meeting?.kind === 'STATUS' ? (meeting.confirmedAt ?? null) : null,
+      // 4.1: a remote day, started from the portal or the phone.
+      remote: !lastEnded && today.open?.source === MOBILE_WFH_SOURCE,
     });
   }
 }

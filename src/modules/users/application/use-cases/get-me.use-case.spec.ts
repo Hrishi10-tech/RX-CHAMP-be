@@ -93,11 +93,17 @@ describe('GET /me permissions', () => {
     }
   });
 
-  it('Staff: the agent only', () => {
+  it('Staff (4.1): their own pages on the portal and messages, nothing of anyone else', () => {
     expect(permissionsOf(staff())).toMatchObject({
-      canUsePortal: false,
+      canUsePortal: true,
+      canUseMessages: true,
       canSeeTeam: false,
       canApprove: false,
+      canSeeReports: false,
+      canSeeTeamBreaks: false,
+      canManagePeople: false,
+      canManageOrg: false,
+      canSeeAgentHealth: false,
     });
   });
 });

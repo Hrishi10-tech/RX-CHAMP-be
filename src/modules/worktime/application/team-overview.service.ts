@@ -10,6 +10,7 @@ import { isWorkingDay } from '@modules/calendar/domain/calendar.rules';
 import { BreakDayService } from '@modules/shifts/application/break-day.service';
 import { APPROVALS_READER, ApprovalsReader } from '../domain/approvals.reader';
 import { Interval, normalize, span, subtract } from '../domain/intervals';
+import { MOBILE_WFH_SOURCE } from '../domain/day';
 import {
   DepartmentRow,
   LiveFacts,
@@ -43,6 +44,8 @@ export interface TeamPersonView {
   department: DepartmentRow | null;
   status: TeamStatus;
   since: string | null;
+  /** 4.1: a remote day is running now (started from the portal or the phone); WORKING reads "Remote". */
+  remote: boolean;
   startedAt: string | null;
   focusSec: number;
   targetSec: number;
@@ -106,6 +109,8 @@ interface Live {
   date: string;
   status: TeamStatus;
   since: Date | null;
+  /** 4.1: the open session is a remote day. */
+  remote: boolean;
   online: boolean;
   facts: LiveFacts | undefined;
 }
@@ -219,6 +224,7 @@ export class TeamOverviewService {
         date,
         status,
         since,
+        remote: openSession?.source === MOBILE_WFH_SOURCE,
         online: seen > 0 && now.getTime() - seen <= ONLINE_MS,
         facts: f,
       };
@@ -317,6 +323,7 @@ export class TeamOverviewService {
       department: l.person.departmentId ? (deptBy.get(l.person.departmentId) ?? null) : null,
       status: l.status,
       since: l.since?.toISOString() ?? null,
+      remote: l.remote,
       startedAt: s.startedAt,
       focusSec: s.focusSec,
       targetSec: s.targetSec,

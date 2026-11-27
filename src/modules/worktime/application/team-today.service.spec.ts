@@ -24,7 +24,7 @@ const person = (id: string, name: string): PersonRow => ({
   joinedOn: '2026-01-01',
 });
 
-function setup() {
+function setup(nightSource = 'AGENT') {
   const day = (userId: string, date: string) => ({
     userId,
     date,
@@ -38,7 +38,7 @@ function setup() {
               startedAt: new Date('2026-10-13T13:00:00Z'),
               endedAt: null,
               endReason: null,
-              source: 'AGENT',
+              source: nightSource,
             },
           ]
         : [],
@@ -157,6 +157,17 @@ describe('Team today', () => {
     expect(byId.day).toMatchObject({ date: '2026-10-14', status: 'NOT_STARTED', pending: 0 });
     expect(byId.night).toMatchObject({ date: '2026-10-13', status: 'WORKING', pending: 2 });
     expect(view.date).toBe('2026-10-14');
+  });
+
+  it('a remote day running now is flagged remote (4.1), and counted', async () => {
+    const remote = await setup('MOBILE_WFH').svc.today(me, {}, NOW);
+    const night = remote.rows.find((r) => r.user.id === 'night');
+    expect(night).toMatchObject({ status: 'WORKING', remote: true });
+    expect(remote.rows.find((r) => r.user.id === 'day')?.remote).toBe(false);
+    expect(remote.totals.remote).toBe(1);
+    const office = await setup().svc.today(me, {}, NOW);
+    expect(office.rows.find((r) => r.user.id === 'night')?.remote).toBe(false);
+    expect(office.totals.remote).toBe(0);
   });
 
   it('rows carry the 4.0 focus breakdown (paid and unpaid breaks, away)', async () => {

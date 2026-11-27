@@ -153,7 +153,7 @@ export interface MePermissions {
   canSeeReports: boolean;
   canSeeTeamBreaks: boolean;
   canUseMessages: boolean;
-  /** Staff use the agent only. */
+  /** 4.1: true for every role (Staff have their own pages); kept so a client can still be told no. */
   canUsePortal: boolean;
   /** A Super Admin on the platform view must pick an organisation for org pages. */
   needsOrganisation: boolean;

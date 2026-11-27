@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Param,
   Post,
@@ -70,21 +69,15 @@ export class MyAvatarController {
   }
 
   @Put()
-  @ApiOperation({
-    summary: 'Choose an avatar from your own library (Staff: from the agent or the phone only)',
-  })
-  choose(
-    @CurrentUser() me: AuthenticatedUser,
-    @Body() body: SetMyAvatarDto,
-    @Headers('user-agent') userAgent?: string,
-  ) {
-    return this.avatars.choose(me, body.avatarId, userAgent);
+  @ApiOperation({ summary: 'Choose an avatar from your own library' })
+  choose(@CurrentUser() me: AuthenticatedUser, @Body() body: SetMyAvatarDto) {
+    return this.avatars.choose(me, body.avatarId);
   }
 
   @Delete()
-  @ApiOperation({ summary: 'Go back to the default avatar (Staff: from the agent or the phone)' })
-  reset(@CurrentUser() me: AuthenticatedUser, @Headers('user-agent') userAgent?: string) {
-    return this.avatars.resetMine(me, userAgent);
+  @ApiOperation({ summary: 'Go back to the default avatar' })
+  reset(@CurrentUser() me: AuthenticatedUser) {
+    return this.avatars.resetMine(me);
   }
 }
 
